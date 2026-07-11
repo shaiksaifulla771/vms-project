@@ -1,0 +1,2302 @@
+{
+  "vendors": [
+    "Malhar traders",
+    "Varahi Traders",
+    "Vida Agro",
+    "S&S Exports",
+    "Aashirvaad - Retail Brand",
+    "Rainbow Expochem Pvt Ltd",
+    "Sri Balaji Traders",
+    "Puresaiens Health Private Limited",
+    "Everest Food Products",
+    "Millet Store",
+    "Rishab Marketting",
+    "Nova starches",
+    "NVR Nutrition",
+    "Priya Milk & Milk Products Pvt Ltd",
+    "Mevive International Pvt Ltd",
+    "Angel Starch and Food Private Limited",
+    "S.K.M Fruits",
+    "Fotune Pet Pack",
+    "Winwal Agro International Pvt. Ltd.",
+    "Nutri Organics",
+    "Local Spot Market",
+    "ZAIN NATURAL AGRO INDIA PRIVATE LIMITED",
+    "Deepanshu agro",
+    "Annexe Chem Private Limited",
+    "Pradeep Polyflex",
+    "Print Branch",
+    "Nexibles",
+    "Manvi Enterprises",
+    "Royal Packaging",
+    "Mother's recipe",
+    "Soham Packaging",
+    "Nakoda Dairy",
+    "Mother Dairy Fruits and Vegetables",
+    "ACK Vegetable Mandi",
+    "SHIMLA HILLS OFFERINGS PVT LTD",
+    "Sakthi Masala Pvt Ltd - Retail Brand",
+    "Sri Kamatchi Stores",
+    "TATA Consumer Products - Retail Brand",
+    "Foodpro Packaging Pvt Ltd",
+    "M/S Shri Krishna Agro Cold Storage",
+    "Nutrifusion LLC",
+    "Jain Farm Fresh",
+    "Kaleel & Co"
+  ],
+  "raw_materials": {
+    "RM-PEARL-MILLET-BAJ": {
+      "name": "Pearl Millet (Bajra)",
+      "unit": "Kg",
+      "price": 35.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-SPLIT-RED-LENTIL": {
+      "name": "Split Red lentils",
+      "unit": "Kg",
+      "price": 126.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-RED-PUMPKIN": {
+      "name": "Red pumpkin",
+      "unit": "Kg",
+      "price": 50.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-SPLIT-MOONG-DAL": {
+      "name": "Split Moong dal",
+      "unit": "Kg",
+      "price": 138.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-ROLLED-OATS": {
+      "name": "Rolled Oats",
+      "unit": "Kg",
+      "price": 149.5,
+      "vendor": "Nutri Organics"
+    },
+    "RM-PEARLED-BARLEY": {
+      "name": "Pearled Barley",
+      "unit": "Kg",
+      "price": 55.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-CASHEW-NUTS": {
+      "name": "Cashew Nuts",
+      "unit": "Kg",
+      "price": 580.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-BANANA-PUREE-CON": {
+      "name": "Banana Puree Concentrate",
+      "unit": "Kg",
+      "price": 112.7428,
+      "vendor": "Jain Farm Fresh"
+    },
+    "RM-COCONUT-MILK-POW": {
+      "name": "Coconut Milk Powder",
+      "unit": "Kg",
+      "price": 860.1544,
+      "vendor": "NVR Nutrition"
+    },
+    "RM-SEEDLESS-RED-DAT": {
+      "name": "Seedless Red Dates",
+      "unit": "kg",
+      "price": 180.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-WATER-FOR-DILUTI": {
+      "name": "Water for Dilution",
+      "unit": "Kg",
+      "price": 0.07,
+      "vendor": "Local Spot Market"
+    },
+    "RM-WATER-FOR-PROCES": {
+      "name": "Water for Process",
+      "unit": "Kg",
+      "price": 0.07,
+      "vendor": "Local Spot Market"
+    },
+    "RM-RETORTABLE-100GM": {
+      "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Rice-O-Lentil, RL1)",
+      "unit": "pcs",
+      "price": 8.36,
+      "vendor": "Foodpro Packaging Pvt Ltd"
+    },
+    "RM-CORRUGATED-BOXES": {
+      "name": "Corrugated Boxes",
+      "unit": "pcs",
+      "price": 41.0,
+      "vendor": "Royal Packaging"
+    },
+    "RM-ROASTED-RAGI-FLO": {
+      "name": "Roasted Ragi flour",
+      "unit": "Kg",
+      "price": 140.0,
+      "vendor": "Winwal Agro International Pvt. Ltd."
+    },
+    "RM-WHOLE-WHEAT-FLOU": {
+      "name": "Whole wheat flour",
+      "unit": "Kg",
+      "price": 89.6,
+      "vendor": "Aashirvaad - Retail Brand"
+    },
+    "RM-GHEE": {
+      "name": "Ghee",
+      "unit": "Kg",
+      "price": 562.7333,
+      "vendor": "Priya Milk & Milk Products Pvt Ltd"
+    },
+    "RM-WHOLE-GREEN-CARD": {
+      "name": "Whole Green Cardamom",
+      "unit": "Kg",
+      "price": 2800.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-SKIM-MILK-POWDER": {
+      "name": "Skim milk powder",
+      "unit": "Kg",
+      "price": 319.312,
+      "vendor": "Nakoda Dairy"
+    },
+    "RM-DRIED-GREEN-PEAS": {
+      "name": "Dried Green Peas",
+      "unit": "Kg",
+      "price": 119.0,
+      "vendor": "Varahi Traders"
+    },
+    "RM-PEAR-PUREE": {
+      "name": "Pear Puree",
+      "unit": "Kg",
+      "price": 94.98,
+      "vendor": "ZAIN NATURAL AGRO INDIA PRIVATE LIMITED"
+    },
+    "RM-MINT": {
+      "name": "Mint",
+      "unit": "Kg",
+      "price": 30.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-SPINACH": {
+      "name": "Spinach",
+      "unit": "Kg",
+      "price": 35.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-SWEET-POTATO": {
+      "name": "Sweet Potato",
+      "unit": "Kg",
+      "price": 35.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-APPLE-PUREE": {
+      "name": "Apple Puree",
+      "unit": "Kg",
+      "price": 74.19,
+      "vendor": "SHIMLA HILLS OFFERINGS PVT LTD"
+    },
+    "RM-CUCUMBER": {
+      "name": "Cucumber",
+      "unit": "Kg",
+      "price": 30.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-BASIL": {
+      "name": "Basil",
+      "unit": "Kg",
+      "price": 150.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-DRIED-PRUNES": {
+      "name": "Dried Prunes",
+      "unit": "Kg",
+      "price": 605.0,
+      "vendor": "Puresaiens Health Private Limited"
+    },
+    "RM-TOTAPURI-MANGO-P": {
+      "name": "Totapuri Mango Puree",
+      "unit": "Kg",
+      "price": 97.2,
+      "vendor": "Mother Dairy Fruits and Vegetables"
+    },
+    "RM-MUSKMELON": {
+      "name": "Muskmelon",
+      "unit": "Kg",
+      "price": 28.0,
+      "vendor": "S.K.M Fruits"
+    },
+    "RM-SHARBATI-RICE": {
+      "name": "Sharbati Rice",
+      "unit": "Kg",
+      "price": 77.35,
+      "vendor": "Deepanshu agro"
+    },
+    "RM-SORGHUMJOWAR": {
+      "name": "Sorghum(Jowar)",
+      "unit": "Kg",
+      "price": 120.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-SALT": {
+      "name": "Salt",
+      "unit": "Kg",
+      "price": 25.0,
+      "vendor": "TATA Consumer Products - Retail Brand"
+    },
+    "RM-CUMIN-POWDER": {
+      "name": "Cumin Powder",
+      "unit": "Kg",
+      "price": 700.0,
+      "vendor": "Sakthi Masala Pvt Ltd - Retail Brand"
+    },
+    "RM-BLACK-PEPPER-POW": {
+      "name": "Black pepper powder",
+      "unit": "Kg",
+      "price": 1100.0,
+      "vendor": "Everest Food Products"
+    },
+    "RM-TAMARIND-PASTE": {
+      "name": "Tamarind Paste",
+      "unit": "Kg",
+      "price": 260.0,
+      "vendor": "Mother's recipe"
+    },
+    "RM-APRICOTS-DRIED-D": {
+      "name": "Apricots (Dried, De Seeded, Orange)",
+      "unit": "kg",
+      "price": 1300.0,
+      "vendor": "Kaleel & Co"
+    },
+    "RM-DRIED-FIGS": {
+      "name": "Dried Figs",
+      "unit": "kg",
+      "price": 1000.0,
+      "vendor": "Rishab Marketting"
+    },
+    "RM-RAISINS": {
+      "name": "Raisins",
+      "unit": "kg",
+      "price": 500.0,
+      "vendor": "Sri Kamatchi Stores"
+    },
+    "RM-BLACK-STRAP-MOLA": {
+      "name": "Black strap molasses",
+      "unit": "L",
+      "price": 270.0,
+      "vendor": "S&S Exports"
+    },
+    "RM-RETORTABLE-200GM": {
+      "name": "Retortable 200gm Spouted Pouch with Anti Choking Cap (Dry Fruit sweetener, HS5)",
+      "unit": "pcs",
+      "price": 11.0,
+      "vendor": "Local Spot Market"
+    },
+    "RM-SEMOLINA": {
+      "name": "Semolina",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Sri Kamatchi Stores"
+    },
+    "RM-AMARANTH": {
+      "name": "Amaranth",
+      "unit": "Kg",
+      "price": 200.0,
+      "vendor": "Millet Store"
+    },
+    "RM-ALMONDS": {
+      "name": "Almonds",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Sri Kamatchi Stores"
+    },
+    "RM-RAW-AND-FRESH-ON": {
+      "name": "Raw and Fresh Onion",
+      "unit": "Kg",
+      "price": 30.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-TOMATO": {
+      "name": "Tomato",
+      "unit": "Kg",
+      "price": 20.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-TURMERIC-POWDER": {
+      "name": "Turmeric powder",
+      "unit": "Kg",
+      "price": 313.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-PEELED-POTATO": {
+      "name": "Peeled Potato",
+      "unit": "Kg",
+      "price": 25.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-PEELED-CARROT": {
+      "name": "Peeled Carrot",
+      "unit": "Kg",
+      "price": 40.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-GREEN-PEAS": {
+      "name": "Green peas",
+      "unit": "Kg",
+      "price": 137.9,
+      "vendor": "Manvi Enterprises"
+    },
+    "RM-ASPARAGUS": {
+      "name": "Asparagus",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-BROCCOLI-DE-STEM": {
+      "name": "Broccoli (De Stemmed)",
+      "unit": "Kg",
+      "price": 40.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-CORIANDER-LEAVES": {
+      "name": "Coriander Leaves",
+      "unit": "Kg",
+      "price": 10.0,
+      "vendor": "ACK Vegetable Mandi"
+    },
+    "RM-BARLEY-MILLED-TO": {
+      "name": "Barley (Milled to a Medium Coarse Grain)",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Sri Kamatchi Stores"
+    },
+    "RM-BUCK-WHEAT": {
+      "name": "Buck Wheat",
+      "unit": "Kg",
+      "price": 250.0,
+      "vendor": "Millet Store"
+    },
+    "RM-STAR-ANISE-WHOLE": {
+      "name": "Star Anise (Whole)",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Sri Kamatchi Stores"
+    },
+    "RM-CINNAMON-POWDER": {
+      "name": "Cinnamon Powder",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Sri Kamatchi Stores"
+    },
+    "RM-ROSE-WATER-FOR-C": {
+      "name": "Rose Water for Cooking",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Local Spot Market"
+    },
+    "RM-CAROB-POWDER": {
+      "name": "Carob Powder",
+      "unit": "Kg",
+      "price": 0.0,
+      "vendor": "Local Spot Market"
+    },
+    "RM-THERMALLY-TREATE": {
+      "name": "Thermally Treated Sorghum Flour",
+      "unit": "Kg",
+      "price": 150.8498,
+      "vendor": "Nova starches"
+    },
+    "RM-TOMATO-POWDER-SP": {
+      "name": "Tomato Powder (Spray Dried)",
+      "unit": "Kg",
+      "price": 241.80599999999998,
+      "vendor": "Rainbow Expochem Pvt Ltd"
+    },
+    "RM-COMPOUNDED-ASAFO": {
+      "name": "Compounded Asafoetida",
+      "unit": "Kg",
+      "price": 1230.0,
+      "vendor": "Malhar traders"
+    },
+    "RM-VITAMIN-BLEND-12": {
+      "name": "Vitamin Blend (12 Vit and Minerals), Blend 53",
+      "unit": "Kg",
+      "price": 38000.0,
+      "vendor": "Nutrifusion LLC"
+    },
+    "RM-CALCIUM-CARBONAT": {
+      "name": "Calcium Carbonate",
+      "unit": "Kg",
+      "price": 92.03999999999999,
+      "vendor": "Annexe Chem Private Limited"
+    },
+    "RM-PACKAGING-ROLL": {
+      "name": "Packaging roll",
+      "unit": "Kg",
+      "price": 277.536,
+      "vendor": "Pradeep Polyflex"
+    },
+    "RM-BIB-BOXES-RL2": {
+      "name": "BIB Boxes RL2",
+      "unit": "pcs",
+      "price": 14.985999999999997,
+      "vendor": "Print Branch"
+    },
+    "RM-SCOOPS": {
+      "name": "Scoops",
+      "unit": "pcs",
+      "price": 1.7251599999999998,
+      "vendor": "Soham Packaging"
+    },
+    "RM-DATES-POWDER-SPR": {
+      "name": "Dates Powder (Spray Dried)",
+      "unit": "Kg",
+      "price": 669.5132,
+      "vendor": "Mevive International Pvt Ltd"
+    },
+    "RM-BANANA-POWDER-SP": {
+      "name": "Banana Powder (Spray Dried)",
+      "unit": "Kg",
+      "price": 461.1544,
+      "vendor": "NVR Nutrition"
+    },
+    "RM-BIB-BOXES-WR2": {
+      "name": "BIB Boxes WR2",
+      "unit": "pcs",
+      "price": 14.985999999999997,
+      "vendor": "Print Branch"
+    },
+    "RM-PUMPKIN-POWDER-S": {
+      "name": "Pumpkin Powder (Spray Dried)",
+      "unit": "Kg",
+      "price": 440.1544,
+      "vendor": "NVR Nutrition"
+    },
+    "RM-BIB-BOXES-MP2": {
+      "name": "BIB Boxes MP2",
+      "unit": "pcs",
+      "price": 14.985999999999997,
+      "vendor": "Print Branch"
+    },
+    "RM-SPINACH-POWDER-S": {
+      "name": "Spinach Powder (Spray Dried)",
+      "unit": "Kg",
+      "price": 404.556,
+      "vendor": "Rainbow Expochem Pvt Ltd"
+    },
+    "RM-MINT-POWDER-SPRA": {
+      "name": "Mint Powder (Spray Dried)",
+      "unit": "Kg",
+      "price": 673.1,
+      "vendor": "Rainbow Expochem Pvt Ltd"
+    },
+    "RM-BIB-BOXES-SG2": {
+      "name": "BIB Boxes SG2",
+      "unit": "pcs",
+      "price": 14.985999999999997,
+      "vendor": "Print Branch"
+    },
+    "RM-CHICKOO": {
+      "name": "Chickoo",
+      "unit": "Kg",
+      "price": 80.0,
+      "vendor": "M/S Shri Krishna Agro Cold Storage"
+    },
+    "RM-YOGURT-FREEZE-DR": {
+      "name": "Yogurt Freeze Dried Powder",
+      "unit": "Kg",
+      "price": 840.0,
+      "vendor": "Vida Agro"
+    },
+    "RM-TAPIOCA-STARCH": {
+      "name": "Tapioca Starch",
+      "unit": "Kg",
+      "price": 90.534,
+      "vendor": "Angel Starch and Food Private Limited"
+    },
+    "RM-PRINTED-POUCHES-": {
+      "name": "Printed Pouches for Yogurt Melts(5g) - Center Seal_Pumpkin",
+      "unit": "pcs",
+      "price": 7.292399999999999,
+      "vendor": "Nexibles"
+    },
+    "RM-PUNNET": {
+      "name": "Punnet",
+      "unit": "pcs",
+      "price": 0.31,
+      "vendor": "Fotune Pet Pack"
+    },
+    "RM-ALPHONSO-MANGO-P": {
+      "name": "Alphonso Mango Puree",
+      "unit": "Kg",
+      "price": 93.84280000000001,
+      "vendor": "Mother Dairy Fruits and Vegetables"
+    },
+    "RM-STRAWBERRY": {
+      "name": "Strawberry",
+      "unit": "Kg",
+      "price": 78.75,
+      "vendor": "M/S Shri Krishna Agro Cold Storage"
+    },
+    "RM-ROASTED-PUMPKIN": {
+      "name": "Roasted Pumpkin",
+      "unit": "Kg",
+      "price": 147.0,
+      "vendor": "Vida Agro"
+    },
+    "RM-PONNI-RICE": {
+      "name": "Ponni Rice",
+      "unit": "Kg",
+      "price": 60.0,
+      "vendor": "Local Spot Market"
+    },
+    "RM-SPLIT-TOOR-DAL": {
+      "name": "Split Toor dal",
+      "unit": "Kg",
+      "price": 105.0,
+      "vendor": "Sri Balaji Traders"
+    },
+    "RM-ROASTED-CUMIN-PO": {
+      "name": "Roasted cumin powder",
+      "unit": "Kg",
+      "price": 560.0,
+      "vendor": "Everest Food Products"
+    }
+  },
+  "finished_goods": [
+    {
+      "name": "MILLETY PUMPKIN 100 GM SPOUTED POUCH",
+      "code": "FG-MP1",
+      "components": [
+        {
+          "name": "Pearl Millet (Bajra)",
+          "code": "RM-PEARL-MILLET-BAJ",
+          "quantity": 2.5188916876574305,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Split Red lentils",
+          "code": "RM-SPLIT-RED-LENTIL",
+          "quantity": 2.5188916876574305,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Red pumpkin",
+          "code": "RM-RED-PUMPKIN",
+          "quantity": 2.5188916876574305,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Split Moong dal",
+          "code": "RM-SPLIT-MOONG-DAL",
+          "quantity": 2.5188916876574305,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Rolled Oats",
+          "code": "RM-ROLLED-OATS",
+          "quantity": 2.5188916876574305,
+          "unit": "Kg",
+          "vendor": "Nutri Organics"
+        },
+        {
+          "name": "Pearled Barley",
+          "code": "RM-PEARLED-BARLEY",
+          "quantity": 2.5188916876574305,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Cashew Nuts",
+          "code": "RM-CASHEW-NUTS",
+          "quantity": 1.0137027707808564,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 14.099647355163727,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Coconut Milk Powder",
+          "code": "RM-COCONUT-MILK-POW",
+          "quantity": 2.3891939546599494,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Seedless Red Dates",
+          "code": "RM-SEEDLESS-RED-DAT",
+          "quantity": 3.0718136020151134,
+          "unit": "kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Water for Dilution",
+          "code": "RM-WATER-FOR-DILUTI",
+          "quantity": 8.461158690176322,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Dilution",
+          "code": "RM-WATER-FOR-DILUTI",
+          "quantity": 3.413123425692695,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 52.43801007556675,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Millety Pumpkin, MP1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "WHEAT Y RAGI 100GM SPOUTED POUCH",
+      "code": "FG-WR1",
+      "components": [
+        {
+          "name": "Roasted Ragi flour",
+          "code": "RM-ROASTED-RAGI-FLO",
+          "quantity": 6.128800000000001,
+          "unit": "Kg",
+          "vendor": "Winwal Agro International Pvt. Ltd."
+        },
+        {
+          "name": "Whole wheat flour",
+          "code": "RM-WHOLE-WHEAT-FLOU",
+          "quantity": 6.128800000000001,
+          "unit": "Kg",
+          "vendor": "Aashirvaad - Retail Brand"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 4.081066666666668,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 20.001400000000007,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Whole Green Cardamom",
+          "code": "RM-WHOLE-GREEN-CARD",
+          "quantity": 0.08220000000000004,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Skim milk powder",
+          "code": "RM-SKIM-MILK-POWDER",
+          "quantity": 2.7255333333333347,
+          "unit": "Kg",
+          "vendor": "Nakoda Dairy"
+        },
+        {
+          "name": "Water for Dilution",
+          "code": "RM-WATER-FOR-DILUTI",
+          "quantity": 11.999000000000004,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 48.853200000000015,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Wheaty Ragi, WR1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "PEARY GREEN 100GM SPOUTED POUCH",
+      "code": "FG-PG1",
+      "components": [
+        {
+          "name": "Dried Green Peas",
+          "code": "RM-DRIED-GREEN-PEAS",
+          "quantity": 8.291985199070723,
+          "unit": "Kg",
+          "vendor": "Varahi Traders"
+        },
+        {
+          "name": "Pear Puree",
+          "code": "RM-PEAR-PUREE",
+          "quantity": 44.42055605652072,
+          "unit": "Kg",
+          "vendor": "ZAIN NATURAL AGRO INDIA PRIVATE LIMITED"
+        },
+        {
+          "name": "Mint",
+          "code": "RM-MINT",
+          "quantity": 0.5628084452361175,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Spinach",
+          "code": "RM-SPINACH",
+          "quantity": 5.857738727173387,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Water for Dilution",
+          "code": "RM-WATER-FOR-DILUTI",
+          "quantity": 40.86691157199906,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Peary Green, PG1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "SWEET POTATO APPLE 100GM SPOUTED POUCH",
+      "code": "FG-SA1",
+      "components": [
+        {
+          "name": "Sweet Potato",
+          "code": "RM-SWEET-POTATO",
+          "quantity": 36.00000000000001,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Apple Puree",
+          "code": "RM-APPLE-PUREE",
+          "quantity": 54.000000000000014,
+          "unit": "Kg",
+          "vendor": "SHIMLA HILLS OFFERINGS PVT LTD"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 10.000000000000002,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Sweetpotato Apple, SA1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "CUCUMBER BASIL 100GM SPOUTED POUCH",
+      "code": "FG-CB1",
+      "components": [
+        {
+          "name": "Cucumber",
+          "code": "RM-CUCUMBER",
+          "quantity": 41.74826713380194,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Apple Puree",
+          "code": "RM-APPLE-PUREE",
+          "quantity": 29.223786993661356,
+          "unit": "Kg",
+          "vendor": "SHIMLA HILLS OFFERINGS PVT LTD"
+        },
+        {
+          "name": "Pear Puree",
+          "code": "RM-PEAR-PUREE",
+          "quantity": 28.806304322323335,
+          "unit": "Kg",
+          "vendor": "ZAIN NATURAL AGRO INDIA PRIVATE LIMITED"
+        },
+        {
+          "name": "Basil",
+          "code": "RM-BASIL",
+          "quantity": 1.5911934535377272,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Cucumber Basil, CB1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "PRUNE DELIGHT",
+      "code": "FG-PR1",
+      "components": [
+        {
+          "name": "Dried Prunes",
+          "code": "RM-DRIED-PRUNES",
+          "quantity": 27.94000052527201,
+          "unit": "Kg",
+          "vendor": "Puresaiens Health Private Limited"
+        },
+        {
+          "name": "Apple Puree",
+          "code": "RM-APPLE-PUREE",
+          "quantity": 27.94000052527201,
+          "unit": "Kg",
+          "vendor": "SHIMLA HILLS OFFERINGS PVT LTD"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 44.119998949455976,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Prune Delight, PR1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "Nos",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "MUSKMELON MANGO 100GM SPOUTED POUCH",
+      "code": "FG-MM1",
+      "components": [
+        {
+          "name": "Totapuri Mango Puree",
+          "code": "RM-TOTAPURI-MANGO-P",
+          "quantity": 45.0,
+          "unit": "Kg",
+          "vendor": "Mother Dairy Fruits and Vegetables"
+        },
+        {
+          "name": "Muskmelon",
+          "code": "RM-MUSKMELON",
+          "quantity": 55.0008,
+          "unit": "Kg",
+          "vendor": "S.K.M Fruits"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Muskmelon Mango, MM1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "SPINACHY GRAINS 100 GM POUCH",
+      "code": "FG-SG1",
+      "components": [
+        {
+          "name": "Sharbati Rice",
+          "code": "RM-SHARBATI-RICE",
+          "quantity": 6.068591168439075,
+          "unit": "Kg",
+          "vendor": "Deepanshu agro"
+        },
+        {
+          "name": "Split Moong dal",
+          "code": "RM-SPLIT-MOONG-DAL",
+          "quantity": 6.068591168439075,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Sorghum(Jowar)",
+          "code": "RM-SORGHUMJOWAR",
+          "quantity": 3.0078790068633223,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Salt",
+          "code": "RM-SALT",
+          "quantity": 0.19127405348451487,
+          "unit": "Kg",
+          "vendor": "TATA Consumer Products - Retail Brand"
+        },
+        {
+          "name": "Cumin Powder",
+          "code": "RM-CUMIN-POWDER",
+          "quantity": 0.1199869708641437,
+          "unit": "Kg",
+          "vendor": "Sakthi Masala Pvt Ltd - Retail Brand"
+        },
+        {
+          "name": "Black pepper powder",
+          "code": "RM-BLACK-PEPPER-POW",
+          "quantity": 0.02835790267894368,
+          "unit": "Kg",
+          "vendor": "Everest Food Products"
+        },
+        {
+          "name": "Tamarind Paste",
+          "code": "RM-TAMARIND-PASTE",
+          "quantity": 0.04962632968815144,
+          "unit": "Kg",
+          "vendor": "Mother's recipe"
+        },
+        {
+          "name": "Spinach",
+          "code": "RM-SPINACH",
+          "quantity": 10.686824852309105,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Mint",
+          "code": "RM-MINT",
+          "quantity": 0.2757312339250524,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Coconut Milk Powder",
+          "code": "RM-COCONUT-MILK-POW",
+          "quantity": 2.219854237868003,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 2.205847929451245,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Water for Dilution",
+          "code": "RM-WATER-FOR-DILUTI",
+          "quantity": 5.624852747907225,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 63.45258239808212,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Spinachy Grains, SG1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "Dry Fruit Sweetener",
+      "code": "FG-HS5",
+      "components": [
+        {
+          "name": "Seedless Red Dates",
+          "code": "RM-SEEDLESS-RED-DAT",
+          "quantity": 19.801980198019805,
+          "unit": "kg",
+          "vendor": "Kaleel & Co"
+        },
+        {
+          "name": "Apricots (Dried, De Seeded, Orange)",
+          "code": "RM-APRICOTS-DRIED-D",
+          "quantity": 14.851485148514854,
+          "unit": "kg",
+          "vendor": "Kaleel & Co"
+        },
+        {
+          "name": "Dried Figs",
+          "code": "RM-DRIED-FIGS",
+          "quantity": 16.831683168316832,
+          "unit": "kg",
+          "vendor": "Rishab Marketting"
+        },
+        {
+          "name": "Raisins",
+          "code": "RM-RAISINS",
+          "quantity": 9.900990099009903,
+          "unit": "kg",
+          "vendor": "Rishab Marketting"
+        },
+        {
+          "name": "Black strap molasses",
+          "code": "RM-BLACK-STRAP-MOLA",
+          "quantity": 37.62376237623763,
+          "unit": "L",
+          "vendor": "S&S Exports"
+        },
+        {
+          "name": "Dried Prunes",
+          "code": "RM-DRIED-PRUNES",
+          "quantity": 0.9900990099009903,
+          "unit": "Kg",
+          "vendor": "Puresaiens Health Private Limited"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 65.0,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 200gm Spouted Pouch with Anti Choking Cap (Dry Fruit sweetener, HS5)",
+          "code": "RM-RETORTABLE-200GM",
+          "quantity": 500.0,
+          "unit": "pcs",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 8.0,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "PAYSAM - CURIOUS CREATION",
+      "code": "FG-AA4",
+      "components": [
+        {
+          "name": "Semolina",
+          "code": "RM-SEMOLINA",
+          "quantity": 6.81818181818182,
+          "unit": "Kg",
+          "vendor": "Sri Kamatchi Stores"
+        },
+        {
+          "name": "Amaranth",
+          "code": "RM-AMARANTH",
+          "quantity": 5.909090909090911,
+          "unit": "Kg",
+          "vendor": "Millet Store"
+        },
+        {
+          "name": "Skim milk powder",
+          "code": "RM-SKIM-MILK-POWDER",
+          "quantity": 5.984848484848486,
+          "unit": "Kg",
+          "vendor": "Nakoda Dairy"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 4.090909090909092,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 1.5909090909090915,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Almonds",
+          "code": "RM-ALMONDS",
+          "quantity": 2.8409090909090917,
+          "unit": "Kg",
+          "vendor": "Sri Kamatchi Stores"
+        },
+        {
+          "name": "Raisins",
+          "code": "RM-RAISINS",
+          "quantity": 2.7272727272727284,
+          "unit": "kg",
+          "vendor": "Sri Kamatchi Stores"
+        },
+        {
+          "name": "Whole Green Cardamom",
+          "code": "RM-WHOLE-GREEN-CARD",
+          "quantity": 0.15909090909090914,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 1.7424242424242429,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 6.81818181818182,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 68.1818181818182,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Curious Creation, CC1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "VEGGIE MEDLEY",
+      "code": "FG-AB4",
+      "components": [
+        {
+          "name": "Raw and Fresh Onion",
+          "code": "RM-RAW-AND-FRESH-ON",
+          "quantity": 19.663414634146346,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Tomato",
+          "code": "RM-TOMATO",
+          "quantity": 17.321951219512197,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 0.9902439024390245,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Turmeric powder",
+          "code": "RM-TURMERIC-POWDER",
+          "quantity": 0.11219512195121953,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Cumin Powder",
+          "code": "RM-CUMIN-POWDER",
+          "quantity": 0.15609756097560978,
+          "unit": "Kg",
+          "vendor": "Sakthi Masala Pvt Ltd - Retail Brand"
+        },
+        {
+          "name": "Peeled Potato",
+          "code": "RM-PEELED-POTATO",
+          "quantity": 29.556097560975616,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Peeled Carrot",
+          "code": "RM-PEELED-CARROT",
+          "quantity": 18.731707317073173,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Green peas",
+          "code": "RM-GREEN-PEAS",
+          "quantity": 12.04878048780488,
+          "unit": "Kg",
+          "vendor": "Manvi Enterprises"
+        },
+        {
+          "name": "Asparagus",
+          "code": "RM-ASPARAGUS",
+          "quantity": 3.9951219512195126,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Broccoli (De Stemmed)",
+          "code": "RM-BROCCOLI-DE-STEM",
+          "quantity": 4.209756097560977,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Coriander Leaves",
+          "code": "RM-CORIANDER-LEAVES",
+          "quantity": 0.24878048780487808,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 79.26829268292684,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Curious Creation, CC1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "BARLEY - CURIOUS CREATION",
+      "code": "FG-AC4",
+      "components": [
+        {
+          "name": "Barley (Milled to a Medium Coarse Grain)",
+          "code": "RM-BARLEY-MILLED-TO",
+          "quantity": 3.7837837837837833,
+          "unit": "Kg",
+          "vendor": "Sri Kamatchi Stores"
+        },
+        {
+          "name": "Buck Wheat",
+          "code": "RM-BUCK-WHEAT",
+          "quantity": 5.405405405405405,
+          "unit": "Kg",
+          "vendor": "Millet Store"
+        },
+        {
+          "name": "Amaranth",
+          "code": "RM-AMARANTH",
+          "quantity": 5.405405405405405,
+          "unit": "Kg",
+          "vendor": "Millet Store"
+        },
+        {
+          "name": "Star Anise (Whole)",
+          "code": "RM-STAR-ANISE-WHOLE",
+          "quantity": 0.07567567567567567,
+          "unit": "Kg",
+          "vendor": "Sri Kamatchi Stores"
+        },
+        {
+          "name": "Cinnamon Powder",
+          "code": "RM-CINNAMON-POWDER",
+          "quantity": 0.07027027027027026,
+          "unit": "Kg",
+          "vendor": "Sri Kamatchi Stores"
+        },
+        {
+          "name": "Apricots (Dried, De Seeded, Orange)",
+          "code": "RM-APRICOTS-DRIED-D",
+          "quantity": 3.7837837837837833,
+          "unit": "kg",
+          "vendor": "Kaleel & Co"
+        },
+        {
+          "name": "Rose Water for Cooking",
+          "code": "RM-ROSE-WATER-FOR-C",
+          "quantity": 0.05405405405405405,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Skim milk powder",
+          "code": "RM-SKIM-MILK-POWDER",
+          "quantity": 0.5405405405405405,
+          "unit": "Kg",
+          "vendor": "Nakoda Dairy"
+        },
+        {
+          "name": "Carob Powder",
+          "code": "RM-CAROB-POWDER",
+          "quantity": 0.18918918918918914,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Seedless Red Dates",
+          "code": "RM-SEEDLESS-RED-DAT",
+          "quantity": 9.459459459459458,
+          "unit": "kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 2.7027027027027026,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 12.162162162162147,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 108.1081081081081,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 8.108108108108121,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Curious Creation, CC1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "RICE O LENTILS PORRIDGE POWDER",
+      "code": "FG-RL2",
+      "components": [
+        {
+          "name": "Thermally Treated Rice Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 32.15148,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Moong Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 32.15148,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Sorghum Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 15.828430815840001,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Coconut Milk Powder",
+          "code": "RM-COCONUT-MILK-POW",
+          "quantity": 11.871323111879999,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Tomato Powder (Spray Dried)",
+          "code": "RM-TOMATO-POWDER-SP",
+          "quantity": 4.94637659208,
+          "unit": "Kg",
+          "vendor": "Rainbow Expochem Pvt Ltd"
+        },
+        {
+          "name": "Salt",
+          "code": "RM-SALT",
+          "quantity": 0.98926888812,
+          "unit": "Kg",
+          "vendor": "TATA Consumer Products - Retail Brand"
+        },
+        {
+          "name": "Cumin Powder",
+          "code": "RM-CUMIN-POWDER",
+          "quantity": 0.49465051979999997,
+          "unit": "Kg",
+          "vendor": "Sakthi Masala Pvt Ltd - Retail Brand"
+        },
+        {
+          "name": "Compounded Asafoetida",
+          "code": "RM-COMPOUNDED-ASAFO",
+          "quantity": 0.29679031188,
+          "unit": "Kg",
+          "vendor": "Malhar traders"
+        },
+        {
+          "name": "Turmeric powder",
+          "code": "RM-TURMERIC-POWDER",
+          "quantity": 0.19786020791999998,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Vitamin Blend (12 Vit and Minerals), Blend 53",
+          "code": "RM-VITAMIN-BLEND-12",
+          "quantity": 0.19786020791999998,
+          "unit": "Kg",
+          "vendor": "Nutrifusion LLC"
+        },
+        {
+          "name": "Calcium Carbonate",
+          "code": "RM-CALCIUM-CARBONAT",
+          "quantity": 0.795377999036064,
+          "unit": "Kg",
+          "vendor": "Annexe Chem Private Limited"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 0.07915694376,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Packaging roll",
+          "code": "RM-PACKAGING-ROLL",
+          "quantity": 2.5,
+          "unit": "Kg",
+          "vendor": "Pradeep Polyflex"
+        },
+        {
+          "name": "BIB Boxes RL2",
+          "code": "RM-BIB-BOXES-RL2",
+          "quantity": 416.6666666666667,
+          "unit": "pcs",
+          "vendor": "Print Branch"
+        },
+        {
+          "name": "Scoops",
+          "code": "RM-SCOOPS",
+          "quantity": 416.6666666666667,
+          "unit": "pcs",
+          "vendor": "Soham Packaging"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 8.6875,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "WHEAT Y RAGI PORRIDGE POWDER",
+      "code": "FG-WR2",
+      "components": [
+        {
+          "name": "Thermally Treated Wheat Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 23.2319,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Ragi Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 24.251780410000002,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Skim milk powder",
+          "code": "RM-SKIM-MILK-POWDER",
+          "quantity": 10.880660364999999,
+          "unit": "Kg",
+          "vendor": "Nakoda Dairy"
+        },
+        {
+          "name": "Dates Powder (Spray Dried)",
+          "code": "RM-DATES-POWDER-SPR",
+          "quantity": 24.731983783,
+          "unit": "Kg",
+          "vendor": "Mevive International Pvt Ltd"
+        },
+        {
+          "name": "Banana Powder (Spray Dried)",
+          "code": "RM-BANANA-POWDER-SP",
+          "quantity": 14.841002358,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Whole Green Cardamom",
+          "code": "RM-WHOLE-GREEN-CARD",
+          "quantity": 0.989911259,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Vitamin Blend (12 Vit and Minerals), Blend 53",
+          "code": "RM-VITAMIN-BLEND-12",
+          "quantity": 0.19747115,
+          "unit": "Kg",
+          "vendor": "Nutrifusion LLC"
+        },
+        {
+          "name": "Calcium Carbonate",
+          "code": "RM-CALCIUM-CARBONAT",
+          "quantity": 0.799874317,
+          "unit": "Kg",
+          "vendor": "Annexe Chem Private Limited"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 0.07898846,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Packaging roll",
+          "code": "RM-PACKAGING-ROLL",
+          "quantity": 2.5,
+          "unit": "Kg",
+          "vendor": "Pradeep Polyflex"
+        },
+        {
+          "name": "BIB Boxes WR2",
+          "code": "RM-BIB-BOXES-WR2",
+          "quantity": 417.0,
+          "unit": "pcs",
+          "vendor": "Print Branch"
+        },
+        {
+          "name": "Scoops",
+          "code": "RM-SCOOPS",
+          "quantity": 417.0,
+          "unit": "pcs",
+          "vendor": "Soham Packaging"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 8.6875,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "MILLETY PUMPKIN PORRIDGE POWDER",
+      "code": "FG-MP2",
+      "components": [
+        {
+          "name": "Thermally Treated Rice Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 19.2513,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Moong Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 5.65795707,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Sorghum Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 10.59399039,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Ragi Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 10.59399039,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Masoor Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 5.64833142,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Coconut Milk Powder",
+          "code": "RM-COCONUT-MILK-POW",
+          "quantity": 11.870351580000001,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Dates Powder (Spray Dried)",
+          "code": "RM-DATES-POWDER-SPR",
+          "quantity": 24.73021998,
+          "unit": "Kg",
+          "vendor": "Mevive International Pvt Ltd"
+        },
+        {
+          "name": "Pumpkin Powder (Spray Dried)",
+          "code": "RM-PUMPKIN-POWDER-S",
+          "quantity": 4.94565897,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Banana Powder (Spray Dried)",
+          "code": "RM-BANANA-POWDER-SP",
+          "quantity": 4.94565897,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Whole Green Cardamom",
+          "code": "RM-WHOLE-GREEN-CARD",
+          "quantity": 0.6928542870000001,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Vitamin Blend (12 Vit and Minerals), Blend 53",
+          "code": "RM-VITAMIN-BLEND-12",
+          "quantity": 0.19636326,
+          "unit": "Kg",
+          "vendor": "Nutrifusion LLC"
+        },
+        {
+          "name": "Calcium Carbonate",
+          "code": "RM-CALCIUM-CARBONAT",
+          "quantity": 0.7950786900000001,
+          "unit": "Kg",
+          "vendor": "Annexe Chem Private Limited"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 0.07893033,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Packaging roll",
+          "code": "RM-PACKAGING-ROLL",
+          "quantity": 2.5,
+          "unit": "Kg",
+          "vendor": "Pradeep Polyflex"
+        },
+        {
+          "name": "BIB Boxes MP2",
+          "code": "RM-BIB-BOXES-MP2",
+          "quantity": 417.0,
+          "unit": "pcs",
+          "vendor": "Print Branch"
+        },
+        {
+          "name": "Scoops",
+          "code": "RM-SCOOPS",
+          "quantity": 417.0,
+          "unit": "pcs",
+          "vendor": "Soham Packaging"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 23.16,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "SPINACHY GRAINS PORRIDGE POWDER",
+      "code": "FG-SG2",
+      "components": [
+        {
+          "name": "Thermally Treated Rice Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 32.184248385155335,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Moong Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 32.184248385155335,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Thermally Treated Sorghum Flour",
+          "code": "RM-THERMALLY-TREATE",
+          "quantity": 15.844305480011972,
+          "unit": "Kg",
+          "vendor": "Nova starches"
+        },
+        {
+          "name": "Coconut Milk Powder",
+          "code": "RM-COCONUT-MILK-POW",
+          "quantity": 11.88242450379935,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Spinach Powder (Spray Dried)",
+          "code": "RM-SPINACH-POWDER-S",
+          "quantity": 4.94993740163689,
+          "unit": "Kg",
+          "vendor": "Rainbow Expochem Pvt Ltd"
+        },
+        {
+          "name": "Salt",
+          "code": "RM-SALT",
+          "quantity": 0.8908599953010997,
+          "unit": "Kg",
+          "vendor": "TATA Consumer Products - Retail Brand"
+        },
+        {
+          "name": "Cumin Powder",
+          "code": "RM-CUMIN-POWDER",
+          "quantity": 0.6919613402808397,
+          "unit": "Kg",
+          "vendor": "Sakthi Masala Pvt Ltd - Retail Brand"
+        },
+        {
+          "name": "Mint Powder (Spray Dried)",
+          "code": "RM-MINT-POWDER-SPRA",
+          "quantity": 0.2967387701111322,
+          "unit": "Kg",
+          "vendor": "Rainbow Expochem Pvt Ltd"
+        },
+        {
+          "name": "Vitamin Blend (12 Vit and Minerals), Blend 53",
+          "code": "RM-VITAMIN-BLEND-12",
+          "quantity": 0.19793312756870532,
+          "unit": "Kg",
+          "vendor": "Nutrifusion LLC"
+        },
+        {
+          "name": "Calcium Carbonate",
+          "code": "RM-CALCIUM-CARBONAT",
+          "quantity": 0.7981693599518523,
+          "unit": "Kg",
+          "vendor": "Annexe Chem Private Limited"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 0.07917325102748213,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Packaging roll",
+          "code": "RM-PACKAGING-ROLL",
+          "quantity": 2.5,
+          "unit": "Kg",
+          "vendor": "Pradeep Polyflex"
+        },
+        {
+          "name": "BIB Boxes SG2",
+          "code": "RM-BIB-BOXES-SG2",
+          "quantity": 417.0,
+          "unit": "pcs",
+          "vendor": "Print Branch"
+        },
+        {
+          "name": "Scoops",
+          "code": "RM-SCOOPS",
+          "quantity": 417.0,
+          "unit": "pcs",
+          "vendor": "Soham Packaging"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 8.6875,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    },
+    {
+      "name": "Chickoo Melts",
+      "code": "FG-CK3",
+      "components": [
+        {
+          "name": "Chickoo",
+          "code": "RM-CHICKOO",
+          "quantity": 36.03,
+          "unit": "Kg",
+          "vendor": "M/S Shri Krishna Agro Cold Storage"
+        },
+        {
+          "name": "Yogurt Freeze Dried Powder",
+          "code": "RM-YOGURT-FREEZE-DR",
+          "quantity": 8.64,
+          "unit": "Kg",
+          "vendor": "Vida Agro"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 15.26,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Tapioca Starch",
+          "code": "RM-TAPIOCA-STARCH",
+          "quantity": 2.06,
+          "unit": "Kg",
+          "vendor": "Angel Starch and Food Private Limited"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 38.01,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Printed Pouches for Yogurt Melts(5g) - Center Seal_Chickoo",
+          "code": "RM-PRINTED-POUCHES-",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Nexibles"
+        },
+        {
+          "name": "Punnet",
+          "code": "RM-PUNNET",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Fotune Pet Pack"
+        }
+      ]
+    },
+    {
+      "name": "Mango Melts",
+      "code": "FG-MN3",
+      "components": [
+        {
+          "name": "Alphonso Mango Puree",
+          "code": "RM-ALPHONSO-MANGO-P",
+          "quantity": 52.11,
+          "unit": "Kg",
+          "vendor": "Mother Dairy Fruits and Vegetables"
+        },
+        {
+          "name": "Yogurt Freeze Dried Powder",
+          "code": "RM-YOGURT-FREEZE-DR",
+          "quantity": 7.2,
+          "unit": "Kg",
+          "vendor": "Vida Agro"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 13.2,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Tapioca Starch",
+          "code": "RM-TAPIOCA-STARCH",
+          "quantity": 2.49,
+          "unit": "Kg",
+          "vendor": "Angel Starch and Food Private Limited"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 25.0,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Printed Pouches for Yogurt Melts(5g) - Center Seal_Mango",
+          "code": "RM-PRINTED-POUCHES-",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Nexibles"
+        },
+        {
+          "name": "Punnet",
+          "code": "RM-PUNNET",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Fotune Pet Pack"
+        }
+      ]
+    },
+    {
+      "name": "Strawberry Melts",
+      "code": "FG-SB3",
+      "components": [
+        {
+          "name": "Strawberry",
+          "code": "RM-STRAWBERRY",
+          "quantity": 49.82,
+          "unit": "Kg",
+          "vendor": "M/S Shri Krishna Agro Cold Storage"
+        },
+        {
+          "name": "Yogurt Freeze Dried Powder",
+          "code": "RM-YOGURT-FREEZE-DR",
+          "quantity": 7.12,
+          "unit": "Kg",
+          "vendor": "Vida Agro"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 31.01,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Tapioca Starch",
+          "code": "RM-TAPIOCA-STARCH",
+          "quantity": 1.92,
+          "unit": "Kg",
+          "vendor": "Angel Starch and Food Private Limited"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 10.17,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Punnet",
+          "code": "RM-PUNNET",
+          "quantity": 3637.8181818181824,
+          "unit": "pcs",
+          "vendor": "Fotune Pet Pack"
+        },
+        {
+          "name": "Printed Pouches for Yogurt Melts(5g) - Center Seal_Strawberry",
+          "code": "RM-PRINTED-POUCHES-",
+          "quantity": 3637.8181818181824,
+          "unit": "pcs",
+          "vendor": "Nexibles"
+        }
+      ]
+    },
+    {
+      "name": "Pumpkin Melts",
+      "code": "FG-PK3",
+      "components": [
+        {
+          "name": "Roasted Pumpkin",
+          "code": "RM-ROASTED-PUMPKIN",
+          "quantity": 71.97,
+          "unit": "Kg",
+          "vendor": "Vida Agro"
+        },
+        {
+          "name": "Yogurt Freeze Dried Powder",
+          "code": "RM-YOGURT-FREEZE-DR",
+          "quantity": 6.412,
+          "unit": "Kg",
+          "vendor": "Vida Agro"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 12.01,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Tapioca Starch",
+          "code": "RM-TAPIOCA-STARCH",
+          "quantity": 1.598,
+          "unit": "Kg",
+          "vendor": "Angel Starch and Food Private Limited"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 8.01,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Printed Pouches for Yogurt Melts(5g) - Center Seal_Pumpkin",
+          "code": "RM-PRINTED-POUCHES-",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Nexibles"
+        },
+        {
+          "name": "Punnet",
+          "code": "RM-PUNNET",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Fotune Pet Pack"
+        }
+      ]
+    },
+    {
+      "name": "Nendra Banana Porridge Powder",
+      "code": "FG-PK3_2",
+      "components": [
+        {
+          "name": "Banana Powder (Spray Dried)",
+          "code": "RM-BANANA-POWDER-SP",
+          "quantity": 71.97,
+          "unit": "Kg",
+          "vendor": "NVR Nutrition"
+        },
+        {
+          "name": "Yogurt Freeze Dried Powder",
+          "code": "RM-YOGURT-FREEZE-DR",
+          "quantity": 6.412,
+          "unit": "Kg",
+          "vendor": "Vida Agro"
+        },
+        {
+          "name": "Banana Puree Concentrate",
+          "code": "RM-BANANA-PUREE-CON",
+          "quantity": 12.01,
+          "unit": "Kg",
+          "vendor": "Jain Farm Fresh"
+        },
+        {
+          "name": "Tapioca Starch",
+          "code": "RM-TAPIOCA-STARCH",
+          "quantity": 1.598,
+          "unit": "Kg",
+          "vendor": "Angel Starch and Food Private Limited"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 8.01,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Printed Pouches for Yogurt Melts(5g) - Center Seal_Pumpkin",
+          "code": "RM-PRINTED-POUCHES-",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Nexibles"
+        },
+        {
+          "name": "Punnet",
+          "code": "RM-PUNNET",
+          "quantity": 3636.0,
+          "unit": "pcs",
+          "vendor": "Fotune Pet Pack"
+        }
+      ]
+    },
+    {
+      "name": "RICE O LENTIL 100GM SPOUTED POUCH",
+      "code": "FG-RL1",
+      "components": [
+        {
+          "name": "Sharbati Rice",
+          "code": "RM-SHARBATI-RICE",
+          "quantity": 11.043134483291738,
+          "unit": "Kg",
+          "vendor": "Deepanshu agro"
+        },
+        {
+          "name": "Ponni Rice",
+          "code": "RM-PONNI-RICE",
+          "quantity": 0.0,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Split Moong dal",
+          "code": "RM-SPLIT-MOONG-DAL",
+          "quantity": 2.95403847428054,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Split Toor dal",
+          "code": "RM-SPLIT-TOOR-DAL",
+          "quantity": 2.158932791483535,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Green peas",
+          "code": "RM-GREEN-PEAS",
+          "quantity": 3.4819003025818853,
+          "unit": "Kg",
+          "vendor": "Manvi Enterprises"
+        },
+        {
+          "name": "Tomato",
+          "code": "RM-TOMATO",
+          "quantity": 10.100050798418623,
+          "unit": "Kg",
+          "vendor": "ACK Vegetable Mandi"
+        },
+        {
+          "name": "Ghee",
+          "code": "RM-GHEE",
+          "quantity": 2.777348322547872,
+          "unit": "Kg",
+          "vendor": "Priya Milk & Milk Products Pvt Ltd"
+        },
+        {
+          "name": "Roasted cumin powder",
+          "code": "RM-ROASTED-CUMIN-PO",
+          "quantity": 0.19546348035426375,
+          "unit": "Kg",
+          "vendor": "Everest Food Products"
+        },
+        {
+          "name": "Turmeric powder",
+          "code": "RM-TURMERIC-POWDER",
+          "quantity": 0.09607527000463811,
+          "unit": "Kg",
+          "vendor": "Sri Balaji Traders"
+        },
+        {
+          "name": "Black pepper powder",
+          "code": "RM-BLACK-PEPPER-POW",
+          "quantity": 0.07178037414139629,
+          "unit": "Kg",
+          "vendor": "Everest Food Products"
+        },
+        {
+          "name": "Compounded Asafoetida",
+          "code": "RM-COMPOUNDED-ASAFO",
+          "quantity": 0.05631998586478786,
+          "unit": "Kg",
+          "vendor": "Malhar traders"
+        },
+        {
+          "name": "Water for Process",
+          "code": "RM-WATER-FOR-PROCES",
+          "quantity": 67.06495571703073,
+          "unit": "Kg",
+          "vendor": "Local Spot Market"
+        },
+        {
+          "name": "Retortable 100gm Spouted Pouch with Anti Choking Cap (Rice-O-Lentil, RL1)",
+          "code": "RM-RETORTABLE-100GM",
+          "quantity": 1000.0,
+          "unit": "pcs",
+          "vendor": "Foodpro Packaging Pvt Ltd"
+        },
+        {
+          "name": "Corrugated Boxes",
+          "code": "RM-CORRUGATED-BOXES",
+          "quantity": 12.5,
+          "unit": "pcs",
+          "vendor": "Royal Packaging"
+        }
+      ]
+    }
+  ]
+}
