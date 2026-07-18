@@ -81,6 +81,11 @@ function determineSubcategory(name, type, vendor) {
 // Connect to database and seed data
 connectDB().then(async () => {
   try {
+    const userCount = await User.countDocuments();
+    if (userCount > 0) {
+      console.log('Database already seeded, skipping seed step.');
+      return;
+    }
     // 1. Seed Users (Wipes existing to avoid duplications)
     await User.deleteMany({});
     console.log('Seeding default system users...');
@@ -113,17 +118,17 @@ connectDB().then(async () => {
     console.log('Seeded Production Manager: production@vms.com / manager123');
 
     // Wipe existing data to force clean seeding of the Excel dataset
-    console.log('Clearing existing ERP collections for fresh Excel seeding...');
-    await Promise.all([
-      Vendor.deleteMany({}),
-      Material.deleteMany({}),
-      BOM.deleteMany({}),
-      InventoryItem.deleteMany({}),
-      InventoryTransaction.deleteMany({}),
-      PurchaseOrder.deleteMany({}),
-      ProductionOrder.deleteMany({}),
-      QualityRecord.deleteMany({})
-    ]);
+    // console.log('Clearing existing ERP collections for fresh Excel seeding...');
+    // await Promise.all([
+    //   Vendor.deleteMany({}),
+    //   Material.deleteMany({}),
+    //   BOM.deleteMany({}),
+    //   InventoryItem.deleteMany({}),
+    //   InventoryTransaction.deleteMany({}),
+    //   PurchaseOrder.deleteMany({}),
+    //   ProductionOrder.deleteMany({}),
+    //   QualityRecord.deleteMany({})
+    // ]);
 
     // Read the all_recipes.json file
     const fs = require('fs');

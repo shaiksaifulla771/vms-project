@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const VendorSchema = new mongoose.Schema({
+  vendorId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+  },
   name: {
     type: String,
     required: [true, 'Please provide vendor name'],
@@ -33,7 +39,22 @@ const VendorSchema = new mongoose.Schema({
     default: '',
     trim: true,
   },
+  zipCode: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  city: {
+    type: String,
+    default: '',
+    trim: true,
+  },
   state: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  country: {
     type: String,
     default: '',
     trim: true,
@@ -53,21 +74,16 @@ const VendorSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  primaryContactName: {
-    type: String,
-    default: '',
-    trim: true,
-  },
-  primaryContactPhone: {
-    type: String,
-    default: '',
-    trim: true,
-  },
-  primaryContactDesignation: {
-    type: String,
-    default: '',
-    trim: true,
-  },
+  
+  
+  
+  contacts: [
+    {
+      name: { type: String, trim: true, default: '' },
+      phone: { type: String, trim: true, default: '' },
+      role: { type: String, trim: true, default: 'Other' }
+    }
+  ],
   notes: {
     type: String,
     default: '',
@@ -78,9 +94,24 @@ const VendorSchema = new mongoose.Schema({
     required: [true, 'Please provide vendor category'],
     enum: ['Food Processor', 'Contract Manufacturer', 'Retail Brand', 'Fresh Fruits Supplier', 'Other'],
   },
+  subCategory: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  ffsc2200: { type: Boolean, default: false },
+  ffsc2200Expiry: { type: Date, default: null },
+  ffsc2200Qty: { type: Number, default: 0 },
+  fssai: { type: Boolean, default: false },
+  fssaiExpiry: { type: Date, default: null },
+  fssaiQty: { type: Number, default: 0 },
+  bankAccountHolder: { type: String, default: '', trim: true },
+  bankAccountNumber: { type: String, default: '', trim: true },
+  bankName: { type: String, default: '', trim: true },
+  ifscCode: { type: String, default: '', trim: true },
   status: {
     type: String,
-    enum: ['Active', 'Inactive'],
+    enum: ['Active', 'Inactive', 'Draft'],
     default: 'Active',
   },
   createdAt: {

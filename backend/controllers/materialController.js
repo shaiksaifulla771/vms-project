@@ -79,6 +79,23 @@ exports.createMaterial = async (req, res, next) => {
       balance: 0
     });
 
+    // Update sequence to reflect this new manual code if it's the highest
+    const match = material.code.match(/\d+/);
+    if (match) {
+      const num = parseInt(match[0], 10);
+      if (!isNaN(num)) {
+        const Sequence = require('../models/Sequence');
+        const seqDoc = await Sequence.findById('materialCode');
+        if (!seqDoc || num > seqDoc.seq) {
+          await Sequence.findByIdAndUpdate(
+            'materialCode',
+            { $set: { seq: num } },
+            { upsert: true }
+          );
+        }
+      }
+    }
+
     res.status(201).json({ success: true, data: material });
   } catch (err) {
     next(err);
@@ -225,6 +242,32 @@ exports.createMaterialsBatch = async (req, res, next) => {
         }
       }));
       await InventoryItem.bulkWrite(invOps);
+    }
+
+    // Update sequence based on inserted valid items
+    if (validItems.length > 0) {
+      let maxNum = 0;
+      for (const item of validItems) {
+        if (item.code) {
+          const match = String(item.code).match(/\d+/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          }
+        }
+      }
+      
+      if (maxNum > 0) {
+        const Sequence = require('../models/Sequence');
+        const seqDoc = await Sequence.findById('materialCode');
+        if (!seqDoc || maxNum > seqDoc.seq) {
+          await Sequence.findByIdAndUpdate(
+            'materialCode',
+            { $set: { seq: maxNum } },
+            { upsert: true }
+          );
+        }
+      }
     }
 
     res.status(200).json({
@@ -434,6 +477,76 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
       message: `Successfully deleted all ${materialIds.length} materials imported from ${source}`
     });
   } catch (err) {
+    next(err);
+  }
+};
+
+
+// @desc    Peek next available material code without incrementing
+// @route   GET /api/materials/sequence-peek
+// @access  Private
+exports.peekNextMaterialCode = async (req, res, next) => {
+  try {
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findById('materialCode');
+    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
+    res.status(200).json({ success: true, nextCode });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get next available material code (Legacy)
+// @route   GET /api/materials/next-code
+// @access  Private
+exports.getNextMaterialCode = async (req, res, next) => {
+  try {
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findById('materialCode');
+    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
+    await Sequence.findByIdAndUpdate(
+      'materialCode',
+      { $set: { seq: nextCode } },
+      { upsert: true }
+    );
+    res.status(200).json({ success: true, nextCode });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+exports.deleteMaterialsBySource = async (req, res, next) => {
+  try {
+    const { source } = req.body;
+    if (!source) return res.status(400).json({success: false, error: 'Source required'});
+    const result = await Material.deleteMany({ importSource: source });
+    res.status(200).json({success: true, count: result.deletedCount});
+  } catch(err) {
+    next(err);
+  }
+};
+
+exports.batchDeleteMaterials = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids)) return res.status(400).json({success: false, error: 'Invalid ids array'});
+    const result = await Material.deleteMany({ _id: { $in: ids } });
+    res.status(200).json({success: true, count: result.deletedCount});
+  } catch(err) {
+    next(err);
+  }
+};
+
+exports.getNextMaterialCode = async (req, res, next) => {
+  try {
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findById('materialCode');
+    let nextCode = 1001;
+    if (seqDoc) nextCode = seqDoc.seq + 1;
+    await Sequence.findByIdAndUpdate('materialCode', { $set: { seq: nextCode } }, { upsert: true });
+    res.status(200).json({ success: true, nextCode });
+  } catch(err) {
     next(err);
   }
 };

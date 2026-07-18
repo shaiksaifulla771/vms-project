@@ -6,7 +6,10 @@ const {
   updateMaterial,
   deleteMaterial,
   createMaterialsBatch,
-  deleteMaterialsBySource
+  deleteMaterialsBySource,
+  batchDeleteMaterials,
+  getNextMaterialCode,
+  peekNextMaterialCode
 } = require('../controllers/materialController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -17,6 +20,15 @@ router.route('/batch')
 
 router.route('/batch-delete-source')
   .post(protect, deleteMaterialsBySource);
+
+router.route('/batch-delete')
+  .post(protect, batchDeleteMaterials);
+
+router.route('/sequence-peek')
+  .get(protect, peekNextMaterialCode);
+
+router.route('/next-code')
+  .get(protect, getNextMaterialCode);
 
 router.route('/')
   .get(protect, getMaterials)

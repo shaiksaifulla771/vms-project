@@ -108,11 +108,21 @@ const syncExcelToMongoDB = async (Model, items, options = {}) => {
       }
     }
 
+    // Set $setOnInsert for fields that were used in the match filter
+    // This is required because matchFilter uses RegExp which cannot be inserted.
+    const setOnInsertFields = {};
+    matchFields.forEach(field => {
+      if (item[field] !== undefined) {
+        setOnInsertFields[field] = item[field];
+      }
+    });
+
     bulkOps.push({
       updateOne: {
         filter: matchFilter,
         update: {
-          $set: updateFields
+          $set: updateFields,
+          $setOnInsert: setOnInsertFields
         },
         upsert: true
       }

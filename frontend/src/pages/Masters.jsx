@@ -68,6 +68,7 @@ const MaterialsTab = () => {
   const [batchEditItems, setBatchEditItems] = useState([]);
   const [batchEditIdx, setBatchEditIdx] = useState(0);
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
+  const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   const [hasInitializedSourceFilter, setHasInitializedSourceFilter] = useState(false);
   const uniqueImportSources = React.useMemo(() => {
     const sources = new Set();
@@ -79,12 +80,7 @@ const MaterialsTab = () => {
     return Array.from(sources);
   }, [materials]);
 
-  useEffect(() => {
-    if (!hasInitializedSourceFilter && uniqueImportSources.length > 0) {
-      setSourceFilter(uniqueImportSources[0]);
-      setHasInitializedSourceFilter(true);
-    }
-  }, [uniqueImportSources, hasInitializedSourceFilter]);
+
   const [error, setError] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
@@ -114,9 +110,27 @@ const MaterialsTab = () => {
   const [autoPrefix, setAutoPrefix] = useState(() => localStorage.getItem('erp_auto_prefix') || 'DCODE');
   const [toasts, setToasts] = useState([]);
   const [editingRowId, setEditingRowId] = useState(null);
+  const [confirmedReplacements, setConfirmedReplacements] = useState(new Set());
+  const [skippedItems, setSkippedItems] = useState(new Set());
+  const [bulkUpdateTab, setBulkUpdateTab] = useState('changed');
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set()); // multi-checkbox selection for Edit Selected
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [editRowData, setEditRowData] = useState({});
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importSummary, setImportSummary] = useState(null);
+  const [importSearch, setImportSearch] = useState('');
+
+  // Reset search when modal is closed
+  useEffect(() => {
+    if (!isImportModalOpen) {
+      setImportSearch('');
+    }
+  }, [isImportModalOpen]);
+
+  // Bulk update applies reviewed spreadsheet changes from the final import action.
+  const unresolvedCount = React.useMemo(() => {
+    return 0;
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('erp_auto_prefix', autoPrefix);
@@ -502,28 +516,33 @@ const MaterialsTab = () => {
   };
 
   const getNextManualCode = () => {
-    const manualCodes = materials
-      .map(m => parseInt(m.code, 10))
-      .filter(num => !isNaN(num) && num >= 1001 && num <= 1999);
-    const max = manualCodes.length > 0 ? Math.max(...manualCodes) : 1000;
-    const nextVal = Math.min(1999, max + 1);
-    return nextVal.toString();
-  };
-
-  const getNextAutoCounter = () => {
-    let maxCounter = 2000;
+    let maxCounter = 1000;
     materials.forEach(m => {
       if (m.code) {
-        const num = parseInt(m.code, 10);
-        if (!isNaN(num) && num >= 2001) {
-          if (m.code.includes('-')) {
-            const parts = m.code.split('-');
-            const suffixNum = parseInt(parts[1], 10);
-            if (!isNaN(suffixNum)) {
-              maxCounter = Math.max(maxCounter, suffixNum);
-            }
-          } else {
-            maxCounter = Math.max(maxCounter, num);
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
+            maxCounter = num;
+          }
+        }
+      }
+    });
+    return `M${maxCounter + 1}`;
+  };
+
+  const getNextAutoCounter = (baseSequence = null) => {
+    if (baseSequence) return baseSequence;
+    
+    // Fallback if sequence fails
+    let maxCounter = 1000;
+    materials.forEach(m => {
+      if (m.code) {
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
+            maxCounter = num;
           }
         }
       }
@@ -531,10 +550,23 @@ const MaterialsTab = () => {
     return maxCounter + 1;
   };
 
-  const handleOpenAddModal = () => {
-    const nextCodeStr = getNextManualCode();
+  const handleOpenAddModal = async () => {
     setEditingId(null);
     setCurrentDraftId(null);
+    setFormErrors({});
+    
+    // Default fallback code
+    let nextCodeStr = "M1001";
+    try {
+      const res = await api.get('/api/materials/sequence-peek');
+      if (res.data && res.data.nextCode) {
+        nextCodeStr = `M${res.data.nextCode}`;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch sequence peek", e);
+      nextCodeStr = getNextManualCode(); // fallback
+    }
+
     setFormData({ 
       name: '', 
       code: nextCodeStr, 
@@ -544,7 +576,6 @@ const MaterialsTab = () => {
       status: 'Active',
       description: '' 
     });
-    setFormErrors({});
     setIsModalOpen(true);
   };
 
@@ -653,8 +684,10 @@ const MaterialsTab = () => {
       errors.push("Material Name is missing.");
     }
 
-    if (!['pcs', 'kg', 'gm', 'l'].includes(unit)) {
-      errors.push(`Invalid UOM '${unit || ''}'. Must be pcs, kg, gm, or L.`);
+    // UOM: case-insensitive, accept L/l/ltr/litre, kg, gm, pcs
+    const validUnits = ['pcs', 'kg', 'gm', 'l', 'ltr', 'litre', 'liters', 'nos', 'box', 'pack', 'set', 'mtr', 'cm', 'mm'];
+    if (!validUnits.includes(unit.toLowerCase())) {
+      warnings.push(`UOM '${unit || ''}' is non-standard. It will be saved as entered.`);
     }
 
     const normalizedType = type === 'Raw' || type === 'Raw Material' ? 'Raw Material' 
@@ -668,62 +701,110 @@ const MaterialsTab = () => {
     if (normalizedType && subcategory) {
       matchedSubcat = (subcategoryMap[normalizedType] || []).find(s => s.value.toLowerCase() === subcategory.toLowerCase());
       if (!matchedSubcat) {
-        errors.push(`Invalid Sub-Category '${subcategory}' for Category '${normalizedType}'.`);
+        // Accept as-is but warn — do NOT block the import
+        warnings.push(`Sub-Category '${subcategory}' is not in the predefined list for '${normalizedType}'. It will be saved as entered.`);
+        matchedSubcat = { value: subcategory }; // use the raw value
       }
-    } else {
-      errors.push("Sub-Category is missing.");
+    } else if (!subcategory) {
+      // Missing sub-category is a warning, not an error
+      warnings.push("Sub-Category is missing. It will be left blank.");
     }
 
     let finalCode = '';
     let isUpdatingExisting = false;
+    let fieldChanges = [];
 
-    if (code) {
-      finalCode = code.toUpperCase();
-      const parsedNum = parseInt(finalCode, 10);
-      if (!isNaN(parsedNum)) {
-        if (parsedNum >= 1001 && parsedNum <= 1999) {
-          finalCode = parsedNum.toString();
-        }
-      }
-      
-      const existingByCode = (fullMaterialsList || []).find(m => m.code.toUpperCase().trim() === finalCode);
-      if (existingByCode) {
-        isUpdatingExisting = true;
-        if (existingByCode.name.trim().toLowerCase() !== name.trim().toLowerCase()) {
-          warnings.push(`Existing material code '${finalCode}' matches '${existingByCode.name}'. Import will overwrite name to '${name}'.`);
-        } else {
-          warnings.push(`Material code '${finalCode}' exists. Import will update/rewrite the existing record.`);
-        }
-      }
-    } else {
-      const existingByName = (fullMaterialsList || []).find(m => 
+    if (isAutoEntryVal) {
+      // ─── BULK ENTRY MODE ─────────────────────────────────────────────────────
+      // Ignore Excel codes. Look up by Name + Type.
+      // Found in DB → mark existing (Replace/Skip dialog)
+      // Not found   → auto-generate code from 2001+
+
+      const existingByName = (fullMaterialsList || []).find(m =>
         m.name.trim().toLowerCase() === name.trim().toLowerCase() &&
-        (m.type.trim().toLowerCase() === (normalizedType || type).trim().toLowerCase())
+        m.type.trim().toLowerCase() === (normalizedType || type).trim().toLowerCase()
       );
 
       if (existingByName) {
         finalCode = existingByName.code.toUpperCase();
         isUpdatingExisting = true;
-        warnings.push("Material already exists. Import will overwrite/rewrite the existing record.");
-      } else if (isAutoEntryVal) {
-        let nextVal = autoCounterRef.val;
-        finalCode = nextVal.toString();
-        autoCounterRef.val++;
-        
-        while (systemExistingCodes.includes(finalCode) || importedCodesInBatch.has(finalCode)) {
-          nextVal = autoCounterRef.val;
-          finalCode = nextVal.toString();
-          autoCounterRef.val++;
-        }
+        warnings.push(`'${name}' already exists in the database (Code: ${existingByName.code}). Please choose to Replace or Skip.`);
       } else {
         let nextVal = autoCounterRef.val;
-        finalCode = nextVal.toString();
+        finalCode = `M${nextVal}`;
         autoCounterRef.val++;
-        
         while (systemExistingCodes.includes(finalCode) || importedCodesInBatch.has(finalCode)) {
           nextVal = autoCounterRef.val;
-          finalCode = nextVal.toString();
+          finalCode = `M${nextVal}`;
           autoCounterRef.val++;
+        }
+      }
+
+    } else {
+      // ─── BULK UPDATE MODE ────────────────────────────────────────────────────
+      // Match by CODE from Excel → compute field-level diff → Accept/Skip per row
+
+      const excelCode = (code || '').toString().trim().toUpperCase();
+
+      if (excelCode) {
+        // Automatically prepend 'M' if it's just a number
+        const isPureNum = /^\d+$/.test(excelCode);
+        finalCode = isPureNum ? `M${excelCode}` : excelCode;
+
+        const existingByCode = (fullMaterialsList || []).find(
+          m => m.code.toUpperCase().trim() === finalCode
+        );
+
+        if (existingByCode) {
+          isUpdatingExisting = true;
+
+          const newStatus = ['active', 'inactive'].includes(status.toLowerCase())
+            ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive')
+            : 'Active';
+          const newSubcat = matchedSubcat ? matchedSubcat.value : subcategory;
+          const newType   = normalizedType || type;
+
+          const fieldDefs = [
+            { label: 'Name',         oldVal: existingByCode.name        || '', newVal: name        },
+            { label: 'UOM',          oldVal: existingByCode.unit        || '', newVal: unit        },
+            { label: 'Category',     oldVal: existingByCode.type        || '', newVal: newType     },
+            { label: 'Sub-Category', oldVal: existingByCode.subcategory || '', newVal: newSubcat   },
+            { label: 'Status',       oldVal: existingByCode.status      || '', newVal: newStatus   },
+            { label: 'Description',  oldVal: existingByCode.description || '', newVal: description },
+          ];
+
+          fieldChanges = fieldDefs.filter(f =>
+            f.oldVal.toString().trim().toLowerCase() !== f.newVal.toString().trim().toLowerCase()
+          );
+
+          if (fieldChanges.length === 0) {
+            warnings.push(`Code '${finalCode}': No changes detected — data is identical to the database record.`);
+          } else {
+            warnings.push(`Code '${finalCode}': ${fieldChanges.length} field(s) will be updated. Review and confirm.`);
+          }
+        }
+        // else: code not in DB → treat as new, use provided code as-is
+
+      } else {
+        // No code in Excel — fall back to name+type lookup
+        const existingByName = (fullMaterialsList || []).find(m =>
+          m.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+          m.type.trim().toLowerCase() === (normalizedType || type).trim().toLowerCase()
+        );
+        if (existingByName) {
+          finalCode = existingByName.code.toUpperCase();
+          isUpdatingExisting = true;
+          warnings.push(`'${name}' matched by name in database (Code: ${existingByName.code}). Review and confirm.`);
+        } else {
+          // Genuinely new — auto-generate code
+          let nextVal = autoCounterRef.val;
+          finalCode = `M${nextVal}`;
+          autoCounterRef.val++;
+          while (systemExistingCodes.includes(finalCode) || importedCodesInBatch.has(finalCode)) {
+            nextVal = autoCounterRef.val;
+            finalCode = `M${nextVal}`;
+            autoCounterRef.val++;
+          }
         }
       }
     }
@@ -731,6 +812,8 @@ const MaterialsTab = () => {
     return {
       errors,
       warnings,
+      isUpdatingExisting,
+      fieldChanges,
       item: {
         name,
         code: finalCode,
@@ -738,14 +821,17 @@ const MaterialsTab = () => {
         type: normalizedType || type,
         subcategory: matchedSubcat ? matchedSubcat.value : subcategory,
         description,
-        status: ['active', 'inactive'].includes(status.toLowerCase()) ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive') : 'Active'
+        status: ['active', 'inactive'].includes(status.toLowerCase())
+          ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive')
+          : 'Active'
       }
     };
   };
 
-  const recalculateImportSummary = (allItemsList, systemExistingCodes, isAutoEntryVal) => {
+
+  const recalculateImportSummary = (allItemsList, systemExistingCodes, isAutoEntryVal, baseSequence = null) => {
     const importedCodesInBatch = new Set();
-    const autoCounter = getNextAutoCounter();
+    const autoCounter = getNextAutoCounter(baseSequence);
     const autoCounterRef = { val: autoCounter };
 
     const processedItems = allItemsList.map((item, index) => {
@@ -765,44 +851,55 @@ const MaterialsTab = () => {
       
       let isDuplicate = false;
       let duplicateMsg = '';
-      if (!isAutoEntryVal && validation.item.code) {
+      const isExistingMatch = validation.isUpdatingExisting || false;
+
+      // Only check for in-spreadsheet code collisions on TRULY NEW items.
+      // Existing DB matches reuse the DB code — two rows matching the same DB
+      // record is expected and should show in the Replace/Skip dialog, NOT as errors.
+      if (!isExistingMatch && validation.item.code) {
         const checkCode = validation.item.code.toUpperCase();
         if (importedCodesInBatch.has(checkCode)) {
           isDuplicate = true;
           duplicateMsg = `Duplicate Entry: Code '${validation.item.code}' appears multiple times in this spreadsheet.`;
-        } else {
-          const existingMat = materials.find(m => m.code.toUpperCase().trim() === checkCode);
-          if (existingMat) {
-            const isIdentical = 
-              existingMat.name.trim().toLowerCase() === validation.item.name.trim().toLowerCase() &&
-              existingMat.unit.trim().toLowerCase() === validation.item.unit.trim().toLowerCase() &&
-              existingMat.type.trim().toLowerCase() === validation.item.type.trim().toLowerCase() &&
-              (existingMat.subcategory || '').trim().toLowerCase() === (validation.item.subcategory || '').trim().toLowerCase() &&
-              existingMat.status.trim().toLowerCase() === validation.item.status.trim().toLowerCase() &&
-              (existingMat.description || '').trim().toLowerCase() === (validation.item.description || '').trim().toLowerCase();
-              
-            if (isIdentical) {
-              validation.warnings.push("Material exists in system with identical details. Ingesting will refresh/overwrite it.");
-            }
-          }
         }
       }
 
       if (isDuplicate) {
         validation.errors.push(duplicateMsg);
-      } else if (validation.errors.length === 0 && validation.item.code) {
+      } else if (validation.errors.length === 0 && validation.item.code && !isExistingMatch) {
+        // Only track auto-generated codes for collision detection
         importedCodesInBatch.add(validation.item.code.toUpperCase());
+      }
+
+      // Attach existing material details for the confirmation UI
+      let existingMaterialDetails = null;
+      if (isExistingMatch && validation.item.code) {
+        const existingMat = materials.find(m => m.code.toUpperCase().trim() === validation.item.code.toUpperCase());
+        if (existingMat) {
+          existingMaterialDetails = {
+            name: existingMat.name,
+            code: existingMat.code,
+            unit: existingMat.unit,
+            type: existingMat.type,
+            subcategory: existingMat.subcategory || '',
+            status: existingMat.status || 'Active'
+          };
+        }
       }
 
       return {
         ...validation.item,
         isDuplicate,
+        isExistingMatch,
+        fieldChanges: validation.fieldChanges || [],
+        existingMaterialDetails,
         validationErrors: validation.errors.map(err => `Row ${rowNum}: ${err}`),
         validationWarnings: validation.warnings.map(warn => `Row ${rowNum}: ${warn}`)
       };
     });
 
-    const acceptedItems = processedItems.filter(item => item.validationErrors.length === 0);
+    const acceptedItems = processedItems.filter(item => item.validationErrors.length === 0 && !item.isExistingMatch);
+    const existingMatchItems = processedItems.filter(item => item.isExistingMatch && item.validationErrors.length === 0);
     const duplicateItems = processedItems.filter(item => item.isDuplicate);
     const rejectedItems = processedItems.filter(item => item.validationErrors.length > 0 && !item.isDuplicate);
 
@@ -811,19 +908,32 @@ const MaterialsTab = () => {
       summary: {
         total: processedItems.length,
         acceptedCount: acceptedItems.length,
+        existingMatchCount: existingMatchItems.length,
         duplicateCount: duplicateItems.length,
         rejectedCount: rejectedItems.length,
         accepted: acceptedItems,
+        existingMatches: existingMatchItems,
         duplicates: duplicateItems,
         rejected: processedItems.filter(item => item.validationErrors.length > 0).reduce((acc, curr) => acc.concat(curr.validationErrors), [])
       }
     };
   };
 
-  const processExcelFile = (file) => {
+  const processExcelFile = async (file) => {
+    let baseSequence = null;
+    try {
+      const seqRes = await api.get('/api/materials/sequence-peek');
+      if (seqRes.data && seqRes.data.nextCode) {
+        baseSequence = seqRes.data.nextCode;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch sequence peek", e);
+    }
     setCurrentFileName(file.name);
     setNewSheetName(file.name);
     setImportTargetType('new');
+    setConfirmedReplacements(new Set());
+    setSkippedItems(new Set());
     if (uniqueImportSources.length > 0) {
       setSelectedExistingSheet(uniqueImportSources[0]);
     }
@@ -865,11 +975,20 @@ const MaterialsTab = () => {
         });
 
         const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
-        const { processedItems, summary } = recalculateImportSummary(deduplicatedRows, systemExistingCodes, isAutoEntry);
+        const { processedItems, summary } = recalculateImportSummary(deduplicatedRows, systemExistingCodes, isAutoEntry, baseSequence);
+
+        if (!isAutoEntry && summary.existingMatchCount === 0 && summary.acceptedCount > 0) {
+          showToast("Bulk update will not work when all materials are new. Please add materials through Bulk Entry or Manual Entry.", "error");
+          // Abort process, don't open modal
+          setIsImportModalOpen(false);
+          setImportSummary(null);
+          return; // Exit completely
+        }
 
         setImportSummary(summary);
         setEditableAcceptedItems(processedItems);
         setEditingPreviewIdx(null);
+        setImportSearch('');
       } catch (err) {
         console.error(err);
         showToast("Error reading Excel data files", "error");
@@ -879,42 +998,67 @@ const MaterialsTab = () => {
   };
 
   const handleBatchImportSubmit = async (customSource) => {
-    const validToImport = editableAcceptedItems.filter(item => item.validationErrors.length === 0);
+    // Auto-accept items with no field changes (identical to DB) — no manual action needed
+    const noChangeItems = editableAcceptedItems
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item }) => item.isExistingMatch && item.validationErrors.length === 0 && (!item.fieldChanges || item.fieldChanges.length === 0));
+
+    const validToImport = editableAcceptedItems.filter((item, idx) => {
+      if (item.validationErrors.length > 0) return false;
+      if (item.isDuplicate) return false;
+      if (item.isExistingMatch) {
+        if (!isAutoEntry) {
+          return !skippedItems.has(idx);
+        }
+        // Auto-include no-change records; include confirmed replacements.
+        const isNoChange = !item.fieldChanges || item.fieldChanges.length === 0;
+        return isNoChange || confirmedReplacements.has(idx);
+      }
+      return true; // new items always included
+    });
+
     if (validToImport.length === 0) {
-      showToast("No valid non-duplicate items to import", "error");
+      showToast("No items to import. All existing matches may have been skipped.", "error");
       return;
     }
-    
+
     setSubmitLoading(true);
     try {
-      const finalSource = customSource !== undefined
-        ? customSource
-        : (importTargetType === 'new' 
-          ? (newSheetName.trim() || currentFileName)
-          : (selectedExistingSheet || currentFileName || 'Excel Import'));
+      const finalSource = '';
 
-      const res = await api.post('/api/materials/batch', { 
+      const res = await api.post('/api/materials/batch', {
         items: validToImport,
         importSource: finalSource
       });
-      if (res.data && res.data.success) {
-        const total = importSummary.total;
-        const inserted = res.data.insertedCount || 0;
-        const updated = res.data.updatedCount || 0;
-        const rejected = (importSummary.rejectedCount || 0) + (res.data.errorsCount || 0);
 
-        showToast(`${total} records uploaded: ${inserted} created, ${updated} updated, ${rejected} rejected`, "success");
-        
-        setSourceFilter(finalSource);
+      if (res.data && res.data.success) {
+        const inserted  = res.data.insertedCount || 0;
+        const updated   = res.data.updatedCount  || 0;
+        const skipped   = skippedItems.size;
+        const autoKept  = noChangeItems.length;
+        const errors    = (importSummary.rejectedCount || 0) + (importSummary.duplicateCount || 0) + (res.data.errorsCount || 0);
+
+        let parts = [];
+        if (inserted > 0)  parts.push(`${inserted} new added`);
+        if (updated > 0)   parts.push(`${updated} updated`);
+        if (autoKept > 0)  parts.push(`${autoKept} unchanged kept`);
+        if (skipped > 0)   parts.push(`${skipped} skipped`);
+        if (errors > 0)    parts.push(`${errors} errors`);
+
+        showToast(`✅ Import complete — ${parts.join(', ')}`, 'success');
+
+        setSourceFilter('');
+        setConfirmedReplacements(new Set());
+        setSkippedItems(new Set());
         fetchMaterials();
-        
+
         if (res.data.errorsCount > 0) {
-          alert(`Batch complete.\nCreated: ${inserted}\nUpdated: ${updated}\nRejected: ${rejected}\n\nRejection details:\n` + res.data.errors.join('\n'));
+          alert(`Import complete.\nCreated: ${inserted}\nUpdated: ${updated}\nSkipped: ${skipped}\nErrors: ${errors}\n\nDetails:\n` + res.data.errors.join('\n'));
         }
       }
     } catch (err) {
       console.error(err);
-      showToast("Failed to process batch creation on database server", "error");
+      showToast('Failed to save batch to database', 'error');
     } finally {
       setSubmitLoading(false);
     }
@@ -1185,6 +1329,30 @@ const MaterialsTab = () => {
     }
   };
 
+  const handleDeleteSelectedMaterials = async () => {
+    const ids = Array.from(selectedRowIds);
+    if (ids.length === 0) {
+      showToast('Select at least one material to delete.', 'error');
+      return;
+    }
+
+    if (!window.confirm(`Delete ${ids.length} selected material(s)? This will update MongoDB, BOM, production, quality, purchase, inventory, and related records.`)) return;
+
+    try {
+      const res = await api.post('/api/materials/batch-delete', { ids });
+      showToast(res.data?.message || `Deleted ${ids.length} selected material(s).`, 'success');
+      setSelectedRowIds(new Set());
+      setIsSelectionMode(false);
+      setSelectedMaterialId(null);
+      fetchMaterials();
+    } catch (err) {
+      console.error(err);
+      const errorMsg = err.response?.data?.error || 'Validation error: one or more selected materials could not be deleted.';
+      showToast(errorMsg, 'error');
+      alert(`Relational Integrity Check: ${errorMsg}`);
+    }
+  };
+
   const handleToggleMaterialStatus = async (material) => {
     try {
       const newStatus = material.status === 'Active' ? 'Inactive' : 'Active';
@@ -1272,12 +1440,13 @@ const MaterialsTab = () => {
   });
 
   const isEditSelectedActive = React.useMemo(() => {
-    return !!sourceFilter;
-  }, [sourceFilter]);
+    return selectedRowIds.size > 0;
+  }, [selectedRowIds]);
 
-  // Reset selected row selection when filters change to avoid selection leaks
+  // Reset row selection when filters change
   React.useEffect(() => {
     setSelectedMaterialId(null);
+    setSelectedRowIds(new Set());
   }, [search, typeFilter, sourceFilter, columnFilters]);
 
   return (
@@ -1338,41 +1507,49 @@ const MaterialsTab = () => {
               <option value="Packing Material">Packing Materials</option>
             </select>
 
-            {uniqueImportSources.length > 0 && (
-              <select
-                value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value)}
-                className="px-2.5 py-0.5 h-7 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-600 focus:outline-none cursor-pointer max-w-[150px] truncate"
-                title="Filter by import file source"
+
+
+            {/* Single 'Select All' checkbox — professional, no per-row clutter */}
+            <label className={`flex items-center gap-1.5 cursor-pointer select-none px-2 py-1 rounded border transition-all text-xs font-semibold ${
+              selectedRowIds.size > 0
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+            }`} title="Show material checkboxes">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={isSelectionMode}
+                onChange={e => {
+                  setIsSelectionMode(e.target.checked);
+                  if (!e.target.checked) setSelectedRowIds(new Set());
+                }}
+              />
+              {selectedRowIds.size > 0
+                ? <span>{selectedRowIds.size} selected</span>
+                : <span>Select</span>}
+            </label>
+
+            {isSelectionMode && (
+              <button
+                onClick={() => {
+                  setSelectedRowIds(new Set());
+                  setIsSelectionMode(false);
+                }}
+                className="h-7 px-3 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800 text-xs font-semibold transition-colors"
+                title="Clear selection and hide checkboxes"
               >
-                <option value="">All Materials</option>
-                {uniqueImportSources.map(src => (
-                  <option key={src} value={src}>{src}</option>
-                ))}
-              </select>
+                Clear
+              </button>
             )}
 
-            {sourceFilter && sourceFilter !== 'Manual Entry' && (
+            {selectedRowIds.size > 0 && (
               <button
-                onClick={async () => {
-                  if (window.confirm(`Are you sure you want to delete all materials imported from "${sourceFilter}"? This action cannot be undone.`)) {
-                    try {
-                      const res = await api.post('/api/materials/batch-delete-source', { source: sourceFilter });
-                      if (res.data && res.data.success) {
-                        showToast(`Successfully deleted materials from "${sourceFilter}"`, "success");
-                        setSourceFilter('');
-                        fetchMaterials();
-                      }
-                    } catch (err) {
-                      const errMsg = err.response?.data?.error || err.message || "Failed to delete sheet data";
-                      showToast(errMsg, "error");
-                    }
-                  }
-                }}
-                className="p-1 text-red-500 hover:text-red-700 bg-red-50 rounded-md border border-red-200 transition-colors h-7 w-7 flex items-center justify-center shrink-0 cursor-pointer"
-                title={`Delete all materials from ${sourceFilter}`}
+                onClick={handleDeleteSelectedMaterials}
+                className="h-7 px-3 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                title="Delete selected materials"
               >
                 <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete</span>
               </button>
             )}
 
@@ -1415,7 +1592,7 @@ const MaterialsTab = () => {
                       className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
                     >
                       <Save className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Auto Entry</span>
+                      <span>Bulk Entry</span>
                     </button>
 
                     <button
@@ -1433,26 +1610,27 @@ const MaterialsTab = () => {
                     <button
                       onClick={() => {
                         setShowFunctionList(false);
-                        if (filteredMaterials.length === 0) {
-                          showToast("No visible records to edit", "error");
+                        const ids = selectedRowIds.size > 0 ? selectedRowIds : null;
+                        const itemsToEdit = ids
+                          ? filteredMaterials.filter(m => ids.has(m._id))
+                          : filteredMaterials;
+                        if (itemsToEdit.length === 0) {
+                          showToast('No records to edit', 'error');
                           return;
                         }
-                        
-                        let startIdx = filteredMaterials.findIndex(m => m._id === selectedMaterialId);
-                        if (startIdx === -1) {
-                          startIdx = 0;
-                        }
-                        
-                        setBatchEditItems(filteredMaterials);
-                        setBatchEditIdx(startIdx);
-                        const activeItem = filteredMaterials[startIdx];
-                        const normalizedType = activeItem.type === 'Raw' || activeItem.type === 'Raw Material' ? 'Raw Material' 
-                                             : activeItem.type === 'Finished' || activeItem.type === 'Finished Goods' ? 'Finished Goods'
-                                             : activeItem.type === 'Packing' || activeItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
+                        let startIdx = ids
+                          ? filteredMaterials.findIndex(m => ids.has(m._id))
+                          : filteredMaterials.findIndex(m => m._id === selectedMaterialId);
+                        if (startIdx === -1) startIdx = 0;
+                        setBatchEditItems(itemsToEdit);
+                        setBatchEditIdx(0);
+                        const activeItem = itemsToEdit[0];
+                        const normalizedType = activeItem.type === 'Raw' || activeItem.type === 'Raw Material' ? 'Raw Material'
+                          : activeItem.type === 'Finished' || activeItem.type === 'Finished Goods' ? 'Finished Goods'
+                          : activeItem.type === 'Packing' || activeItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
                         const subcats = subcategoryMap[normalizedType] || [];
                         const matched = subcats.find(s => s.value.toLowerCase() === (activeItem.subcategory || '').toLowerCase());
                         const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
-
                         setFormData({
                           name: activeItem.name,
                           code: activeItem.code,
@@ -1473,7 +1651,11 @@ const MaterialsTab = () => {
                       disabled={!isEditSelectedActive}
                     >
                       <Edit2 className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Edit Selected</span>
+                      <span>
+                        {selectedRowIds.size > 0
+                          ? `Edit Selected (${selectedRowIds.size})`
+                          : 'Edit Selected'}
+                      </span>
                     </button>
 
                     <div className="border-t border-slate-100 my-1" />
@@ -1524,8 +1706,7 @@ const MaterialsTab = () => {
         </CardContent>
         {/* Active Filter Tags & Sheet Workspace Actions */}
         {(() => {
-          if (!sourceFilter) {
-            const activeTags = [];
+          const activeTags = [];
 
             if (search) {
               activeTags.push({
@@ -1592,49 +1773,6 @@ const MaterialsTab = () => {
                 </button>
               </div>
             );
-          } else {
-            // Spreadsheet Workspace view: Show sheet tag, Save Changes, and Add Material
-            return (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-3 pb-2 pt-2 bg-slate-50/50 border-t border-slate-100 rounded-b-md">
-                <div className="flex items-center space-x-2 flex-wrap">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulk Entry Source:</span>
-                  <span className="inline-flex items-center space-x-1.5 bg-blue-50 border border-blue-200 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
-                    <span>{sourceFilter}</span>
-                    <button
-                      onClick={() => setSourceFilter('')}
-                      className="text-blue-400 hover:text-red-500 font-black focus:outline-none ml-0.5 text-[8px]"
-                      title="Close spreadsheet view"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                  
-                  {search && (
-                    <span className="inline-flex items-center space-x-1 bg-white border border-slate-200 text-slate-750 text-[9px] font-semibold px-2 py-0.5 rounded-full">
-                      <span>Search: "{search}"</span>
-                      <button onClick={() => setSearch('')} className="text-slate-400 hover:text-red-500 text-[7px] ml-0.5 font-bold">✕</button>
-                    </span>
-                  )}
-                  {typeFilter && (
-                    <span className="inline-flex items-center space-x-1 bg-white border border-slate-200 text-slate-750 text-[9px] font-semibold px-2 py-0.5 rounded-full">
-                      <span>Category: {typeFilter}</span>
-                      <button onClick={() => setTypeFilter('')} className="text-slate-400 hover:text-red-500 text-[7px] ml-0.5 font-bold">✕</button>
-                    </span>
-                  )}
-                </div>
-                
-                <div className="flex items-center space-x-1.5 shrink-0 self-end sm:self-auto">
-                  <button
-                    onClick={handleAddToAllMaterials}
-                    className="h-6 text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 rounded-md flex items-center space-x-1 transition-all shadow-sm active:scale-95"
-                    title="Merge sheet records directly into All Materials"
-                  >
-                    <span>Add to All Materials</span>
-                  </button>
-                </div>
-              </div>
-            );
-          }
         })()}
       </Card>
 
@@ -1728,13 +1866,32 @@ const MaterialsTab = () => {
           ) : materials.length === 0 ? (
             <div className="p-20 text-center text-slate-400 font-medium">No materials registered.</div>
           ) : (
-            <Table className="border border-slate-200 w-full table-fixed">
+            <>
+              <Table className="border border-slate-200 w-full table-fixed">
               <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                 <TableRow>
                   {/* Name Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[220px] max-w-[220px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
+                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
-                      <span>Material Name</span>
+                      <div className="flex items-center space-x-2">
+                        {isSelectionMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIds.size > 0 && selectedRowIds.size === filteredMaterials.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedRowIds(new Set(filteredMaterials.map(m => m._id)));
+                                setIsSelectionMode(true);
+                              } else {
+                                setSelectedRowIds(new Set());
+                                setIsSelectionMode(false);
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                        )}
+                        <span>Material Name</span>
+                      </div>
                       <button
                         onClick={(e) => toggleFilterPopup('name', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
@@ -1995,15 +2152,35 @@ const MaterialsTab = () => {
               </TableHeader>
               <TableBody>
                 {filteredMaterials.map((mat) => (
-                  <TableRow 
-                    key={mat._id} 
+                  <TableRow
+                    key={mat._id}
                     onClick={() => setSelectedMaterialId(selectedMaterialId === mat._id ? null : mat._id)}
                     className={`hover:bg-slate-50/50 border-b border-slate-200 cursor-pointer transition-all ${
-                      selectedMaterialId === mat._id ? 'bg-blue-50/40 hover:bg-blue-50/50 border-l-2 border-l-blue-600' : ''
+                      selectedRowIds.has(mat._id)
+                        ? 'bg-blue-50/40 hover:bg-blue-50/50'
+                        : selectedMaterialId === mat._id ? 'bg-blue-50/40 hover:bg-blue-50/50 border-l-2 border-l-blue-600' : ''
                     }`}
                   >
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[220px] max-w-[220px] whitespace-nowrap">
-                      <div className="relative group max-w-[220px]">
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap">
+                      <div className="flex items-center gap-2 max-w-[220px]">
+                        {isSelectionMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIds.has(mat._id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedRowIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(mat._id)) next.delete(mat._id);
+                                else next.add(mat._id);
+                                return next;
+                              });
+                            }}
+                            className="w-3.5 h-3.5 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+                      <div className="relative group min-w-0 flex-1">
                         <span className="block truncate text-xs text-slate-500 cursor-pointer capitalize">
                           {mat.name.toLowerCase()}
                         </span>
@@ -2011,6 +2188,7 @@ const MaterialsTab = () => {
                         <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
                           {mat.name.toLowerCase()}
                         </div>
+                      </div>
                       </div>
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 font-mono text-[11px] border-r border-slate-200 w-[80px] max-w-[80px] whitespace-nowrap">
@@ -2135,6 +2313,7 @@ const MaterialsTab = () => {
                 ))}
               </TableBody>
             </Table>
+            </>
           )}
         </CardContent>
       </Card>      {/* CRUD Form Modal */}
@@ -2159,11 +2338,9 @@ const MaterialsTab = () => {
               placeholder="e.g. 00005"
               value={formData.code}
               onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-              className={`w-full px-2 py-0.5 border border-slate-200 rounded-md text-[11px] font-mono h-7 font-semibold ${
-                editingId ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'text-slate-800 focus:outline-none focus:border-blue-500'
-              }`}
+              className="w-full px-2 py-0.5 border border-slate-200 rounded-md text-[11px] font-mono h-7 font-semibold bg-slate-50 text-slate-500 cursor-not-allowed"
               required
-              disabled={!!editingId}
+              disabled={true}
             />
             {formErrors.code && <span className="text-xs text-red-500 font-medium">{formErrors.code}</span>}
           </div>
@@ -2433,8 +2610,8 @@ const MaterialsTab = () => {
       <Dialog
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        title={isAutoEntry ? 'Auto Ingestion (Auto-assign Codes starting at 2001)' : 'Bulk Update Materials (Apply spreadsheet details)'}
-        className="!max-w-[50vw] !w-[50vw] !rounded-none"
+        title={isAutoEntry ? 'Bulk Entry (Auto-assigning M-codes)' : 'Bulk Update Materials (Apply spreadsheet details)'}
+        className={isAutoEntry ? "!max-w-[65vw] !w-[65vw] !rounded-none" : "!max-w-[92vw] !w-[92vw] !rounded-none"}
       >
         <div className="space-y-4">
 
@@ -2445,7 +2622,7 @@ const MaterialsTab = () => {
             </div>
             <div>
               <span className="text-xs font-bold text-slate-700 block">
-                {isAutoEntry ? 'Auto Entry Ingestion' : 'Upload Spreadsheet for Bulk Update'}
+                {isAutoEntry ? 'Bulk Entry Ingestion' : 'Upload Spreadsheet for Bulk Update'}
               </span>
               <span className="text-[10px] text-slate-400 block font-semibold mt-0.5">
                 Supports Microsoft Excel files (.xlsx, .xls)
@@ -2485,6 +2662,12 @@ const MaterialsTab = () => {
 
           {importSummary && (
             <div className="space-y-3 p-3 border border-slate-200 rounded-md bg-white">
+              {!isAutoEntry && (
+                <div className="flex gap-2 justify-center mb-2">
+                  <span className="px-3 py-1 bg-amber-50 text-amber-700 font-bold text-xs rounded-full border border-amber-200">Changed ({importSummary.existingMatchCount || 0})</span>
+                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-200">New ({(importSummary.acceptedCount || 0) + (importSummary.duplicateCount || 0)})</span>
+                </div>
+              )}
               {/* File Uploaded Successfully Banner */}
               <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md flex items-center space-x-2 text-emerald-800 font-semibold mb-1">
                 <div className="p-0.5 bg-emerald-100 rounded-full text-emerald-600">
@@ -2505,16 +2688,16 @@ const MaterialsTab = () => {
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="bg-emerald-50 border border-emerald-100 p-1.5 rounded">
-                  <span className="text-[10px] text-emerald-600 font-bold block">Validated (Ready)</span>
+                  <span className="text-[10px] text-emerald-600 font-bold block">✅ New Materials</span>
                   <span className="text-sm font-extrabold text-emerald-700">{importSummary.acceptedCount}</span>
                 </div>
                 <div className="bg-amber-50 border border-amber-100 p-1.5 rounded">
-                  <span className="text-[10px] text-amber-700 font-bold block">Duplicates Found</span>
-                  <span className="text-sm font-extrabold text-amber-700">{importSummary.duplicateCount || 0}</span>
+                  <span className="text-[10px] text-amber-700 font-bold block">⚠️ Already Existing</span>
+                  <span className="text-sm font-extrabold text-amber-700">{importSummary.existingMatchCount || 0}</span>
                 </div>
                 <div className="bg-red-50 border border-red-100 p-1.5 rounded">
-                  <span className="text-[10px] text-red-650 font-bold block">Validation Errors</span>
-                  <span className="text-sm font-extrabold text-red-700">{importSummary.rejectedCount}</span>
+                  <span className="text-[10px] text-red-600 font-bold block">❌ Errors</span>
+                  <span className="text-sm font-extrabold text-red-700">{(importSummary.rejectedCount || 0) + (importSummary.duplicateCount || 0)}</span>
                 </div>
               </div>
 
@@ -2528,195 +2711,465 @@ const MaterialsTab = () => {
               )}
 
               {/* Editable Preview Table of Accepted Items */}
-              {editableAcceptedItems.length > 0 && (
-                <div className="border border-slate-200 rounded-md overflow-hidden bg-slate-50/50">
-                  <div className="bg-slate-100 px-2 py-1.5 border-b border-slate-200 flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
-                      Ingestion List Preview (Double check / Edit before save)
+              
+
+              {/* ── BULK ENTRY: Replace / Skip panel ── */}
+              {isAutoEntry && importSummary.acceptedCount > 0 && (
+                <div className="space-y-2 p-3 border border-emerald-200 rounded-md bg-emerald-50/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide flex items-center space-x-1.5">
+                      <Info className="h-3.5 w-3.5" />
+                      <span>New Materials to Add</span>
                     </span>
-                    <span className="text-[9px] text-slate-400 font-semibold">
-                      *Codes are locked sequence
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
+                      {importSummary.acceptedCount} new
                     </span>
                   </div>
-                  
-                  <div className="max-h-60 overflow-y-auto">
-                    <table className="w-full text-[11px] text-slate-700 bg-white">
-                      <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 font-bold text-slate-500 z-10">
-                        <tr>
-                          <th className="px-2 py-1.5 text-left w-[80px]">Code</th>
-                          <th className="px-2 py-1.5 text-left w-[130px]">Name</th>
-                          <th className="px-2 py-1.5 text-left w-[60px]">UOM</th>
-                          <th className="px-2 py-1.5 text-left w-[100px]">Category</th>
-                          <th className="px-2 py-1.5 text-left w-[100px]">Sub-Category</th>
-                          <th className="px-2 py-1.5 text-right w-[60px]">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {editableAcceptedItems.map((item, idx) => {
-                          const isEditing = editingPreviewIdx === idx;
-                          return (
-                            <tr
-                              key={idx} 
-                              className={`hover:bg-slate-50/50 transition-colors ${
-                                item.validationErrors.length > 0 ? 'bg-red-50/40 hover:bg-red-100/30' : ''
-                              }`}
-                            >
-                              {/* 1. Code */}
-                              <td className="px-2 py-1 font-mono text-[10px] font-bold text-blue-600 bg-slate-50/30">
-                                {item.code}
-                              </td>
-                              
-                              {/* 2. Name */}
-                              <td className="px-2 py-1">
-                                {isEditing ? (
-                                  <input
-                                    type="text"
-                                    value={previewRowData.name || ''}
-                                    onChange={(e) => setPreviewRowData({ ...previewRowData, name: e.target.value })}
-                                    className="w-full px-1 py-0.5 border border-slate-250 rounded focus:outline-none focus:border-blue-500 text-[11px] font-semibold"
-                                  />
-                                ) : (
-                                  <span className="font-semibold block truncate capitalize">{item.name ? item.name.toLowerCase() : '—'}</span>
-                                )}
-                                {item.validationErrors.length > 0 && !isEditing && (
-                                  <span className="block text-[9px] text-red-500 font-bold leading-tight mt-0.5 max-w-[150px] truncate animate-pulse" title={item.validationErrors.join(', ')}>
-                                    ⚠ {item.validationErrors.map(e => e.replace(/Row \d+:\s*/, '')).join(', ')}
-                                  </span>
-                                )}
-                                {item.validationWarnings && item.validationWarnings.length > 0 && item.validationErrors.length === 0 && !isEditing && (
-                                  <span className="block text-[9px] text-amber-600 font-semibold leading-tight mt-0.5 max-w-[200px]" title={item.validationWarnings.join(', ')}>
-                                    ℹ️ {item.validationWarnings.map(w => w.replace(/Row \d+:\s*/, '')).join(', ')}
-                                  </span>
-                                )}
-                              </td>
-                              
-                              {/* 3. UOM */}
-                              <td className="px-2 py-1 font-mono">
-                                {isEditing ? (
-                                  <select
-                                    value={previewRowData.unit || 'pcs'}
-                                    onChange={(e) => setPreviewRowData({ ...previewRowData, unit: e.target.value })}
-                                    className="w-full px-1 py-0.5 border border-slate-250 rounded text-[11px]"
-                                  >
-                                    <option value="pcs">pcs</option>
-                                    <option value="kg">kg</option>
-                                    <option value="gm">gm</option>
-                                    <option value="l">L</option>
-                                  </select>
-                                ) : (
-                                  <span>{item.unit}</span>
-                                )}
-                              </td>
-                              
-                              {/* 4. Type */}
-                              <td className="px-2 py-1">
-                                {isEditing ? (
-                                  <select
-                                    value={previewRowData.type || 'Raw Material'}
-                                    onChange={(e) => {
-                                      const newType = e.target.value;
-                                      const subcats = subcategoryMap[newType] || [];
-                                      setPreviewRowData({
-                                        ...previewRowData,
-                                        type: newType,
-                                        subcategory: subcats.length > 0 ? subcats[0].value : ''
-                                      });
-                                    }}
-                                    className="w-full px-1 py-0.5 border border-slate-250 rounded text-[11px]"
-                                  >
-                                    <option value="Raw Material">Raw Material</option>
-                                    <option value="Finished Goods">Finished Goods</option>
-                                    <option value="Packing Material">Packing Material</option>
-                                  </select>
-                                ) : (
-                                  <span className="font-semibold">{item.type}</span>
-                                )}
-                              </td>
-                              
-                              {/* 5. Subcategory */}
-                              <td className="px-2 py-1">
-                                {isEditing ? (
-                                  <select
-                                    value={previewRowData.subcategory || ''}
-                                    onChange={(e) => setPreviewRowData({ ...previewRowData, subcategory: e.target.value })}
-                                    className="w-full px-1 py-0.5 border border-slate-250 rounded text-[11px]"
-                                  >
-                                    {(subcategoryMap[previewRowData.type || 'Raw Material'] || []).map(sub => (
-                                      <option key={sub.value} value={sub.value}>{sub.label}</option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span>{item.subcategory}</span>
-                                )}
-                              </td>
-                              
-                              {/* 6. Action buttons */}
-                              <td className="px-2 py-1 text-right">
-                                {isEditing ? (
-                                  <div className="flex items-center justify-end space-x-1">
-                                    <button
-                                      onClick={() => {
-                                        const updatedItemRaw = {
-                                          name: (previewRowData.name || '').trim(),
-                                          code: previewRowData.code,
-                                          unit: previewRowData.unit,
-                                          type: previewRowData.type,
-                                          subcategory: previewRowData.subcategory,
-                                          description: previewRowData.description || '',
-                                          status: previewRowData.status || 'Active'
-                                        };
-                                        
-                                        const updatedList = [...editableAcceptedItems];
-                                        updatedList[idx] = updatedItemRaw;
-                                        
-                                        const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
-                                        const { processedItems: nextProcessed, summary: nextSummary } = recalculateImportSummary(updatedList, systemExistingCodes, isAutoEntry);
-                                        
-                                        setEditableAcceptedItems(nextProcessed);
-                                        setImportSummary(nextSummary);
-                                        setEditingPreviewIdx(null);
-                                        showToast("Item changes saved successfully.", "success");
-                                      }}
-                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                                      title="Save Row Changes"
-                                    >
-                                      Save
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingPreviewIdx(null)}
-                                      className="bg-slate-100 hover:bg-slate-200 text-slate-650 font-bold px-1.5 py-0.5 rounded text-[10px] border border-slate-200 transition-colors"
-                                      title="Cancel Changes"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      setEditingPreviewIdx(idx);
-                                      const subcats = subcategoryMap[item.type || 'Raw Material'] || [];
-                                      const matched = subcats.find(s => s.value.toLowerCase() === (item.subcategory || '').toLowerCase());
-                                      setPreviewRowData({
-                                        ...item,
-                                        subcategory: matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '')
-                                      });
-                                    }}
-                                    className="text-blue-600 hover:text-blue-700 hover:underline font-bold"
-                                  >
-                                    Edit
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <p className="text-[10px] text-emerald-700 font-medium">
+                    These materials are new and will be added directly to All Materials with the assigned codes below.
+                  </p>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5">
+                    {editableAcceptedItems.map((item, idx) => {
+                      if (item.isExistingMatch || item.validationErrors.length > 0 || item.isDuplicate) return null;
+                      return (
+                        <div key={idx} className="flex items-center justify-between px-3 py-2 rounded border border-emerald-200 bg-white text-xs font-semibold">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold block truncate text-slate-800 capitalize">{item.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Code: {item.code} • {item.type} • {item.unit}</span>
+                          </div>
+                          <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full ml-3">NEW</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {editableAcceptedItems.length > 0 && (
+              {isAutoEntry && (importSummary.existingMatchCount || 0) > 0 && (
+                <div className="space-y-2 p-3 border border-amber-200 rounded-md bg-amber-50/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center space-x-1.5">
+                      <Info className="h-3.5 w-3.5" />
+                      <span>Already in Database — Replace or Skip?</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">
+                      {confirmedReplacements.size + skippedItems.size} / {importSummary.existingMatchCount} resolved
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-700 font-medium">
+                    These materials already exist. Choose <strong>Replace</strong> to overwrite with new data, or <strong>Skip</strong> to keep existing data.
+                  </p>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5">
+                    {editableAcceptedItems.map((item, idx) => {
+                      if (!item.isExistingMatch || item.validationErrors.length > 0) return null;
+                      const isConfirmed = confirmedReplacements.has(idx);
+                      const isSkipped = skippedItems.has(idx);
+                      return (
+                        <div key={idx} className={`flex items-center justify-between px-3 py-2 rounded border text-xs font-semibold transition-all ${
+                          isConfirmed ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+                          isSkipped   ? 'bg-slate-50 border-slate-200 text-slate-400' :
+                                        'bg-white border-amber-200 text-slate-700'
+                        }`}>
+                          <div className="flex-1 min-w-0">
+                            <span className={`font-bold block truncate ${isSkipped ? 'line-through' : ''}`}>{item.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Code: {item.code} • {item.type}</span>
+                            {item.existingMaterialDetails && !isSkipped && (
+                              <span className="text-[10px] text-amber-600 block">
+                                DB: {item.existingMaterialDetails.name} • {item.existingMaterialDetails.unit} • {item.existingMaterialDetails.status}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1.5 ml-3 flex-shrink-0">
+                            {(isConfirmed || isSkipped) ? (
+                              <>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isConfirmed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                  {isConfirmed ? '✓ Will Replace' : '✗ Skipped'}
+                                </span>
+                                <button onClick={() => { setConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; }); setSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="text-[10px] text-slate-400 hover:text-slate-600 font-bold hover:underline">Undo</button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => { setConfirmedReplacements(prev => { const n = new Set(prev); n.add(idx); return n; }); setSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded text-[10px] transition-colors">Replace</button>
+                                <button onClick={() => { setSkippedItems(prev => { const n = new Set(prev); n.add(idx); return n; }); setConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; }); }} className="bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 font-bold px-2.5 py-1 rounded text-[10px] border border-slate-200 hover:border-red-200 transition-colors">Skip</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {(importSummary.existingMatchCount || 0) > 1 && (
+                    <div className="flex items-center space-x-2 pt-1.5 border-t border-amber-200">
+                      <button onClick={() => { const s = new Set(); editableAcceptedItems.forEach((item, i) => { if (item.isExistingMatch && item.validationErrors.length === 0) s.add(i); }); setConfirmedReplacements(s); setSkippedItems(new Set()); }} className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold hover:underline">✓ Replace All</button>
+                      <span className="text-slate-300">|</span>
+                      <button onClick={() => { const s = new Set(); editableAcceptedItems.forEach((item, i) => { if (item.isExistingMatch && item.validationErrors.length === 0) s.add(i); }); setSkippedItems(s); setConfirmedReplacements(new Set()); }} className="text-[10px] text-red-600 hover:text-red-700 font-bold hover:underline">✗ Skip All</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── BULK UPDATE: Professional Field-level diff panel ── */}
+              {!isAutoEntry && (importSummary.existingMatchCount || 0) > 0 && (() => {
+                const allExisting = editableAcceptedItems.filter(it => it.isExistingMatch && it.validationErrors.length === 0);
+                const changedItems = allExisting.filter(it => it.fieldChanges && it.fieldChanges.length > 0);
+                const noChangeItems = allExisting.filter(it => !it.fieldChanges || it.fieldChanges.length === 0);
+                const newItems = editableAcceptedItems.filter(it => !it.isExistingMatch && it.validationErrors.length === 0 && !it.isDuplicate);
+                const totalNeedingAction = changedItems.length;
+                const resolved = changedItems.filter((_, i) => {
+                  const realIdx = editableAcceptedItems.indexOf(changedItems[i]);
+                  return confirmedReplacements.has(realIdx) || skippedItems.has(realIdx);
+                }).length;
+                const accepted = changedItems.filter((_, i) => {
+                  const realIdx = editableAcceptedItems.indexOf(changedItems[i]);
+                  return confirmedReplacements.has(realIdx);
+                }).length;
+                const progressPct = totalNeedingAction > 0 ? Math.round((resolved / totalNeedingAction) * 100) : 100;
+                const allResolved = totalNeedingAction === 0 || resolved >= totalNeedingAction;
+
+                return (
+                  <div className="space-y-2.5 p-3 border border-blue-200 rounded-lg bg-gradient-to-b from-blue-50/60 to-white">
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-blue-800 uppercase tracking-wide flex items-center gap-1.5">
+                        <Info className="h-3.5 w-3.5" />
+                        Bulk Update Review
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {noChangeItems.length > 0 && (
+                          <span className="text-[9px] bg-slate-100 text-slate-500 font-semibold px-2 py-0.5 rounded-full">
+                            {noChangeItems.length} unchanged (auto-kept)
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                          Ready to import
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    {totalNeedingAction > 0 && (
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            allResolved ? 'bg-emerald-500' : 'bg-blue-500'
+                          }`}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    )}
+
+
+                    {/* Filter tabs */}
+                    {(() => {
+                      const tabs = [
+                        { key: 'changed',   label: `Changed (${changedItems.length})`,    color: 'text-orange-600 border-orange-400',  active: 'bg-orange-50 border-orange-400' },
+                        { key: 'nochange',  label: `No Change (${noChangeItems.length})`, color: 'text-slate-500 border-slate-200',     active: 'bg-slate-50 border-slate-400' },
+                        { key: 'new',       label: `New (${newItems.length})`,            color: 'text-emerald-600 border-emerald-300', active: 'bg-emerald-50 border-emerald-400' },
+                      ];
+                      const filteredItems = editableAcceptedItems.map((item, idx) => ({ item, idx })).filter(({ item }) => {
+                        if (!item || item.validationErrors.length > 0 || item.isDuplicate) return false;
+
+                        // Apply internal search filter
+                        if (importSearch.trim()) {
+                          const q = importSearch.toLowerCase().trim();
+                          const nameMatch = (item.name || '').toLowerCase().includes(q);
+                          const codeMatch = (item.code || '').toLowerCase().includes(q);
+                          if (!nameMatch && !codeMatch) return false;
+                        }
+
+                        if (bulkUpdateTab === 'changed')  return item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0;
+                        if (bulkUpdateTab === 'nochange') return item.isExistingMatch && (!item.fieldChanges || item.fieldChanges.length === 0);
+                        if (bulkUpdateTab === 'new')      return !item.isExistingMatch;
+                        return true;
+                      });
+
+
+                      return (
+                        <>
+                          {/* Tabs row with search */}
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-2">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {tabs.map(tab => (
+                                <button
+                                  key={tab.key}
+                                  onClick={() => setBulkUpdateTab(tab.key)}
+                                  className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-all ${
+                                    bulkUpdateTab === tab.key ? tab.active + ' ' + tab.color : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                                  }`}
+                                >
+                                  {tab.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Search Box */}
+                            <div className="relative w-full lg:w-[360px]">
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                              <input
+                                type="text"
+                                value={importSearch}
+                                onChange={(e) => setImportSearch(e.target.value)}
+                                placeholder="Search material name or code to edit..."
+                                className="w-full pl-8 pr-7 py-2 border border-blue-200 rounded-md text-xs focus:outline-none focus:border-blue-500 bg-white font-semibold shadow-sm"
+                              />
+                              {importSearch && (
+                                <button
+                                  onClick={() => setImportSearch('')}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 text-xs font-bold"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                            {/* Quick bulk actions */}
+                            {bulkUpdateTab === 'changed' && changedItems.length > 1 && (
+                              <div className="ml-auto flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    const s = new Set(confirmedReplacements);
+                                    editableAcceptedItems.forEach((item, i) => {
+                                      if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0 && item.validationErrors.length === 0)
+                                        s.add(i);
+                                    });
+                                    setConfirmedReplacements(s);
+                                    editableAcceptedItems.forEach((item, i) => {
+                                      if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0)
+                                        setSkippedItems(prev => { const n = new Set(prev); n.delete(i); return n; });
+                                    });
+                                  }}
+                                  className="text-[10px] text-blue-700 hover:text-blue-900 font-bold hover:underline"
+                                >✓ Accept All</button>
+                                <span className="text-slate-200">|</span>
+                                <button
+                                  onClick={() => {
+                                    const s = new Set(skippedItems);
+                                    editableAcceptedItems.forEach((item, i) => {
+                                      if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0 && item.validationErrors.length === 0)
+                                        s.add(i);
+                                    });
+                                    setSkippedItems(s);
+                                    editableAcceptedItems.forEach((item, i) => {
+                                      if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0)
+                                        setConfirmedReplacements(prev => { const n = new Set(prev); n.delete(i); return n; });
+                                    });
+                                  }}
+                                  className="text-[10px] text-red-600 hover:text-red-800 font-bold hover:underline"
+                                >✗ Skip All</button>
+                              </div>
+                            )}
+
+                          {/* Items list */}
+                          <div className="max-h-[58vh] overflow-y-auto space-y-2 pr-0.5">
+                            {filteredItems.length === 0 && (
+                              <div className="text-center py-4 text-slate-400 text-[11px] italic">No items in this category.</div>
+                            )}
+                            {filteredItems.map(({ item, idx }) => {
+                              const isConfirmed = confirmedReplacements.has(idx);
+                              const isSkipped   = skippedItems.has(idx);
+                              const hasChanges  = item.fieldChanges && item.fieldChanges.length > 0;
+                              const isEditing = editingPreviewIdx === idx;
+                              return (
+                                <div key={idx} className={`rounded-lg border text-xs transition-all ${
+                                  item.isExistingMatch
+                                    ? isConfirmed ? 'border-emerald-200 bg-emerald-50'
+                                    : isSkipped   ? 'border-slate-200 bg-slate-50 opacity-50'
+                                    :               'border-blue-200 bg-white shadow-sm'
+                                    : 'border-emerald-100 bg-emerald-50/30'
+                                }`}>
+                                  {/* Row header */}
+                                  <div className="flex items-center justify-between px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`font-bold ${
+                                        isSkipped ? 'line-through text-slate-400' : 'text-slate-800'
+                                      }`}>{item.name}</span>
+                                      <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">#{item.code}</span>
+                                      {!item.isExistingMatch && <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">NEW</span>}
+                                      <button
+                                        onClick={() => {
+                                          if (!item.isExistingMatch) {
+                                            alert('New materials cannot be edited in Bulk Update. Add them through Bulk Entry or Material Master first.');
+                                            return;
+                                          }
+                                          const subcats = subcategoryMap[item.type || 'Raw Material'] || [];
+                                          const matched = subcats.find(s => s.value.toLowerCase() === (item.subcategory || '').toLowerCase());
+                                          setEditingPreviewIdx(idx);
+                                          setPreviewRowData({
+                                            ...item,
+                                            subcategory: matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '')
+                                          });
+                                        }}
+                                        className={item.isExistingMatch
+                                          ? 'bg-white hover:bg-blue-50 text-blue-700 font-bold px-2.5 py-0.5 rounded text-[10px] border border-blue-200 transition-colors'
+                                          : 'bg-slate-100 text-slate-400 font-bold px-2.5 py-0.5 rounded text-[10px] border border-slate-200 cursor-not-allowed'}
+                                        title={item.isExistingMatch ? 'Edit this material update' : 'New materials cannot be edited in Bulk Update'}
+                                      >
+                                        Edit
+                                      </button>
+                                      {item.isExistingMatch && !hasChanges && <span className="text-[9px] text-slate-400 italic ml-1">✓ No changes</span>}
+                                    </div>
+                                    {/* Action buttons — only for changed items */}
+                                    {item.isExistingMatch && hasChanges && (
+                                      <div className="flex items-center gap-1.5">
+                                        {(isConfirmed || isSkipped) ? (
+                                          <>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                              isConfirmed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                            }`}>{isConfirmed ? '✓ Will Update' : '✗ Skipped'}</span>
+                                            <button
+                                              onClick={() => {
+                                                setConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                                setSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                              }}
+                                              className="text-[10px] text-slate-400 hover:text-slate-700 font-semibold hover:underline"
+                                            >Undo</button>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={() => {
+                                                setConfirmedReplacements(prev => { const n = new Set(prev); n.add(idx); return n; });
+                                                setSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                              }}
+                                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded text-[10px] transition-colors shadow-sm"
+                                            >✓ Accept</button>
+                                            <button
+                                              onClick={() => {
+                                                setSkippedItems(prev => { const n = new Set(prev); n.add(idx); return n; });
+                                                setConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                              }}
+                                              className="bg-white hover:bg-red-50 text-slate-500 hover:text-red-600 font-bold px-3 py-1 rounded text-[10px] border border-slate-200 hover:border-red-200 transition-colors"
+                                            >✗ Skip</button>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {isEditing && (
+                                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 px-3 py-2 border-t border-blue-100 bg-blue-50/40">
+                                      <input
+                                        type="text"
+                                        value={previewRowData.name || ''}
+                                        onChange={(e) => setPreviewRowData({ ...previewRowData, name: e.target.value })}
+                                        className="md:col-span-2 px-2 py-1 border border-blue-200 rounded text-xs font-semibold focus:outline-none focus:border-blue-500 bg-white"
+                                        placeholder="Material name"
+                                      />
+                                      <select
+                                        value={previewRowData.unit || 'pcs'}
+                                        onChange={(e) => setPreviewRowData({ ...previewRowData, unit: e.target.value })}
+                                        className="px-2 py-1 border border-blue-200 rounded text-xs font-semibold bg-white"
+                                      >
+                                        <option value="pcs">pcs</option>
+                                        <option value="kg">kg</option>
+                                        <option value="gm">gm</option>
+                                        <option value="l">L</option>
+                                        <option value="nos">nos</option>
+                                        <option value="box">box</option>
+                                      </select>
+                                      <select
+                                        value={previewRowData.type || 'Raw Material'}
+                                        onChange={(e) => {
+                                          const newType = e.target.value;
+                                          const subcats = subcategoryMap[newType] || [];
+                                          setPreviewRowData({
+                                            ...previewRowData,
+                                            type: newType,
+                                            subcategory: subcats.length > 0 ? subcats[0].value : ''
+                                          });
+                                        }}
+                                        className="px-2 py-1 border border-blue-200 rounded text-xs font-semibold bg-white"
+                                      >
+                                        <option value="Raw Material">Raw Material</option>
+                                        <option value="Finished Goods">Finished Goods</option>
+                                        <option value="Packing Material">Packing Material</option>
+                                      </select>
+                                      <select
+                                        value={previewRowData.subcategory || ''}
+                                        onChange={(e) => setPreviewRowData({ ...previewRowData, subcategory: e.target.value })}
+                                        className="px-2 py-1 border border-blue-200 rounded text-xs font-semibold bg-white"
+                                      >
+                                        {(subcategoryMap[previewRowData.type || 'Raw Material'] || []).map(sub => (
+                                          <option key={sub.value} value={sub.value}>{sub.label}</option>
+                                        ))}
+                                      </select>
+                                      <div className="flex items-center justify-end gap-1">
+                                        <button
+                                          onClick={() => {
+                                            const updatedItemRaw = {
+                                              name: (previewRowData.name || '').trim(),
+                                              code: previewRowData.code,
+                                              unit: previewRowData.unit,
+                                              type: previewRowData.type,
+                                              subcategory: previewRowData.subcategory,
+                                              description: previewRowData.description || '',
+                                              status: previewRowData.status || 'Active'
+                                            };
+                                            const updatedList = [...editableAcceptedItems];
+                                            updatedList[idx] = updatedItemRaw;
+                                            const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
+                                            const { processedItems: nextProcessed, summary: nextSummary } = recalculateImportSummary(updatedList, systemExistingCodes, isAutoEntry);
+                                            setEditableAcceptedItems(nextProcessed);
+                                            setImportSummary(nextSummary);
+                                            setEditingPreviewIdx(null);
+                                            showToast('Material update edited successfully.', 'success');
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded text-[10px]"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={() => setEditingPreviewIdx(null)}
+                                          className="bg-white hover:bg-slate-100 text-slate-600 font-bold px-2 py-1 rounded text-[10px] border border-slate-200"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {/* Field diff table */}
+                                  {hasChanges && !isSkipped && (
+                                    <div className="px-3 pb-2 pt-0 border-t border-slate-100">
+                                      <table className="w-full text-[10px] mt-1.5">
+                                        <thead>
+                                          <tr className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">
+                                            <td className="pb-1 w-24">Field</td>
+                                            <td className="pb-1">Current (in DB)</td>
+                                            <td className="pb-1 text-center w-5"></td>
+                                            <td className="pb-1">New (from Excel)</td>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {item.fieldChanges.map((change, ci) => (
+                                            <tr key={ci} className="border-t border-slate-50">
+                                              <td className="py-1 font-bold text-slate-500">{change.label}</td>
+                                              <td className="py-1">
+                                                <span className="text-red-500 line-through bg-red-50 px-1 rounded">{change.oldVal || '—'}</span>
+                                              </td>
+                                              <td className="py-1 text-center text-slate-300 font-bold">→</td>
+                                              <td className="py-1">
+                                                <span className="text-emerald-700 font-bold bg-emerald-50 px-1 rounded">{change.newVal || '—'}</span>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                        </>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+
+              {false && editableAcceptedItems.length > 0 && (
                 <div className="pt-2 border-t mt-3 space-y-3">
                   {/* Virtual Data Sheet Destination Config */}
                   <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-2">
@@ -2789,16 +3242,35 @@ const MaterialsTab = () => {
                 <Button variant="outline" size="sm" onClick={() => setImportSummary(null)}>
                   Cancel / Re-upload
                 </Button>
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   onClick={async () => {
                     await handleBatchImportSubmit();
                     setIsImportModalOpen(false);
-                  }} 
+                  }}
                   isLoading={submitLoading}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  disabled={submitLoading || (
+                    isAutoEntry
+                      ? (importSummary?.existingMatchCount || 0) > 0 && (confirmedReplacements.size + skippedItems.size) < (importSummary?.existingMatchCount || 0)
+                      : false
+                  )}
+                  className={
+                    submitLoading
+                      ? 'bg-slate-300 text-slate-500 font-bold cursor-not-allowed'
+                      : isAutoEntry
+                        ? ((importSummary?.existingMatchCount || 0) > 0 && (confirmedReplacements.size + skippedItems.size) < (importSummary?.existingMatchCount || 0)
+                            ? 'bg-slate-300 text-slate-500 font-bold cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold')
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold'
+                  }
                 >
-                  Save Imported File
+                  {isAutoEntry
+                    ? ((importSummary?.existingMatchCount || 0) > 0 && (confirmedReplacements.size + skippedItems.size) < (importSummary?.existingMatchCount || 0)
+                        ? `Resolve ${(importSummary?.existingMatchCount || 0) - confirmedReplacements.size - skippedItems.size} item(s) first`
+                        : '✓ Save & Import Batch')
+                    : (unresolvedCount > 0
+                        ? `Resolve ${unresolvedCount} changed item(s) first`
+                        : '✓ Save & Import Updates')}
                 </Button>
               </>
             ) : null}
@@ -2980,6 +3452,44 @@ const MaterialsTab = () => {
 // VENDORS TAB COMPONENT (Reused from our previous VMS build)
 // -------------------------------------------------------------
 const VendorsTab = () => {
+  const [isVendorImportModalOpen, setIsVendorImportModalOpen] = useState(false);
+  const [isVendorAutoEntry, setIsVendorAutoEntry] = useState(false);
+  const [vendorImportSummary, setVendorImportSummary] = useState(null);
+  const [vendorImportSearch, setVendorImportSearch] = useState('');
+  
+  // Bulk Edit / Import logic for Vendors
+  const handleVendorImportExcel = async (e) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const formData = new FormData();
+    formData.append('spreadsheet', file);
+    formData.append('isAutoEntry', isVendorAutoEntry);
+    
+    setSubmitLoading(true);
+    try {
+      const res = await api.post('/api/vendors/batch-upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      if (res.data.success) {
+        showToast(`Successfully processed vendor spreadsheet`, 'success');
+        setVendorImportSummary({
+          inserted: res.data.insertedCount,
+          updated: res.data.updatedCount,
+          errors: res.data.errors,
+          errorsCount: res.data.errorsCount
+        });
+        fetchVendors();
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err.response?.data?.error || 'Failed to import vendors';
+      showToast(msg, 'error');
+    } finally {
+      setSubmitLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const gstStateMap = {
     '01': 'Jammu and Kashmir',
     '02': 'Himachal Pradesh',
@@ -3028,6 +3538,7 @@ const VendorsTab = () => {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [viewingVendorAudit, setViewingVendorAudit] = useState(null);
+  const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   const [activeFilterCol, setActiveFilterCol] = useState(null);
   const [columnFilters, setColumnFilters] = useState({});
   const [tempFilters, setTempFilters] = useState({});
@@ -3043,21 +3554,40 @@ const VendorsTab = () => {
   const [showDraftsList, setShowDraftsList] = useState(false);
   
   const [formData, setFormData] = useState({
+    vendorId: '',
     name: '',
     company: '',
     email: '',
     phone: '',
     address: '',
     address2: '',
+    zipCode: '',
+    city: '',
     state: '',
+    country: '',
     gstin: '',
     gstList: [{ state: '', gstin: '' }],
     hasNoGst: false,
-    primaryContactName: '',
-    primaryContactPhone: '',
-    primaryContactDesignation: '',
+    
+    contactQualityName: '',
+    contactQualityPhone: '',
+    contactAccountsName: '',
+    contactAccountsPhone: '',
+    contactLogisticsName: '',
+    contactLogisticsPhone: '',
     notes: '',
     category: 'Food Processor',
+    subCategory: '',
+    ffsc2200: false,
+    ffsc2200Expiry: '',
+    ffsc2200Qty: '',
+    fssai: false,
+    fssaiExpiry: '',
+    fssaiQty: '',
+    bankAccountHolder: '',
+    bankAccountNumber: '',
+    bankName: '',
+    ifscCode: '',
     status: 'Active'
   });
   
@@ -3188,49 +3718,72 @@ const VendorsTab = () => {
     });
   };
 
-  const handleOpenAddModal = () => {
+  const handleOpenAddModal = async () => {
     setEditingId(null);
     setCurrentDraftId(null); // Clear active draft pointer
+    setFormErrors({});
+    
+    let nextCodeStr = "V1001";
+    try {
+      const res = await api.get('/api/vendors/sequence-peek');
+      if (res.data && res.data.nextCode) {
+        nextCodeStr = res.data.nextCode;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch sequence peek", e);
+    }
+
     setFormData({ 
-      name: '', 
-      company: '', 
-      email: '', 
-      phone: '', 
-      address: '', 
-      address2: '',
-      state: '',
-      gstin: '',
-      gstList: [{ state: '', gstin: '' }],
-      hasNoGst: false,
-      primaryContactName: '',
-      primaryContactPhone: '',
-      primaryContactDesignation: '',
-      notes: '',
-      category: 'Food Processor', 
+      vendorId: nextCodeStr,
+      name: '', company: '', email: '', phone: '', address: '', address2: '',
+      zipCode: '', city: '', state: '', country: '',
+      gstin: '', gstList: [{ state: '', gstin: '' }], hasNoGst: false,
+      
+      contactQualityName: '', contactQualityPhone: '',
+      contactAccountsName: '', contactAccountsPhone: '',
+      contactLogisticsName: '', contactLogisticsPhone: '',
+      notes: '', category: 'Food Processor', subCategory: '', 
+      ffsc2200: false, ffsc2200Expiry: '', ffsc2200Qty: '',
+      fssai: false, fssaiExpiry: '', fssaiQty: '',
+      bankAccountHolder: '', bankAccountNumber: '', bankName: '', ifscCode: '',
       status: 'Active' 
     });
-    setFormErrors({});
+    
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (vendor) => {
     setEditingId(vendor._id);
     setFormData({
-      name: vendor.name,
-      company: vendor.company,
-      email: vendor.email,
-      phone: vendor.phone,
-      address: vendor.address,
+      vendorId: vendor.vendorId || '',
+      name: vendor.name || '',
+      company: vendor.company || '',
+      email: vendor.email || '',
+      phone: vendor.phone || '',
+      address: vendor.address || '',
       address2: vendor.address2 || '',
+      zipCode: vendor.zipCode || '',
+      city: vendor.city || '',
       state: vendor.state || '',
+      country: vendor.country || '',
       gstin: vendor.gstin || '',
       gstList: vendor.gstList && vendor.gstList.length > 0 ? vendor.gstList : [{ state: '', gstin: '' }],
       hasNoGst: vendor.hasNoGst || false,
-      primaryContactName: vendor.primaryContactName || '',
-      primaryContactPhone: vendor.primaryContactPhone || '',
-      primaryContactDesignation: vendor.primaryContactDesignation || '',
+      
+      contacts: vendor.contacts || [],
       notes: vendor.notes || '',
       category: vendor.category || 'Food Processor',
+      subCategory: vendor.subCategory || '',
+      ffsc2200: vendor.ffsc2200 || false,
+      ffsc2200Expiry: vendor.ffsc2200Expiry ? vendor.ffsc2200Expiry.substring(0, 10) : '',
+      ffsc2200Qty: vendor.ffsc2200Qty || '',
+      fssai: vendor.fssai || false,
+      fssaiExpiry: vendor.fssaiExpiry ? vendor.fssaiExpiry.substring(0, 10) : '',
+      fssaiQty: vendor.fssaiQty || '',
+      bankAccountHolder: vendor.bankAccountHolder || '',
+      bankAccountNumber: vendor.bankAccountNumber || '',
+      bankName: vendor.bankName || '',
+      ifscCode: vendor.ifscCode || '',
       status: vendor.status || 'Active'
     });
     setFormErrors({});
@@ -3639,8 +4192,8 @@ const VendorsTab = () => {
   return (
     <div className="space-y-3">
       {/* Search & Filters */}
-      <Card className="shadow-none border border-slate-200">
-        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50">
+      <Card className="shadow-none border border-slate-200 overflow-visible">
+        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible">
           <div className="relative w-64">
             <input
               type="text"
@@ -3702,10 +4255,33 @@ const VendorsTab = () => {
               <option value="Inactive">Inactive</option>
             </select>
 
-            <Button onClick={handleOpenAddModal} size="sm" className="h-7 flex items-center space-x-1 rounded-md px-2.5 font-bold">
-              <Plus className="h-3 w-3" />
-              <span>Add Vendor</span>
-            </Button>
+            <div className="relative">
+              <Button
+                size="sm"
+                onClick={() => setShowVendorFunctionList(!showVendorFunctionList)}
+                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+              >
+                <span>Function List</span>
+                <span className="text-[9px]">▼</span>
+              </Button>
+
+              {showVendorFunctionList && (
+                <>
+                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowVendorFunctionList(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
+                    <button onClick={() => { setShowVendorFunctionList(false); handleOpenAddModal(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
+                      <Plus className="h-3.5 w-3.5 text-slate-400" /><span>Manual Entry</span>
+                    </button>
+                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(true); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
+                      <Save className="h-3.5 w-3.5 text-slate-400" /><span>Auto Entry</span>
+                    </button>
+                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(false); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
+                      <Save className="h-3.5 w-3.5 text-slate-400" /><span>Bulk Update</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </CardContent>
         {/* Active Filter Tags */}
@@ -3882,7 +4458,7 @@ const VendorsTab = () => {
               <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                 <TableRow>
                   {/* Name Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
+                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Name</span>
                       <button
@@ -3919,7 +4495,7 @@ const VendorsTab = () => {
                   </TableHead>
 
                   {/* Company Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap relative group ${activeFilterCol === 'company' ? 'z-50' : 'z-10'}`}>
+                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap relative group ${activeFilterCol === 'company' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Company</span>
                       <button
@@ -3993,7 +4569,7 @@ const VendorsTab = () => {
                   </TableHead>
 
                   {/* GST Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap relative group ${activeFilterCol === 'gstList' ? 'z-50' : 'z-10'}`}>
+                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap relative group ${activeFilterCol === 'gstList' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>GST Registrations</span>
                       <button
@@ -4067,7 +4643,7 @@ const VendorsTab = () => {
                   </TableHead>
 
                   {/* Status Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[80px] max-w-[80px] whitespace-nowrap relative group ${activeFilterCol === 'status' ? 'z-50' : 'z-10'}`}>
+                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative group ${activeFilterCol === 'status' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Status</span>
                       <button
@@ -4109,7 +4685,7 @@ const VendorsTab = () => {
               <TableBody>
                 {filteredVendors.map((v) => (
                   <TableRow key={v._id} className="hover:bg-slate-50/50 border-b border-slate-200">
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap">
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">
                       <div className="relative group max-w-[140px]">
                         <span className="block truncate text-xs font-semibold text-slate-800 cursor-pointer capitalize">
                           {v.name.toLowerCase()}
@@ -4121,7 +4697,7 @@ const VendorsTab = () => {
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono mt-0.5">{v.phone}</div>
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap">
+                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">
                       <div className="relative group max-w-[140px]">
                         <button
                           onClick={() => {
@@ -4150,7 +4726,7 @@ const VendorsTab = () => {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[140px] max-w-[140px] truncate whitespace-nowrap">
+                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[120px] max-w-[120px] truncate whitespace-nowrap">
                       {v.hasNoGst ? (
                         <span className="text-[10px] text-slate-400 italic">No GST (Unregistered)</span>
                       ) : (
@@ -4259,290 +4835,382 @@ const VendorsTab = () => {
         title={editingId ? 'Edit Vendor details' : 'Register new vendor'}
         className="!max-w-[50vw] !w-[50vw] !rounded-none"
       >
-        <form onSubmit={handleFormSubmit} className="space-y-3">
+        <form onSubmit={handleFormSubmit} className="space-y-6">
           {formErrors.form && (
-            <div className="bg-red-50 border border-red-100 rounded-lg p-2.5 text-[11px] text-red-600 font-semibold">
+            <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-600 font-semibold shadow-sm">
               {formErrors.form}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3.5">
-            <Input
-              label="Name"
-              id="vname"
-              placeholder="e.g. Alice Miller"
-              value={formData.name}
-              onChange={(e) => {
-                const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-                setFormData({ ...formData, name: val });
-              }}
-              error={formErrors.name}
-              required
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-            
-            <Input
-              label="Company Name"
-              id="vcompany"
-              placeholder="e.g. Apex Sourcing"
-              value={formData.company}
-              onChange={(e) => {
-                const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-                setFormData({ ...formData, company: val });
-              }}
-              error={formErrors.company}
-              required
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3.5">
-            <Input
-              label="Email Address"
-              id="vemail"
-              type="email"
-              placeholder="name@company.com"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value.toLowerCase().trim() })}
-              error={formErrors.email}
-              required
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-
-            <Input
-              label="Phone Number"
-              id="vphone"
-              placeholder="e.g. +91 98765 43210"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              error={formErrors.phone}
-              required
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-          </div>
-
-          {/* Sourcing Category and Status Fields grouped together */}
-          <div className="grid grid-cols-2 gap-3.5">
-            <Select
-              label="Category Type"
-              id="vcat"
-              options={categoryOptions}
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              required
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-            <div className="flex flex-col space-y-1">
-              <label className="text-xs font-semibold text-slate-600">Status</label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none cursor-pointer h-8.5"
+          {/* Section 1: Basic Information */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Basic Information</h4>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-4 bg-white">
+              <Input
+                label="Vendor ID"
+                id="vvendorId"
+                value={formData.vendorId || ''}
+                disabled={true}
+                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md font-mono text-slate-500 bg-slate-50 cursor-not-allowed font-bold"
+              />
+              <Input
+                label="Vendor Name"
+                id="vname"
+                placeholder="e.g. Acme Supplies Ltd"
+                value={formData.name}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
+                  setFormData({ ...formData, name: val });
+                }}
+                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
                 required
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
+              />
+              <div className="flex flex-col space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9"
+                >
+                  <option value="Food Processor">Food Processor</option>
+                  <option value="Contract Manufacturer">Contract Manufacturer</option>
+                  <option value="Retail Brand">Retail Brand</option>
+                  <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <Input
+                label="Sub-Category"
+                id="vsubcategory"
+                placeholder="e.g. Packaging, Raw Material"
+                value={formData.subCategory}
+                onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
+              />
+              <Input
+                label="Primary Email"
+                id="vemail"
+                type="email"
+                placeholder="vendor@company.com"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value.toLowerCase() })}
+                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
+                required
+              />
+              <div className="flex flex-col space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Draft">Draft</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Address & Alternative Address */}
-          <div className="grid grid-cols-2 gap-3.5">
-            <Input
-              label="Address"
-              id="vaddress"
-              placeholder="Office block 12"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              error={formErrors.address}
-              required
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-            <Input
-              label="Alternative Address (optional)"
-              id="vaddress2"
-              placeholder="Apartment, suite, etc."
-              value={formData.address2}
-              onChange={(e) => setFormData({ ...formData, address2: e.target.value })}
-              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-            />
-          </div>
-
-          {/* GSTIN / State Multi-Registration Block */}
-          <div className="border-t border-slate-100 pt-2.5 mt-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-slate-700">GST Registrations</label>
-              <label className="flex items-center space-x-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.hasNoGst}
-                  onChange={(e) => {
-                    setFormData({ 
-                      ...formData, 
-                      hasNoGst: e.target.checked,
-                      gstList: e.target.checked ? [] : [{ state: '', gstin: '' }]
-                    });
-                  }}
-                  className="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 border-slate-300"
-                />
-                <span className="text-[11px] font-semibold text-slate-500">No GSTIN (Composition/Unregistered)</span>
-              </label>
+          {/* Section 2: Contact List */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Contacts Directory</h4>
             </div>
-
-            {!formData.hasNoGst && (
-              <div className="space-y-2">
-                {formData.gstList.map((gst, idx) => {
-                  const rowError = (formErrors.gstList && formErrors.gstList[idx]) || {};
-                  return (
-                    <div key={idx} className="flex items-start space-x-2 bg-slate-50 p-2 rounded-md border border-slate-200">
-                      <div className="flex-1 flex flex-col space-y-1">
-                        <label className="text-[10px] font-semibold text-slate-500 uppercase">State</label>
-                        <select
-                          value={gst.state}
-                          onChange={(e) => {
-                            const selectedState = e.target.value;
-                            const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selectedState);
-                            const updatedList = [...formData.gstList];
-                            let currentGstin = updatedList[idx].gstin;
-                            if (foundCode) {
-                              if (currentGstin.length >= 2) {
-                                currentGstin = foundCode + currentGstin.substring(2);
-                              } else {
-                                currentGstin = foundCode;
-                              }
-                            }
-                            updatedList[idx] = { state: selectedState, gstin: currentGstin };
-                            setFormData({ ...formData, gstList: updatedList });
-                          }}
-                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
-                        >
-                          <option value="">Select State</option>
-                          {Object.values(gstStateMap).map(st => (
-                            <option key={st} value={st}>{st}</option>
-                          ))}
-                        </select>
-                        {rowError.state && <span className="text-[9px] text-red-500 font-bold">{rowError.state}</span>}
-                      </div>
-
-                      <div className="flex-1 flex flex-col space-y-1">
-                        <label className="text-[10px] font-semibold text-slate-500 uppercase">GSTIN Code</label>
-                        <input
-                          type="text"
-                          placeholder="15-char GSTIN"
-                          value={gst.gstin}
-                          onChange={(e) => {
-                            const val = e.target.value.toUpperCase().trim();
-                            let detectedState = gst.state;
-                            if (val.length >= 2) {
-                              const prefix = val.substring(0, 2);
-                              if (gstStateMap[prefix]) {
-                                detectedState = gstStateMap[prefix];
-                              }
-                            }
-                            const updatedList = [...formData.gstList];
-                            updatedList[idx] = { state: detectedState, gstin: val };
-                            setFormData({ ...formData, gstList: updatedList });
-                          }}
-                          className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 uppercase font-mono"
-                        />
-                        {rowError.gstin && <span className="text-[9px] text-red-500 font-bold leading-tight">{rowError.gstin}</span>}
-                      </div>
-
-                      {formData.gstList.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = formData.gstList.filter((_, i) => i !== idx);
-                            setFormData({ ...formData, gstList: updated });
-                          }}
-                          className="text-red-500 hover:text-red-700 text-xs font-bold pt-5"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {formErrors.gstListStr && (
-                  <div className="text-[10px] text-red-500 font-bold">{formErrors.gstListStr}</div>
+            <div className="p-4 bg-white space-y-4">
+              <div className="space-y-3">
+                {(formData.contacts || []).length === 0 && (
+                  <div className="text-xs text-slate-400 italic py-2">No contacts added yet.</div>
                 )}
-
+                {(formData.contacts || []).map((contact, idx) => (
+                  <div key={idx} className="flex items-end space-x-3 bg-slate-50 p-3 rounded-md border border-slate-200">
+                    <div className="flex-1 flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Role / Dept</label>
+                      <select
+                        value={contact.role}
+                        onChange={(e) => {
+                          const updated = [...(formData.contacts || [])];
+                          updated[idx] = { ...updated[idx], role: e.target.value };
+                          setFormData({ ...formData, contacts: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                      >
+                        <option value="Primary">Primary</option>
+                        <option value="Quality">Quality</option>
+                        <option value="Accounts">Accounts</option>
+                        <option value="Logistics">Logistics</option>
+                        <option value="Sales">Sales</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div className="flex-1 flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Name</label>
+                      <input
+                        type="text"
+                        value={contact.name}
+                        onChange={(e) => {
+                          const updated = [...(formData.contacts || [])];
+                          updated[idx] = { ...updated[idx], name: e.target.value };
+                          setFormData({ ...formData, contacts: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
+                      <input
+                        type="text"
+                        value={contact.phone}
+                        onChange={(e) => {
+                          const updated = [...(formData.contacts || [])];
+                          updated[idx] = { ...updated[idx], phone: e.target.value };
+                          setFormData({ ...formData, contacts: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...(formData.contacts || [])];
+                        updated.splice(idx, 1);
+                        setFormData({ ...formData, contacts: updated });
+                      }}
+                      className="text-red-500 hover:text-red-700 text-xs font-bold pb-1.5 px-2"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                
                 <button
                   type="button"
                   onClick={() => {
                     setFormData({ 
                       ...formData, 
-                      gstList: [...formData.gstList, { state: '', gstin: '' }] 
+                      contacts: [...(formData.contacts || []), { role: 'Primary', name: '', phone: '' }] 
                     });
                   }}
-                  className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1"
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2"
                 >
-                  <Plus className="h-3 w-3" />
-                  <span>Add Another GST / State Registration</span>
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Contact</span>
                 </button>
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Primary Contact Details */}
-          <div className="border-t border-slate-100 pt-2.5 mt-2">
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Primary Contact Details</h4>
-            <div className="grid grid-cols-3 gap-3">
-              <Input
-                label="Contact Name"
-                id="vpcontact_name"
-                placeholder="e.g. Alice Smith"
-                value={formData.primaryContactName}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-                  setFormData({ ...formData, primaryContactName: val });
-                }}
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-              />
-              <Input
-                label="Contact Phone"
-                id="vpcontact_phone"
-                placeholder="e.g. 9876543210"
-                value={formData.primaryContactPhone}
-                onChange={(e) => setFormData({ ...formData, primaryContactPhone: e.target.value })}
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-              />
-              <Input
-                label="Designation"
-                id="vpcontact_desig"
-                placeholder="e.g. Sourcing Manager"
-                value={formData.primaryContactDesignation}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-                  setFormData({ ...formData, primaryContactDesignation: val });
-                }}
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
-              />
+          {/* Section 3: Location Details */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Address & Location</h4>
             </div>
-            <div className="mt-2">
-              <TextArea
-                label="Notes"
-                id="vnotes"
-                placeholder="Preferred terms, delivery notes..."
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="!text-xs !py-1.5 !px-2.5 !rounded-md !h-12"
-              />
+            <div className="p-4 bg-white space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Address Line 1" id="vaddress1" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="!text-xs !h-9" />
+                <Input label="Address Line 2" id="vaddress2" value={formData.address2} onChange={(e) => setFormData({ ...formData, address2: e.target.value })} className="!text-xs !h-9" />
+              </div>
+              
+              <div className="grid grid-cols-4 gap-4">
+                <Input 
+                  label="Zip Code (PIN)" 
+                  id="vzip" 
+                  value={formData.zipCode} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData({ ...formData, zipCode: val });
+                    if (val.length === 6) {
+                      handleZipCodeBlur(val);
+                    }
+                  }} 
+                  onBlur={() => { if (formData.zipCode && formData.zipCode.length === 6) handleZipCodeBlur(formData.zipCode); }}
+                  className="!text-xs !h-9 font-mono" 
+                />
+                <Input label="City" id="vcity" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="!text-xs !h-9" />
+                <Input label="State" id="vstate" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-9" />
+                <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-9" />
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 mt-3">
+                <div className="flex items-center space-x-2 mb-3">
+                  <input
+                    type="checkbox"
+                    id="hasNoGst"
+                    checked={formData.hasNoGst}
+                    onChange={(e) => {
+                      setFormData({ 
+                        ...formData, 
+                        hasNoGst: e.target.checked,
+                        gstList: e.target.checked ? [] : [{ state: '', gstin: '' }]
+                      });
+                    }}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 border-slate-300"
+                  />
+                  <label htmlFor="hasNoGst" className="text-[11px] font-semibold text-slate-700">No GSTIN (Composition/Unregistered)</label>
+                </div>
+
+                {!formData.hasNoGst && (
+                  <div className="space-y-3">
+                    {formData.gstList.map((gst, idx) => (
+                      <div key={idx} className="flex items-end space-x-3 bg-slate-50 p-3 rounded-md border border-slate-200">
+                        <div className="flex-1 flex flex-col space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                          <select
+                            value={gst.state}
+                            onChange={(e) => {
+                              const selectedState = e.target.value;
+                              const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selectedState);
+                              const updatedList = [...formData.gstList];
+                              let currentGstin = updatedList[idx].gstin;
+                              if (foundCode) {
+                                if (currentGstin.length >= 2) {
+                                  currentGstin = foundCode + currentGstin.substring(2);
+                                } else {
+                                  currentGstin = foundCode;
+                                }
+                              }
+                              updatedList[idx] = { state: selectedState, gstin: currentGstin };
+                              setFormData({ ...formData, gstList: updatedList });
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                          >
+                            <option value="">Select State</option>
+                            {Object.values(gstStateMap).map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 flex flex-col space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN Code</label>
+                          <input
+                            type="text"
+                            placeholder="15-char GSTIN"
+                            value={gst.gstin}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase().trim();
+                              let detectedState = gst.state;
+                              if (val.length >= 2) {
+                                const prefix = val.substring(0, 2);
+                                if (gstStateMap[prefix]) {
+                                  detectedState = gstStateMap[prefix];
+                                }
+                              }
+                              const updatedList = [...formData.gstList];
+                              updatedList[idx] = { state: detectedState, gstin: val };
+                              setFormData({ ...formData, gstList: updatedList });
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
+                          />
+                        </div>
+                        {formData.gstList.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = formData.gstList.filter((_, i) => i !== idx);
+                              setFormData({ ...formData, gstList: updated });
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs font-bold pb-1.5 px-2"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ 
+                          ...formData, 
+                          gstList: [...formData.gstList, { state: '', gstin: '' }] 
+                        });
+                      }}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add Another GST Registration</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Certifications */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Certifications</h4>
+            </div>
+            <div className="p-4 bg-white grid grid-cols-2 gap-6">
+              
+              {/* FFSC2200 */}
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="vffsc2200"
+                    checked={formData.ffsc2200}
+                    onChange={(e) => setFormData({ ...formData, ffsc2200: e.target.checked })}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300"
+                  />
+                  <label htmlFor="vffsc2200" className="text-xs font-bold text-slate-800">FFSC2200 Certified</label>
+                </div>
+                {formData.ffsc2200 && (
+                  <div className="grid grid-cols-2 gap-3 pl-6">
+                    <Input label="Expiry Date" type="date" value={formData.ffsc2200Expiry} onChange={(e) => setFormData({ ...formData, ffsc2200Expiry: e.target.value })} className="!text-xs !h-8" />
+                    <Input label="Quantity" type="number" value={formData.ffsc2200Qty} onChange={(e) => setFormData({ ...formData, ffsc2200Qty: e.target.value })} className="!text-xs !h-8" />
+                  </div>
+                )}
+              </div>
+
+              {/* FSSAI */}
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="vfssai"
+                    checked={formData.fssai}
+                    onChange={(e) => setFormData({ ...formData, fssai: e.target.checked })}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300"
+                  />
+                  <label htmlFor="vfssai" className="text-xs font-bold text-slate-800">FSSAI Certified</label>
+                </div>
+                {formData.fssai && (
+                  <div className="grid grid-cols-2 gap-3 pl-6">
+                    <Input label="Expiry Date" type="date" value={formData.fssaiExpiry} onChange={(e) => setFormData({ ...formData, fssaiExpiry: e.target.value })} className="!text-xs !h-8" />
+                    <Input label="Quantity" type="number" value={formData.fssaiQty} onChange={(e) => setFormData({ ...formData, fssaiQty: e.target.value })} className="!text-xs !h-8" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: Bank Details */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Bank Details</h4>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-4 bg-white">
+              <Input label="Account Holder Name" value={formData.bankAccountHolder} onChange={(e) => setFormData({ ...formData, bankAccountHolder: e.target.value })} className="!text-xs !h-9" />
+              <Input label="Account Number" type="text" value={formData.bankAccountNumber} onChange={(e) => setFormData({ ...formData, bankAccountNumber: e.target.value })} className="!text-xs !h-9 font-mono" />
+              <Input label="Bank Name" value={formData.bankName} onChange={(e) => setFormData({ ...formData, bankName: e.target.value })} className="!text-xs !h-9" />
+              <Input label="IFSC Code" value={formData.ifscCode} onChange={(e) => setFormData({ ...formData, ifscCode: e.target.value.toUpperCase() })} className="!text-xs !h-9 font-mono uppercase" />
             </div>
           </div>
 
           {draftMessage && (
-            <div className="flex items-center space-x-1.5 text-[9px] text-blue-500 font-bold bg-blue-50 py-1 px-2 rounded-md">
-              <Save className="h-3 w-3 shrink-0" />
+            <div className="flex items-center space-x-1.5 text-[10px] text-emerald-600 font-bold bg-emerald-50 py-1.5 px-3 rounded-md shadow-sm border border-emerald-100">
+              <Save className="h-3.5 w-3.5 shrink-0" />
               <span>{draftMessage}</span>
             </div>
           )}
 
-          <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100 mt-4">
-            <Button variant="outline" size="sm" onClick={handleCloseModal}>Cancel</Button>
-            <Button type="submit" size="sm" isLoading={submitLoading}>
-              {editingId ? 'Save changes' : 'Register vendor'}
+          <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-200 mt-4">
+            <Button variant="outline" type="button" onClick={handleCloseModal}>Cancel</Button>
+            <Button type="submit" isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 shadow-sm px-6">
+              {editingId ? 'Save Changes' : 'Register Vendor'}
             </Button>
           </div>
         </form>
