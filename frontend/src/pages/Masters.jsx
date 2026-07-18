@@ -2243,13 +2243,7 @@ const MaterialsTab = () => {
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-right w-[110px] max-w-[110px] whitespace-nowrap relative overflow-visible">
                       <div className="flex items-center justify-end space-x-1">
-                        <button
-                          onClick={() => handleToggleMaterialStatus(mat)}
-                          title="Toggle Status"
-                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
-                        >
-                          {mat.status === 'Active' ? <ToggleRight className="h-3.5 w-3.5 text-blue-600" /> : <ToggleLeft className="h-3.5 w-3.5 text-slate-400" />}
-                        </button>
+                        
                         <button
                           onClick={() => handleOpenEditModal(mat)}
                           className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
@@ -3456,6 +3450,11 @@ const VendorsTab = () => {
   const [isVendorAutoEntry, setIsVendorAutoEntry] = useState(false);
   const [vendorImportSummary, setVendorImportSummary] = useState(null);
   const [vendorImportSearch, setVendorImportSearch] = useState('');
+  const [isVendorSelectionMode, setIsVendorSelectionMode] = useState(false);
+  const [selectedVendorRowIds, setSelectedVendorRowIds] = useState(new Set());
+  const [vendorBatchEditItems, setVendorBatchEditItems] = useState([]);
+  const [vendorBatchEditIdx, setVendorBatchEditIdx] = useState(0);
+  const [isVendorBatchEditModalOpen, setIsVendorBatchEditModalOpen] = useState(false);
   
   // Bulk Edit / Import logic for Vendors
   const handleVendorImportExcel = async (e) => {
@@ -4268,6 +4267,8 @@ const VendorsTab = () => {
               {showVendorFunctionList && (
                 <>
                   <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowVendorFunctionList(false)} />
+                  
+                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowVendorFunctionList(false)} />
                   <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
                     <button onClick={() => { setShowVendorFunctionList(false); handleOpenAddModal(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
                       <Plus className="h-3.5 w-3.5 text-slate-400" /><span>Manual Entry</span>
@@ -4278,7 +4279,11 @@ const VendorsTab = () => {
                     <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(false); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
                       <Save className="h-3.5 w-3.5 text-slate-400" /><span>Bulk Update</span>
                     </button>
+                    <button onClick={() => { setShowVendorFunctionList(false); handleVendorBatchEdit(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
+                      <Edit2 className="h-3.5 w-3.5 text-slate-400" /><span>Edit Selected</span>
+                    </button>
                   </div>
+
                 </>
               )}
             </div>
@@ -4379,11 +4384,142 @@ const VendorsTab = () => {
             ) : (
               <Table className="border-t border-slate-200">
                 <TableHeader className="bg-slate-50 border-b border-slate-200">
-                  <TableRow>
-                    <TableHead className="!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200">Vendor Name Draft</TableHead>
-                    <TableHead className="!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200">Company Draft</TableHead>
-                    <TableHead className="!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200">Last Autosaved</TableHead>
-                    <TableHead className="!px-2.5 !py-1 text-right text-slate-600 font-bold text-[11px]">Actions</TableHead>
+                  
+                  <TableRow
+                    key={v._id}
+                    className={`hover:bg-blue-50/50 transition-colors cursor-pointer group ${(isVendorSelectionMode && selectedVendorRowIds.has(v._id)) ? 'bg-blue-50' : ''}`}
+                    onClick={() => {
+                      if (isVendorSelectionMode) {
+                        handleVendorRowSelect(v._id);
+                      } else {
+                        setViewingVendor(v);
+                        setIsViewModalOpen(true);
+                      }
+                    }}
+                  >
+                    {isVendorSelectionMode && (
+                      <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                        <label className="flex items-center justify-center cursor-pointer p-1">
+                          <input
+                            type="checkbox"
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                            checked={selectedVendorRowIds.has(v._id)}
+                            onChange={() => handleVendorRowSelect(v._id)}
+                          />
+                        </label>
+                      </TableCell>
+                    )}
+                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 relative group/code">
+                      <div className="flex items-center justify-between cursor-default">
+                        <div className="w-full">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-blue-600">{v.vendorId}</span>
+                          </div>
+                          <span className="block truncate text-xs font-semibold text-slate-800 capitalize">{v.name ? v.name.toLowerCase() : "-"}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium truncate max-w-[150px]">
+                      {v.company || "-"}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[10px] text-slate-500 truncate max-w-[150px]">
+                      {v.notes || "-"}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[100px] max-w-[100px] truncate">
+                      {v.gstList && v.gstList.length > 0 && v.gstList[0].gstin ? (
+                        <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                          {v.gstList[0].gstin}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">No GST</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[100px] max-w-[100px] truncate">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-medium inline-block border border-slate-200 capitalize shadow-sm">
+                        {v.category}
+                      </span>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[100px] max-w-[100px] truncate">
+                      <span className={"px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm inline-flex items-center space-x-1 " + (v.status === "Active" ? "bg-green-100 text-green-700 border border-green-200" : v.status === "Draft" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-red-100 text-red-700 border border-red-200")}>
+                        <span className={"h-1.5 w-1.5 rounded-full " + (v.status === "Active" ? "bg-green-500" : v.status === "Draft" ? "bg-amber-500" : "bg-red-500")}></span>
+                        <span>{v.status}</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left text-[11px] text-slate-600 truncate w-auto">
+                      {v.email || "-"}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-right w-[110px] max-w-[110px] whitespace-nowrap relative overflow-visible border-r border-slate-200">
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleToggleStatus(v); }}
+                          title="Toggle Status"
+                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
+                        >
+                          {v.status === 'Active' ? <ToggleRight className="h-3.5 w-3.5 text-blue-600" /> : <ToggleLeft className="h-3.5 w-3.5 text-slate-400" />}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
+                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
+                          title="Edit Vendor"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
+                          className="p-0.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700"
+                          title="Delete Vendor"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenDropdownId(openDropdownId === v._id ? null : v._id);
+                            }}
+                            className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700 focus:outline-none"
+                            title="More actions"
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </button>
+                          {openDropdownId === v._id && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-40 cursor-default"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenDropdownId(null);
+                                }}
+                              />
+                              <div className="absolute right-0 top-full mt-1.5 w-36 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenDropdownId(null);
+                                    setViewingVendor(v);
+                                    setIsViewModalOpen(true);
+                                  }}
+                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
+                                >
+                                  <span>View Registered Data</span>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenDropdownId(null);
+                                    setViewingVendorAudit(v);
+                                    setIsAuditModalOpen(true);
+                                  }}
+                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
+                                >
+                                  <span>Revision History</span>
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -5125,7 +5261,106 @@ const VendorsTab = () => {
           </div>
         )}
       </Dialog>
-    </div>
+    
+      {/* Vendor Batch Edit Modal */}
+      <Dialog
+        isOpen={isVendorBatchEditModalOpen}
+        onClose={() => setIsVendorBatchEditModalOpen(false)}
+        title={`Batch Edit Vendor (${vendorBatchEditIdx + 1} of ${vendorBatchEditItems.length})`}
+      >
+        {vendorBatchEditItems.length > 0 && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Input 
+                label="Vendor Name"
+                value={vendorBatchEditItems[vendorBatchEditIdx]?.name || ''}
+                onChange={(e) => {
+                  const newItems = [...vendorBatchEditItems];
+                  newItems[vendorBatchEditIdx].name = e.target.value;
+                  setVendorBatchEditItems(newItems);
+                }}
+              />
+              <Input 
+                label="Company"
+                value={vendorBatchEditItems[vendorBatchEditIdx]?.company || ''}
+                onChange={(e) => {
+                  const newItems = [...vendorBatchEditItems];
+                  newItems[vendorBatchEditIdx].company = e.target.value;
+                  setVendorBatchEditItems(newItems);
+                }}
+              />
+              <Input 
+                label="Category"
+                value={vendorBatchEditItems[vendorBatchEditIdx]?.category || ''}
+                onChange={(e) => {
+                  const newItems = [...vendorBatchEditItems];
+                  newItems[vendorBatchEditIdx].category = e.target.value;
+                  setVendorBatchEditItems(newItems);
+                }}
+              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+                <select 
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                  value={vendorBatchEditItems[vendorBatchEditIdx]?.status || ''}
+                  onChange={(e) => {
+                    const newItems = [...vendorBatchEditItems];
+                    newItems[vendorBatchEditIdx].status = e.target.value;
+                    setVendorBatchEditItems(newItems);
+                  }}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Draft">Draft</option>
+                </select>
+              </div>
+            </div>
+            <div className="pt-4 flex justify-between border-t border-slate-100">
+              <Button variant="outline" type="button" onClick={handleVendorBatchWizardBack} disabled={vendorBatchEditIdx === 0}>Back</Button>
+              <Button type="button" onClick={() => handleVendorBatchWizardSaveCurrent(vendorBatchEditItems[vendorBatchEditIdx])} isLoading={submitLoading}>
+                {vendorBatchEditIdx < vendorBatchEditItems.length - 1 ? "Save & Next" : "Save & Finish"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      {/* Vendor Import Modal */}
+      <Dialog
+        isOpen={isVendorImportModalOpen}
+        onClose={() => setIsVendorImportModalOpen(false)}
+        title={isVendorAutoEntry ? "Bulk Create Vendors" : "Bulk Update Vendors"}
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-blue-50 text-blue-700 text-xs rounded border border-blue-100">
+            {isVendorAutoEntry ? "Upload an Excel file with new vendor details. Ensure headers match the template." : "Upload an Excel file containing Vendor IDs to update existing records."}
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Select Excel File</label>
+            <input 
+              type="file" 
+              accept=".xlsx, .xls, .csv" 
+              onChange={handleVendorImportExcel} 
+              className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+          </div>
+          {vendorImportSummary && (
+            <div className="mt-4 p-4 border border-slate-200 rounded bg-slate-50 space-y-2">
+              <h4 className="font-bold text-slate-700 text-sm">Import Summary</h4>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>Total Processed: {vendorImportSummary.totalRows}</div>
+                <div className="text-green-600">Successfully created: {vendorImportSummary.insertedCount}</div>
+                <div className="text-amber-600">Updated: {vendorImportSummary.updatedCount}</div>
+                <div className="text-red-500">Failed: {vendorImportSummary.failedCount}</div>
+              </div>
+            </div>
+          )}
+          <div className="pt-4 flex justify-end">
+            <Button variant="outline" type="button" onClick={() => setIsVendorImportModalOpen(false)}>Close</Button>
+          </div>
+        </div>
+      </Dialog>
+</div>
   );
 };
 
