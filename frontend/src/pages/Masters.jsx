@@ -4457,368 +4457,73 @@ const VendorsTab = () => {
             <Table className="border border-slate-200 w-full table-fixed">
               <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                 <TableRow>
-                  {/* Name Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>Name</span>
-                      <button
-                        onClick={(e) => toggleFilterPopup('name', e)}
-                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        title="Filter Name"
-                      >
-                        <Filter className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {activeFilterCol === 'name' && (
-                      <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
-                        <div className="absolute left-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
-                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Name</div>
-                          <input
-                            type="text"
-                            placeholder="Search names/companies..."
-                            value={filterSearchText['name'] || ''}
-                            onChange={(e) => setFilterSearchText({ ...filterSearchText, name: e.target.value })}
-                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {renderFilterPopupContent('name')}
-                          <div className="flex items-center justify-between pt-2 border-t mt-2">
-                            <button onClick={() => clearColumnFilter('name')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
-                            <button onClick={() => applyColumnFilter('name')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
+                  <TableHead className="!px-3 !py-1 w-[40px] max-w-[40px] text-center border-r border-slate-200 relative z-20">
+                    <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5" />
                   </TableHead>
-
-                  {/* Company Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap relative group ${activeFilterCol === 'company' ? 'z-50' : 'z-10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>Company</span>
-                      <button
-                        onClick={(e) => toggleFilterPopup('company', e)}
-                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['company'] && columnFilters['company'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        title="Filter Company"
-                      >
-                        <Filter className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {activeFilterCol === 'company' && (
-                      <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
-                        <div className="absolute left-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
-                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Company</div>
-                          <input
-                            type="text"
-                            placeholder="Search companies..."
-                            value={filterSearchText['company'] || ''}
-                            onChange={(e) => setFilterSearchText({ ...filterSearchText, company: e.target.value })}
-                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {renderFilterPopupContent('company')}
-                          <div className="flex items-center justify-between pt-2 border-t mt-2">
-                            <button onClick={() => clearColumnFilter('company')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
-                            <button onClick={() => applyColumnFilter('company')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </TableHead>
-
-                  {/* Email Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-auto whitespace-nowrap relative group ${activeFilterCol === 'email' ? 'z-50' : 'z-10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>Email Address</span>
-                      <button
-                        onClick={(e) => toggleFilterPopup('email', e)}
-                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['email'] && columnFilters['email'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        title="Filter Email"
-                      >
-                        <Filter className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {activeFilterCol === 'email' && (
-                      <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
-                        <div className="absolute left-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
-                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Email</div>
-                          <input
-                            type="text"
-                            placeholder="Search emails..."
-                            value={filterSearchText['email'] || ''}
-                            onChange={(e) => setFilterSearchText({ ...filterSearchText, email: e.target.value })}
-                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {renderFilterPopupContent('email')}
-                          <div className="flex items-center justify-between pt-2 border-t mt-2">
-                            <button onClick={() => clearColumnFilter('email')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
-                            <button onClick={() => applyColumnFilter('email')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </TableHead>
-
-                  {/* GST Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap relative group ${activeFilterCol === 'gstList' ? 'z-50' : 'z-10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>GST Registrations</span>
-                      <button
-                        onClick={(e) => toggleFilterPopup('gstList', e)}
-                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['gstList'] && columnFilters['gstList'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        title="Filter GST"
-                      >
-                        <Filter className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {activeFilterCol === 'gstList' && (
-                      <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
-                        <div className="absolute right-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
-                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter GSTIN</div>
-                          <input
-                            type="text"
-                            placeholder="Search GSTINs..."
-                            value={filterSearchText['gstList'] || ''}
-                            onChange={(e) => setFilterSearchText({ ...filterSearchText, gstList: e.target.value })}
-                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {renderFilterPopupContent('gstList')}
-                          <div className="flex items-center justify-between pt-2 border-t mt-2">
-                            <button onClick={() => clearColumnFilter('gstList')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
-                            <button onClick={() => applyColumnFilter('gstList')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </TableHead>
-
-                  {/* Category Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative group ${activeFilterCol === 'category' ? 'z-50' : 'z-10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>Category</span>
-                      <button
-                        onClick={(e) => toggleFilterPopup('category', e)}
-                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['category'] && columnFilters['category'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        title="Filter Category"
-                      >
-                        <Filter className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {activeFilterCol === 'category' && (
-                      <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
-                        <div className="absolute right-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
-                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Category</div>
-                          <input
-                            type="text"
-                            placeholder="Search categories..."
-                            value={filterSearchText['category'] || ''}
-                            onChange={(e) => setFilterSearchText({ ...filterSearchText, category: e.target.value })}
-                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {renderFilterPopupContent('category')}
-                          <div className="flex items-center justify-between pt-2 border-t mt-2">
-                            <button onClick={() => clearColumnFilter('category')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
-                            <button onClick={() => applyColumnFilter('category')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </TableHead>
-
-                  {/* Status Filter */}
-                  <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative group ${activeFilterCol === 'status' ? 'z-50' : 'z-10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>Status</span>
-                      <button
-                        onClick={(e) => toggleFilterPopup('status', e)}
-                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        title="Filter Status"
-                      >
-                        <Filter className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {activeFilterCol === 'status' && (
-                      <>
-                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
-                        <div className="absolute right-1 top-full mt-1.5 w-32 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
-                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Status</div>
-                          <input
-                            type="text"
-                            placeholder="Search status..."
-                            value={filterSearchText['status'] || ''}
-                            onChange={(e) => setFilterSearchText({ ...filterSearchText, status: e.target.value })}
-                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {renderFilterPopupContent('status')}
-                          <div className="flex items-center justify-between pt-2 border-t mt-2">
-                            <button onClick={() => clearColumnFilter('status')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
-                            <button onClick={() => applyColumnFilter('status')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </TableHead>
-
-                  <TableHead className="!px-2 !py-0.5 text-right text-slate-600 font-bold text-[11px] w-[120px] max-w-[120px]">Actions</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">Vendor Name</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Company</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Notes/Desc</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">GST Reg</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Category</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap">Status</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-right text-slate-600 font-bold text-[11px] w-[120px] max-w-[120px] border-r border-slate-200">Actions</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] whitespace-nowrap">Email</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredVendors.map((v) => (
                   <TableRow key={v._id} className="hover:bg-slate-50/50 border-b border-slate-200">
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">
-                      <div className="relative group max-w-[140px]">
-                        <span className="block truncate text-xs font-semibold text-slate-800 cursor-pointer capitalize">
-                          {v.name.toLowerCase()}
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center">
+                      <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5" />
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[120px] max-w-[120px]">
+                      <div className="flex items-center justify-between group/code">
+                        <div className="w-full">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-blue-600">{v.vendorId}</span>
+                          </div>
+                          <span className="block truncate text-xs font-semibold text-slate-800 capitalize">{v.name ? v.name.toLowerCase() : "-"}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium truncate max-w-[120px]">
+                      {v.company || "-"}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[10px] text-slate-500 truncate max-w-[120px]">
+                      {v.notes || "-"}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200">
+                      {v.gstList && v.gstList.length > 0 && v.gstList[0].gstin ? (
+                        <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                          {v.gstList[0].gstin}
                         </span>
-                        {/* Custom hover tooltip showing full name next to it */}
-                        <div className="absolute hidden group-hover:block bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
-                          {v.name.toLowerCase()}
-                        </div>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{v.phone}</div>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">
-                      <div className="relative group max-w-[140px]">
-                        <button
-                          onClick={() => {
-                            setViewingVendor(v);
-                            setIsViewModalOpen(true);
-                          }}
-                          className="block text-blue-600 font-bold hover:underline focus:outline-none text-xs text-left w-full truncate cursor-pointer"
-                          title="View vendor details"
-                        >
-                          {v.company}
-                        </button>
-                        {/* Custom hover tooltip showing full company above it */}
-                        <div className="absolute hidden group-hover:block bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
-                          {v.company}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 font-mono text-[11px] text-slate-600 border-r border-slate-200 w-auto whitespace-nowrap">
-                      <div className="relative group w-full">
-                        <span className="block truncate cursor-pointer text-xs font-semibold text-slate-600 lowercase">
-                          {v.email}
-                        </span>
-                        {/* Custom hover tooltip showing full email above it */}
-                        <div className="absolute hidden group-hover:block bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none lowercase font-sans">
-                          {v.email}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[120px] max-w-[120px] truncate whitespace-nowrap">
-                      {v.hasNoGst ? (
-                        <span className="text-[10px] text-slate-400 italic">No GST (Unregistered)</span>
                       ) : (
-                        <div className="space-y-0.5 max-h-[40px] overflow-y-auto pr-1" title={(v.gstList || []).map(g => `${g.state}: ${g.gstin}`).join(', ')}>
-                          {(v.gstList || []).map((gst, idx) => (
-                            <div key={idx} className="text-[10px] font-mono text-slate-600 whitespace-nowrap truncate">
-                              <span className="font-bold text-slate-500 mr-1">{gst.state}:</span>
-                              {gst.gstin}
-                            </div>
-                          ))}
-                        </div>
+                        <span className="text-[10px] text-slate-400 italic">No GST</span>
                       )}
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[110px] max-w-[110px] truncate whitespace-nowrap">
-                      <span className="text-xs text-slate-700 capitalize block truncate" title={v.category}>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-medium inline-block border border-slate-200 capitalize shadow-sm">
                         {v.category}
                       </span>
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[80px] max-w-[80px] truncate whitespace-nowrap">
-                      <span className={`text-xs font-semibold whitespace-nowrap ${
-                        v.status === 'Active' ? 'text-green-600' : 'text-slate-500'
-                      }`}>
-                        {v.status}
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[110px] max-w-[110px]">
+                      <span className={"px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm inline-flex items-center space-x-1 " + (v.status === "Active" ? "bg-green-100 text-green-700 border border-green-200" : v.status === "Draft" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-red-100 text-red-700 border border-red-200")}>
+                        <span className={"h-1.5 w-1.5 rounded-full " + (v.status === "Active" ? "bg-green-500" : v.status === "Draft" ? "bg-amber-500" : "bg-red-500")}></span>
+                        <span>{v.status}</span>
                       </span>
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-right w-[120px] max-w-[120px] whitespace-nowrap relative overflow-visible">
-                      <div className="flex items-center justify-end space-x-1">
-                        <button
-                          onClick={() => handleToggleStatus(v)}
-                          title="Toggle Status"
-                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
-                        >
-                          {v.status === 'Active' ? <ToggleRight className="h-3.5 w-3.5 text-blue-600" /> : <ToggleLeft className="h-3.5 w-3.5 text-slate-400" />}
-                        </button>
-                        <button
-                          onClick={() => handleOpenEditModal(v)}
-                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
-                        >
+                    <TableCell className="!px-2 !py-0.5 text-right border-r border-slate-200 w-[120px] max-w-[120px]">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }} className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-400 transition-colors" title="Edit Vendor">
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteVendor(v._id)}
-                          className="p-0.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700"
-                        >
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }} className="p-1 hover:bg-red-50 hover:text-red-600 rounded text-slate-400 transition-colors" title="Delete Vendor">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                        <div className="relative">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenDropdownId(openDropdownId === v._id ? null : v._id);
-                            }}
-                            className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700 focus:outline-none"
-                            title="More actions"
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                          {openDropdownId === v._id && (
-                            <>
-                              <div 
-                                className="fixed inset-0 z-40 cursor-default"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenDropdownId(null);
-                                }}
-                              />
-                              <div className="absolute right-0 top-full mt-1.5 w-36 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
-                                <button
-                                  onClick={() => {
-                                    setOpenDropdownId(null);
-                                    setViewingVendor(v);
-                                    setIsViewModalOpen(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                                >
-                                  <span>View Registered Data</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setOpenDropdownId(null);
-                                    setViewingVendorAudit(v);
-                                    setIsAuditModalOpen(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                                >
-                                  <span>Revision History</span>
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
                       </div>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left text-[11px] text-slate-600 truncate max-w-[120px]">
+                      {v.email || "-"}
                     </TableCell>
                   </TableRow>
                 ))}

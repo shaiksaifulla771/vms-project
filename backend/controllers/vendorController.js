@@ -1,7 +1,7 @@
 const Vendor = require('../models/Vendor');
 const Sequence = require('../models/Sequence');
 
-const { syncExcelToMongoDB } = require('../utils/syncUtility');
+const { syncExcelToMongoDB } = require('../utils/dbSync');
 const XLSX = require('xlsx');
 
 
