@@ -5257,13 +5257,67 @@ const VendorsTab = () => {
                     />
                   </TableHead>
                 )}
-                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[90px] max-w-[90px] whitespace-nowrap">Vendor Code</TableHead>
-                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap">Vendor Name</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[90px] max-w-[90px] whitespace-nowrap">Code</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap relative">
+                    <div className="flex items-center justify-between">
+                      <span>Vendor Name</span>
+                      <button
+                        onClick={(e) => toggleFilterPopup('name', e)}
+                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
+                          (columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        title="Filter Vendor Name"
+                      >
+                        <Filter className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {activeFilterCol === 'name' && (
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                        {renderFilterPopupContent('name')}
+                      </div>
+                    )}
+                  </TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Company</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Notes/Desc</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">GST Reg</TableHead>
-                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Category</TableHead>
-                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap">Status</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative">
+                    <div className="flex items-center justify-between">
+                      <span>Category</span>
+                      <button
+                        onClick={(e) => toggleFilterPopup('category', e)}
+                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
+                          (columnFilters['category'] && columnFilters['category'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        title="Filter Category"
+                      >
+                        <Filter className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {activeFilterCol === 'category' && (
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                        {renderFilterPopupContent('category')}
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative">
+                    <div className="flex items-center justify-between">
+                      <span>Status</span>
+                      <button
+                        onClick={(e) => toggleFilterPopup('status', e)}
+                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
+                          (columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        title="Filter Status"
+                      >
+                        <Filter className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {activeFilterCol === 'status' && (
+                      <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                        {renderFilterPopupContent('status')}
+                      </div>
+                    )}
+                  </TableHead>
                   <TableHead className="border-r border-slate-200">Email</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-right text-slate-600 font-bold text-[11px] w-[120px] max-w-[120px] border-r border-slate-200">Actions</TableHead>
                 </TableRow>
