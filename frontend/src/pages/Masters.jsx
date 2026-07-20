@@ -4332,7 +4332,7 @@ const VendorsTab = () => {
         const sorted = [...res.data.data].sort((a, b) => {
           const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
           const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-          return numA - numB;
+          return numB - numA;
         });
         setVendors(sorted);
       }
@@ -4595,11 +4595,11 @@ const VendorsTab = () => {
         const res = await api.post('/api/vendors', formattedData);
         if (res.data && res.data.data) {
           setVendors(prev => {
-          const list = [...prev, res.data.data];
+          const list = [res.data.data, ...prev];
           return list.sort((a, b) => {
             const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
             const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-            return numA - numB;
+            return numB - numA;
           });
         });
         }
