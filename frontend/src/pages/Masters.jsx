@@ -4332,7 +4332,7 @@ const VendorsTab = () => {
         const sorted = [...res.data.data].sort((a, b) => {
           const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
           const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-          return numA - numB;
+          return numB - numA;
         });
         setVendors(sorted);
       }
@@ -4599,7 +4599,7 @@ const VendorsTab = () => {
           return list.sort((a, b) => {
             const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
             const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-            return numA - numB;
+            return numB - numA;
           });
         });
         }
@@ -5422,11 +5422,13 @@ const VendorsTab = () => {
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600">
                       {v.vendorId || '-'}
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize truncate max-w-[140px]">
-                      {v.name ? v.name.toLowerCase() : "-"}
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize truncate max-w-[140px]" title={v.name || ''}>
+                      <span className="truncate block" title={v.name || ''}>
+                        {v.name ? v.name.toLowerCase() : "-"}
+                      </span>
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium truncate max-w-[120px]">
-                      {v.company || "-"}
+                      <span className="truncate block cursor-pointer" title={v.company || ''}>{v.company || "-"}</span>
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[10px] text-slate-500 truncate max-w-[120px]">
                       {v.notes || "-"}
