@@ -3648,6 +3648,8 @@ const VendorsTab = () => {
   const [vendorConfirmedReplacements, setVendorConfirmedReplacements] = useState(new Set());
   const [vendorSkippedItems, setVendorSkippedItems] = useState(new Set());
   const [vendorCurrentFileName, setVendorCurrentFileName] = useState('');
+  const [editingVendorPreviewIdx, setEditingVendorPreviewIdx] = useState(null);
+  const [vendorPreviewFormData, setVendorPreviewFormData] = useState({});
   const [isVendorSelectionMode, setIsVendorSelectionMode] = useState(false);
   const [selectedVendorRowIds, setSelectedVendorRowIds] = useState(new Set());
   const [vendorBatchEditItems, setVendorBatchEditItems] = useState([]);
@@ -3942,6 +3944,69 @@ const VendorsTab = () => {
         rejected
       }
     };
+  };
+
+  const handleOpenVendorPreviewEdit = (origIdx) => {
+    setEditingVendorPreviewIdx(origIdx);
+    setVendorPreviewFormData({ ...editableVendorItems[origIdx] });
+  };
+
+  const handleSaveVendorPreviewRow = () => {
+    if (editingVendorPreviewIdx === null) return;
+    setEditableVendorItems(prev => {
+      const list = [...prev];
+      const updated = { ...vendorPreviewFormData };
+
+      const errors = [];
+      if (!updated.name || !updated.name.trim()) errors.push("Vendor Name is missing.");
+      if (!updated.email || !updated.email.trim()) {
+        errors.push("Email is missing.");
+      } else if (!/\S+@\S+\.\S+/.test(updated.email.trim())) {
+        errors.push(`Invalid email: ${updated.email}`);
+      }
+
+      updated.validationErrors = errors;
+
+      if (updated.isExistingMatch && updated.matchedVendorId) {
+        const existingVendor = vendors.find(v => v._id === updated.matchedVendorId);
+        if (existingVendor) {
+          const fieldDefs = [
+            { label: 'Vendor Name', oldVal: existingVendor.name || '', newVal: updated.name || '' },
+            { label: 'Company', oldVal: existingVendor.company || '', newVal: updated.company || '' },
+            { label: 'Email', oldVal: existingVendor.email || '', newVal: updated.email || '' },
+            { label: 'Phone', oldVal: existingVendor.phone || '', newVal: updated.phone || '' },
+            { label: 'Category', oldVal: existingVendor.category || '', newVal: updated.category || '' },
+            { label: 'Sub-Category', oldVal: existingVendor.subCategory || '', newVal: updated.subCategory || '' },
+            { label: 'Address', oldVal: existingVendor.address || '', newVal: updated.address || '' },
+            { label: 'GSTIN', oldVal: existingVendor.gstin || '', newVal: updated.gstin || '' },
+            { label: 'Status', oldVal: existingVendor.status || 'Active', newVal: updated.status || 'Active' },
+            { label: 'Notes', oldVal: existingVendor.notes || '', newVal: updated.notes || '' }
+          ];
+
+          updated.fieldChanges = fieldDefs.filter(f => f.oldVal.toString().trim().toLowerCase() !== f.newVal.toString().trim().toLowerCase());
+        }
+      }
+
+      list[editingVendorPreviewIdx] = updated;
+
+      const validNew = list.filter(i => !i.isExistingMatch && i.validationErrors.length === 0 && !i.isDuplicate);
+      const existingMatch = list.filter(i => i.isExistingMatch && i.validationErrors.length === 0 && !i.isDuplicate);
+      const rejected = list.filter(i => i.validationErrors.length > 0 || i.isDuplicate).map(i => i.validationErrors.join(', '));
+
+      setVendorImportSummary({
+        total: list.length,
+        acceptedCount: validNew.length,
+        existingMatchCount: existingMatch.length,
+        rejectedCount: rejected.length,
+        duplicateCount: 0,
+        rejected
+      });
+
+      return list;
+    });
+
+    setEditingVendorPreviewIdx(null);
+    showToast("Row updated successfully in preview wizard.");
   };
 
   const handleUpdateIncompleteVendorRow = (idx, field, val) => {
@@ -4529,7 +4594,14 @@ const VendorsTab = () => {
       } else {
         const res = await api.post('/api/vendors', formattedData);
         if (res.data && res.data.data) {
-          setVendors(prev => [...prev, res.data.data]);
+          setVendors(prev => {
+          const list = [...prev, res.data.data];
+          return list.sort((a, b) => {
+            const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
+            const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
+            return numA - numB;
+          });
+        });
         }
         showToast("Successfully added 1 new vendor record.");
 
@@ -6423,19 +6495,29 @@ const VendorsTab = () => {
                                 <span className="font-bold text-slate-800 text-xs capitalize">{item.name} ({item.company})</span>
                                 <span className="text-[10px] text-slate-400 font-mono ml-2">Code: {item.vendorId || 'Auto'} • {item.email}</span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (isSkipped) {
-                                    setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
-                                  } else {
-                                    setVendorSkippedItems(prev => new Set(prev).add(origIdx));
-                                  }
-                                }}
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded transition-colors ${isSkipped ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}
-                              >
-                                {isSkipped ? '✓ Enable Row' : '✕ Skip Row'}
-                              </button>
+                              <div className="flex items-center space-x-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenVendorPreviewEdit(origIdx)}
+                                  className="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded transition-colors flex items-center space-x-1 border border-blue-200"
+                                >
+                                  <Edit2 className="h-3 w-3" />
+                                  <span>Edit & Save</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isSkipped) {
+                                      setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
+                                    } else {
+                                      setVendorSkippedItems(prev => new Set(prev).add(origIdx));
+                                    }
+                                  }}
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded transition-colors ${isSkipped ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}
+                                >
+                                  {isSkipped ? '✓ Enable Row' : '✕ Skip Row'}
+                                </button>
+                              </div>
                             </div>
 
                             {item.fieldChanges && item.fieldChanges.length > 0 && (
@@ -6481,6 +6563,105 @@ const VendorsTab = () => {
                 Close
               </Button>
             )}
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Edit Preview Row Modal */}
+      <Dialog
+        isOpen={editingVendorPreviewIdx !== null}
+        onClose={() => setEditingVendorPreviewIdx(null)}
+        title="Edit Vendor Row Details in Import Wizard"
+        className="!max-w-[50vw] !w-[50vw] !rounded-xl"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="bg-blue-50 border border-blue-100 p-2.5 rounded-md text-blue-800 font-semibold">
+            Edit details for row #{editingVendorPreviewIdx !== null ? editingVendorPreviewIdx + 1 : ''} ({vendorPreviewFormData.vendorId || 'Auto'})
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Vendor Name *"
+              id="pe_name"
+              value={vendorPreviewFormData.name || ''}
+              onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, name: e.target.value })}
+              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
+            />
+            <Input
+              label="Company Name"
+              id="pe_company"
+              value={vendorPreviewFormData.company || ''}
+              onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, company: e.target.value })}
+              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Primary Email *"
+              id="pe_email"
+              type="email"
+              value={vendorPreviewFormData.email || ''}
+              onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, email: e.target.value })}
+              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
+            />
+            <Input
+              label="Phone Number"
+              id="pe_phone"
+              value={vendorPreviewFormData.phone || ''}
+              onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, phone: e.target.value })}
+              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Category"
+              id="pe_category"
+              value={vendorPreviewFormData.category || 'Food Processor'}
+              onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, category: e.target.value })}
+              options={[
+                { value: 'Food Processor', label: 'Food Processor' },
+                { value: 'Contract Manufacturer', label: 'Contract Manufacturer' },
+                { value: 'Retail Brand', label: 'Retail Brand' },
+                { value: 'Fresh Fruits Supplier', label: 'Fresh Fruits Supplier' },
+                { value: 'Other', label: 'Other' }
+              ]}
+              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
+            />
+            <Input
+              label="GSTIN Number"
+              id="pe_gstin"
+              value={vendorPreviewFormData.gstin || ''}
+              onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, gstin: e.target.value.toUpperCase() })}
+              className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md font-mono"
+            />
+          </div>
+
+          <Input
+            label="Address"
+            id="pe_address"
+            value={vendorPreviewFormData.address || ''}
+            onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, address: e.target.value })}
+            className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md"
+          />
+
+          <TextArea
+            label="Notes & Remarks"
+            id="pe_notes"
+            rows={2}
+            value={vendorPreviewFormData.notes || ''}
+            onChange={(e) => setVendorPreviewFormData({ ...vendorPreviewFormData, notes: e.target.value })}
+            className="!text-xs !py-1.5 !px-2.5 !rounded-md"
+          />
+
+          <div className="pt-3 flex items-center justify-end space-x-2 border-t border-slate-100">
+            <Button variant="outline" size="sm" onClick={() => setEditingVendorPreviewIdx(null)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveVendorPreviewRow} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
+              ✓ Save Row Details
+            </Button>
           </div>
         </div>
       </Dialog>
