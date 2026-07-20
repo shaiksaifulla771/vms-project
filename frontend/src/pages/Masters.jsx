@@ -5257,7 +5257,8 @@ const VendorsTab = () => {
                     />
                   </TableHead>
                 )}
-                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">Vendor Name</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[90px] max-w-[90px] whitespace-nowrap">Vendor Code</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap">Vendor Name</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Company</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Notes/Desc</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">GST Reg</TableHead>
@@ -5275,15 +5276,11 @@ const VendorsTab = () => {
                       <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
                     </TableCell>
                     )}
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[120px] max-w-[120px]">
-                      <div className="flex items-center justify-between group/code">
-                        <div className="w-full">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-blue-600">{v.vendorId}</span>
-                          </div>
-                          <span className="block truncate text-xs font-semibold text-slate-800 capitalize">{v.name ? v.name.toLowerCase() : "-"}</span>
-                        </div>
-                      </div>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600">
+                      {v.vendorId || '-'}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize truncate max-w-[140px]">
+                      {v.name ? v.name.toLowerCase() : "-"}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium truncate max-w-[120px]">
                       {v.company || "-"}
