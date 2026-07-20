@@ -5422,55 +5422,88 @@ const VendorsTab = () => {
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600">
                       {v.vendorId || '-'}
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize truncate max-w-[140px]" title={v.name || ''}>
-                      <span className="truncate block" title={v.name || ''}>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize relative group/vtooltip max-w-[140px]">
+                      <span className="truncate block cursor-pointer" title={v.name || ''}>
                         {v.name ? v.name.toLowerCase() : "-"}
                       </span>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium truncate max-w-[120px]">
-                      <span className="truncate block cursor-pointer" title={v.company || ''}>{v.company || "-"}</span>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[10px] text-slate-500 truncate max-w-[120px]">
-                      {v.notes || "-"}
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200">
-                      {v.gstList && v.gstList.length > 0 && v.gstList[0].gstin ? (
-                        <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                          {v.gstList[0].gstin}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 italic">No GST</span>
+                      {v.name && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/vtooltip:block z-50 bg-slate-900 text-white text-[11px] font-semibold px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none capitalize">
+                          {v.name}
+                        </div>
                       )}
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200">
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-medium inline-block border border-slate-200 capitalize shadow-sm">
-                        {v.category}
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium relative group/ctooltip max-w-[120px]">
+                      <span className="truncate block cursor-pointer" title={v.company || ''}>
+                        {v.company || "-"}
                       </span>
+                      {v.company && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/ctooltip:block z-50 bg-slate-900 text-white text-[11px] font-semibold px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none">
+                          {v.company}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-500 max-w-[130px] truncate" title={v.notes || ''}>
+                      <span className="truncate block" title={v.notes || ''}>{v.notes || '-'}</span>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-600 font-mono">
+                      {v.hasNoGst ? (
+                        <span className="text-[10px] text-slate-400 italic">No GST</span>
+                      ) : (v.gstList && v.gstList.length > 0) ? (
+                        <div className="flex items-center space-x-1" title={v.gstList.map(g => `${g.state}: ${g.gstin}`).join(' | ')}>
+                          <span className="truncate max-w-[85px] font-bold text-blue-600">{v.gstList[0].gstin}</span>
+                          {v.gstList.length > 1 && (
+                            <span className="px-1 py-0.2 bg-blue-100 text-blue-800 text-[9px] font-bold rounded">+${v.gstList.length - 1}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="truncate max-w-[100px]" title={v.gstin || ''}>{v.gstin || '-'}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700">
+                      {v.category || 'Other'}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[110px] max-w-[110px]">
-                      <span className={"px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm inline-flex items-center space-x-1 " + (v.status === "Active" ? "bg-green-100 text-green-700 border border-green-200" : v.status === "Draft" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-red-100 text-red-700 border border-red-200")}>
-                        <span className={"h-1.5 w-1.5 rounded-full " + (v.status === "Active" ? "bg-green-500" : v.status === "Draft" ? "bg-amber-500" : "bg-red-500")}></span>
-                        <span>{v.status}</span>
-                      </span>
+                      <Badge className={v.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]' : 'bg-slate-100 text-slate-700 border-slate-200 text-[10px]'}>
+                        {v.status || 'Active'}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 max-w-[160px] truncate">
-                      {v.email ? (
-                        <a href={`mailto:${v.email}`} onClick={e => e.stopPropagation()} className="text-[11px] text-blue-600 hover:underline font-medium truncate block">{v.email}</a>
-                      ) : <span className="text-[11px] text-slate-400">-</span>}
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-blue-600 font-medium relative group/etooltip max-w-[140px]">
+                      <span className="truncate block cursor-pointer" title={v.email || ''}>
+                        {v.email || "-"}
+                      </span>
+                      {v.email && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/etooltip:block z-50 bg-slate-900 text-white text-[11px] font-semibold px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none lowercase">
+                          {v.email}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-right border-r border-slate-200 w-[120px] max-w-[120px]">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }} className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-400 transition-colors" title="Edit Vendor">
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
+                          className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="View Full Details"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
+                          className="p-1 rounded text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                          title="Edit Vendor"
+                        >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }} className="p-1 hover:bg-red-50 hover:text-red-600 rounded text-slate-400 transition-colors" title="Delete Vendor">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
+                          className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          title="Delete Vendor"
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
+                ))}</TableBody>
             </Table>
           )}
         </CardContent>
