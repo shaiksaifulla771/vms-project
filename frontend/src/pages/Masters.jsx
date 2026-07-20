@@ -3944,6 +3944,57 @@ const VendorsTab = () => {
     };
   };
 
+  const handleUpdateIncompleteVendorRow = (idx, field, val) => {
+    setEditableVendorItems(prev => {
+      const list = [...prev];
+      const item = { ...list[idx], [field]: val };
+      
+      const errors = [];
+      if (!item.name || !item.name.trim()) errors.push("Vendor Name is missing.");
+      if (!item.email || !item.email.trim()) {
+        errors.push("Email is missing.");
+      } else if (!/\S+@\S+\.\S+/.test(item.email.trim())) {
+        errors.push(`Invalid email: ${item.email}`);
+      }
+
+      item.validationErrors = errors;
+
+      if (errors.length === 0) {
+        if (!item.vendorId) {
+          const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
+          const usedCodes = new Set([
+            ...systemExistingCodes,
+            ...list.map(i => (i.vendorId || '').toUpperCase().trim()).filter(Boolean)
+          ]);
+          let num = 1001;
+          let code = `V${num}`;
+          while (usedCodes.has(code)) {
+            num++;
+            code = `V${num}`;
+          }
+          item.vendorId = code;
+        }
+      }
+
+      list[idx] = item;
+
+      const validNew = list.filter(i => !i.isExistingMatch && i.validationErrors.length === 0 && !i.isDuplicate);
+      const existingMatch = list.filter(i => i.isExistingMatch && i.validationErrors.length === 0 && !i.isDuplicate);
+      const rejected = list.filter(i => i.validationErrors.length > 0 || i.isDuplicate).map(i => i.validationErrors.join(', '));
+
+      setVendorImportSummary({
+        total: list.length,
+        acceptedCount: validNew.length,
+        existingMatchCount: existingMatch.length,
+        rejectedCount: rejected.length,
+        duplicateCount: 0,
+        rejected
+      });
+
+      return list;
+    });
+  };
+
   const processVendorExcelFile = async (file) => {
     let baseSequence = null;
     try {
@@ -6035,6 +6086,85 @@ const VendorsTab = () => {
                   {vendorImportSummary.rejected.map((err, idx) => (
                     <span key={idx} className="text-[10px] text-red-600 font-medium block leading-tight">• {err}</span>
                   ))}
+                </div>
+              )}
+
+              {/* ── BULK ENTRY: Incomplete Records panel (Inline Editing) ── */}
+              {isVendorAutoEntry && (editableVendorItems.filter(i => i.validationErrors.length > 0).length > 0) && (
+                <div className="space-y-2 p-3 border border-amber-300 rounded-md bg-amber-50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center space-x-1.5">
+                      <Info className="h-3.5 w-3.5 text-amber-600" />
+                      <span>Incomplete Records ({editableVendorItems.filter(i => i.validationErrors.length > 0).length}) — Fill Missing Details</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-200 text-amber-800 font-bold px-2 py-0.5 rounded-full">
+                      Action Required
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-800 font-medium">
+                    Some rows in your spreadsheet are missing required fields. Fill in the missing information below to assign a Vendor Code and include them in the import.
+                  </p>
+
+                  <div className="max-h-52 overflow-y-auto space-y-2 pt-1">
+                    {editableVendorItems.map((item, idx) => {
+                      if (item.validationErrors.length === 0) return null;
+
+                      return (
+                        <div key={idx} className="p-2.5 rounded border border-amber-200 bg-white text-xs space-y-2 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-amber-700 uppercase">Row #{idx + 1} — Missing Info</span>
+                            <span className="text-[9px] text-red-600 font-semibold">{item.validationErrors.join(' | ')}</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Vendor Name *</label>
+                              <input
+                                type="text"
+                                value={item.name || ''}
+                                placeholder="Enter vendor name..."
+                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'name', e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Primary Email *</label>
+                              <input
+                                type="email"
+                                value={item.email || ''}
+                                placeholder="Enter vendor email..."
+                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'email', e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Phone Number</label>
+                              <input
+                                type="text"
+                                value={item.phone || ''}
+                                placeholder="Enter phone..."
+                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'phone', e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Company</label>
+                              <input
+                                type="text"
+                                value={item.company || ''}
+                                placeholder="Enter company..."
+                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'company', e.target.value)}
+                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
