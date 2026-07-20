@@ -3455,8 +3455,26 @@ const VendorsTab = () => {
   const [vendorBatchEditItems, setVendorBatchEditItems] = useState([]);
   const [vendorBatchEditIdx, setVendorBatchEditIdx] = useState(0);
   const [isVendorBatchEditModalOpen, setIsVendorBatchEditModalOpen] = useState(false);
-  
   // Bulk Edit / Import logic for Vendors
+  const handleVendorBatchEdit = () => {
+    const itemsToEdit = vendors.filter(v => selectedVendorRowIds.has(v._id));
+    if (itemsToEdit.length > 0) {
+      setVendorBatchEditItems(itemsToEdit.map(i => ({...i})));
+      setVendorBatchEditIdx(0);
+      setIsVendorBatchEditModalOpen(true);
+    }
+  };
+
+  const handleVendorRowSelect = (id) => {
+    const newSet = new Set(selectedVendorRowIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedVendorRowIds(newSet);
+  };
+
   const handleVendorImportExcel = async (e) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
