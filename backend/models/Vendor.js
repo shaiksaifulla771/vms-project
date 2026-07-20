@@ -14,7 +14,7 @@ const VendorSchema = new mongoose.Schema({
   },
   company: {
     type: String,
-    required: [true, 'Please provide company name'],
+    default: '',
     trim: true,
   },
   email: {
@@ -28,11 +28,13 @@ const VendorSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: [true, 'Please provide vendor phone number'],
+    default: '',
+    trim: true,
   },
   address: {
     type: String,
-    required: [true, 'Please provide vendor address'],
+    default: '',
+    trim: true,
   },
   address2: {
     type: String,
@@ -56,7 +58,7 @@ const VendorSchema = new mongoose.Schema({
   },
   country: {
     type: String,
-    default: '',
+    default: 'India',
     trim: true,
   },
   gstin: {
@@ -74,9 +76,6 @@ const VendorSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
-  
-  
   contacts: [
     {
       name: { type: String, trim: true, default: '' },
@@ -84,6 +83,9 @@ const VendorSchema = new mongoose.Schema({
       role: { type: String, trim: true, default: 'Other' }
     }
   ],
+  primaryContactName: { type: String, default: '', trim: true },
+  primaryContactPhone: { type: String, default: '', trim: true },
+  primaryContactDesignation: { type: String, default: '', trim: true },
   notes: {
     type: String,
     default: '',
@@ -91,8 +93,8 @@ const VendorSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    required: [true, 'Please provide vendor category'],
-    enum: ['Food Processor', 'Contract Manufacturer', 'Retail Brand', 'Fresh Fruits Supplier', 'Other'],
+    default: 'Other',
+    trim: true,
   },
   subCategory: {
     type: String,

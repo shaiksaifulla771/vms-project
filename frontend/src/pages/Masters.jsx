@@ -4454,24 +4454,29 @@ const VendorsTab = () => {
       const formattedData = {
         ...formData,
         name: formData.name.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
-        company: (formData.company || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
+        company: (formData.company || formData.name).trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         email: formData.email.trim().toLowerCase(),
         primaryContactName: (formData.primaryContactName || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         primaryContactDesignation: (formData.primaryContactDesignation || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
-        gstList: formData.gstList.map(gst => ({
-          state: gst.state,
-          gstin: gst.gstin.trim().toUpperCase()
+        gstList: (formData.gstList || []).map(gst => ({
+          state: gst.state || '',
+          gstin: (gst.gstin || '').trim().toUpperCase()
         }))
       };
 
       if (editingId) {
-        await api.put(`/api/vendors/${editingId}`, formattedData);
+        const res = await api.put(`/api/vendors/${editingId}`, formattedData);
+        if (res.data && res.data.data) {
+          setVendors(prev => prev.map(v => v._id === editingId ? res.data.data : v));
+        }
         showToast("Vendor configurations updated successfully.");
       } else {
-        await api.post('/api/vendors', formattedData);
+        const res = await api.post('/api/vendors', formattedData);
+        if (res.data && res.data.data) {
+          setVendors(prev => [res.data.data, ...prev]);
+        }
         showToast("Successfully added 1 new vendor record.");
 
-        // Evict draft from FIFO queue on successful register
         if (currentDraftId) {
           setDrafts((prev) => {
             const filtered = prev.filter((d) => d.id !== currentDraftId);
@@ -4480,12 +4485,13 @@ const VendorsTab = () => {
           });
         }
       }
-      fetchVendors();
+      await fetchVendors();
       handleCloseModal();
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.error || 'Failed to submit vendor details.';
       setFormErrors({ form: msg });
+      showToast(msg, 'error');
     } finally {
       setSubmitLoading(false);
     }
@@ -4870,13 +4876,15 @@ const VendorsTab = () => {
       const data = await res.json();
       if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice?.length > 0) {
         const po = data[0].PostOffice[0];
+        const newCity = po.District || po.Name || '';
+        const newState = po.State || '';
         setFormData(prev => ({
           ...prev,
-          city: prev.city || po.District || po.Name || '',
-          state: prev.state || po.State || '',
-          country: prev.country || 'India'
+          city: newCity,
+          state: newState,
+          country: 'India'
         }));
-        showToast(`Location auto-filled: ${po.District}, ${po.State}`, 'success');
+        showToast(`Location updated for PIN ${code}: ${newCity}, ${newState}`, 'success');
       }
     } catch (e) {
       console.warn('PIN lookup failed', e);
