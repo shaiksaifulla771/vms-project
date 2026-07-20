@@ -4332,7 +4332,7 @@ const VendorsTab = () => {
         const sorted = [...res.data.data].sort((a, b) => {
           const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
           const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-          return numA - numB;
+          return numB - numA;
         });
         setVendors(sorted);
       }
@@ -4599,7 +4599,7 @@ const VendorsTab = () => {
           return list.sort((a, b) => {
             const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
             const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-            return numA - numB;
+            return numB - numA;
           });
         });
         }
