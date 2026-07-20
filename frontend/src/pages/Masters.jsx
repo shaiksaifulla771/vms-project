@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
@@ -48,6 +48,198 @@ const Masters = () => {
 // MATERIALS TAB COMPONENT
 // -------------------------------------------------------------
 let toastIdCounter = 0;
+
+const getNextAutoCounter = (baseSequence = null) => {
+  if (baseSequence) return baseSequence;
+  
+  // Fallback if sequence fails
+  let maxCounter = 1000;
+  materials.forEach(m => {
+    if (m.code) {
+      const match = m.code.toString().match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (!isNaN(num) && num > maxCounter) {
+          maxCounter = num;
+        }
+      }
+    }
+  });
+  return maxCounter + 1;
+}
+
+const getRowValueIgnoreCase = (row, keys) => {
+  for (const rowKey in row) {
+    const normalizedRowKey = rowKey.trim().toLowerCase().replace(/[\s_-]/g, '');
+    for (const key of keys) {
+      const normalizedKey = key.toLowerCase().replace(/[\s_-]/g, '');
+      if (normalizedRowKey === normalizedKey) {
+        return row[rowKey];
+      }
+    }
+  }
+  return null;
+}
+
+const validateRowData = (item, isAutoEntryVal, systemExistingCodes, importedCodesInBatch, autoCounterRef, fullMaterialsList) => {
+  const errors = [];
+  const warnings = [];
+  const name = (item.name || '').toString().trim();
+  const code = (item.code || '').toString().trim();
+  const unit = (item.unit || '').toString().trim().toLowerCase();
+  const type = (item.type || '').toString().trim();
+  const subcategory = (item.subcategory || '').toString().trim();
+  const description = (item.description || '').toString().trim();
+  const status = (item.status || 'Active').toString().trim();
+
+  if (!name) {
+    errors.push("Material Name is missing.");
+  }
+
+  // UOM: case-insensitive, accept L/l/ltr/litre, kg, gm, pcs
+  const validUnits = ['pcs', 'kg', 'gm', 'l', 'ltr', 'litre', 'liters', 'nos', 'box', 'pack', 'set', 'mtr', 'cm', 'mm'];
+  if (!validUnits.includes(unit.toLowerCase())) {
+    warnings.push(`UOM '${unit || ''}' is non-standard. It will be saved as entered.`);
+  }
+
+  const normalizedType = type === 'Raw' || type === 'Raw Material' ? 'Raw Material' 
+                       : type === 'Finished' || type === 'Finished Goods' ? 'Finished Goods'
+                       : type === 'Packing' || type === 'Packing Material' ? 'Packing Material' : null;
+  if (!normalizedType) {
+    errors.push(`Invalid Category '${type || ''}'. Must be Raw Material, Finished Goods, or Packing Material.`);
+  }
+
+  let matchedSubcat = null;
+  if (normalizedType && subcategory) {
+    matchedSubcat = (subcategoryMap[normalizedType] || []).find(s => s.value.toLowerCase() === subcategory.toLowerCase());
+    if (!matchedSubcat) {
+      // Accept as-is but warn — do NOT block the import
+      warnings.push(`Sub-Category '${subcategory}' is not in the predefined list for '${normalizedType}'. It will be saved as entered.`);
+      matchedSubcat = { value: subcategory }; // use the raw value
+    }
+  } else if (!subcategory) {
+    // Missing sub-category is a warning, not an error
+    warnings.push("Sub-Category is missing. It will be left blank.");
+  }
+
+  let finalCode = '';
+  let isUpdatingExisting = false;
+  let fieldChanges = [];
+
+  if (isAutoEntryVal) {
+    // ─── BULK ENTRY MODE ─────────────────────────────────────────────────────
+    // Ignore Excel codes. Look up by Name + Type.
+    // Found in DB → mark existing (Replace/Skip dialog)
+    // Not found   → auto-generate code from 2001+
+
+    const existingByName = (fullMaterialsList || []).find(m =>
+      m.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+      m.type.trim().toLowerCase() === (normalizedType || type).trim().toLowerCase()
+    );
+
+    if (existingByName) {
+      finalCode = existingByName.code.toUpperCase();
+      isUpdatingExisting = true;
+      warnings.push(`'${name}' already exists in the database (Code: ${existingByName.code}). Please choose to Replace or Skip.`);
+    } else {
+      let nextVal = autoCounterRef.val;
+      finalCode = `M${nextVal}`;
+      autoCounterRef.val++;
+      while (systemExistingCodes.includes(finalCode) || importedCodesInBatch.has(finalCode)) {
+        nextVal = autoCounterRef.val;
+        finalCode = `M${nextVal}`;
+        autoCounterRef.val++;
+      }
+    }
+
+  } else {
+    // ─── BULK UPDATE MODE ────────────────────────────────────────────────────
+    // Match by CODE from Excel → compute field-level diff → Accept/Skip per row
+
+    const excelCode = (code || '').toString().trim().toUpperCase();
+
+    if (excelCode) {
+      // Automatically prepend 'M' if it's just a number
+      const isPureNum = /^\d+$/.test(excelCode);
+      finalCode = isPureNum ? `M${excelCode}` : excelCode;
+
+      const existingByCode = (fullMaterialsList || []).find(
+        m => m.code.toUpperCase().trim() === finalCode
+      );
+
+      if (existingByCode) {
+        isUpdatingExisting = true;
+
+        const newStatus = ['active', 'inactive'].includes(status.toLowerCase())
+          ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive')
+          : 'Active';
+        const newSubcat = matchedSubcat ? matchedSubcat.value : subcategory;
+        const newType   = normalizedType || type;
+
+        const fieldDefs = [
+          { label: 'Name',         oldVal: existingByCode.name        || '', newVal: name        },
+          { label: 'UOM',          oldVal: existingByCode.unit        || '', newVal: unit        },
+          { label: 'Category',     oldVal: existingByCode.type        || '', newVal: newType     },
+          { label: 'Sub-Category', oldVal: existingByCode.subcategory || '', newVal: newSubcat   },
+          { label: 'Status',       oldVal: existingByCode.status      || '', newVal: newStatus   },
+          { label: 'Description',  oldVal: existingByCode.description || '', newVal: description },
+        ];
+
+        fieldChanges = fieldDefs.filter(f =>
+          f.oldVal.toString().trim().toLowerCase() !== f.newVal.toString().trim().toLowerCase()
+        );
+
+        if (fieldChanges.length === 0) {
+          warnings.push(`Code '${finalCode}': No changes detected — data is identical to the database record.`);
+        } else {
+          warnings.push(`Code '${finalCode}': ${fieldChanges.length} field(s) will be updated. Review and confirm.`);
+        }
+      }
+      // else: code not in DB → treat as new, use provided code as-is
+
+    } else {
+      // No code in Excel — fall back to name+type lookup
+      const existingByName = (fullMaterialsList || []).find(m =>
+        m.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        m.type.trim().toLowerCase() === (normalizedType || type).trim().toLowerCase()
+      );
+      if (existingByName) {
+        finalCode = existingByName.code.toUpperCase();
+        isUpdatingExisting = true;
+        warnings.push(`'${name}' matched by name in database (Code: ${existingByName.code}). Review and confirm.`);
+      } else {
+        // Genuinely new — auto-generate code
+        let nextVal = autoCounterRef.val;
+        finalCode = `M${nextVal}`;
+        autoCounterRef.val++;
+        while (systemExistingCodes.includes(finalCode) || importedCodesInBatch.has(finalCode)) {
+          nextVal = autoCounterRef.val;
+          finalCode = `M${nextVal}`;
+          autoCounterRef.val++;
+        }
+      }
+    }
+  }
+
+  return {
+    errors,
+    warnings,
+    isUpdatingExisting,
+    fieldChanges,
+    item: {
+      name,
+      code: finalCode,
+      unit,
+      type: normalizedType || type,
+      subcategory: matchedSubcat ? matchedSubcat.value : subcategory,
+      description,
+      status: ['active', 'inactive'].includes(status.toLowerCase())
+        ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive')
+        : 'Active'
+    }
+  };
+}
+
 
 const MaterialsTab = () => {
   const [materials, setMaterials] = useState([]);
@@ -3446,16 +3638,34 @@ const MaterialsTab = () => {
 // VENDORS TAB COMPONENT (Reused from our previous VMS build)
 // -------------------------------------------------------------
 const VendorsTab = () => {
+  const vendorFileInputRef = useRef(null);
   const [isVendorImportModalOpen, setIsVendorImportModalOpen] = useState(false);
   const [isVendorAutoEntry, setIsVendorAutoEntry] = useState(false);
   const [vendorImportSummary, setVendorImportSummary] = useState(null);
   const [vendorImportSearch, setVendorImportSearch] = useState('');
+  const [vendorBulkUpdateTab, setVendorBulkUpdateTab] = useState('new');
+  const [editableVendorItems, setEditableVendorItems] = useState([]);
+  const [vendorConfirmedReplacements, setVendorConfirmedReplacements] = useState(new Set());
+  const [vendorSkippedItems, setVendorSkippedItems] = useState(new Set());
+  const [vendorCurrentFileName, setVendorCurrentFileName] = useState('');
   const [isVendorSelectionMode, setIsVendorSelectionMode] = useState(false);
   const [selectedVendorRowIds, setSelectedVendorRowIds] = useState(new Set());
   const [vendorBatchEditItems, setVendorBatchEditItems] = useState([]);
   const [vendorBatchEditIdx, setVendorBatchEditIdx] = useState(0);
   const [isVendorBatchEditModalOpen, setIsVendorBatchEditModalOpen] = useState(false);
-  // Bulk Edit / Import logic for Vendors
+
+  // Reset wizard on modal close
+  React.useEffect(() => {
+    if (!isVendorImportModalOpen) {
+      setVendorImportSearch('');
+      setVendorImportSummary(null);
+      setEditableVendorItems([]);
+      setVendorConfirmedReplacements(new Set());
+      setVendorSkippedItems(new Set());
+    }
+  }, [isVendorImportModalOpen]);
+
+  // Bulk Edit selected rows
   const handleVendorBatchEdit = () => {
     const itemsToEdit = vendors.filter(v => selectedVendorRowIds.has(v._id));
     if (itemsToEdit.length > 0) {
@@ -3467,44 +3677,414 @@ const VendorsTab = () => {
 
   const handleVendorRowSelect = (id) => {
     const newSet = new Set(selectedVendorRowIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
+    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
     setSelectedVendorRowIds(newSet);
   };
 
-  const handleVendorImportExcel = async (e) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    const formData = new FormData();
-    formData.append('spreadsheet', file);
-    formData.append('isAutoEntry', isVendorAutoEntry);
-    
+  // Delete selected vendors
+  const handleDeleteSelectedVendors = async () => {
+    if (selectedVendorRowIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedVendorRowIds.size} selected vendor(s)? This cannot be undone.`)) return;
+    let deleted = 0, failed = 0;
+    for (const id of selectedVendorRowIds) {
+      try { await api.delete(`/api/vendors/${id}`); deleted++; }
+      catch (e) { console.error(e); failed++; }
+    }
+    showToast(`${deleted} vendor(s) deleted${failed > 0 ? `, ${failed} failed` : ''}`, deleted > 0 ? 'success' : 'error');
+    setSelectedVendorRowIds(new Set());
+    fetchVendors();
+  };
+
+  // Helper: case-insensitive column key lookup
+  const getVendorRowVal = (row, keys) => {
+    for (const rowKey in row) {
+      const nk = rowKey.trim().toLowerCase().replace(/[\s_-]/g, '');
+      for (const key of keys) {
+        if (nk === key.toLowerCase().replace(/[\s_-]/g, '')) return row[rowKey];
+      }
+    }
+    return null;
+  };
+
+  // Validate and classify a vendor row from Excel
+  const getNextVendorAutoCounter = (baseSequence = null) => {
+    if (baseSequence) return baseSequence;
+    let maxCounter = 1000;
+    vendors.forEach(v => {
+      if (v.vendorId) {
+        const match = v.vendorId.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
+            maxCounter = num;
+          }
+        }
+      }
+    });
+    return maxCounter + 1;
+  };
+
+  const validateVendorRow = (item, isAutoEntryVal, systemExistingCodes, importedCodesInBatch, autoCounterRef, fullVendorsList) => {
+    const errors = [];
+    const warnings = [];
+    const name = (item.name || '').toString().trim();
+    const company = (item.company || name || '').toString().trim();
+    const email = (item.email || '').toString().trim().toLowerCase();
+    const phone = (item.phone || '').toString().trim();
+    const category = (item.category || 'Food Processor').toString().trim();
+    const subCategory = (item.subCategory || '').toString().trim();
+    const status = (item.status || 'Active').toString().trim();
+    const address = (item.address || '').toString().trim();
+    const city = (item.city || '').toString().trim();
+    const state = (item.state || '').toString().trim();
+    const country = (item.country || 'India').toString().trim();
+    const zipCode = (item.zipCode || '').toString().trim();
+    const gstin = (item.gstin || '').toString().trim().toUpperCase();
+    const notes = (item.notes || '').toString().trim();
+
+    if (!name) errors.push("Vendor Name is missing.");
+    if (!email) {
+      errors.push("Email is missing.");
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      errors.push(`Invalid email address format: '${email}'`);
+    }
+
+    let finalVendorId = '';
+    let isUpdatingExisting = false;
+    let fieldChanges = [];
+    let matchedVendorId = null;
+
+    if (isAutoEntryVal) {
+      // Match by Email, Phone, or Name
+      const existingVendor = (fullVendorsList || []).find(v =>
+        (email && v.email && v.email.toLowerCase() === email) ||
+        (phone && v.phone && v.phone.trim() === phone) ||
+        (name && v.name && v.name.toLowerCase() === name.toLowerCase())
+      );
+
+      if (existingVendor) {
+        finalVendorId = existingVendor.vendorId ? existingVendor.vendorId.toUpperCase() : '';
+        isUpdatingExisting = true;
+        matchedVendorId = existingVendor._id;
+        warnings.push(`'${name}' (${email}) matches an existing vendor in the database (Code: ${existingVendor.vendorId}). Choose Replace or Skip.`);
+      } else {
+        let nextVal = autoCounterRef.val;
+        finalVendorId = `V${nextVal}`;
+        autoCounterRef.val++;
+        while (systemExistingCodes.includes(finalVendorId) || importedCodesInBatch.has(finalVendorId)) {
+          nextVal = autoCounterRef.val;
+          finalVendorId = `V${nextVal}`;
+          autoCounterRef.val++;
+        }
+      }
+    } else {
+      // Bulk Update Mode: Match by Code, Email, or Phone
+      const excelCode = (item.vendorId || '').toString().trim().toUpperCase();
+      let existingVendor = null;
+
+      if (excelCode) {
+        const isPureNum = /^\d+$/.test(excelCode);
+        finalVendorId = isPureNum ? `V${excelCode}` : excelCode;
+        existingVendor = (fullVendorsList || []).find(v => (v.vendorId || '').toUpperCase().trim() === finalVendorId);
+      }
+      if (!existingVendor && email) {
+        existingVendor = (fullVendorsList || []).find(v => (v.email || '').toLowerCase().trim() === email);
+      }
+      if (!existingVendor && phone) {
+        existingVendor = (fullVendorsList || []).find(v => (v.phone || '').trim() === phone);
+      }
+
+      if (existingVendor) {
+        isUpdatingExisting = true;
+        matchedVendorId = existingVendor._id;
+        finalVendorId = existingVendor.vendorId || finalVendorId;
+
+        const fieldDefs = [
+          { label: 'Vendor Name', oldVal: existingVendor.name || '', newVal: name },
+          { label: 'Company', oldVal: existingVendor.company || '', newVal: company },
+          { label: 'Email', oldVal: existingVendor.email || '', newVal: email },
+          { label: 'Phone', oldVal: existingVendor.phone || '', newVal: phone },
+          { label: 'Category', oldVal: existingVendor.category || '', newVal: category },
+          { label: 'Sub-Category', oldVal: existingVendor.subCategory || '', newVal: subCategory },
+          { label: 'Address', oldVal: existingVendor.address || '', newVal: address },
+          { label: 'GSTIN', oldVal: existingVendor.gstin || '', newVal: gstin },
+          { label: 'Status', oldVal: existingVendor.status || 'Active', newVal: status },
+          { label: 'Notes', oldVal: existingVendor.notes || '', newVal: notes }
+        ];
+
+        fieldChanges = fieldDefs.filter(f => f.oldVal.toString().trim().toLowerCase() !== f.newVal.toString().trim().toLowerCase());
+
+        if (fieldChanges.length === 0) {
+          warnings.push(`Vendor '${name}': No changes detected — data is identical to database record.`);
+        } else {
+          warnings.push(`Vendor '${name}': ${fieldChanges.length} field(s) will be updated. Review and confirm.`);
+        }
+      }
+    }
+
+    return {
+      item: {
+        name,
+        company: company || name,
+        email,
+        phone,
+        vendorId: finalVendorId,
+        category,
+        subCategory,
+        address,
+        city,
+        state,
+        country,
+        zipCode,
+        gstin,
+        notes,
+        status: ['active','inactive','draft'].includes(status.toLowerCase()) ? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase() : 'Active'
+      },
+      errors,
+      warnings,
+      isUpdatingExisting,
+      fieldChanges,
+      matchedVendorId
+    };
+  };
+
+  const recalculateVendorImportSummary = (allItemsList, systemExistingCodes, isAutoEntryVal, baseSequence = null) => {
+    const importedCodesInBatch = new Set();
+    const autoCounter = getNextVendorAutoCounter(baseSequence);
+    const autoCounterRef = { val: autoCounter };
+
+    const processedItems = allItemsList.map((item, index) => {
+      const rawItem = {
+        name: item.name,
+        company: item.company,
+        email: item.email,
+        phone: item.phone,
+        vendorId: item.vendorId,
+        primaryContactName: item.primaryContactName,
+        primaryContactPhone: item.primaryContactPhone,
+        primaryContactDesignation: item.primaryContactDesignation,
+        address: item.address,
+        city: item.city,
+        state: item.state,
+        country: item.country,
+        zipCode: item.zipCode,
+        gstin: item.gstin,
+        bankName: item.bankName,
+        bankAccountNumber: item.bankAccountNumber,
+        bankAccountHolder: item.bankAccountHolder,
+        ifscCode: item.ifscCode,
+        category: item.category,
+        subCategory: item.subCategory,
+        status: item.status,
+        notes: item.notes
+      };
+
+      const validation = validateVendorRow(rawItem, isAutoEntryVal, systemExistingCodes, importedCodesInBatch, autoCounterRef, vendors);
+
+      let isDuplicate = false;
+      let duplicateMsg = '';
+      const isExistingMatch = validation.isUpdatingExisting || false;
+
+      if (!isExistingMatch && validation.item.vendorId) {
+        const checkCode = validation.item.vendorId.toUpperCase();
+        if (importedCodesInBatch.has(checkCode)) {
+          isDuplicate = true;
+          duplicateMsg = `Duplicate Entry: Code '${validation.item.vendorId}' appears multiple times in spreadsheet.`;
+        }
+      }
+
+      if (isDuplicate) {
+        validation.errors.push(duplicateMsg);
+      } else if (validation.errors.length === 0 && validation.item.vendorId && !isExistingMatch) {
+        importedCodesInBatch.add(validation.item.vendorId.toUpperCase());
+      }
+
+      let existingVendorDetails = null;
+      if (isExistingMatch && validation.matchedVendorId) {
+        const existingV = vendors.find(v => v._id === validation.matchedVendorId);
+        if (existingV) {
+          existingVendorDetails = {
+            name: existingV.name,
+            vendorId: existingV.vendorId,
+            company: existingV.company,
+            email: existingV.email,
+            phone: existingV.phone,
+            category: existingV.category,
+            status: existingV.status || 'Active'
+          };
+        }
+      }
+
+      return {
+        ...validation.item,
+        isDuplicate,
+        isExistingMatch,
+        matchedVendorId: validation.matchedVendorId,
+        fieldChanges: validation.fieldChanges || [],
+        validationErrors: validation.errors.map(e => `Row ${index + 1}: ${e}`),
+        validationWarnings: validation.warnings,
+        existingVendorDetails
+      };
+    });
+
+    const validNew = processedItems.filter(i => !i.isExistingMatch && i.validationErrors.length === 0 && !i.isDuplicate);
+    const existingMatch = processedItems.filter(i => i.isExistingMatch && i.validationErrors.length === 0 && !i.isDuplicate);
+    const rejected = processedItems.filter(i => i.validationErrors.length > 0 || i.isDuplicate).map(i => i.validationErrors.join(', '));
+
+    return {
+      processedItems,
+      summary: {
+        total: processedItems.length,
+        acceptedCount: validNew.length,
+        existingMatchCount: existingMatch.length,
+        rejectedCount: rejected.length,
+        duplicateCount: 0,
+        rejected
+      }
+    };
+  };
+
+  const processVendorExcelFile = async (file) => {
+    let baseSequence = null;
+    try {
+      const seqRes = await api.get('/api/vendors/sequence-peek');
+      if (seqRes.data && seqRes.data.nextCode) {
+        const match = seqRes.data.nextCode.match(/\d+/);
+        if (match) baseSequence = parseInt(match[0], 10);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch sequence peek", e);
+    }
+
+    setVendorCurrentFileName(file.name);
+    setVendorConfirmedReplacements(new Set());
+    setVendorSkippedItems(new Set());
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet);
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+          showToast("Import file is empty", "error");
+          return;
+        }
+
+        const rawRowsMapped = rows.map(row => ({
+          name: (getVendorRowVal(row, ["vendorname", "name", "vendor_name", "vendor name"]) || '').toString().trim(),
+          company: (getVendorRowVal(row, ["company", "companyname", "company_name", "company name"]) || '').toString().trim(),
+          email: (getVendorRowVal(row, ["email", "emailaddress", "email_address", "primary email"]) || '').toString().trim().toLowerCase(),
+          phone: (getVendorRowVal(row, ["phone", "phonenumber", "phone_number", "mobile"]) || '').toString().trim(),
+          vendorId: (getVendorRowVal(row, ["vendorid", "vendor id", "vendor code", "vendor_code"]) || '').toString().trim(),
+          primaryContactName: (getVendorRowVal(row, ["primarycontactname", "contactname", "primary contact"]) || '').toString().trim(),
+          primaryContactPhone: (getVendorRowVal(row, ["primarycontactphone", "contactphone"]) || '').toString().trim(),
+          primaryContactDesignation: (getVendorRowVal(row, ["primarycontactdesignation", "designation"]) || '').toString().trim(),
+          address: (getVendorRowVal(row, ["address", "addressline1", "address line 1"]) || '').toString().trim(),
+          city: (getVendorRowVal(row, ["city"]) || '').toString().trim(),
+          state: (getVendorRowVal(row, ["state"]) || '').toString().trim(),
+          country: (getVendorRowVal(row, ["country"]) || '').toString().trim(),
+          zipCode: (getVendorRowVal(row, ["zipcode", "zip", "pincode", "pin"]) || '').toString().trim(),
+          gstin: (getVendorRowVal(row, ["gstin", "gst", "gstnumber", "gst number"]) || '').toString().trim().toUpperCase(),
+          bankName: (getVendorRowVal(row, ["bankname", "bank name", "bank"]) || '').toString().trim(),
+          bankAccountNumber: (getVendorRowVal(row, ["bankaccountnumber", "accountnumber", "acc no"]) || '').toString().trim(),
+          bankAccountHolder: (getVendorRowVal(row, ["bankaccountholder", "accountholder"]) || '').toString().trim(),
+          ifscCode: (getVendorRowVal(row, ["ifsccode", "ifsc"]) || '').toString().trim(),
+          category: (getVendorRowVal(row, ["category", "vendortype", "type"]) || 'Food Processor').toString().trim(),
+          subCategory: (getVendorRowVal(row, ["subcategory", "sub-category", "sub category"]) || '').toString().trim(),
+          status: (getVendorRowVal(row, ["status", "state"]) || 'Active').toString().trim(),
+          notes: (getVendorRowVal(row, ["notes", "description", "remarks"]) || '').toString().trim()
+        }));
+
+        const seenKeys = new Set();
+        const deduplicatedRows = [];
+        rawRowsMapped.forEach(row => {
+          const key = `${row.name}|${row.email}|${row.phone}`.toLowerCase();
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            deduplicatedRows.push(row);
+          }
+        });
+
+        const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
+        const { processedItems, summary } = recalculateVendorImportSummary(deduplicatedRows, systemExistingCodes, isVendorAutoEntry, baseSequence);
+
+        if (!isVendorAutoEntry && summary.existingMatchCount === 0 && summary.acceptedCount > 0) {
+          showToast("Bulk update requires existing vendor matches. Use Bulk Entry for new vendors.", "error");
+          setIsVendorImportModalOpen(false);
+          setVendorImportSummary(null);
+          return;
+        }
+
+        setVendorImportSummary(summary);
+        setEditableVendorItems(processedItems);
+        setVendorImportSearch('');
+      } catch (err) {
+        console.error(err);
+        showToast("Error reading Excel data file", "error");
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleVendorBatchImportSubmit = async () => {
+    const validToImport = editableVendorItems.filter((item, idx) => {
+      if (item.validationErrors.length > 0) return false;
+      if (item.isDuplicate) return false;
+      if (item.isExistingMatch) {
+        if (!isVendorAutoEntry) return !vendorSkippedItems.has(idx);
+        const noChange = !item.fieldChanges || item.fieldChanges.length === 0;
+        return noChange || vendorConfirmedReplacements.has(idx);
+      }
+      return true;
+    });
+
+    if (validToImport.length === 0) {
+      showToast("No items to import.", "error");
+      return;
+    }
+
     setSubmitLoading(true);
     try {
-      const res = await api.post('/api/vendors/batch-upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      if (res.data.success) {
-        showToast(`Successfully processed vendor spreadsheet`, 'success');
-        setVendorImportSummary({
-          inserted: res.data.insertedCount,
-          updated: res.data.updatedCount,
-          errors: res.data.errors,
-          errorsCount: res.data.errorsCount
-        });
-        fetchVendors();
+      let inserted = 0, updated = 0, skipped = 0;
+      for (const item of validToImport) {
+        try {
+          if (item.isExistingMatch && item.matchedVendorId) {
+            await api.put(`/api/vendors/${item.matchedVendorId}`, item);
+            updated++;
+          } else {
+            await api.post('/api/vendors', item);
+            inserted++;
+          }
+        } catch (e) {
+          console.error(e);
+          skipped++;
+        }
       }
+
+      const parts = [];
+      if (inserted > 0) parts.push(`${inserted} added`);
+      if (updated > 0) parts.push(`${updated} updated`);
+      if (skipped > 0) parts.push(`${skipped} failed`);
+      showToast(`✅ Import complete — ${parts.join(', ')}`, 'success');
+      fetchVendors();
+      setIsVendorImportModalOpen(false);
     } catch (err) {
       console.error(err);
-      const msg = err.response?.data?.error || 'Failed to import vendors';
-      showToast(msg, 'error');
+      showToast("Failed to save batch to database", "error");
     } finally {
       setSubmitLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleVendorImportExcel = (e) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    processVendorExcelFile(e.target.files[0]);
+    if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
   };
 
   const gstStateMap = {
@@ -3874,10 +4454,10 @@ const VendorsTab = () => {
       const formattedData = {
         ...formData,
         name: formData.name.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
-        company: formData.company.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
+        company: (formData.company || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         email: formData.email.trim().toLowerCase(),
-        primaryContactName: formData.primaryContactName.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
-        primaryContactDesignation: formData.primaryContactDesignation.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
+        primaryContactName: (formData.primaryContactName || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
+        primaryContactDesignation: (formData.primaryContactDesignation || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         gstList: formData.gstList.map(gst => ({
           state: gst.state,
           gstin: gst.gstin.trim().toUpperCase()
@@ -3886,8 +4466,10 @@ const VendorsTab = () => {
 
       if (editingId) {
         await api.put(`/api/vendors/${editingId}`, formattedData);
+        showToast("Vendor configurations updated successfully.");
       } else {
         await api.post('/api/vendors', formattedData);
+        showToast("Successfully added 1 new vendor record.");
 
         // Evict draft from FIFO queue on successful register
         if (currentDraftId) {
@@ -4206,6 +4788,101 @@ const VendorsTab = () => {
     printWindow.document.close();
   };
 
+  // Vendor toasts
+  const [vendorToasts, setVendorToasts] = useState([]);
+  const showToast = (message, type = 'success') => {
+    const id = Date.now();
+    setVendorToasts(prev => [...prev.slice(-3), { id, message, type }]);
+    setTimeout(() => setVendorToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  };
+
+  // Download template
+  const handleDownloadTemplate = () => {
+    const templateData = [
+      {
+        "Vendor Name": "Fresh Foods Co",
+        "Company": "Fresh Foods Ltd",
+        "Email": "contact@freshfoods.example.com",
+        "Phone": "9876543210",
+        "Primary Contact Name": "Rahul Sharma",
+        "Primary Contact Phone": "9876543210",
+        "Primary Contact Designation": "Sales Manager",
+        "Address": "123 Market Road",
+        "City": "Mumbai",
+        "State": "Maharashtra",
+        "Country": "India",
+        "Zip Code": "400001",
+        "GST Number": "27ABCDE1234F1Z5",
+        "Bank Name": "HDFC Bank",
+        "Bank Account Number": "123456789012",
+        "Bank Account Holder": "Fresh Foods Ltd",
+        "IFSC Code": "HDFC0001234",
+        "Category": "Food Processor",
+        "Sub-Category": "Raw Materials",
+        "Status": "Active",
+        "Notes": "Preferred supplier for raw spices"
+      },
+      {
+        "Vendor Name": "Global Packaging",
+        "Company": "Global Pack Inc",
+        "Email": "info@globalpack.example.com",
+        "Phone": "9988776655",
+        "Primary Contact Name": "Anita Desai",
+        "Primary Contact Phone": "9988776655",
+        "Primary Contact Designation": "Director",
+        "Address": "Phase 2 Industrial Area",
+        "City": "Pune",
+        "State": "Maharashtra",
+        "Country": "India",
+        "Zip Code": "411001",
+        "GST Number": "27XYZDE9876G1Z2",
+        "Bank Name": "SBI",
+        "Bank Account Number": "987654321098",
+        "Bank Account Holder": "Global Pack Inc",
+        "IFSC Code": "SBIN0009876",
+        "Category": "Contract Manufacturer",
+        "Sub-Category": "Bottles",
+        "Status": "Active",
+        "Notes": "Supplies glass and plastic bottles"
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vendor_Import_Template.xlsx');
+    XLSX.writeFile(wb, 'Vendor_Import_Template.xlsx');
+  };
+
+  // Batch wizard navigation
+  const handleVendorBatchWizardBack = () => {
+    setVendorBatchEditIdx(prev => Math.max(0, prev - 1));
+  };
+
+  const handleVendorBatchWizardSaveCurrent = () => {
+    setVendorBatchEditIdx(prev => Math.min((vendorBatchEditItems || []).length - 1, prev + 1));
+  };
+
+  // Zip/PIN code auto-fetch - fills city, state, country from India Post API
+  const handleZipCodeBlur = async (zip) => {
+    const code = (zip || formData.zipCode || '').trim();
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) return;
+    try {
+      const res = await fetch(`https://api.postalpincode.in/pincode/${code}`);
+      const data = await res.json();
+      if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice?.length > 0) {
+        const po = data[0].PostOffice[0];
+        setFormData(prev => ({
+          ...prev,
+          city: prev.city || po.District || po.Name || '',
+          state: prev.state || po.State || '',
+          country: prev.country || 'India'
+        }));
+        showToast(`Location auto-filled: ${po.District}, ${po.State}`, 'success');
+      }
+    } catch (e) {
+      console.warn('PIN lookup failed', e);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {/* Search & Filters */}
@@ -4242,6 +4919,29 @@ const VendorsTab = () => {
               </Button>
             )}
 
+
+            <Button
+              size="sm"
+              variant={isVendorSelectionMode ? "solid" : "outline"}
+              onClick={() => {
+                setIsVendorSelectionMode(!isVendorSelectionMode);
+                if (isVendorSelectionMode) setSelectedVendorRowIds(new Set()); // clear when toggling off
+              }}
+              className={`h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold text-xs shadow-sm transition-colors ${isVendorSelectionMode ? 'bg-blue-600 text-white hover:bg-blue-700 border-transparent' : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-50'}`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span>{isVendorSelectionMode ? 'Cancel Selection' : 'Select Options'}</span>
+            </Button>
+
+            {isVendorSelectionMode && selectedVendorRowIds.size > 0 && (
+              <button
+                onClick={handleDeleteSelectedVendors}
+                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm text-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete Selected ({selectedVendorRowIds.size})</span>
+              </button>
+            )}
             {(search || category || status || Object.values(columnFilters).some(v => v && v.length > 0)) && (
               <button
                 onClick={handleResetAllFilters}
@@ -4292,14 +4992,16 @@ const VendorsTab = () => {
                       <Plus className="h-3.5 w-3.5 text-slate-400" /><span>Manual Entry</span>
                     </button>
                     <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(true); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
-                      <Save className="h-3.5 w-3.5 text-slate-400" /><span>Auto Entry</span>
+                      <Save className="h-3.5 w-3.5 text-slate-400" /><span>Bulk Entry</span>
                     </button>
                     <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(false); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
                       <Save className="h-3.5 w-3.5 text-slate-400" /><span>Bulk Update</span>
                     </button>
-                    <button onClick={() => { setShowVendorFunctionList(false); handleVendorBatchEdit(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
-                      <Edit2 className="h-3.5 w-3.5 text-slate-400" /><span>Edit Selected</span>
+                    {isVendorSelectionMode && selectedVendorRowIds.size > 0 && (
+<button onClick={() => { setShowVendorFunctionList(false); handleVendorBatchEdit(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
+                      <Edit2 className="h-3.5 w-3.5 text-slate-400" /><span>Edit Selected ({selectedVendorRowIds.size})</span>
                     </button>
+)}
                   </div>
 
                 </>
@@ -4402,142 +5104,11 @@ const VendorsTab = () => {
             ) : (
               <Table className="border-t border-slate-200">
                 <TableHeader className="bg-slate-50 border-b border-slate-200">
-                  
-                  <TableRow
-                    key={v._id}
-                    className={`hover:bg-blue-50/50 transition-colors cursor-pointer group ${(isVendorSelectionMode && selectedVendorRowIds.has(v._id)) ? 'bg-blue-50' : ''}`}
-                    onClick={() => {
-                      if (isVendorSelectionMode) {
-                        handleVendorRowSelect(v._id);
-                      } else {
-                        setViewingVendor(v);
-                        setIsViewModalOpen(true);
-                      }
-                    }}
-                  >
-                    {isVendorSelectionMode && (
-                      <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-10 text-center" onClick={(e) => e.stopPropagation()}>
-                        <label className="flex items-center justify-center cursor-pointer p-1">
-                          <input
-                            type="checkbox"
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
-                            checked={selectedVendorRowIds.has(v._id)}
-                            onChange={() => handleVendorRowSelect(v._id)}
-                          />
-                        </label>
-                      </TableCell>
-                    )}
-                    <TableCell className="!px-2 !py-0.5 border-r border-slate-200 relative group/code">
-                      <div className="flex items-center justify-between cursor-default">
-                        <div className="w-full">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-blue-600">{v.vendorId}</span>
-                          </div>
-                          <span className="block truncate text-xs font-semibold text-slate-800 capitalize">{v.name ? v.name.toLowerCase() : "-"}</span>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium truncate max-w-[150px]">
-                      {v.company || "-"}
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[10px] text-slate-500 truncate max-w-[150px]">
-                      {v.notes || "-"}
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[100px] max-w-[100px] truncate">
-                      {v.gstList && v.gstList.length > 0 && v.gstList[0].gstin ? (
-                        <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                          {v.gstList[0].gstin}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 italic">No GST</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[100px] max-w-[100px] truncate">
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-medium inline-block border border-slate-200 capitalize shadow-sm">
-                        {v.category}
-                      </span>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[100px] max-w-[100px] truncate">
-                      <span className={"px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm inline-flex items-center space-x-1 " + (v.status === "Active" ? "bg-green-100 text-green-700 border border-green-200" : v.status === "Draft" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-red-100 text-red-700 border border-red-200")}>
-                        <span className={"h-1.5 w-1.5 rounded-full " + (v.status === "Active" ? "bg-green-500" : v.status === "Draft" ? "bg-amber-500" : "bg-red-500")}></span>
-                        <span>{v.status}</span>
-                      </span>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left text-[11px] text-slate-600 truncate w-auto">
-                      {v.email || "-"}
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-right w-[110px] max-w-[110px] whitespace-nowrap relative overflow-visible border-r border-slate-200">
-                      <div className="flex items-center justify-end space-x-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleToggleStatus(v); }}
-                          title="Toggle Status"
-                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
-                        >
-                          {v.status === 'Active' ? <ToggleRight className="h-3.5 w-3.5 text-blue-600" /> : <ToggleLeft className="h-3.5 w-3.5 text-slate-400" />}
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
-                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
-                          title="Edit Vendor"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
-                          className="p-0.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700"
-                          title="Delete Vendor"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                        <div className="relative">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenDropdownId(openDropdownId === v._id ? null : v._id);
-                            }}
-                            className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700 focus:outline-none"
-                            title="More actions"
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                          {openDropdownId === v._id && (
-                            <>
-                              <div 
-                                className="fixed inset-0 z-40 cursor-default"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenDropdownId(null);
-                                }}
-                              />
-                              <div className="absolute right-0 top-full mt-1.5 w-36 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOpenDropdownId(null);
-                                    setViewingVendor(v);
-                                    setIsViewModalOpen(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                                >
-                                  <span>View Registered Data</span>
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOpenDropdownId(null);
-                                    setViewingVendorAudit(v);
-                                    setIsAuditModalOpen(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                                >
-                                  <span>Revision History</span>
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
+                  <TableRow>
+                    <TableHead className="!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200">Vendor Name Draft</TableHead>
+                    <TableHead className="!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200">Company</TableHead>
+                    <TableHead className="!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200">Last Autosaved</TableHead>
+                    <TableHead className="!px-2.5 !py-1 text-right text-slate-600 font-bold text-[11px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4611,25 +5182,40 @@ const VendorsTab = () => {
             <Table className="border border-slate-200 w-full table-fixed">
               <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                 <TableRow>
+                  {isVendorSelectionMode && (
                   <TableHead className="!px-3 !py-1 w-[40px] max-w-[40px] text-center border-r border-slate-200 relative z-20">
-                    <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5" />
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                      checked={filteredVendors.length > 0 && filteredVendors.every(v => selectedVendorRowIds.has(v._id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedVendorRowIds(new Set(filteredVendors.map(v => v._id)));
+                        } else {
+                          setSelectedVendorRowIds(new Set());
+                        }
+                      }}
+                    />
                   </TableHead>
+                )}
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[120px] max-w-[120px] whitespace-nowrap">Vendor Name</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Company</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Notes/Desc</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">GST Reg</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Category</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap">Status</TableHead>
+                  <TableHead className="border-r border-slate-200">Email</TableHead>
                   <TableHead className="!px-2 !py-0.5 text-right text-slate-600 font-bold text-[11px] w-[120px] max-w-[120px] border-r border-slate-200">Actions</TableHead>
-                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] whitespace-nowrap">Email</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredVendors.map((v) => (
                   <TableRow key={v._id} className="hover:bg-slate-50/50 border-b border-slate-200">
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center">
-                      <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5" />
+                    {isVendorSelectionMode && (
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center" onClick={(e) => { e.stopPropagation(); handleVendorRowSelect(v._id); }}>
+                      <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
                     </TableCell>
+                    )}
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[120px] max-w-[120px]">
                       <div className="flex items-center justify-between group/code">
                         <div className="w-full">
@@ -4666,6 +5252,11 @@ const VendorsTab = () => {
                         <span>{v.status}</span>
                       </span>
                     </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 max-w-[160px] truncate">
+                      {v.email ? (
+                        <a href={`mailto:${v.email}`} onClick={e => e.stopPropagation()} className="text-[11px] text-blue-600 hover:underline font-medium truncate block">{v.email}</a>
+                      ) : <span className="text-[11px] text-slate-400">-</span>}
+                    </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-right border-r border-slate-200 w-[120px] max-w-[120px]">
                       <div className="flex items-center justify-end space-x-2">
                         <button onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }} className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-400 transition-colors" title="Edit Vendor">
@@ -4675,9 +5266,6 @@ const VendorsTab = () => {
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                    </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left text-[11px] text-slate-600 truncate max-w-[120px]">
-                      {v.email || "-"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -4692,7 +5280,7 @@ const VendorsTab = () => {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         title={editingId ? 'Edit Vendor details' : 'Register new vendor'}
-        className="!max-w-[50vw] !w-[50vw] !rounded-none"
+        className="!max-w-[85vw] !w-[85vw] !rounded-xl"
       >
         <form onSubmit={handleFormSubmit} className="space-y-6">
           {formErrors.form && (
@@ -5343,38 +5931,350 @@ const VendorsTab = () => {
         )}
       </Dialog>
 
-      {/* Vendor Import Modal */}
+      {/* Vendor Import Modal — Full Wizard */}
+      <input
+        type="file"
+        ref={vendorFileInputRef}
+        accept=".xlsx, .xls"
+        onChange={handleVendorImportExcel}
+        className="hidden"
+      />
       <Dialog
         isOpen={isVendorImportModalOpen}
         onClose={() => setIsVendorImportModalOpen(false)}
-        title={isVendorAutoEntry ? "Bulk Create Vendors" : "Bulk Update Vendors"}
+        title={isVendorAutoEntry ? 'Bulk Entry — Create Vendors (Auto-assigning V-codes)' : 'Bulk Update Vendors (Apply spreadsheet details)'}
+        className={isVendorAutoEntry ? "!max-w-[65vw] !w-[65vw] !rounded-none" : "!max-w-[92vw] !w-[92vw] !rounded-none"}
       >
         <div className="space-y-4">
-          <div className="p-4 bg-blue-50 text-blue-700 text-xs rounded border border-blue-100">
-            {isVendorAutoEntry ? "Upload an Excel file with new vendor details. Ensure headers match the template." : "Upload an Excel file containing Vendor IDs to update existing records."}
+          {/* Upload Area */}
+          <div className="border border-slate-200 rounded-lg p-6 text-center bg-slate-50 relative flex flex-col items-center justify-center space-y-3">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-full">
+              <Save className="h-6 w-6" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-700 block">
+                {isVendorAutoEntry ? 'Bulk Entry Ingestion — Upload Vendor Spreadsheet' : 'Upload Spreadsheet for Bulk Vendor Update'}
+              </span>
+              <span className="text-[10px] text-slate-400 block font-semibold mt-0.5">Supports Microsoft Excel files (.xlsx, .xls)</span>
+            </div>
+            
+            <div>
+              <input
+                type="file"
+                ref={vendorFileInputRef}
+                accept=".xlsx, .xls"
+                onChange={handleVendorImportExcel}
+                className="hidden"
+              />
+              <Button size="sm" onClick={() => vendorFileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 flex items-center space-x-1.5 rounded shadow">
+                <span>Upload File</span>
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Select Excel File</label>
-            <input 
-              type="file" 
-              accept=".xlsx, .xls, .csv" 
-              onChange={handleVendorImportExcel} 
-              className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
-          </div>
-          {vendorImportSummary && (
-            <div className="mt-4 p-4 border border-slate-200 rounded bg-slate-50 space-y-2">
-              <h4 className="font-bold text-slate-700 text-sm">Import Summary</h4>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>Total Processed: {vendorImportSummary.totalRows}</div>
-                <div className="text-green-600">Successfully created: {vendorImportSummary.insertedCount}</div>
-                <div className="text-amber-600">Updated: {vendorImportSummary.updatedCount}</div>
-                <div className="text-red-500">Failed: {vendorImportSummary.failedCount}</div>
-              </div>
+
+          {/* Download Template (Bulk Entry only) */}
+          {isVendorAutoEntry && (
+            <div className="flex items-center justify-between text-xs bg-slate-50 px-3 py-2 rounded-md border border-slate-200">
+              <span className="text-slate-500 font-medium">Need the format template?</span>
+              <button onClick={handleDownloadTemplate} className="text-blue-600 hover:underline font-bold text-xs focus:outline-none">Download Excel Template</button>
             </div>
           )}
-          <div className="pt-4 flex justify-end">
-            <Button variant="outline" type="button" onClick={() => setIsVendorImportModalOpen(false)}>Close</Button>
+
+          {/* Results after file uploaded */}
+          {vendorImportSummary && (
+            <div className="space-y-3 p-3 border border-slate-200 rounded-md bg-white">
+              {!isVendorAutoEntry && (
+                <div className="flex gap-2 justify-center mb-2">
+                  <span className="px-3 py-1 bg-amber-50 text-amber-700 font-bold text-xs rounded-full border border-amber-200">Changed ({vendorImportSummary.existingMatchCount || 0})</span>
+                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-200">New ({(vendorImportSummary.acceptedCount || 0) + (vendorImportSummary.duplicateCount || 0)})</span>
+                </div>
+              )}
+
+              {/* File success banner */}
+              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md flex items-center space-x-2 text-emerald-800 font-semibold mb-1">
+                <div className="p-0.5 bg-emerald-100 rounded-full text-emerald-600">
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                </div>
+                <div>
+                  <span className="block text-xs font-bold">File read and validated successfully!</span>
+                  <span className="block font-mono text-[10px] text-emerald-600 mt-0.5">{vendorCurrentFileName}</span>
+                </div>
+              </div>
+
+              {/* Summary row */}
+              <div className="flex items-center justify-between border-b pb-1.5 mb-1.5">
+                <span className="text-xs font-bold text-slate-700">Validation Results Summary</span>
+                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded">Total: {vendorImportSummary.total} rows</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-emerald-50 border border-emerald-100 p-1.5 rounded">
+                  <span className="text-[10px] text-emerald-600 font-bold block">✅ New Vendors</span>
+                  <span className="text-sm font-extrabold text-emerald-700">{vendorImportSummary.acceptedCount}</span>
+                </div>
+                <div className="bg-amber-50 border border-amber-100 p-1.5 rounded">
+                  <span className="text-[10px] text-amber-700 font-bold block">⚠️ Already Existing</span>
+                  <span className="text-sm font-extrabold text-amber-700">{vendorImportSummary.existingMatchCount || 0}</span>
+                </div>
+                <div className="bg-red-50 border border-red-100 p-1.5 rounded">
+                  <span className="text-[10px] text-red-600 font-bold block">❌ Errors</span>
+                  <span className="text-sm font-extrabold text-red-700">{(vendorImportSummary.rejectedCount || 0) + (vendorImportSummary.duplicateCount || 0)}</span>
+                </div>
+              </div>
+
+              {vendorImportSummary.rejected.length > 0 && (
+                <div className="max-h-24 overflow-y-auto border border-red-100 rounded p-1.5 bg-red-50/20 space-y-1">
+                  <span className="text-[10px] text-red-700 font-bold block uppercase">Error Details:</span>
+                  {vendorImportSummary.rejected.map((err, idx) => (
+                    <span key={idx} className="text-[10px] text-red-600 font-medium block leading-tight">• {err}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* ── BULK ENTRY: New Vendors panel ── */}
+              {isVendorAutoEntry && vendorImportSummary.acceptedCount > 0 && (
+                <div className="space-y-2 p-3 border border-emerald-200 rounded-md bg-emerald-50/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide flex items-center space-x-1.5">
+                      <Info className="h-3.5 w-3.5" />
+                      <span>New Vendors to Add</span>
+                    </span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
+                      {vendorImportSummary.acceptedCount} new
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-700 font-medium">
+                    These vendors are new and will be added directly to Vendor Master with the assigned codes below.
+                  </p>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5">
+                    {editableVendorItems.map((item, idx) => {
+                      if (item.isExistingMatch || item.validationErrors.length > 0 || item.isDuplicate) return null;
+                      return (
+                        <div key={idx} className="flex items-center justify-between px-3 py-2 rounded border border-emerald-200 bg-white text-xs font-semibold">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold block truncate text-slate-800 capitalize">{item.name} ({item.company})</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Code: {item.vendorId} • {item.email} • {item.phone}</span>
+                          </div>
+                          <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full ml-3">NEW</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── BULK ENTRY: Replace / Skip panel for existing matches ── */}
+              {isVendorAutoEntry && (vendorImportSummary.existingMatchCount || 0) > 0 && (
+                <div className="space-y-2 p-3 border border-amber-200 rounded-md bg-amber-50/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center space-x-1.5">
+                      <Info className="h-3.5 w-3.5" />
+                      <span>Already in Database — Replace or Skip?</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">
+                      {vendorConfirmedReplacements.size + vendorSkippedItems.size} / {vendorImportSummary.existingMatchCount} resolved
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-700 font-medium">
+                    These vendors already exist. Choose <strong>Replace</strong> to overwrite with new data, or <strong>Skip</strong> to keep existing data.
+                  </p>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5">
+                    {editableVendorItems.map((item, idx) => {
+                      if (!item.isExistingMatch || item.validationErrors.length > 0) return null;
+                      const isConfirmed = vendorConfirmedReplacements.has(idx);
+                      const isSkipped = vendorSkippedItems.has(idx);
+                      return (
+                        <div key={idx} className={`flex items-center justify-between px-3 py-2 rounded border text-xs font-semibold transition-all ${
+                          isConfirmed ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+                          isSkipped   ? 'bg-slate-50 border-slate-200 text-slate-400' :
+                                        'bg-white border-amber-200 text-slate-700'
+                        }`}>
+                          <div className="flex-1 min-w-0">
+                            <span className={`font-bold block truncate ${isSkipped ? 'line-through' : ''}`}>{item.name} ({item.company})</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Code: {item.vendorId} • {item.email}</span>
+                            {item.existingVendorDetails && !isSkipped && (
+                              <span className="text-[10px] text-amber-600 block">
+                                DB: {item.existingVendorDetails.name} • {item.existingVendorDetails.phone} • {item.existingVendorDetails.category}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1.5 ml-3 flex-shrink-0">
+                            {(isConfirmed || isSkipped) ? (
+                              <>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isConfirmed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                                  {isConfirmed ? '✓ Will Replace' : '✕ Skipped'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVendorConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                    setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                  }}
+                                  className="text-[10px] text-slate-400 hover:text-slate-600 font-bold underline px-1"
+                                >
+                                  Change
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVendorConfirmedReplacements(prev => new Set(prev).add(idx));
+                                    setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                  }}
+                                  className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded transition-colors"
+                                >
+                                  Replace
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVendorSkippedItems(prev => new Set(prev).add(idx));
+                                    setVendorConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; });
+                                  }}
+                                  className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2.5 py-1 rounded transition-colors"
+                                >
+                                  Skip
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── BULK UPDATE: Filter Tabs & Review Cards ── */}
+              {!isVendorAutoEntry && (() => {
+                const changedItems = editableVendorItems.filter(i => i.isExistingMatch && i.fieldChanges && i.fieldChanges.length > 0);
+                const noChangeItems = editableVendorItems.filter(i => i.isExistingMatch && (!i.fieldChanges || i.fieldChanges.length === 0));
+                const newItems = editableVendorItems.filter(i => !i.isExistingMatch && i.validationErrors.length === 0);
+
+                const filteredRows = editableVendorItems.filter((item, idx) => {
+                  if (item.validationErrors.length > 0) return false;
+                  if (vendorImportSearch) {
+                    const q = vendorImportSearch.toLowerCase();
+                    const nameMatch = (item.name || '').toLowerCase().includes(q);
+                    const emailMatch = (item.email || '').toLowerCase().includes(q);
+                    const codeMatch = (item.vendorId || '').toLowerCase().includes(q);
+                    if (!nameMatch && !emailMatch && !codeMatch) return false;
+                  }
+                  if (vendorBulkUpdateTab === 'changed') return item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0;
+                  if (vendorBulkUpdateTab === 'nochange') return item.isExistingMatch && (!item.fieldChanges || item.fieldChanges.length === 0);
+                  if (vendorBulkUpdateTab === 'new') return !item.isExistingMatch;
+                  return true;
+                });
+
+                return (
+                  <div className="space-y-3">
+                    {/* Tabs row */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 border-b pb-2">
+                      <div className="flex items-center gap-1">
+                        {[
+                          { key: 'changed', label: `Changed (${changedItems.length})`, color: 'bg-amber-500 text-white' },
+                          { key: 'new', label: `New (${newItems.length})`, color: 'bg-emerald-600 text-white' },
+                          { key: 'nochange', label: `No Change (${noChangeItems.length})`, color: 'bg-slate-600 text-white' },
+                          { key: 'all', label: `All (${editableVendorItems.length})`, color: 'bg-blue-600 text-white' }
+                        ].map(t => (
+                          <button
+                            key={t.key}
+                            onClick={() => setVendorBulkUpdateTab(t.key)}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-all ${vendorBulkUpdateTab === t.key ? t.color : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="relative w-full lg:w-[320px]">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={vendorImportSearch}
+                          onChange={(e) => setVendorImportSearch(e.target.value)}
+                          placeholder="Search vendor name, code, email..."
+                          className="w-full pl-8 pr-7 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-semibold"
+                        />
+                        {vendorImportSearch && (
+                          <button onClick={() => setVendorImportSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Filtered items list */}
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                      {filteredRows.map((item) => {
+                        const origIdx = editableVendorItems.indexOf(item);
+                        const isSkipped = vendorSkippedItems.has(origIdx);
+                        const isConfirmed = vendorConfirmedReplacements.has(origIdx);
+
+                        return (
+                          <div key={origIdx} className={`p-3 rounded border text-xs transition-all ${isSkipped ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200'}`}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div>
+                                <span className="font-bold text-slate-800 text-xs capitalize">{item.name} ({item.company})</span>
+                                <span className="text-[10px] text-slate-400 font-mono ml-2">Code: {item.vendorId || 'Auto'} • {item.email}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isSkipped) {
+                                    setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
+                                  } else {
+                                    setVendorSkippedItems(prev => new Set(prev).add(origIdx));
+                                  }
+                                }}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded transition-colors ${isSkipped ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}
+                              >
+                                {isSkipped ? '✓ Enable Row' : '✕ Skip Row'}
+                              </button>
+                            </div>
+
+                            {item.fieldChanges && item.fieldChanges.length > 0 && (
+                              <div className="grid grid-cols-2 gap-1.5 mt-2 bg-amber-50/50 p-2 rounded border border-amber-100">
+                                {item.fieldChanges.map((fc, fcIdx) => (
+                                  <div key={fcIdx} className="text-[10px]">
+                                    <span className="font-bold text-slate-600">{fc.label}:</span>{' '}
+                                    <span className="line-through text-red-500 mr-1">{fc.oldVal || '(empty)'}</span>
+                                    <span className="font-bold text-emerald-700">→ {fc.newVal}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <div className="pt-3 flex items-center justify-end space-x-2 border-t border-slate-100 mt-4">
+            {vendorImportSummary ? (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setVendorImportSummary(null)}>
+                  Cancel / Re-upload
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    await handleVendorBatchImportSubmit();
+                  }}
+                  isLoading={submitLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                >
+                  ✓ Save & Import Batch
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setIsVendorImportModalOpen(false)}>
+                Close
+              </Button>
+            )}
           </div>
         </div>
       </Dialog>
