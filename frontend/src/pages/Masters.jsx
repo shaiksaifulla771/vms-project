@@ -4264,7 +4264,12 @@ const VendorsTab = () => {
       };
       const res = await api.get('/api/vendors', { params });
       if (res.data && res.data.success) {
-        setVendors(res.data.data);
+        const sorted = [...res.data.data].sort((a, b) => {
+          const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
+          const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
+          return numA - numB;
+        });
+        setVendors(sorted);
       }
     } catch (err) {
       console.error(err);
@@ -4524,7 +4529,7 @@ const VendorsTab = () => {
       } else {
         const res = await api.post('/api/vendors', formattedData);
         if (res.data && res.data.data) {
-          setVendors(prev => [res.data.data, ...prev]);
+          setVendors(prev => [...prev, res.data.data]);
         }
         showToast("Successfully added 1 new vendor record.");
 
@@ -4664,50 +4669,62 @@ const VendorsTab = () => {
       return false;
     });
 
-    if (filteredOptions.length === 0) {
-      return (
-        <div className="py-3 text-center space-y-1">
-          <span className="text-[11px] text-slate-400 font-semibold block">No matching options found</span>
-          <div className="flex items-center justify-center space-x-1.5 pt-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setFilterSearchText({ ...filterSearchText, [col]: '' });
-              }}
-              className="text-[10px] text-blue-600 hover:underline font-bold"
-            >
-              Clear Search
-            </button>
-            <span className="text-slate-300 text-[10px]">|</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                clearColumnFilter(col);
-              }}
-              className="text-[10px] text-slate-500 hover:underline font-bold"
-            >
-              Clear Filter
-            </button>
-          </div>
-        </div>
-      );
-    }
-
     return (
-      <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-        {filteredOptions.map(val => (
-          <label key={val} className="flex items-center space-x-1.5 cursor-pointer text-slate-700 hover:text-slate-900 text-[11px] font-medium font-sans">
-            <input
-              type="checkbox"
-              checked={(tempFilters[col] || []).includes(val)}
-              onChange={(e) => handleCheckboxChange(col, val, e.target.checked)}
-              className="rounded border-slate-300 text-blue-600 focus:ring-0 h-3 w-3 cursor-pointer"
-            />
-            <span className={col === 'email' ? 'lowercase' : col === 'gstList' ? 'font-mono' : 'capitalize'}>
-              {col === 'email' || col === 'gstList' ? val : val.toLowerCase()}
-            </span>
-          </label>
-        ))}
+      <div className="space-y-2">
+        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pb-1 border-b">
+          Filter {col === 'name' ? 'Vendor Name' : col.charAt(0).toUpperCase() + col.slice(1)}
+        </div>
+        <input
+          type="text"
+          placeholder="Search options..."
+          value={filterSearchText[col] || ''}
+          onChange={(e) => setFilterSearchText({ ...filterSearchText, [col]: e.target.value })}
+          className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white"
+        />
+
+        <div className="max-h-36 overflow-y-auto space-y-1 py-1">
+          {filteredOptions.length === 0 ? (
+            <div className="text-[10px] text-slate-400 italic text-center py-2">No matching options</div>
+          ) : (
+            filteredOptions.map((opt, idx) => {
+              const checked = (tempFilters[col] || []).includes(opt);
+              return (
+                <label key={idx} className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => handleCheckboxChange(col, opt, e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                  />
+                  <span className="truncate">{opt}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              clearColumnFilter(col);
+            }}
+            className="text-[10px] text-slate-500 hover:text-slate-700 font-bold underline px-1"
+          >
+            Clear Filter
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              applyColumnFilter(col);
+            }}
+            className="text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1 rounded transition-colors"
+          >
+            Apply Filter
+          </button>
+        </div>
       </div>
     );
   };
