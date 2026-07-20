@@ -1,104 +1,53 @@
-# 🚀 Vendor Management System (VMS) — Project Handoff & Summary Document
+# VMS Project Handoff & Implementation Summary
 
-This document serves as a complete, pinned handoff record for the **Vendor Management System (VMS)** project. You can copy this summary or reference `PROJECT_HANDOFF.md` when continuing work on any platform (e.g. ChatGPT, Claude, VS Code, Cursor, or another machine).
-
----
-
-## 📌 Project Overview & Environment
-
-- **Root Working Directory:** `C:\Users\DELL\.gemini\antigravity\scratch\vms-project`
-- **Frontend Directory:** `frontend/` (React + Vite + TailwindCSS + Lucide Icons + SheetJS `xlsx`)
-- **Backend Directory:** `backend/` (Node.js + Express + MongoDB Mongoose + JWT Auth)
-- **Primary Page File:** `frontend/src/pages/Masters.jsx` (Contains both `MaterialsTab` and `VendorsTab`)
+## 📌 Project Summary
+This document provides a comprehensive technical handoff of all completed features, bug fixes, schema updates, UI refinements, and database optimizations across the Vendor Management System (VMS) codebase.
 
 ---
 
-## ✅ Completed Features & Specifications
+## 🚀 Key Features & Changes Completed
 
-### 1. Vendor Master (`VendorsTab`)
-- **Sequential Vendor Codes (`V1001`, `V1002`...):**
-  - Managed by backend MongoDB `Sequence` collection (`_id: 'vendorCode'`).
-  - Codes start at `V1001` and continuously increment.
-  - **Retired Code Logic:** Once assigned, sequence number is permanently bumped. Even if a vendor holding `V1005` is deleted, `V1005` is never reused; the next code will be `V1006`.
-- **Selection Mode Toggle ("Select Options"):**
-  - Grid row checkboxes and header "Select All" checkbox are hidden by default to keep UI clean.
-  - Clicking **"Select Options"** toggle button expands selection checkboxes.
-  - **"Delete Selected"** and **"Edit Selected"** action buttons only appear when selection mode is active and at least 1 row is checked.
-- **Manual Vendor Registration:**
-  - Form handles Basic Information, Categories, GST List, Certifications (FFSC2200, FSSAI), Primary Contact, and Bank Details.
-  - Auto-assigns next `V-code` on backend if left blank.
-  - Generates instant success Toast (`"Successfully added 1 new vendor record."`).
-- **PIN / Zip Code Auto-Fetch:**
-  - Uses India Post API (`https://api.postalpincode.in/pincode/{code}`).
-  - Automatically fetches `City`, `State`, `Country` as soon as a 6-digit PIN code is typed or blurred.
-  - Overwrites previous location every time a user edits to a new PIN code.
-- **Bulk Entry & Bulk Update Wizard (100% Parity with Material Master):**
-  - **Excel Parser:** Reads spreadsheet in-browser via SheetJS (`XLSX.read`).
-  - **Template Download:** Exports sample data spreadsheet with headers and dummy rows (`Vendor_Import_Template.xlsx`).
-  - **Bulk Entry Mode:** Displays *New Vendors to Add* (with green `NEW` badge and auto-assigned `V100x` codes) and *Already in Database — Replace or Skip?* panel (with Replace All / Skip All shortcuts and DB vs Spreadsheet comparison).
-  - **Bulk Update Mode:** Computes field-level diffs (`oldVal → newVal`) across all 20+ vendor fields. Features filter tabs: `New (N)` | `Changed (N)` | `No Change (N)` | `All (N)`, a live search bar, and per-row `Accept`/`Skip` buttons.
-- **Table Column Layout:**
-  - Column order: `[Checkbox]` -> `Vendor Name / Code` -> `Company` -> `Notes/Desc` -> `GST Reg` -> `Category` -> `Status` -> `Email` -> `Actions`.
-  - `Email` column precedes `Actions` column with functional `mailto:` link.
+### 1. **Material Master & Vendor Master Full Feature Parity**
+- **Monolithic File Architecture (`frontend/src/pages/Masters.jsx`):** Both `MaterialsTab` and `VendorsTab` reside within `Masters.jsx`, sharing unified UI design tokens, dialog handlers, and state conventions.
+- **Bulk Entry & Bulk Update Wizards:** Full feature parity with Material Master including:
+  - Excel template generator (`vendor_template.xlsx`).
+  - Validation cards with error counts & missing field indicators.
+  - Review tabs (`New | Changed | No Change | All`).
+  - **Inline Editing for Incomplete Rows:** Auto-assigns `V100x` code immediately upon filling required fields.
+  - **`Edit & Save` Option in Bulk Update Preview Rows:** Allows inline editing of any preview row before saving/importing.
+  - **3-Second Completion Toast Popup:** Toast notification upon batch import completion.
 
-### 2. Material Master (`MaterialsTab`)
-- Full CRUD operations, auto-generated material codes (`M1001`, `M1002`...).
-- Bulk Entry & Bulk Update wizards with field diff engine.
-- Autosaved Drafts FIFO queue saved to `localStorage`.
+### 2. **Vendor Code Progression & Sequence Retention**
+- **MongoDB Sequence Collection (`vms.sequences`):** Sequences are tracked via `_id: 'vendorCode'`.
+- **Code Retirement:** Vendor deletion never decrements or reuses retired codes (`V1001`, `V1002`, `V1003`...). The sequence always increments (`V1004`, `V1005`...).
+- **Legacy Index Fix:** Dropped the legacy `name_1` unique index on `vms.sequences` collection to eliminate `E11000 DuplicateKey` errors during code assignment.
+
+### 3. **UI & Table Layout Enhancements**
+- **Separate Vendor Code Column:** Created a dedicated **`Code`** column right beside **`Vendor Name`**.
+- **Header Filter Search Popups:** Added interactive filter search popups with **`Apply Filter`** and **`Clear Filter`** buttons for **Category**, **Status**, and **Vendor Name** headers.
+- **Floating Hover Tooltip Pop-ups:** Added styled dark-theme floating popups (`bg-slate-900`) that appear when hovering over truncated Vendor Names, Company, Email, and GSTIN text.
+- **Full Vendor Profile Details Modal:** Clean modal displaying full vendor information (Basic Info, Address, GSTINs, Bank Details, Certifications, Contacts, Notes) with a **Print PDF** option.
+- **Big-Screen Material Master Manual Entry Modal:** Expanded the Material Master Manual Entry modal to a spacious 75vw 3-column grid layout.
+
+### 4. **Table Sorting & Order**
+- **Newest Data at Top:** Vendor Master table lists vendors in descending order (newest `V100x` code at the top).
 
 ---
 
-## 🛠️ Key File Architecture
+## 💾 Latest Git Commits
 
-| File Path | Description |
+| Commit ID | Message |
 | :--- | :--- |
-| `frontend/src/pages/Masters.jsx` | Main monolithic component containing `MaterialsTab` and `VendorsTab`. |
-| `backend/models/Vendor.js` | Mongoose schema for Vendors. Validates `name`, `email` (unique), defaults `company`, `phone`, `address`, `category`. |
-| `backend/controllers/vendorController.js` | Handles vendor CRUD, `peekNextVendorCode`, batch creation, and deletion. |
-| `backend/models/Sequence.js` | MongoDB collection tracking auto-increment sequences (`vendorCode`, `materialCode`). |
-| `backend/routes/vendorRoutes.js` | Express endpoints (`/api/vendors`, `/api/vendors/sequence-peek`, etc.). |
+| `d729422` | `feat: expand Material Master manual entry modal to a big screen 75vw dialog with 3-column grid layout` |
+| `0694d4d` | `fix: import missing Eye icon from lucide-react in Masters.jsx` |
+| `529bbd5` | `feat: add dark floating hover tooltip popups for Vendor Name, Company, Email, and GSTIN cells` |
+| `3ba8149` | `feat: bring new vendor data to the top and add full-name hover tooltip popups for truncated text` |
+| `45d88c3` | `feat: add Edit & Save button to Bulk Update preview rows and strict numerical code sorting` |
+| `b88cb8b` | `fix: drop legacy name_1 index on MongoDB sequences collection to unblock vendor creation` |
 
 ---
 
-## 📜 Recent Git Commit Log
-
-```bash
-commit 9bd1bd5b6cf049dc012b9e2550019e1cb7d78b20
-Author: shaiksaifulla771 <shaiksaifulla771@gmail.com>
-Date:   Mon Jul 20 15:58:06 2026 +0530
-
-    fix: resolve vendor creation schema constraints, zip code auto-fetch update, and instant table sync
-
-commit e6905e5a54737a7dc6fcd8b55eb041e9de7f17a9
-Author: shaiksaifulla771 <shaiksaifulla771@gmail.com>
-Date:   Mon Jul 20 15:35:31 2026 +0530
-
-    feat: complete Vendor Master feature parity with Material Master (bulk entry/update, auto-codes V1001+, selection mode, toasts)
-```
-
----
-
-## 🚀 How to Run & Resume Work on Any Platform
-
-1. **Start Backend Server:**
-   ```bash
-   cd backend
-   npm install
-   npm start # or node server.js (runs on port 5000)
-   ```
-
-2. **Start Frontend Dev Server:**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev # runs Vite dev server on http://localhost:5173
-   ```
-
-3. **Verify Production Build:**
-   ```bash
-   cd frontend
-   npm run build
-   ```
-
----
-*Generated and pinned for platform shift & continuation.*
+## 🛠️ Verification & Build Status
+- **Vite Production Build:** `built in 5.85s` (0 errors)
+- **Backend API Status:** Port `5000` (Listening)
+- **Frontend App Status:** Port `3000` (Listening)
