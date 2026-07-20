@@ -2502,142 +2502,167 @@ const MaterialsTab = () => {
             </>
           )}
         </CardContent>
-      </Card>      {/* CRUD Form Modal */}
+      </Card>      {/* CRUD Form Modal — Expanded Big Screen */}
       <Dialog
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         title={editingId ? 'Edit Material Details' : 'Register New Material'}
-        className="!max-w-[50vw] !w-[50vw] !rounded-none"
+        className="!max-w-[75vw] !w-[75vw] !rounded-2xl p-6 shadow-2xl border border-slate-200"
       >
-        <form onSubmit={handleFormSubmit} className="space-y-4">
+        <form onSubmit={handleFormSubmit} className="space-y-5">
           {formErrors.form && (
-            <div className="bg-red-50 border border-red-100 rounded-lg p-2.5 text-sm text-red-600 font-semibold">
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-600 font-bold">
               {formErrors.form}
             </div>
           )}
 
-          {/* 1. Material Code */}
-          <div className="flex flex-col space-y-1">
-            <label className="text-xs font-semibold text-slate-600">Material Code</label>
-            <input
-              type="text"
-              placeholder="e.g. 00005"
-              value={formData.code}
-              onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-              className="w-full px-2 py-0.5 border border-slate-200 rounded-md text-[11px] font-mono h-7 font-semibold bg-slate-50 text-slate-500 cursor-not-allowed"
+          {/* Banner Header */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-3 rounded-xl flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-600 text-white rounded-lg font-mono font-extrabold text-sm shadow-sm">
+                {formData.code || 'M-AUTO'}
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-800 block">Material Registration Portal</span>
+                <span className="text-[11px] text-slate-500 block">Enter comprehensive specifications for this material item.</span>
+              </div>
+            </div>
+            <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-bold px-3 py-1">
+              {formData.type || 'Raw Material'}
+            </Badge>
+          </div>
+
+          {/* Row 1: Code (1 col) & Name (2 cols) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-bold text-slate-700">Material Code *</label>
+              <input
+                type="text"
+                placeholder="e.g. M1001"
+                value={formData.code}
+                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono font-bold bg-slate-100 text-slate-600 cursor-not-allowed h-9"
+                required
+                disabled={true}
+              />
+              {formErrors.code && <span className="text-xs text-red-500 font-semibold">{formErrors.code}</span>}
+            </div>
+
+            <div className="md:col-span-2">
+              <Input
+                label="Material Name *"
+                id="name"
+                placeholder="e.g. Raw Cumin Powder (Grade A)"
+                value={formData.name}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
+                  setFormData({ ...formData, name: val });
+                }}
+                error={formErrors.name}
+                required
+                className="w-full !h-9 !text-xs !px-3 !py-1.5 !rounded-lg font-semibold text-slate-800"
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Unit, Category, Sub-Category */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Select
+              label="Unit of Measure *"
+              id="unit"
+              options={[
+                { value: 'pcs', label: 'pcs (Pieces)' },
+                { value: 'kg', label: 'kg (Kilograms)' },
+                { value: 'gm', label: 'gm (Grams)' },
+                { value: 'L', label: 'L (Liters)' }
+              ]}
+              value={formData.unit}
+              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
               required
-              disabled={true}
+              className="w-full !h-9 !text-xs !px-3 !py-1.5 !rounded-lg"
             />
-            {formErrors.code && <span className="text-xs text-red-500 font-medium">{formErrors.code}</span>}
-          </div>
-          
-          {/* 2. Material Name */}
-          <Input
-            label="Material Name"
-            id="name"
-            placeholder="e.g. raw cumin powder"
-            value={formData.name}
-            onChange={(e) => {
-              const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-              setFormData({ ...formData, name: val });
-            }}
-            error={formErrors.name}
-            required
-            className="w-full !h-7 !text-[11px] !px-2 !py-0.5 !rounded-md"
-          />
 
-          {/* 3. Unit of Measure */}
-          <Select
-            label="Unit of Measure"
-            id="unit"
-            options={[
-              { value: 'pcs', label: 'pcs (Pieces)' },
-              { value: 'kg', label: 'kg (Kilograms)' },
-              { value: 'gm', label: 'gm (Grams)' },
-              { value: 'L', label: 'L (Liters)' }
-            ]}
-            value={formData.unit}
-            onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-            required
-            className="w-full !h-7 !text-[11px] !px-2 !py-0.5 !rounded-md"
-          />
-
-          {/* 4. Category */}
-          <Select
-            label="Category"
-            id="type"
-            options={[
-              { value: 'Raw Material', label: 'Raw Material' },
-              { value: 'Finished Goods', label: 'Finished Goods' },
-              { value: 'Packing Material', label: 'Packing Material' }
-            ]}
-            value={formData.type}
-            onChange={(e) => {
-              const newType = e.target.value;
-              const newSubcats = subcategoryMap[newType] || [];
-              setFormData({
-                ...formData,
-                type: newType,
-                subcategory: newSubcats.length > 0 ? newSubcats[0].value : '',
-                status: formData.status || 'Active'
-              });
-            }}
-            required
-            className="w-full !h-7 !text-[11px] !px-2 !py-0.5 !rounded-md"
-          />
-
-          {/* 5. Sub-Category */}
-          <div className="flex flex-col space-y-1">
-            <label className="text-xs font-semibold text-slate-600">Sub-Category</label>
-            <select
-              value={formData.subcategory}
-              onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
-              className="w-full px-2 py-0.5 bg-white border border-slate-200 rounded-md text-[11px] text-slate-800 focus:outline-none cursor-pointer h-7"
+            <Select
+              label="Category *"
+              id="type"
+              options={[
+                { value: 'Raw Material', label: 'Raw Material' },
+                { value: 'Finished Goods', label: 'Finished Goods' },
+                { value: 'Packing Material', label: 'Packing Material' }
+              ]}
+              value={formData.type}
+              onChange={(e) => {
+                const newType = e.target.value;
+                const newSubcats = subcategoryMap[newType] || [];
+                setFormData({
+                  ...formData,
+                  type: newType,
+                  subcategory: newSubcats.length > 0 ? newSubcats[0].value : '',
+                  status: formData.status || 'Active'
+                });
+              }}
               required
-            >
-              {(subcategoryMap[formData.type] || []).map(sub => (
-                <option key={sub.value} value={sub.value}>{sub.label}</option>
-              ))}
-            </select>
-            {formErrors.subcategory && <span className="text-xs text-red-500 font-medium">{formErrors.subcategory}</span>}
+              className="w-full !h-9 !text-xs !px-3 !py-1.5 !rounded-lg"
+            />
+
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-bold text-slate-700">Sub-Category *</label>
+              <select
+                value={formData.subcategory}
+                onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
+                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer h-9"
+                required
+              >
+                {(subcategoryMap[formData.type] || []).map(sub => (
+                  <option key={sub.value} value={sub.value}>{sub.label}</option>
+                ))}
+              </select>
+              {formErrors.subcategory && <span className="text-xs text-red-500 font-semibold">{formErrors.subcategory}</span>}
+            </div>
           </div>
 
-          {/* 6. Material Description */}
-          <TextArea
-            label="Material Description"
-            id="description"
-            placeholder="operational purpose, notes, or storage conditions..."
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="w-full !text-[11px] !px-2 !py-1 !rounded-md h-16"
-          />
+          {/* Row 3: Status & Description */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Material Status *</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer h-9"
+                required
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Draft">Draft</option>
+              </select>
+            </div>
 
-          {/* 7. Material Status */}
-          <div className="flex flex-col space-y-1">
-            <label className="text-xs font-semibold text-slate-600">Material Status</label>
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-              className="w-full px-2 py-0.5 bg-white border border-slate-200 rounded-md text-[11px] text-slate-800 focus:outline-none cursor-pointer h-7"
-              required
-            >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Draft">Draft</option>
-            </select>
+            <div className="md:col-span-2">
+              <TextArea
+                label="Material Description & Storage Notes"
+                id="description"
+                placeholder="Specify operational usage, storage temperature, or quality specifications..."
+                rows={2}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full !text-xs !px-3 !py-2 !rounded-lg"
+              />
+            </div>
           </div>
 
           {draftMessage && (
-            <div className="flex items-center space-x-1.5 text-xs text-blue-500 font-bold bg-blue-50 py-1.5 px-3 rounded-md">
+            <div className="flex items-center space-x-2 text-xs text-blue-600 font-bold bg-blue-50 py-2 px-3 rounded-xl border border-blue-100">
               <Save className="h-4 w-4 shrink-0" />
               <span>{draftMessage}</span>
             </div>
           )}
 
-          <div className="pt-3 flex items-center justify-end space-x-2 border-t border-slate-100 mt-4">
-            <Button variant="outline" size="sm" onClick={handleCloseModal}>Cancel</Button>
-            <Button type="submit" size="sm" isLoading={submitLoading}>
-              {editingId ? 'Save changes' : 'Register material'}
+          <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-100 mt-4">
+            <Button variant="outline" size="sm" onClick={handleCloseModal} className="!px-4 !py-2 text-xs font-bold">
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold !px-6 !py-2 text-xs shadow-md">
+              {editingId ? 'Save Material Changes' : '✓ Register Material'}
             </Button>
           </div>
         </form>
