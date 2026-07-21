@@ -3675,6 +3675,14 @@ const VendorsTab = () => {
   const [draftMessage, setDraftMessage] = useState('');
   const [vendorToasts, setVendorToasts] = useState([]);
 
+  const categoryOptions = [
+    { value: 'Food Processor', label: 'Food Processor' },
+    { value: 'Contract Manufacturer', label: 'Contract Manufacturer' },
+    { value: 'Retail Brand', label: 'Retail Brand' },
+    { value: 'Fresh Fruits Supplier', label: 'Fresh Fruits Supplier' },
+    { value: 'Other', label: 'Other' }
+  ];
+
   const fetchVendors = async () => {
     setLoading(true);
     setError(null);
@@ -4378,13 +4386,7 @@ const VendorsTab = () => {
   
   const autoSaveIntervalRef = useRef(null);
 
-  const categoryOptions = [
-    { value: 'Food Processor', label: 'Food Processor' },
-    { value: 'Contract Manufacturer', label: 'Contract Manufacturer' },
-    { value: 'Retail Brand', label: 'Retail Brand' },
-    { value: 'Fresh Fruits Supplier', label: 'Fresh Fruits Supplier' },
-    { value: 'Other', label: 'Other' }
-  ];
+  
 
   
       const res = await api.get('/api/vendors', { params });
