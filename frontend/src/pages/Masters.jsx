@@ -1509,13 +1509,18 @@ const MaterialsTab = () => {
   };
 
   const handleDeleteMaterial = async (id) => {
+    const target = materials.find(m => m._id === id);
     if (!window.confirm('Delete this material definition? This checks Bill of Materials (BOM) references.')) return;
     try {
       await api.delete(`/api/materials/${id}`);
+      if (target) {
+        setDeletedMaterialsHistory(prev => [{ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() }, ...prev]);
+      }
       if (selectedMaterialId === id) {
         setSelectedMaterialId(null);
       }
       fetchMaterials();
+      showToast(`Material ${target ? target.code : ''} moved to Deleted Sheets & Rows History.`);
     } catch (err) {
       console.error(err);
       const errorMsg = err.response?.data?.error || 'Validation error: Active stock or BOM dependencies prevent deleting this material.';
@@ -2555,38 +2560,43 @@ const MaterialsTab = () => {
         </form>
       </Dialog>
 
-      {/* Deleted Materials History Modal */}
+      {/* Deleted Materials Sheets & Rows History Modal */}
       <Dialog
         isOpen={isDeletedMaterialsModalOpen}
         onClose={() => setIsDeletedMaterialsModalOpen(false)}
-        title="Deleted Sheets & Removed Material Records History"
-        className="!max-w-[60vw] !w-[60vw] !rounded-xl"
+        title="Deleted Rows & Removed Material Sheets History"
+        className="!max-w-[65vw] !w-[65vw] !rounded-xl"
       >
         <div className="space-y-4 text-xs">
           <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-red-800 font-semibold flex items-center justify-between">
             <div>
-              <span className="font-bold block text-sm">Removed Material Sheets Log</span>
-              <span className="text-[11px] text-red-600 block">List of materials deleted during this session. You can restore any material record back to your main data sheet.</span>
+              <span className="font-bold block text-sm">Removed Material Rows & Sheets Log</span>
+              <span className="text-[11px] text-red-600 block">List of deleted material rows and removed sheets. Click Restore to return any record back to your active data grid.</span>
             </div>
             <Badge className="bg-red-100 text-red-800 border-red-200 text-xs font-bold">
-              {deletedMaterialsHistory.length} Removed
+              {deletedMaterialsHistory.length} Removed Items
             </Badge>
           </div>
 
           {deletedMaterialsHistory.length === 0 ? (
             <div className="py-8 text-center text-slate-400 space-y-1">
               <Trash2 className="h-8 w-8 mx-auto text-slate-300" />
-              <span className="font-bold text-xs block text-slate-500">No deleted material sheets in history</span>
-              <span className="text-[11px] text-slate-400 block">When you delete a material, it will appear here for easy restoration.</span>
+              <span className="font-bold text-xs block text-slate-500">No deleted rows or sheets in history</span>
+              <span className="text-[11px] text-slate-400 block">When you delete material rows or remove sheets, they will appear here for easy restoration.</span>
             </div>
           ) : (
             <div className="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
               {deletedMaterialsHistory.map((item, idx) => (
                 <div key={idx} className="p-3 hover:bg-slate-50 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.code}</span>
+                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.code || 'MAT'}</span>
                     <div>
-                      <span className="font-bold text-slate-800 text-xs block capitalize">{item.name}</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-slate-800 text-xs capitalize">{item.name}</span>
+                        <Badge className={item.deletionType === 'Deleted Sheet' ? 'bg-red-100 text-red-700 border-red-200 text-[9px]' : 'bg-amber-100 text-amber-700 border-amber-200 text-[9px]'}>
+                          {item.deletionType || 'Deleted Row'}
+                        </Badge>
+                      </div>
                       <span className="text-[11px] text-slate-500 block">{item.type} • {item.subcategory} • Unit: {item.unit}</span>
                       <span className="text-[10px] text-slate-400 block">Deleted at: {new Date(item.deletedAt).toLocaleTimeString()}</span>
                     </div>
@@ -4211,6 +4221,11 @@ const VendorsTab = () => {
     '38': 'Ladakh'
   };
 
+  const handleViewDetails = (vendor) => {
+    setSelectedVendor(vendor);
+    setIsViewModalOpen(true);
+  };
+
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -4643,14 +4658,22 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   };
 
   const handleDeleteVendor = async (id) => {
-    if (!window.confirm('Delete this vendor record? Checks active Purchase Orders (PO) references.')) return;
+    const target = vendors.find(v => v._id === id);
+    if (!target) return;
+    if (!window.confirm(`Are you sure you want to delete vendor "${target.name}" (${target.vendorId})?`)) return;
     try {
       await api.delete(`/api/vendors/${id}`);
-      fetchVendors();
+      setVendors(prev => prev.filter(v => v._id !== id));
+      setDeletedVendorsHistory(prev => [{ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() }, ...prev]);
+      setSelectedVendorRowIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      showToast(`Vendor ${target.vendorId} moved to Deleted Sheets & Rows History.`);
     } catch (err) {
       console.error(err);
-      const errorMsg = err.response?.data?.error || 'Operational safety: linked Purchase Orders prevent deleting this vendor.';
-      alert(`Relational Integrity Check: ${errorMsg}`);
+      showToast("Failed to delete vendor.", "error");
     }
   };
 
@@ -6712,39 +6735,44 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
         </div>
       </Dialog>
 
-      {/* Deleted Vendors Sheets History Modal */}
+      {/* Deleted Vendors Sheets & Rows History Modal */}
       <Dialog
         isOpen={isDeletedVendorsModalOpen}
         onClose={() => setIsDeletedVendorsModalOpen(false)}
-        title="Deleted Sheets & Removed Vendor Records History"
-        className="!max-w-[60vw] !w-[60vw] !rounded-xl"
+        title="Deleted Rows & Removed Vendor Sheets History"
+        className="!max-w-[65vw] !w-[65vw] !rounded-xl"
       >
         <div className="space-y-4 text-xs">
           <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-red-800 font-semibold flex items-center justify-between">
             <div>
-              <span className="font-bold block text-sm">Removed Vendor Sheets Log</span>
-              <span className="text-[11px] text-red-600 block">List of vendors deleted during this session. You can restore any record back to your main data sheet.</span>
+              <span className="font-bold block text-sm">Removed Vendor Rows & Sheets Log</span>
+              <span className="text-[11px] text-red-600 block">List of deleted vendor rows and removed sheets. Click Restore to return any record back to your active data grid.</span>
             </div>
             <Badge className="bg-red-100 text-red-800 border-red-200 text-xs font-bold">
-              {deletedVendorsHistory.length} Removed
+              {deletedVendorsHistory.length} Removed Items
             </Badge>
           </div>
 
           {deletedVendorsHistory.length === 0 ? (
             <div className="py-8 text-center text-slate-400 space-y-1">
               <Trash2 className="h-8 w-8 mx-auto text-slate-300" />
-              <span className="font-bold text-xs block text-slate-500">No deleted vendor sheets in history</span>
-              <span className="text-[11px] text-slate-400 block">When you delete a vendor, it will appear here for easy restoration.</span>
+              <span className="font-bold text-xs block text-slate-500">No deleted rows or sheets in history</span>
+              <span className="text-[11px] text-slate-400 block">When you delete vendor rows or remove sheets, they will appear here for easy restoration.</span>
             </div>
           ) : (
             <div className="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
               {deletedVendorsHistory.map((item, idx) => (
                 <div key={idx} className="p-3 hover:bg-slate-50 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.vendorId}</span>
+                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.vendorId || 'ROW'}</span>
                     <div>
-                      <span className="font-bold text-slate-800 text-xs block capitalize">{item.name}</span>
-                      <span className="text-[11px] text-slate-500 block">{item.company} • {item.email}</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-slate-800 text-xs capitalize">{item.name}</span>
+                        <Badge className={item.deletionType === 'Deleted Sheet' ? 'bg-red-100 text-red-700 border-red-200 text-[9px]' : 'bg-amber-100 text-amber-700 border-amber-200 text-[9px]'}>
+                          {item.deletionType || 'Deleted Row'}
+                        </Badge>
+                      </div>
+                      <span className="text-[11px] text-slate-500 block">{item.company || 'Company'} • {item.email || '-'}</span>
                       <span className="text-[10px] text-slate-400 block">Deleted at: {new Date(item.deletedAt).toLocaleTimeString()}</span>
                     </div>
                   </div>
