@@ -4225,6 +4225,8 @@ const VendorsTab = () => {
     '38': 'Ladakh'
   };
 
+  
+
   const handleViewDetails = (vendor) => {
     setViewingVendor(vendor);
     setSelectedVendor(vendor);
@@ -5450,8 +5452,16 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                       <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
                     </TableCell>
                     )}
-                    <TableCell onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }} className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600 cursor-pointer hover:underline hover:text-blue-800" title="Click to view full vendor profile details & print PDF">
-                      {v.vendorId || '-'}
+                    <TableCell
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleViewDetails(v);
+                      }}
+                      className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600 cursor-pointer hover:underline hover:text-blue-800"
+                      title="Click to view full vendor profile & print PDF"
+                    >
+                      <span className="cursor-pointer hover:underline">{v.vendorId || '-'}</span>
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize relative group/vtooltip max-w-[140px]">
                       <span className="truncate block cursor-pointer" title={v.name || ''}>
@@ -6291,6 +6301,55 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                         )}
                       </div>
                     </div>
+
+                    {/* Quick bulk actions for Changed items */}
+                    {vendorBulkUpdateTab === 'changed' && changedItems.length > 0 && (
+                      <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200 px-3 py-1.5 rounded-md mb-2">
+                        <span className="text-[11px] font-bold text-amber-900">
+                          Bulk Actions for {changedItems.length} Changed Records:
+                        </span>
+                        <div className="flex items-center space-x-3 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const s = new Set(vendorConfirmedReplacements);
+                              editableVendorItems.forEach((item, i) => {
+                                if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0 && (!item.validationErrors || item.validationErrors.length === 0)) {
+                                  s.add(i);
+                                }
+                              });
+                              setVendorConfirmedReplacements(s);
+                              editableVendorItems.forEach((item, i) => {
+                                if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
+                                  setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(i); return n; });
+                                }
+                              });
+                              showToast("All changed vendor records accepted.");
+                            }}
+                            className="text-blue-700 hover:text-blue-900 font-extrabold hover:underline flex items-center space-x-1"
+                          >
+                            <span>✓ Accept All</span>
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const s = new Set(vendorSkippedItems);
+                              editableVendorItems.forEach((item, i) => {
+                                if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
+                                  s.add(i);
+                                }
+                              });
+                              setVendorSkippedItems(s);
+                              showToast("All changed vendor records skipped.", "error");
+                            }}
+                            className="text-red-600 hover:text-red-800 font-extrabold hover:underline flex items-center space-x-1"
+                          >
+                            <span>✕ Skip All</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Filtered items list */}
                     <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
