@@ -3660,7 +3660,32 @@ const VendorsTab = () => {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [viewingVendorAudit, setViewingVendorAudit] = useState(null);
-  const [deletedVendorsHistory, setDeletedVendorsHistory] = useState([]);
+  const [deletedVendorsHistory, setDeletedVendorsHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('erp_deleted_vendors_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch(e) { return []; }
+  });
+
+  const handleRestoreVendor = async (item) => {
+    try {
+      const payload = { ...item };
+      delete payload._id;
+      delete payload.deletedAt;
+      delete payload.deletionType;
+      const res = await api.post('/api/vendors', payload);
+      setDeletedVendorsHistory((prev) => {
+        const updated = prev.filter(d => (d._id && d._id !== item._id) || d.vendorId !== item.vendorId || d.name !== item.name);
+        localStorage.setItem('erp_deleted_vendors_history', JSON.stringify(updated));
+        return updated;
+      });
+      showToast(`Success Notification: Vendor ${item.vendorId || item.name || ''} restored successfully!`, "success");
+      await fetchVendors();
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to restore vendor record.", "error");
+    }
+  };
   const [isDeletedVendorsModalOpen, setIsDeletedVendorsModalOpen] = useState(false);
   const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
 
@@ -5798,6 +5823,133 @@ const VendorsTab = () => {
                 <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-9" />
               </div>
 
+              {/* Secondary Address Options */}
+              <div className="border-t border-slate-200 pt-4 mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="hasSecondaryAddress"
+                      checked={formData.hasSecondaryAddress}
+                      onChange={(e) => setFormData({ ...formData, hasSecondaryAddress: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300 cursor-pointer"
+                    />
+                    <label htmlFor="hasSecondaryAddress" className="text-xs font-bold text-slate-800 cursor-pointer">+ Add Secondary Plant / Branch Address</label>
+                  </div>
+                </div>
+
+                {formData.hasSecondaryAddress && (
+                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-4">
+                    <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200 pb-1">
+                      Secondary Plant / Branch Location
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input label="Address Line 1" id="vsecaddress1" placeholder="Building / Street / Landmark" value={formData.secondaryAddress || ''} onChange={(e) => setFormData({ ...formData, secondaryAddress: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="Address Line 2" id="vsecaddress2" placeholder="Area / Suite / Locality" value={formData.secondaryAddress2 || ''} onChange={(e) => setFormData({ ...formData, secondaryAddress2: e.target.value })} className="!text-xs !h-9" />
+                    </div>
+                    
+                    <div className="grid grid-cols-4 gap-4">
+                      <Input 
+                        label="Zip Code (PIN)" 
+                        id="vseczip" 
+                        placeholder="6-digit PIN"
+                        value={formData.secondaryZipCode || ''} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, secondaryZipCode: val });
+                          if (val.length === 6) {
+                            handleSecondaryZipCodeBlur(val);
+                          }
+                        }} 
+                        onBlur={() => { if (formData.secondaryZipCode && formData.secondaryZipCode.length === 6) handleSecondaryZipCodeBlur(formData.secondaryZipCode); }}
+                        className="!text-xs !h-9 font-mono" 
+                      />
+                      <Input label="City" id="vseccity" value={formData.secondaryCity || ''} onChange={(e) => setFormData({ ...formData, secondaryCity: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="State" id="vsecstate" value={formData.secondaryState || ''} onChange={(e) => setFormData({ ...formData, secondaryState: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="Country" id="vseccountry" value={formData.secondaryCountry || 'India'} onChange={(e) => setFormData({ ...formData, secondaryCountry: e.target.value })} className="!text-xs !h-9" />
+                    </div>
+
+                    {/* Secondary Address GST Option */}
+                    <div className="border-t border-slate-200 pt-3">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase block mb-2">GST Registration for Secondary Address</label>
+                      <div className="flex items-center space-x-6 text-xs font-semibold text-slate-700">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="secGstOpt"
+                            value="same"
+                            checked={!formData.secondaryGstOption || formData.secondaryGstOption === 'same'}
+                            onChange={() => setFormData({ ...formData, secondaryGstOption: 'same' })}
+                            className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                          />
+                          <span>Use Same GSTIN as Primary Address</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="secGstOpt"
+                            value="separate"
+                            checked={formData.secondaryGstOption === 'separate'}
+                            onChange={() => setFormData({ ...formData, secondaryGstOption: 'separate' })}
+                            className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                          />
+                          <span>Add Separate GSTIN for this Address</span>
+                        </label>
+                      </div>
+
+                      {formData.secondaryGstOption === 'separate' && (
+                        <div className="grid grid-cols-2 gap-4 mt-3 bg-white p-3 rounded border border-slate-200">
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                            <select
+                              value={formData.secondaryGstState || ''}
+                              onChange={(e) => {
+                                const selState = e.target.value;
+                                const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selState);
+                                let currentGstin = formData.secondaryGstin || '';
+                                if (foundCode) {
+                                  if (currentGstin.length >= 2) {
+                                    currentGstin = foundCode + currentGstin.substring(2);
+                                  } else {
+                                    currentGstin = foundCode;
+                                  }
+                                }
+                                setFormData({ ...formData, secondaryGstState: selState, secondaryGstin: currentGstin });
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                            >
+                              <option value="">Select State</option>
+                              {Object.values(gstStateMap).map(st => (
+                                <option key={st} value={st}>{st}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Secondary GSTIN Code</label>
+                            <input
+                              type="text"
+                              placeholder="15-character GSTIN"
+                              value={formData.secondaryGstin || ''}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase().trim();
+                                let detectedState = formData.secondaryGstState;
+                                if (val.length >= 2) {
+                                  const prefix = val.substring(0, 2);
+                                  if (gstStateMap[prefix]) detectedState = gstStateMap[prefix];
+                                }
+                                setFormData({ ...formData, secondaryGstState: detectedState, secondaryGstin: val });
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="border-t border-slate-100 pt-3 mt-3">
                 <div className="flex items-center space-x-2 mb-3">
                   <input
@@ -5925,7 +6077,7 @@ const VendorsTab = () => {
                 {formData.ffsc2200 && (
                   <div className="grid grid-cols-2 gap-3 pl-6">
                     <Input label="Expiry Date" type="date" value={formData.ffsc2200Expiry} onChange={(e) => setFormData({ ...formData, ffsc2200Expiry: e.target.value })} className="!text-xs !h-8" />
-                    <Input label="Quantity" type="number" value={formData.ffsc2200Qty} onChange={(e) => setFormData({ ...formData, ffsc2200Qty: e.target.value })} className="!text-xs !h-8" />
+                    <Input label="License No." type="text" placeholder="e.g. LIC-FFSC-10029" value={formData.ffsc2200LicenseNo || ''} onChange={(e) => setFormData({ ...formData, ffsc2200LicenseNo: e.target.value, ffsc2200Qty: e.target.value })} className="!text-xs !h-8 font-mono" />
                   </div>
                 )}
               </div>
@@ -5945,7 +6097,7 @@ const VendorsTab = () => {
                 {formData.fssai && (
                   <div className="grid grid-cols-2 gap-3 pl-6">
                     <Input label="Expiry Date" type="date" value={formData.fssaiExpiry} onChange={(e) => setFormData({ ...formData, fssaiExpiry: e.target.value })} className="!text-xs !h-8" />
-                    <Input label="Quantity" type="number" value={formData.fssaiQty} onChange={(e) => setFormData({ ...formData, fssaiQty: e.target.value })} className="!text-xs !h-8" />
+                    <Input label="License No." type="text" placeholder="e.g. 10024011000123" value={formData.fssaiLicenseNo || ''} onChange={(e) => setFormData({ ...formData, fssaiLicenseNo: e.target.value, fssaiQty: e.target.value })} className="!text-xs !h-8 font-mono" />
                   </div>
                 )}
               </div>
@@ -6034,14 +6186,32 @@ const VendorsTab = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
+            {/* Certifications Block */}
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Full Office / Plant Address</span>
-                <span className="text-xs text-slate-700 font-medium">{viewingVendor.address || 'N/A'} {viewingVendor.city ? `, ${viewingVendor.city}` : ''} {viewingVendor.state ? `, ${viewingVendor.state}` : ''}</span>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">FFSC 2200 Certification</span>
+                <span className="text-xs font-bold text-slate-800">
+                  {viewingVendor.ffsc2200 ? `✓ Certified (Lic No: ${viewingVendor.ffsc2200LicenseNo || viewingVendor.ffsc2200Qty || 'Active'})` : '✕ Not Certified'}
+                </span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Notes & Instructions</span>
-                <span className="text-xs text-slate-700 font-medium">{viewingVendor.notes || 'No special notes recorded.'}</span>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">FSSAI Certification</span>
+                <span className="text-xs font-bold text-slate-800">
+                  {viewingVendor.fssai ? `✓ Certified (Lic No: ${viewingVendor.fssaiLicenseNo || viewingVendor.fssaiQty || 'Active'})` : '✕ Not Certified'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Primary Plant / Office Address</span>
+                <span className="text-xs text-slate-700 font-medium">{viewingVendor.address || 'N/A'} {viewingVendor.address2 ? `, ${viewingVendor.address2}` : ''} {viewingVendor.city ? `, ${viewingVendor.city}` : ''} {viewingVendor.state ? `, ${viewingVendor.state}` : ''} {viewingVendor.zipCode ? `- ${viewingVendor.zipCode}` : ''}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Secondary Plant Address</span>
+                <span className="text-xs text-slate-700 font-medium">
+                  {viewingVendor.hasSecondaryAddress ? `${viewingVendor.secondaryAddress || ''} ${viewingVendor.secondaryAddress2 ? `, ${viewingVendor.secondaryAddress2}` : ''} ${viewingVendor.secondaryCity ? `, ${viewingVendor.secondaryCity}` : ''} ${viewingVendor.secondaryState ? `, ${viewingVendor.secondaryState}` : ''} ${viewingVendor.secondaryZipCode ? `- ${viewingVendor.secondaryZipCode}` : ''}` : 'No secondary address'}
+                </span>
               </div>
             </div>
 
