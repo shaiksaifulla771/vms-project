@@ -1175,11 +1175,10 @@ const MaterialsTab = () => {
         const { processedItems, summary } = recalculateImportSummary(deduplicatedRows, systemExistingCodes, isAutoEntry, baseSequence);
 
         if (!isAutoEntry && summary.existingMatchCount === 0 && summary.acceptedCount > 0) {
-          showToast("Bulk update will not work when all materials are new. Please add materials through Bulk Entry or Manual Entry.", "error");
-          // Abort process, don't open modal
+          showToast("System Notice: Bulk update will not work when all materials are new. Please add materials through Bulk Entry or Manual Entry", "error");
           setIsImportModalOpen(false);
           setImportSummary(null);
-          return; // Exit completely
+          return;
         }
 
         setImportSummary(summary);
@@ -4149,7 +4148,7 @@ const VendorsTab = () => {
         const { processedItems, summary } = recalculateVendorImportSummary(deduplicatedRows, systemExistingCodes, isVendorAutoEntry, baseSequence);
 
         if (!isVendorAutoEntry && summary.existingMatchCount === 0 && summary.acceptedCount > 0) {
-          showToast("Bulk update requires existing vendor matches. Use Bulk Entry for new vendors.", "error");
+          showToast("System Notice: Bulk update will not work when all vendors are new. Please add vendors through Bulk Entry or Manual Entry", "error");
           setIsVendorImportModalOpen(false);
           setVendorImportSummary(null);
           return;
@@ -4205,7 +4204,7 @@ const VendorsTab = () => {
       if (inserted > 0) parts.push(`${inserted} added`);
       if (updated > 0) parts.push(`${updated} updated`);
       if (skipped > 0) parts.push(`${skipped} failed`);
-      showToast(`✅ Import complete — ${parts.join(', ')}`, 'success');
+      showToast(`Success Notification: ${parts.join(', ')} via Bulk Entry!`, 'success');
       fetchVendors();
       setIsVendorImportModalOpen(false);
     } catch (err) {
