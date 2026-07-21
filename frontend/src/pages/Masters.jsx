@@ -4132,12 +4132,11 @@ const VendorsTab = () => {
 
   const handleVendorBatchImportSubmit = async () => {
     const validToImport = editableVendorItems.filter((item, idx) => {
-      if (item.validationErrors.length > 0) return false;
+      if (item.validationErrors && item.validationErrors.length > 0) return false;
       if (item.isDuplicate) return false;
       if (item.isExistingMatch) {
-        if (!isVendorAutoEntry) return !vendorSkippedItems.has(idx);
-        const noChange = !item.fieldChanges || item.fieldChanges.length === 0;
-        return noChange || vendorConfirmedReplacements.has(idx);
+        if (item.userAction === 'skip' || vendorSkippedItems.has(idx)) return false;
+        return true;
       }
       return true;
     });
@@ -6304,47 +6303,56 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
 
                     {/* Quick bulk actions for Changed items */}
                     {vendorBulkUpdateTab === 'changed' && changedItems.length > 0 && (
-                      <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200 px-3 py-1.5 rounded-md mb-2">
-                        <span className="text-[11px] font-bold text-amber-900">
-                          Bulk Actions for {changedItems.length} Changed Records:
+                      <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200 px-3.5 py-2 rounded-lg mb-3 shadow-xs">
+                        <span className="text-xs font-extrabold text-amber-900 flex items-center space-x-1.5">
+                          <span>⚡ Bulk Actions for {changedItems.length} Changed Records:</span>
                         </span>
                         <div className="flex items-center space-x-3 text-xs">
                           <button
                             type="button"
                             onClick={() => {
-                              const sConf = new Set(vendorConfirmedReplacements);
-                              const sSkip = new Set(vendorSkippedItems);
-                              editableVendorItems.forEach((item, i) => {
+                              const newItems = editableVendorItems.map(item => {
                                 if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
-                                  sConf.add(i);
-                                  sSkip.delete(i);
+                                  return { ...item, userAction: 'accept' };
                                 }
+                                return item;
+                              });
+                              setEditableVendorItems(newItems);
+                              const sConf = new Set();
+                              const sSkip = new Set();
+                              newItems.forEach((item, i) => {
+                                if (item.userAction === 'accept') sConf.add(i);
+                                if (item.userAction === 'skip') sSkip.add(i);
                               });
                               setVendorConfirmedReplacements(sConf);
                               setVendorSkippedItems(sSkip);
                               showToast("All changed vendor records accepted for update.", "success");
                             }}
-                            className="text-blue-700 hover:text-blue-900 font-extrabold hover:underline flex items-center space-x-1"
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-3 py-1 rounded shadow-xs transition-all flex items-center space-x-1"
                           >
                             <span>✓ Accept All</span>
                           </button>
-                          <span className="text-slate-300">|</span>
                           <button
                             type="button"
                             onClick={() => {
-                              const sConf = new Set(vendorConfirmedReplacements);
-                              const sSkip = new Set(vendorSkippedItems);
-                              editableVendorItems.forEach((item, i) => {
+                              const newItems = editableVendorItems.map(item => {
                                 if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
-                                  sSkip.add(i);
-                                  sConf.delete(i);
+                                  return { ...item, userAction: 'skip' };
                                 }
+                                return item;
+                              });
+                              setEditableVendorItems(newItems);
+                              const sConf = new Set();
+                              const sSkip = new Set();
+                              newItems.forEach((item, i) => {
+                                if (item.userAction === 'accept') sConf.add(i);
+                                if (item.userAction === 'skip') sSkip.add(i);
                               });
                               setVendorConfirmedReplacements(sConf);
                               setVendorSkippedItems(sSkip);
                               showToast("All changed vendor records skipped.", "error");
                             }}
-                            className="text-red-600 hover:text-red-800 font-extrabold hover:underline flex items-center space-x-1"
+                            className="bg-red-600 hover:bg-red-700 text-white font-extrabold px-3 py-1 rounded shadow-xs transition-all flex items-center space-x-1"
                           >
                             <span>✕ Skip All</span>
                           </button>
