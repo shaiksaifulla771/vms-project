@@ -3675,6 +3675,17 @@ const VendorsTab = () => {
   const [draftMessage, setDraftMessage] = useState('');
   const [vendorToasts, setVendorToasts] = useState([]);
 
+  const fetchVendors = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = {
+        limit: 100,
+        ...(search && { search }),
+        ...(category && { category }),
+        ...(status && { status })
+      };
+
   // Reset wizard on modal close
   React.useEffect(() => {
     if (!isVendorImportModalOpen) {
@@ -4375,16 +4386,7 @@ const VendorsTab = () => {
     { value: 'Other', label: 'Other' }
   ];
 
-  const fetchVendors = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = {
-        limit: 100,
-        ...(search && { search }),
-        ...(category && { category }),
-        ...(status && { status })
-      };
+  
       const res = await api.get('/api/vendors', { params });
       if (res.data && res.data.success) {
         const sorted = [...res.data.data].sort((a, b) => {
