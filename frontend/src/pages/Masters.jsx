@@ -6312,19 +6312,17 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                           <button
                             type="button"
                             onClick={() => {
-                              const s = new Set(vendorConfirmedReplacements);
-                              editableVendorItems.forEach((item, i) => {
-                                if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0 && (!item.validationErrors || item.validationErrors.length === 0)) {
-                                  s.add(i);
-                                }
-                              });
-                              setVendorConfirmedReplacements(s);
+                              const sConf = new Set(vendorConfirmedReplacements);
+                              const sSkip = new Set(vendorSkippedItems);
                               editableVendorItems.forEach((item, i) => {
                                 if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
-                                  setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(i); return n; });
+                                  sConf.add(i);
+                                  sSkip.delete(i);
                                 }
                               });
-                              showToast("All changed vendor records accepted.");
+                              setVendorConfirmedReplacements(sConf);
+                              setVendorSkippedItems(sSkip);
+                              showToast("All changed vendor records accepted for update.", "success");
                             }}
                             className="text-blue-700 hover:text-blue-900 font-extrabold hover:underline flex items-center space-x-1"
                           >
@@ -6334,13 +6332,16 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                           <button
                             type="button"
                             onClick={() => {
-                              const s = new Set(vendorSkippedItems);
+                              const sConf = new Set(vendorConfirmedReplacements);
+                              const sSkip = new Set(vendorSkippedItems);
                               editableVendorItems.forEach((item, i) => {
                                 if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
-                                  s.add(i);
+                                  sSkip.add(i);
+                                  sConf.delete(i);
                                 }
                               });
-                              setVendorSkippedItems(s);
+                              setVendorConfirmedReplacements(sConf);
+                              setVendorSkippedItems(sSkip);
                               showToast("All changed vendor records skipped.", "error");
                             }}
                             className="text-red-600 hover:text-red-800 font-extrabold hover:underline flex items-center space-x-1"
@@ -6409,7 +6410,9 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                                     <button
                                       type="button"
                                       onClick={() => {
+                                        setVendorConfirmedReplacements(prev => new Set(prev).add(origIdx));
                                         setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
+                                        showToast(`Accepted changes for ${item.name}`);
                                       }}
                                       className={`px-3 py-1 rounded text-xs font-bold transition-all ${
                                         !isSkipped
@@ -6423,6 +6426,8 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                                       type="button"
                                       onClick={() => {
                                         setVendorSkippedItems(prev => new Set(prev).add(origIdx));
+                                        setVendorConfirmedReplacements(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
+                                        showToast(`Skipped changes for ${item.name}`, 'error');
                                       }}
                                       className={`px-3 py-1 rounded text-xs font-bold transition-all ${
                                         isSkipped
@@ -6433,8 +6438,7 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                                       ✕ Skip
                                     </button>
                                   </div>
-                                )}
-                              </div>
+                                )}                          </div>
 
                               {/* Diff Table (Matches Screenshot 1) */}
                               {item.fieldChanges && item.fieldChanges.length > 0 && !isEditing && (
