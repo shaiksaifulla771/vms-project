@@ -5535,7 +5535,11 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                       <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
                     </TableCell>
                     )}
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600">
+                    <TableCell
+                      onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
+                      className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600 cursor-pointer hover:underline hover:text-blue-800"
+                      title="Click to view full vendor profile details & print PDF"
+                    >
                       {v.vendorId || '-'}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize relative group/vtooltip max-w-[140px]">
