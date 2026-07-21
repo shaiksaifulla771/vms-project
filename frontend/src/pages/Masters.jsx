@@ -5216,7 +5216,7 @@ const VendorsTab = () => {
               onChange={(e) => setStatus(e.target.value)}
               className="px-2.5 py-0.5 h-7 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-600 focus:outline-none cursor-pointer"
             >
-              <option value="">All Statuses (Active, Inactive, Draft)</option>
+              <option value="">All status</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
               <option value="Draft">Draft</option>
