@@ -6184,16 +6184,9 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
 
           {/* Results after file uploaded */}
           {vendorImportSummary && (
-            <div className="space-y-3 p-3 border border-slate-200 rounded-md bg-white">
-              {!isVendorAutoEntry && (
-                <div className="flex gap-2 justify-center mb-2">
-                  <span className="px-3 py-1 bg-amber-50 text-amber-700 font-bold text-xs rounded-full border border-amber-200">Changed ({vendorImportSummary.existingMatchCount || 0})</span>
-                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-200">New ({(vendorImportSummary.acceptedCount || 0) + (vendorImportSummary.duplicateCount || 0)})</span>
-                </div>
-              )}
-
+            <div className="space-y-3.5 p-4 border border-slate-200 rounded-lg bg-white">
               {/* File success banner */}
-              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md flex items-center space-x-2 text-emerald-800 font-semibold mb-1">
+              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md flex items-center space-x-2 text-emerald-800 font-semibold">
                 <div className="p-0.5 bg-emerald-100 rounded-full text-emerald-600">
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
                 </div>
@@ -6203,244 +6196,42 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                 </div>
               </div>
 
-              {/* Summary row */}
-              <div className="flex items-center justify-between border-b pb-1.5 mb-1.5">
+              {/* Validation Results Summary Header */}
+              <div className="flex items-center justify-between border-b pb-1.5">
                 <span className="text-xs font-bold text-slate-700">Validation Results Summary</span>
-                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded">Total: {vendorImportSummary.total} rows</span>
+                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded">Total: {vendorImportSummary.total} rows</span>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="bg-emerald-50 border border-emerald-100 p-1.5 rounded">
-                  <span className="text-[10px] text-emerald-600 font-bold block">✅ New Vendors</span>
-                  <span className="text-sm font-extrabold text-emerald-700">{vendorImportSummary.acceptedCount}</span>
+
+              {/* 3 Summary Cards Grid */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-emerald-50/70 border border-emerald-100 p-2.5 rounded-md">
+                  <span className="text-[10px] text-emerald-600 font-bold block">✓ New Vendors</span>
+                  <span className="text-lg font-extrabold text-emerald-700">{vendorImportSummary.acceptedCount || 0}</span>
                 </div>
-                <div className="bg-amber-50 border border-amber-100 p-1.5 rounded">
+                <div className="bg-amber-50/70 border border-amber-100 p-2.5 rounded-md">
                   <span className="text-[10px] text-amber-700 font-bold block">⚠️ Already Existing</span>
-                  <span className="text-sm font-extrabold text-amber-700">{vendorImportSummary.existingMatchCount || 0}</span>
+                  <span className="text-lg font-extrabold text-amber-700">{vendorImportSummary.existingMatchCount || 0}</span>
                 </div>
-                <div className="bg-red-50 border border-red-100 p-1.5 rounded">
-                  <span className="text-[10px] text-red-600 font-bold block">❌ Errors</span>
-                  <span className="text-sm font-extrabold text-red-700">{(vendorImportSummary.rejectedCount || 0) + (vendorImportSummary.duplicateCount || 0)}</span>
+                <div className="bg-red-50/70 border border-red-100 p-2.5 rounded-md">
+                  <span className="text-[10px] text-red-600 font-bold block">✕ Errors</span>
+                  <span className="text-lg font-extrabold text-red-700">{(vendorImportSummary.rejectedCount || 0) + (vendorImportSummary.duplicateCount || 0)}</span>
                 </div>
               </div>
 
-              {vendorImportSummary.rejected.length > 0 && (
-                <div className="max-h-24 overflow-y-auto border border-red-100 rounded p-1.5 bg-red-50/20 space-y-1">
-                  <span className="text-[10px] text-red-700 font-bold block uppercase">Error Details:</span>
-                  {vendorImportSummary.rejected.map((err, idx) => (
-                    <span key={idx} className="text-[10px] text-red-600 font-medium block leading-tight">• {err}</span>
-                  ))}
-                </div>
-              )}
-
-              {/* ── BULK ENTRY: Incomplete Records panel (Inline Editing) ── */}
-              {isVendorAutoEntry && (editableVendorItems.filter(i => i.validationErrors.length > 0).length > 0) && (
-                <div className="space-y-2 p-3 border border-amber-300 rounded-md bg-amber-50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center space-x-1.5">
-                      <Info className="h-3.5 w-3.5 text-amber-600" />
-                      <span>Incomplete Records ({editableVendorItems.filter(i => i.validationErrors.length > 0).length}) — Fill Missing Details</span>
-                    </span>
-                    <span className="text-[10px] bg-amber-200 text-amber-800 font-bold px-2 py-0.5 rounded-full">
-                      Action Required
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-amber-800 font-medium">
-                    Some rows in your spreadsheet are missing required fields. Fill in the missing information below to assign a Vendor Code and include them in the import.
-                  </p>
-
-                  <div className="max-h-52 overflow-y-auto space-y-2 pt-1">
-                    {editableVendorItems.map((item, idx) => {
-                      if (item.validationErrors.length === 0) return null;
-
-                      return (
-                        <div key={idx} className="p-2.5 rounded border border-amber-200 bg-white text-xs space-y-2 shadow-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-amber-700 uppercase">Row #{idx + 1} — Missing Info</span>
-                            <span className="text-[9px] text-red-600 font-semibold">{item.validationErrors.join(' | ')}</span>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            <div>
-                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Vendor Name *</label>
-                              <input
-                                type="text"
-                                value={item.name || ''}
-                                placeholder="Enter vendor name..."
-                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'name', e.target.value)}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Primary Email *</label>
-                              <input
-                                type="email"
-                                value={item.email || ''}
-                                placeholder="Enter vendor email..."
-                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'email', e.target.value)}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Phone Number</label>
-                              <input
-                                type="text"
-                                value={item.phone || ''}
-                                placeholder="Enter phone..."
-                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'phone', e.target.value)}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Company</label>
-                              <input
-                                type="text"
-                                value={item.company || ''}
-                                placeholder="Enter company..."
-                                onChange={(e) => handleUpdateIncompleteVendorRow(idx, 'company', e.target.value)}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-medium"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* ── BULK ENTRY: New Vendors panel ── */}
-              {isVendorAutoEntry && vendorImportSummary.acceptedCount > 0 && (
-                <div className="space-y-2 p-3 border border-emerald-200 rounded-md bg-emerald-50/50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide flex items-center space-x-1.5">
-                      <Info className="h-3.5 w-3.5" />
-                      <span>New Vendors to Add</span>
-                    </span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
-                      {vendorImportSummary.acceptedCount} new
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-emerald-700 font-medium">
-                    These vendors are new and will be added directly to Vendor Master with the assigned codes below.
-                  </p>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5">
-                    {editableVendorItems.map((item, idx) => {
-                      if (item.isExistingMatch || item.validationErrors.length > 0 || item.isDuplicate) return null;
-                      return (
-                        <div key={idx} className="flex items-center justify-between px-3 py-2 rounded border border-emerald-200 bg-white text-xs font-semibold">
-                          <div className="flex-1 min-w-0">
-                            <span className="font-bold block truncate text-slate-800 capitalize">{item.name} ({item.company})</span>
-                            <span className="text-[10px] text-slate-400 font-mono">Code: {item.vendorId} • {item.email} • {item.phone}</span>
-                          </div>
-                          <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full ml-3">NEW</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* ── BULK ENTRY: Replace / Skip panel for existing matches ── */}
-              {isVendorAutoEntry && (vendorImportSummary.existingMatchCount || 0) > 0 && (
-                <div className="space-y-2 p-3 border border-amber-200 rounded-md bg-amber-50/50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center space-x-1.5">
-                      <Info className="h-3.5 w-3.5" />
-                      <span>Already in Database — Replace or Skip?</span>
-                    </span>
-                    <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">
-                      {vendorConfirmedReplacements.size + vendorSkippedItems.size} / {vendorImportSummary.existingMatchCount} resolved
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-amber-700 font-medium">
-                    These vendors already exist. Choose <strong>Replace</strong> to overwrite with new data, or <strong>Skip</strong> to keep existing data.
-                  </p>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5">
-                    {editableVendorItems.map((item, idx) => {
-                      if (!item.isExistingMatch || item.validationErrors.length > 0) return null;
-                      const isConfirmed = vendorConfirmedReplacements.has(idx);
-                      const isSkipped = vendorSkippedItems.has(idx);
-                      return (
-                        <div key={idx} className={`flex items-center justify-between px-3 py-2 rounded border text-xs font-semibold transition-all ${
-                          isConfirmed ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
-                          isSkipped   ? 'bg-slate-50 border-slate-200 text-slate-400' :
-                                        'bg-white border-amber-200 text-slate-700'
-                        }`}>
-                          <div className="flex-1 min-w-0">
-                            <span className={`font-bold block truncate ${isSkipped ? 'line-through' : ''}`}>{item.name} ({item.company})</span>
-                            <span className="text-[10px] text-slate-400 font-mono">Code: {item.vendorId} • {item.email}</span>
-                            {item.existingVendorDetails && !isSkipped && (
-                              <span className="text-[10px] text-amber-600 block">
-                                DB: {item.existingVendorDetails.name} • {item.existingVendorDetails.phone} • {item.existingVendorDetails.category}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-1.5 ml-3 flex-shrink-0">
-                            {(isConfirmed || isSkipped) ? (
-                              <>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isConfirmed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-                                  {isConfirmed ? '✓ Will Replace' : '✕ Skipped'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setVendorConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; });
-                                    setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; });
-                                  }}
-                                  className="text-[10px] text-slate-400 hover:text-slate-600 font-bold underline px-1"
-                                >
-                                  Change
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setVendorConfirmedReplacements(prev => new Set(prev).add(idx));
-                                    setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(idx); return n; });
-                                  }}
-                                  className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded transition-colors"
-                                >
-                                  Replace
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setVendorSkippedItems(prev => new Set(prev).add(idx));
-                                    setVendorConfirmedReplacements(prev => { const n = new Set(prev); n.delete(idx); return n; });
-                                  }}
-                                  className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2.5 py-1 rounded transition-colors"
-                                >
-                                  Skip
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* ── BULK UPDATE: Filter Tabs & Review Cards ── */}
-              {!isVendorAutoEntry && (() => {
-                const changedItems = editableVendorItems.filter(i => i.isExistingMatch && i.fieldChanges && i.fieldChanges.length > 0);
-                const noChangeItems = editableVendorItems.filter(i => i.isExistingMatch && (!i.fieldChanges || i.fieldChanges.length === 0));
+              {/* BULK UPDATE REVIEW BOX */}
+              {(() => {
+                const changedItems = editableVendorItems.filter(i => i.isExistingMatch && i.fieldChanges && i.fieldChanges.length > 0 && i.validationErrors.length === 0);
+                const noChangeItems = editableVendorItems.filter(i => i.isExistingMatch && (!i.fieldChanges || i.fieldChanges.length === 0) && i.validationErrors.length === 0);
                 const newItems = editableVendorItems.filter(i => !i.isExistingMatch && i.validationErrors.length === 0);
 
-                const filteredRows = editableVendorItems.filter((item, idx) => {
-                  if (item.validationErrors.length > 0) return false;
+                const filteredRows = editableVendorItems.filter(item => {
+                  if (item.validationErrors && item.validationErrors.length > 0) return false;
                   if (vendorImportSearch) {
                     const q = vendorImportSearch.toLowerCase();
                     const nameMatch = (item.name || '').toLowerCase().includes(q);
-                    const emailMatch = (item.email || '').toLowerCase().includes(q);
                     const codeMatch = (item.vendorId || '').toLowerCase().includes(q);
-                    if (!nameMatch && !emailMatch && !codeMatch) return false;
+                    const emailMatch = (item.email || '').toLowerCase().includes(q);
+                    if (!nameMatch && !codeMatch && !emailMatch) return false;
                   }
                   if (vendorBulkUpdateTab === 'changed') return item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0;
                   if (vendorBulkUpdateTab === 'nochange') return item.isExistingMatch && (!item.fieldChanges || item.fieldChanges.length === 0);
@@ -6449,34 +6240,50 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                 });
 
                 return (
-                  <div className="space-y-3">
-                    {/* Tabs row */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 border-b pb-2">
-                      <div className="flex items-center gap-1">
-                        {[
-                          { key: 'changed', label: `Changed (${changedItems.length})`, color: 'bg-amber-500 text-white' },
-                          { key: 'new', label: `New (${newItems.length})`, color: 'bg-emerald-600 text-white' },
-                          { key: 'nochange', label: `No Change (${noChangeItems.length})`, color: 'bg-slate-600 text-white' },
-                          { key: 'all', label: `All (${editableVendorItems.length})`, color: 'bg-blue-600 text-white' }
-                        ].map(t => (
-                          <button
-                            key={t.key}
-                            onClick={() => setVendorBulkUpdateTab(t.key)}
-                            className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-all ${vendorBulkUpdateTab === t.key ? t.color : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                  <div className="border border-blue-200 rounded-lg p-3.5 bg-blue-50/20 space-y-3">
+                    {/* Header line inside BULK UPDATE REVIEW */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5 text-xs font-extrabold text-blue-900">
+                        <Info className="h-4 w-4 text-blue-600" />
+                        <span>BULK UPDATE REVIEW</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] text-slate-500 font-medium">{noChangeItems.length} unchanged (auto-kept)</span>
+                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-bold">Ready to import</Badge>
+                      </div>
+                    </div>
+
+                    {/* Filter Tabs & Search Bar */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5">
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          onClick={() => setVendorBulkUpdateTab('changed')}
+                          className={`text-xs font-bold px-3 py-1 rounded-md border transition-all ${vendorBulkUpdateTab === 'changed' ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                        >
+                          Changed ({changedItems.length})
+                        </button>
+                        <button
+                          onClick={() => setVendorBulkUpdateTab('nochange')}
+                          className={`text-xs font-bold px-3 py-1 rounded-md border transition-all ${vendorBulkUpdateTab === 'nochange' ? 'bg-slate-700 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                        >
+                          No Change ({noChangeItems.length})
+                        </button>
+                        <button
+                          onClick={() => setVendorBulkUpdateTab('new')}
+                          className={`text-xs font-bold px-3 py-1 rounded-md border transition-all ${vendorBulkUpdateTab === 'new' ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                        >
+                          New ({newItems.length})
+                        </button>
                       </div>
 
-                      <div className="relative w-full lg:w-[320px]">
+                      <div className="relative w-full lg:w-[360px]">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                         <input
                           type="text"
                           value={vendorImportSearch}
                           onChange={(e) => setVendorImportSearch(e.target.value)}
-                          placeholder="Search vendor name, code, email..."
-                          className="w-full pl-8 pr-7 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white font-semibold"
+                          placeholder="Search vendor name or code to edit..."
+                          className="w-full pl-8 pr-7 py-1.5 border border-blue-200 rounded-md text-xs focus:outline-none focus:border-blue-500 bg-white font-semibold shadow-sm"
                         />
                         {vendorImportSearch && (
                           <button onClick={() => setVendorImportSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
@@ -6485,58 +6292,182 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                     </div>
 
                     {/* Filtered items list */}
-                    <div className="max-h-64 overflow-y-auto space-y-2">
-                      {filteredRows.map((item) => {
-                        const origIdx = editableVendorItems.indexOf(item);
-                        const isSkipped = vendorSkippedItems.has(origIdx);
-                        const isConfirmed = vendorConfirmedReplacements.has(origIdx);
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {filteredRows.length === 0 ? (
+                        <div className="py-6 text-center text-slate-400 text-xs font-medium bg-white rounded-lg border border-slate-200">
+                          No records match this view.
+                        </div>
+                      ) : (
+                        filteredRows.map((item) => {
+                          const origIdx = editableVendorItems.indexOf(item);
+                          const isSkipped = vendorSkippedItems.has(origIdx);
+                          const isEditing = editingVendorPreviewIdx === origIdx;
+                          const isNew = !item.isExistingMatch || item.status === 'New';
 
-                        return (
-                          <div key={origIdx} className={`p-3 rounded border text-xs transition-all ${isSkipped ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200'}`}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div>
-                                <span className="font-bold text-slate-800 text-xs capitalize">{item.name} ({item.company})</span>
-                                <span className="text-[10px] text-slate-400 font-mono ml-2">Code: {item.vendorId || 'Auto'} • {item.email}</span>
-                              </div>
-                              <div className="flex items-center space-x-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenVendorPreviewEdit(origIdx)}
-                                  className="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded transition-colors flex items-center space-x-1 border border-blue-200"
-                                >
-                                  <Edit2 className="h-3 w-3" />
-                                  <span>Edit & Save</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (isSkipped) {
-                                      setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
-                                    } else {
-                                      setVendorSkippedItems(prev => new Set(prev).add(origIdx));
-                                    }
-                                  }}
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded transition-colors ${isSkipped ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}
-                                >
-                                  {isSkipped ? '✓ Enable Row' : '✕ Skip Row'}
-                                </button>
-                              </div>
-                            </div>
+                          return (
+                            <div key={origIdx} className={`p-3 rounded-lg border text-xs transition-all bg-white ${isSkipped ? 'border-slate-200 opacity-60 bg-slate-50' : 'border-slate-200 shadow-sm'}`}>
+                              {/* Row Card Header */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-bold text-slate-800 text-xs capitalize">{item.name}</span>
+                                  <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">#{item.vendorId || 'Auto'}</span>
+                                  
+                                  {/* Edit Button: Disabled for New Data as requested */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (isNew) {
+                                        showToast("Edit option is disabled for new vendor data records during Bulk Update.", "error");
+                                        return;
+                                      }
+                                      if (isEditing) {
+                                        setEditingVendorPreviewIdx(null);
+                                      } else {
+                                        setEditingVendorPreviewIdx(origIdx);
+                                        setVendorPreviewRowData({ ...item });
+                                      }
+                                    }}
+                                    disabled={isNew}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors flex items-center space-x-1 ${
+                                      isNew 
+                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50' 
+                                        : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
+                                    }`}
+                                    title={isNew ? 'Edit option is not permitted for new data records' : 'Edit row details'}
+                                  >
+                                    <span>Edit</span>
+                                  </button>
 
-                            {item.fieldChanges && item.fieldChanges.length > 0 && (
-                              <div className="grid grid-cols-2 gap-1.5 mt-2 bg-amber-50/50 p-2 rounded border border-amber-100">
-                                {item.fieldChanges.map((fc, fcIdx) => (
-                                  <div key={fcIdx} className="text-[10px]">
-                                    <span className="font-bold text-slate-600">{fc.label}:</span>{' '}
-                                    <span className="line-through text-red-500 mr-1">{fc.oldVal || '(empty)'}</span>
-                                    <span className="font-bold text-emerald-700">→ {fc.newVal}</span>
+                                  {!item.fieldChanges || item.fieldChanges.length === 0 ? (
+                                    <span className="text-[11px] text-slate-400 italic font-medium">✓ No changes</span>
+                                  ) : null}
+                                </div>
+
+                                {/* Right Side Actions: Accept / Skip Toggles */}
+                                {item.fieldChanges && item.fieldChanges.length > 0 && (
+                                  <div className="flex items-center space-x-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
+                                      }}
+                                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                                        !isSkipped
+                                          ? 'bg-blue-600 text-white shadow-sm'
+                                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      ✓ Accept
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setVendorSkippedItems(prev => new Set(prev).add(origIdx));
+                                      }}
+                                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                                        isSkipped
+                                          ? 'bg-red-600 text-white shadow-sm'
+                                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      ✕ Skip
+                                    </button>
                                   </div>
-                                ))}
+                                )}
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+
+                              {/* Diff Table (Matches Screenshot 1) */}
+                              {item.fieldChanges && item.fieldChanges.length > 0 && !isEditing && (
+                                <div className="mt-2.5 border-t border-slate-100 pt-2 space-y-1">
+                                  <div className="grid grid-cols-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1">
+                                    <span>FIELD</span>
+                                    <span>CURRENT (IN DB)</span>
+                                    <span>NEW (FROM EXCEL)</span>
+                                  </div>
+                                  {item.fieldChanges.map((fc, fcIdx) => (
+                                    <div key={fcIdx} className="grid grid-cols-3 text-xs items-center px-1 py-0.5 rounded hover:bg-slate-50">
+                                      <span className="font-semibold text-slate-600">{fc.label}</span>
+                                      <span className="line-through text-red-500 font-medium bg-red-50 px-1.5 py-0.5 rounded w-fit">{fc.oldVal || '(empty)'}</span>
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-slate-400">→</span>
+                                        <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{fc.newVal}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Inline Edit Form (Matches Screenshot 3) */}
+                              {isEditing && (
+                                <div className="mt-2.5 border-t border-slate-200 pt-2.5 bg-slate-50 p-2.5 rounded-md space-y-2">
+                                  <div className="grid grid-cols-4 gap-2">
+                                    <div>
+                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Vendor Name</label>
+                                      <input
+                                        type="text"
+                                        value={vendorPreviewRowData.name || ''}
+                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, name: e.target.value })}
+                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Category</label>
+                                      <input
+                                        type="text"
+                                        value={vendorPreviewRowData.category || ''}
+                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, category: e.target.value })}
+                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Email</label>
+                                      <input
+                                        type="text"
+                                        value={vendorPreviewRowData.email || ''}
+                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, email: e.target.value })}
+                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Phone</label>
+                                      <input
+                                        type="text"
+                                        value={vendorPreviewRowData.phone || ''}
+                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, phone: e.target.value })}
+                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-end space-x-1.5 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingVendorPreviewIdx(null)}
+                                      className="px-2.5 py-1 rounded text-xs font-bold border border-slate-200 hover:bg-slate-100 text-slate-600"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditableVendorItems(prev => {
+                                          const next = [...prev];
+                                          next[origIdx] = { ...next[origIdx], ...vendorPreviewRowData };
+                                          return next;
+                                        });
+                                        setEditingVendorPreviewIdx(null);
+                                        showToast("Row details updated locally.");
+                                      }}
+                                      className="px-3 py-1 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 );
@@ -6544,22 +6475,28 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
             </div>
           )}
 
-          <div className="pt-3 flex items-center justify-end space-x-2 border-t border-slate-100 mt-4">
+          {/* Bottom Action Footer Bar */}
+          <div className="pt-3 flex items-center justify-between border-t border-slate-200 mt-4">
             {vendorImportSummary ? (
               <>
                 <Button variant="outline" size="sm" onClick={() => setVendorImportSummary(null)}>
                   Cancel / Re-upload
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    await handleVendorBatchImportSubmit();
-                  }}
-                  isLoading={submitLoading}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                >
-                  ✓ Save & Import Batch
-                </Button>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      await handleVendorBatchImportSubmit();
+                    }}
+                    isLoading={submitLoading}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 flex items-center space-x-1"
+                  >
+                    <span>✓ Save & Import Updates</span>
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setIsVendorImportModalOpen(false)}>
+                    Exit
+                  </Button>
+                </div>
               </>
             ) : (
               <Button variant="outline" size="sm" onClick={() => setIsVendorImportModalOpen(false)}>
