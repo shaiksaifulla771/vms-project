@@ -4540,10 +4540,12 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
     if (!formData.name || !formData.name.trim()) {
       errors.name = 'Vendor representative name is required';
     }
-    if (!formData.email || !formData.email.trim()) {
-      errors.email = 'Email address is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) {
-      errors.email = 'Invalid email address format';
+
+    // If user provided email, validate format. If left blank, it will auto-generate!
+    if (formData.email && formData.email.trim()) {
+      if (!/\S+@\S+\.\S+/.test(formData.email.trim())) {
+        errors.email = 'Invalid email address format';
+      }
     }
 
     // Optional field defaults
@@ -4552,7 +4554,7 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
     }
     if (!formData.category) formData.category = 'Food Processor';
 
-    // GSTIN is completely optional. Validate format ONLY if non-empty GSTIN is typed.
+    // Optional GSTIN format check
     if (!formData.hasNoGst && Array.isArray(formData.gstList)) {
       const gstErrors = [];
       formData.gstList.forEach((gst, index) => {
@@ -5932,7 +5934,7 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
 
           <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-200 mt-4">
             <Button variant="outline" type="button" onClick={handleCloseModal}>Cancel</Button>
-            <Button type="submit" isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 shadow-sm px-6">
+            <Button type="submit" onClick={handleFormSubmit} isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 shadow-sm px-6">
               {editingId ? 'Save Changes' : 'Register Vendor'}
             </Button>
           </div>
