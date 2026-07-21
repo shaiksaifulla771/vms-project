@@ -23,7 +23,7 @@ exports.getVendors = async (req, res, next) => {
     const limitNum = parseInt(limit, 10);
     const startIndex = (pageNum - 1) * limitNum;
     const total = await Vendor.countDocuments(query);
-    const vendors = await Vendor.find(query).sort({ createdAt: 1 }).skip(startIndex).limit(limitNum);
+    const vendors = await Vendor.find(query).sort({ createdAt: -1 }).skip(startIndex).limit(limitNum);
     res.status(200).json({ success: true, count: vendors.length, pagination: { total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum }, data: vendors });
   } catch (err) {
     next(err);
