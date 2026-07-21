@@ -3688,11 +3688,27 @@ const VendorsTab = () => {
     setError(null);
     try {
       const params = {
-        limit: 100,
+        limit: 1000,
         ...(search && { search }),
         ...(category && { category }),
         ...(status && { status })
       };
+      const res = await api.get('/api/vendors', { params });
+      if (res.data && res.data.success) {
+        const sorted = [...res.data.data].sort((a, b) => {
+          const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
+          const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
+          return numB - numA;
+        });
+        setVendors(sorted);
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Failed to fetch vendors.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Reset wizard on modal close
   React.useEffect(() => {
@@ -4389,22 +4405,6 @@ const VendorsTab = () => {
   
 
   
-      const res = await api.get('/api/vendors', { params });
-      if (res.data && res.data.success) {
-        const sorted = [...res.data.data].sort((a, b) => {
-          const numA = parseInt((a.vendorId || '').replace(/\D/g, '') || '0', 10);
-          const numB = parseInt((b.vendorId || '').replace(/\D/g, '') || '0', 10);
-          return numB - numA;
-        });
-        setVendors(sorted);
-      }
-    } catch (err) {
-      console.error(err);
-      setError('Failed to fetch vendors.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchVendors();
