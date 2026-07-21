@@ -242,6 +242,8 @@ const validateRowData = (item, isAutoEntryVal, systemExistingCodes, importedCode
 
 
 const MaterialsTab = () => {
+  const [deletedMaterialsHistory, setDeletedMaterialsHistory] = useState([]);
+  const [isDeletedMaterialsModalOpen, setIsDeletedMaterialsModalOpen] = useState(false);
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -2668,6 +2670,63 @@ const MaterialsTab = () => {
         </form>
       </Dialog>
 
+      {/* Deleted Materials History Modal */}
+      <Dialog
+        isOpen={isDeletedMaterialsModalOpen}
+        onClose={() => setIsDeletedMaterialsModalOpen(false)}
+        title="Deleted Sheets & Removed Material Records History"
+        className="!max-w-[60vw] !w-[60vw] !rounded-xl"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-red-800 font-semibold flex items-center justify-between">
+            <div>
+              <span className="font-bold block text-sm">Removed Material Sheets Log</span>
+              <span className="text-[11px] text-red-600 block">List of materials deleted during this session. You can restore any material record back to your main data sheet.</span>
+            </div>
+            <Badge className="bg-red-100 text-red-800 border-red-200 text-xs font-bold">
+              {deletedMaterialsHistory.length} Removed
+            </Badge>
+          </div>
+
+          {deletedMaterialsHistory.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 space-y-1">
+              <Trash2 className="h-8 w-8 mx-auto text-slate-300" />
+              <span className="font-bold text-xs block text-slate-500">No deleted material sheets in history</span>
+              <span className="text-[11px] text-slate-400 block">When you delete a material, it will appear here for easy restoration.</span>
+            </div>
+          ) : (
+            <div className="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+              {deletedMaterialsHistory.map((item, idx) => (
+                <div key={idx} className="p-3 hover:bg-slate-50 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.code}</span>
+                    <div>
+                      <span className="font-bold text-slate-800 text-xs block capitalize">{item.name}</span>
+                      <span className="text-[11px] text-slate-500 block">{item.type} • {item.subcategory} • Unit: {item.unit}</span>
+                      <span className="text-[10px] text-slate-400 block">Deleted at: {new Date(item.deletedAt).toLocaleTimeString()}</span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleRestoreMaterial(item)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    <span>Restore Record</span>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="pt-3 flex justify-end border-t border-slate-100">
+            <Button variant="outline" size="sm" onClick={() => setIsDeletedMaterialsModalOpen(false)}>
+              Close History Log
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
       {/* Batch Edit Wizard Modal */}
       <Dialog
         isOpen={isBatchEditModalOpen}
@@ -4276,7 +4335,39 @@ const VendorsTab = () => {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [viewingVendorAudit, setViewingVendorAudit] = useState(null);
-  const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
+  const [deletedVendorsHistory, setDeletedVendorsHistory] = useState([]);
+  const [isDeletedVendorsModalOpen, setIsDeletedVendorsModalOpen] = useState(false);
+
+  const handleExportVendorGrid = () => {
+    try {
+      const dataToExport = filteredVendors.map(v => ({
+        'Vendor Code': v.vendorId || '',
+        'Vendor Name': v.name || '',
+        'Company': v.company || '',
+        'Primary Email': v.email || '',
+        'Phone': v.phone || '',
+        'Category': v.category || '',
+        'Sub-Category': v.subCategory || '',
+        'Address': v.address || '',
+        'City': v.city || '',
+        'State': v.state || '',
+        'Zip Code': v.zipCode || '',
+        'GSTIN': (v.gstList && v.gstList.length > 0) ? v.gstList.map(g => `${g.state}:${g.gstin}`).join('; ') : (v.gstin || ''),
+        'Status': v.status || 'Active',
+        'Notes': v.notes || ''
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendors Grid');
+      XLSX.writeFile(workbook, `Vendor_Master_Grid_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast("Vendor grid exported successfully to Excel.");
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to export vendor grid.", "error");
+    }
+  };
+const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   const [activeFilterCol, setActiveFilterCol] = useState(null);
   const [columnFilters, setColumnFilters] = useState({});
   const [tempFilters, setTempFilters] = useState({});
@@ -6721,6 +6812,63 @@ const VendorsTab = () => {
             </Button>
             <Button size="sm" onClick={handleSaveVendorPreviewRow} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
               ✓ Save Row Details
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Deleted Vendors Sheets History Modal */}
+      <Dialog
+        isOpen={isDeletedVendorsModalOpen}
+        onClose={() => setIsDeletedVendorsModalOpen(false)}
+        title="Deleted Sheets & Removed Vendor Records History"
+        className="!max-w-[60vw] !w-[60vw] !rounded-xl"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-red-800 font-semibold flex items-center justify-between">
+            <div>
+              <span className="font-bold block text-sm">Removed Vendor Sheets Log</span>
+              <span className="text-[11px] text-red-600 block">List of vendors deleted during this session. You can restore any record back to your main data sheet.</span>
+            </div>
+            <Badge className="bg-red-100 text-red-800 border-red-200 text-xs font-bold">
+              {deletedVendorsHistory.length} Removed
+            </Badge>
+          </div>
+
+          {deletedVendorsHistory.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 space-y-1">
+              <Trash2 className="h-8 w-8 mx-auto text-slate-300" />
+              <span className="font-bold text-xs block text-slate-500">No deleted vendor sheets in history</span>
+              <span className="text-[11px] text-slate-400 block">When you delete a vendor, it will appear here for easy restoration.</span>
+            </div>
+          ) : (
+            <div className="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+              {deletedVendorsHistory.map((item, idx) => (
+                <div key={idx} className="p-3 hover:bg-slate-50 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.vendorId}</span>
+                    <div>
+                      <span className="font-bold text-slate-800 text-xs block capitalize">{item.name}</span>
+                      <span className="text-[11px] text-slate-500 block">{item.company} • {item.email}</span>
+                      <span className="text-[10px] text-slate-400 block">Deleted at: {new Date(item.deletedAt).toLocaleTimeString()}</span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleRestoreVendor(item)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    <span>Restore Record</span>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="pt-3 flex justify-end border-t border-slate-100">
+            <Button variant="outline" size="sm" onClick={() => setIsDeletedVendorsModalOpen(false)}>
+              Close History Log
             </Button>
           </div>
         </div>
