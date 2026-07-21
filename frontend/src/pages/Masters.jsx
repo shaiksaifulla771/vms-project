@@ -4896,28 +4896,34 @@ const VendorsTab = () => {
     );
   };
 
-  const filteredVendors = vendors.filter(v => {
-    for (const col in columnFilters) {
-      const selectedVals = columnFilters[col];
-      if (selectedVals && selectedVals.length > 0) {
-        let attrVal = '';
-        if (col === 'gstList') {
-          const gstinValues = (v.gstList || []).map(g => g.gstin.toString().trim().toLowerCase());
-          if (!selectedVals.some(sv => gstinValues.includes(sv.toString().trim().toLowerCase()))) {
+  const filteredVendors = (() => {
+    let list = vendors;
+    if (status === 'Deleted') {
+      list = deletedVendorsHistory.map(d => ({ ...d, status: 'Deleted', isDeletedHistoryItem: true }));
+    }
+    return list.filter(v => {
+      for (const col in columnFilters) {
+        const selectedVals = columnFilters[col];
+        if (selectedVals && selectedVals.length > 0) {
+          let attrVal = '';
+          if (col === 'gstList') {
+            const gstinValues = (v.gstList || []).map(g => g.gstin.toString().trim().toLowerCase());
+            if (!selectedVals.some(sv => gstinValues.includes(sv.toString().trim().toLowerCase()))) {
+              return false;
+            }
+            continue;
+          } else {
+            attrVal = (v[col] || '');
+          }
+          const val = attrVal.toString().trim().toLowerCase();
+          if (!selectedVals.map(sv => sv.toString().trim().toLowerCase()).includes(val)) {
             return false;
           }
-          continue;
-        } else {
-          attrVal = (v[col] || '');
-        }
-        const val = attrVal.toString().trim().toLowerCase();
-        if (!selectedVals.map(sv => sv.toString().trim().toLowerCase()).includes(val)) {
-          return false;
         }
       }
-    }
-    return true;
-  });
+      return true;
+    });
+  })();
 
   const handlePrintPdf = () => {
     if (!viewingVendor) return;
@@ -5210,9 +5216,11 @@ const VendorsTab = () => {
               onChange={(e) => setStatus(e.target.value)}
               className="px-2.5 py-0.5 h-7 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-600 focus:outline-none cursor-pointer"
             >
-              <option value="">All Statuses</option>
+              <option value="">All Statuses (Active, Inactive, Draft)</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
+              <option value="Draft">Draft</option>
+              <option value="Deleted">Deleted Sheets & Rows ({deletedVendorsHistory.length})</option>
             </select>
 
             <div className="relative">
