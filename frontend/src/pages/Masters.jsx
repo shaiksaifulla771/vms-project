@@ -4537,55 +4537,49 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
 
   const validateForm = () => {
     const errors = {};
-    if (!formData.name || !formData.name.trim()) errors.name = 'Vendor representative name is required';
+    if (!formData.name || !formData.name.trim()) {
+      errors.name = 'Vendor representative name is required';
+    }
     if (!formData.email || !formData.email.trim()) {
       errors.email = 'Email address is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) {
       errors.email = 'Invalid email address format';
     }
 
-    if (!formData.company || !formData.company.trim()) formData.company = formData.name ? formData.name.trim() : 'Company';
+    // Optional field defaults
+    if (!formData.company || !formData.company.trim()) {
+      formData.company = formData.name ? formData.name.trim() : 'Company';
+    }
     if (!formData.category) formData.category = 'Food Processor';
-    if (!formData.phone) formData.phone = '';
-    if (!formData.address) formData.address = '';
 
-    // Validate GST registrations if checkbox not checked
-    if (!formData.hasNoGst) {
-      if (!formData.gstList || formData.gstList.length === 0) {
-        errors.gstListStr = 'At least one GSTIN registration is required, or check "No GSTIN"';
-      } else {
-        const gstErrors = [];
-        formData.gstList.forEach((gst, index) => {
-          const rowError = {};
-          if (!gst.state) rowError.state = 'State is required';
-          if (!gst.gstin.trim()) {
-            rowError.gstin = 'GSTIN is required';
-          } else {
-            const gstinVal = gst.gstin.trim().toUpperCase();
-            if (gstinVal.length !== 15) {
-              rowError.gstin = 'GSTIN must be exactly 15 characters';
-            } else {
-              // Check state code prefix match
-              const prefix = gstinVal.substring(0, 2);
-              const mappedState = gstStateMap[prefix];
-              if (!mappedState) {
-                rowError.gstin = 'Invalid GSTIN state prefix';
-              } else if (mappedState !== gst.state) {
-                rowError.gstin = `GSTIN prefix ${prefix} belongs to ${mappedState}, not ${gst.state}`;
-              }
+    // GSTIN is completely optional. Validate format ONLY if non-empty GSTIN is typed.
+    if (!formData.hasNoGst && Array.isArray(formData.gstList)) {
+      const gstErrors = [];
+      formData.gstList.forEach((gst, index) => {
+        if (gst && (gst.gstin || gst.state)) {
+          const gstinVal = (gst.gstin || '').trim().toUpperCase();
+          const stateVal = gst.state || '';
+          if (gstinVal && gstinVal.length !== 15) {
+            gstErrors[index] = { gstin: 'GSTIN must be exactly 15 characters' };
+          } else if (gstinVal && stateVal) {
+            const prefix = gstinVal.substring(0, 2);
+            const mappedState = gstStateMap[prefix];
+            if (mappedState && mappedState !== stateVal) {
+              gstErrors[index] = { gstin: `GSTIN prefix ${prefix} belongs to ${mappedState}, not ${stateVal}` };
             }
           }
-          if (Object.keys(rowError).length > 0) {
-            gstErrors[index] = rowError;
-          }
-        });
-        if (gstErrors.length > 0) {
-          errors.gstList = gstErrors;
         }
+      });
+      if (gstErrors.length > 0) {
+        errors.gstList = gstErrors;
       }
     }
 
     setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      const firstErr = errors.name || errors.email || 'Please check required fields';
+      showToast(`Validation Notice: ${firstErr}`, "error");
+    }
     return Object.keys(errors).length === 0;
   };
 
