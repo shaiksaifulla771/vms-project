@@ -6775,6 +6775,33 @@ const VendorsTab = () => {
           </div>
         </div>
       </Dialog>
+
+      {/* Floating Toast Notifications Container for Vendor Master */}
+      <div className="fixed top-4 right-4 z-[9999] space-y-2.5 pointer-events-none">
+        {vendorToasts.map(t => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto flex items-center justify-between space-x-3 px-4 py-3 rounded-xl shadow-2xl border text-xs font-extrabold transition-all duration-300 transform translate-y-0 opacity-100 max-w-md ${
+              t.type === 'success' 
+                ? 'bg-emerald-600 border-emerald-700 text-white' 
+                : t.type === 'error'
+                ? 'bg-red-600 border-red-700 text-white'
+                : 'bg-blue-600 border-blue-700 text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <span className="text-sm">{t.type === 'success' ? '✓' : t.type === 'error' ? '⚠️' : 'ℹ️'}</span>
+              <span>{t.message}</span>
+            </div>
+            <button
+              onClick={() => setVendorToasts(prev => prev.filter(item => item.id !== t.id))}
+              className="text-white/80 hover:text-white font-bold ml-3 text-sm cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
 </div>
   );
 };
