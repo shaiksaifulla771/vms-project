@@ -3632,6 +3632,7 @@ const VendorsTab = () => {
   const [vendorCurrentFileName, setVendorCurrentFileName] = useState('');
   const [editingVendorPreviewIdx, setEditingVendorPreviewIdx] = useState(null);
   const [vendorPreviewFormData, setVendorPreviewFormData] = useState({});
+  const [vendorPreviewRowData, setVendorPreviewRowData] = useState({});
   const [isVendorSelectionMode, setIsVendorSelectionMode] = useState(false);
   const [selectedVendorRowIds, setSelectedVendorRowIds] = useState(new Set());
   const [vendorBatchEditItems, setVendorBatchEditItems] = useState([]);
