@@ -8,7 +8,7 @@ import { Input, Select, TextArea } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
 import { Drawer } from '../components/ui/Drawer';
-import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, ArrowRight, ShieldCheck, Printer, MoreVertical, Eye, Filter, Info } from 'lucide-react';
+import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, ArrowRight, ShieldCheck, Printer, MoreVertical, Eye, Filter, Info, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
 
 const Masters = () => {
   const [activeTab, setActiveTab] = useState('materials');
@@ -1760,138 +1760,23 @@ const MaterialsTab = () => {
 
               {showFunctionList && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-40 cursor-default"
-                    onClick={() => setShowFunctionList(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
-                    <button
-                      onClick={() => {
-                        setShowFunctionList(false);
-                        handleOpenAddModal();
-                      }}
-                      className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                    >
-                      <Plus className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Manual Entry</span>
+                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowFunctionList(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 w-52 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
+                    <button onClick={() => { setShowFunctionList(false); handleOpenAddModal(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                      <Plus className="h-3.5 w-3.5 text-blue-600" /><span>Manual Entry</span>
                     </button>
-
-                    <button
-                      onClick={() => {
-                        setShowFunctionList(false);
-                        setImportSummary(null);
-                        setIsAutoEntry(true);
-                        setIsImportModalOpen(true);
-                      }}
-                      className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                    >
-                      <Save className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Bulk Entry</span>
+                    <button onClick={() => { setShowFunctionList(false); setImportSummary(null); setIsAutoEntry(true); setIsImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /><span>Bulk Entry</span>
                     </button>
-
-                    <button
-                      onClick={() => {
-                        setShowFunctionList(false);
-                        setImportSummary(null);
-                        setIsAutoEntry(false);
-                        setIsImportModalOpen(true);
-                      }}
-                      className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                    >
-                      <Save className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Bulk Update</span>
+                    <button onClick={() => { setShowFunctionList(false); setImportSummary(null); setIsAutoEntry(false); setIsImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                      <RefreshCw className="h-3.5 w-3.5 text-amber-600" /><span>Bulk Update</span>
                     </button>
-                    <button
-                      onClick={() => {
-                        setShowFunctionList(false);
-                        const ids = selectedRowIds.size > 0 ? selectedRowIds : null;
-                        const itemsToEdit = ids
-                          ? filteredMaterials.filter(m => ids.has(m._id))
-                          : filteredMaterials;
-                        if (itemsToEdit.length === 0) {
-                          showToast('No records to edit', 'error');
-                          return;
-                        }
-                        let startIdx = ids
-                          ? filteredMaterials.findIndex(m => ids.has(m._id))
-                          : filteredMaterials.findIndex(m => m._id === selectedMaterialId);
-                        if (startIdx === -1) startIdx = 0;
-                        setBatchEditItems(itemsToEdit);
-                        setBatchEditIdx(0);
-                        const activeItem = itemsToEdit[0];
-                        const normalizedType = activeItem.type === 'Raw' || activeItem.type === 'Raw Material' ? 'Raw Material'
-                          : activeItem.type === 'Finished' || activeItem.type === 'Finished Goods' ? 'Finished Goods'
-                          : activeItem.type === 'Packing' || activeItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
-                        const subcats = subcategoryMap[normalizedType] || [];
-                        const matched = subcats.find(s => s.value.toLowerCase() === (activeItem.subcategory || '').toLowerCase());
-                        const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
-                        setFormData({
-                          name: activeItem.name,
-                          code: activeItem.code,
-                          unit: activeItem.unit,
-                          type: normalizedType,
-                          subcategory: finalSubcat,
-                          status: activeItem.status || 'Active',
-                          description: activeItem.description || ''
-                        });
-                        setFormErrors({});
-                        setIsBatchEditModalOpen(true);
-                      }}
-                      className={`w-full px-3 py-1.5 text-xs flex items-center space-x-1.5 text-left font-medium ${
-                        isEditSelectedActive
-                          ? 'text-slate-700 hover:bg-slate-50' 
-                          : 'text-slate-300 bg-slate-50/30 cursor-not-allowed pointer-events-none'
-                      }`}
-                      disabled={!isEditSelectedActive}
-                    >
-                      <Edit2 className="h-3.5 w-3.5 text-slate-400" />
-                      <span>
-                        {selectedRowIds.size > 0
-                          ? `Edit Selected (${selectedRowIds.size})`
-                          : 'Edit Selected'}
-                      </span>
+                    <button onClick={() => { setShowFunctionList(false); handleExportData(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium border-t border-slate-100">
+                      <Download className="h-3.5 w-3.5 text-purple-600" /><span>Export Grid to Excel</span>
                     </button>
-
-                    <div className="border-t border-slate-100 my-1" />
-
-                    <button
-                      onClick={() => {
-                        setShowFunctionList(false);
-                        handleExportData();
-                      }}
-                      className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                    >
-                      <Save className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Export Grid</span>
+                    <button onClick={() => { setShowFunctionList(false); setIsDeletedMaterialsModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-medium border-t border-slate-100">
+                      <Trash2 className="h-3.5 w-3.5 text-red-500" /><span>Deleted Sheets History ({deletedMaterialsHistory.length})</span>
                     </button>
-
-                    {sourceFilter && sourceFilter !== 'Manual Entry' && (
-                      <>
-                        <div className="border-t border-slate-100 my-1" />
-                        <button
-                          onClick={async () => {
-                            setShowFunctionList(false);
-                            if (window.confirm(`Are you sure you want to delete all materials imported from "${sourceFilter}"? This action cannot be undone.`)) {
-                              try {
-                                const res = await api.post('/api/materials/batch-delete-source', { source: sourceFilter });
-                                if (res.data && res.data.success) {
-                                  showToast(`Successfully deleted materials from "${sourceFilter}"`, "success");
-                                  setSourceFilter('');
-                                  fetchMaterials();
-                                }
-                              } catch (err) {
-                                const errMsg = err.response?.data?.error || err.message || "Failed to delete sheet data";
-                                showToast(errMsg, "error");
-                              }
-                            }
-                          }}
-                          className="w-full px-3 py-1.5 text-xs text-red-650 hover:bg-red-50 flex items-center space-x-1.5 text-left font-semibold"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                          <span>Delete Sheet Data</span>
-                        </button>
-                      </>
-                    )}
                   </div>
                 </>
               )}
