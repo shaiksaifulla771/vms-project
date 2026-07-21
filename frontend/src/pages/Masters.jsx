@@ -3621,6 +3621,24 @@ const MaterialsTab = () => {
 // -------------------------------------------------------------
 const VendorsTab = () => {
   const vendorFileInputRef = useRef(null);
+
+  // Consolidated States at Top of VendorsTab
+  const [vendors, setVendors] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState(null);
+
+  const [viewingVendor, setViewingVendor] = useState(null);
+  const [selectedVendor, setSelectedVendor] = useState(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+  const [submitLoading, setSubmitLoading] = useState(false);
+
   const [isVendorImportModalOpen, setIsVendorImportModalOpen] = useState(false);
   const [isVendorAutoEntry, setIsVendorAutoEntry] = useState(false);
   const [vendorImportSummary, setVendorImportSummary] = useState(null);
@@ -3633,11 +3651,30 @@ const VendorsTab = () => {
   const [editingVendorPreviewIdx, setEditingVendorPreviewIdx] = useState(null);
   const [vendorPreviewFormData, setVendorPreviewFormData] = useState({});
   const [vendorPreviewRowData, setVendorPreviewRowData] = useState({});
+
   const [isVendorSelectionMode, setIsVendorSelectionMode] = useState(false);
   const [selectedVendorRowIds, setSelectedVendorRowIds] = useState(new Set());
   const [vendorBatchEditItems, setVendorBatchEditItems] = useState([]);
   const [vendorBatchEditIdx, setVendorBatchEditIdx] = useState(0);
   const [isVendorBatchEditModalOpen, setIsVendorBatchEditModalOpen] = useState(false);
+
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [viewingVendorAudit, setViewingVendorAudit] = useState(null);
+  const [deletedVendorsHistory, setDeletedVendorsHistory] = useState([]);
+  const [isDeletedVendorsModalOpen, setIsDeletedVendorsModalOpen] = useState(false);
+  const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
+
+  const [activeFilterCol, setActiveFilterCol] = useState(null);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [tempFilters, setTempFilters] = useState({});
+  const [filterSearchText, setFilterSearchText] = useState({});
+
+  const [drafts, setDrafts] = useState([]);
+  const [currentDraftId, setCurrentDraftId] = useState(null);
+  const [showDraftsList, setShowDraftsList] = useState(false);
+  const [draftMessage, setDraftMessage] = useState('');
+  const [vendorToasts, setVendorToasts] = useState([]);
 
   // Reset wizard on modal close
   React.useEffect(() => {
@@ -4232,17 +4269,17 @@ const VendorsTab = () => {
     setIsViewModalOpen(true);
   };
 
-  const [vendors, setVendors] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [status, setStatus] = useState('');
-  const [error, setError] = useState(null);
-  const [openDropdownId, setOpenDropdownId] = useState(null);
-  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
-  const [viewingVendorAudit, setViewingVendorAudit] = useState(null);
-  const [deletedVendorsHistory, setDeletedVendorsHistory] = useState([]);
-  const [isDeletedVendorsModalOpen, setIsDeletedVendorsModalOpen] = useState(false);
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 
   const handleExportVendorGrid = () => {
     try {
@@ -4273,20 +4310,20 @@ const VendorsTab = () => {
       showToast("Failed to export vendor grid.", "error");
     }
   };
-const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
-  const [activeFilterCol, setActiveFilterCol] = useState(null);
-  const [columnFilters, setColumnFilters] = useState({});
-  const [tempFilters, setTempFilters] = useState({});
-  const [filterSearchText, setFilterSearchText] = useState({});
+
+  
+  
+  
+  
 
   // Form Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [viewingVendor, setViewingVendor] = useState(null);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [drafts, setDrafts] = useState([]);
-  const [currentDraftId, setCurrentDraftId] = useState(null);
-  const [showDraftsList, setShowDraftsList] = useState(false);
+  
+  
+  
+  
+  
+  
+  
   
   const [formData, setFormData] = useState({
     vendorId: '',
@@ -4326,9 +4363,9 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
     status: 'Active'
   });
   
-  const [formErrors, setFormErrors] = useState({});
-  const [submitLoading, setSubmitLoading] = useState(false);
-  const [draftMessage, setDraftMessage] = useState('');
+  
+  
+  
   const autoSaveIntervalRef = useRef(null);
 
   const categoryOptions = [
@@ -4965,7 +5002,7 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   };
 
   // Vendor toasts
-  const [vendorToasts, setVendorToasts] = useState([]);
+  
   const showToast = (message, type = 'success') => {
     const id = Date.now();
     setVendorToasts(prev => [...prev.slice(-3), { id, message, type }]);
