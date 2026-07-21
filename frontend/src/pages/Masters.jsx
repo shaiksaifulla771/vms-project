@@ -5558,8 +5558,16 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-500 max-w-[130px] truncate" title={v.notes || ''}>
-                      <span className="truncate block" title={v.notes || ''}>{v.notes || '-'}</span>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-500 max-w-[130px] relative group/ntooltip">
+                      <span className="truncate block cursor-pointer" title={v.notes || ''}>
+                        {v.notes || '-'}
+                      </span>
+                      {v.notes && v.notes.trim().length > 0 && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/ntooltip:block z-50 bg-slate-900 text-white text-[11px] font-medium p-2.5 rounded-lg shadow-2xl max-w-[280px] whitespace-normal pointer-events-none">
+                          <div className="font-bold text-[9px] text-blue-400 uppercase tracking-wider mb-1">Notes & Description</div>
+                          {v.notes}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-600 font-mono">
                       {v.hasNoGst ? (
