@@ -332,10 +332,13 @@ const MaterialsTab = () => {
 
   const showToast = (message, type = 'success') => {
     const id = ++toastIdCounter;
-    setToasts(prev => [...prev, { id, message, type }]);
+    const formattedMsg = message.startsWith('Success') || message.startsWith('Failed') || message.startsWith('Update') || message.startsWith('Notice')
+      ? message
+      : `${type === 'success' ? 'Success Notification' : 'System Notice'}: ${message}`;
+    setToasts(prev => [...prev, { id, message: formattedMsg, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
+    }, 4500);
   };
   const [drafts, setDrafts] = useState(() => {
     try {
@@ -4222,6 +4225,7 @@ const VendorsTab = () => {
   };
 
   const handleViewDetails = (vendor) => {
+    setViewingVendor(vendor);
     setSelectedVendor(vendor);
     setIsViewModalOpen(true);
   };
@@ -5931,156 +5935,86 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
         </form>
       </Dialog>
 
-      {/* View Details Modal */}
-      <Drawer
+      {/* View Details Dialog Modal */}
+      <Dialog
         isOpen={isViewModalOpen}
         onClose={() => setIsViewModalOpen(false)}
-        title="Vendor details"
+        title={viewingVendor ? `Vendor Profile — ${viewingVendor.vendorId || ''}` : 'Vendor Profile'}
+        className="!max-w-[70vw] !w-[70vw] !rounded-xl"
       >
         {viewingVendor && (
-          <div className="space-y-3.5 text-xs">
-            <div className="grid grid-cols-2 gap-3.5">
-              <Input
-                label="Name"
-                id="view_vname"
-                value={viewingVendor.name}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed capitalize"
-              />
-              <Input
-                label="Company Name"
-                id="view_vcompany"
-                value={viewingVendor.company}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5">
-              <Input
-                label="Email Address"
-                id="view_vemail"
-                value={viewingVendor.email}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-              />
-              <Input
-                label="Phone Number"
-                id="view_vphone"
-                value={viewingVendor.phone}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3.5">
-              <Input
-                label="Address"
-                id="view_vaddress"
-                value={viewingVendor.address}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-              />
-              <Input
-                label="Alternative Address"
-                id="view_vaddress2"
-                value={viewingVendor.address2 || '-'}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-              />
-            </div>
-
-            {/* GST Registrations */}
-            <div className="border-t border-slate-100 pt-2.5 mt-2">
-              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">GST Registrations</h4>
-              {viewingVendor.hasNoGst ? (
-                <div className="text-xs text-slate-500 italic">Unregistered Vendor (No GSTIN)</div>
-              ) : (
-                <div className="space-y-1.5">
-                  {(viewingVendor.gstList || []).map((gst, idx) => (
-                    <div key={idx} className="flex justify-between bg-slate-50 p-1.5 rounded border border-slate-100 text-xs">
-                      <span className="font-semibold text-slate-700">{gst.state}</span>
-                      <span className="font-mono font-bold text-blue-600 uppercase">{gst.gstin}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Sourcing Category and Status Fields grouped together */}
-            <div className="grid grid-cols-2 gap-3.5 mt-2">
-              <Input
-                label="Category Type"
-                id="view_vcat"
-                value={viewingVendor.category}
-                disabled
-                className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-              />
-              <div className="flex flex-col space-y-1.5">
-                <label className="text-xs font-semibold text-slate-600">Status</label>
-                <div className="h-8.5 flex items-center">
-                  <span className={`text-[9px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${
-                    viewingVendor.status === 'Active'
-                      ? 'bg-green-50 text-green-700 border-green-200'
-                      : 'bg-slate-50 text-slate-500 border-slate-200'
-                  }`}>
-                    {viewingVendor.status}
-                  </span>
+          <div className="space-y-4 text-xs">
+            <div className="bg-slate-900 text-white p-4 rounded-xl flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <span className="font-mono font-extrabold text-blue-400 text-sm bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
+                  {viewingVendor.vendorId || '-'}
+                </span>
+                <div>
+                  <span className="font-extrabold text-sm block capitalize">{viewingVendor.name}</span>
+                  <span className="text-xs text-slate-300 block">{viewingVendor.company} • {viewingVendor.category}</span>
                 </div>
               </div>
+              <Badge className={viewingVendor.status === 'Active' ? 'bg-emerald-500 text-white text-xs font-bold' : 'bg-slate-700 text-white text-xs font-bold'}>
+                {viewingVendor.status || 'Active'}
+              </Badge>
             </div>
 
-            {/* Primary Sourcing Contact */}
-            <div className="border-t border-slate-100 pt-2.5 mt-2">
-              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Primary Contact Details</h4>
-              <div className="grid grid-cols-3 gap-3">
-                <Input
-                  label="Contact Name"
-                  id="view_vpcontact_name"
-                  value={viewingVendor.primaryContactName || '-'}
-                  disabled
-                  className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed capitalize"
-                />
-                <Input
-                  label="Contact Phone"
-                  id="view_vpcontact_phone"
-                  value={viewingVendor.primaryContactPhone || '-'}
-                  disabled
-                  className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-                />
-                <Input
-                  label="Designation"
-                  id="view_vpcontact_desig"
-                  value={viewingVendor.primaryContactDesignation || '-'}
-                  disabled
-                  className="!text-xs !py-1.5 !px-2.5 !h-8.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed"
-                />
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Primary Email</span>
+                <span className="text-xs font-bold text-slate-700">{viewingVendor.email || '-'}</span>
               </div>
-              <div className="mt-2">
-                <TextArea
-                  label="Notes"
-                  id="view_vnotes"
-                  value={viewingVendor.notes || 'No notes provided.'}
-                  disabled
-                  className="!text-xs !py-1.5 !px-2.5 !rounded-md bg-slate-50 text-slate-500 cursor-not-allowed !h-12"
-                />
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Phone Number</span>
+                <span className="text-xs font-bold text-slate-700">{viewingVendor.phone || '-'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Primary Contact Person</span>
+                <span className="text-xs font-bold text-slate-700">{viewingVendor.primaryContactName || '-'} ({viewingVendor.primaryContactDesignation || 'Contact'})</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Sourcing Category</span>
+                <span className="text-xs font-bold text-slate-700">{viewingVendor.category || '-'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Sub-Category</span>
+                <span className="text-xs font-bold text-slate-700">{viewingVendor.subCategory || '-'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">GSTIN / Tax Registration</span>
+                <span className="text-xs font-mono font-bold text-blue-600">
+                  {(viewingVendor.gstList && viewingVendor.gstList.length > 0) ? viewingVendor.gstList.map(g => `${g.state}: ${g.gstin}`).join(' | ') : (viewingVendor.gstin || 'No GST')}
+                </span>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-end border-t border-slate-100 mt-4 space-x-2">
+            <div className="grid grid-cols-2 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Full Office / Plant Address</span>
+                <span className="text-xs text-slate-700 font-medium">{viewingVendor.address || 'N/A'} {viewingVendor.city ? `, ${viewingVendor.city}` : ''} {viewingVendor.state ? `, ${viewingVendor.state}` : ''}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Notes & Instructions</span>
+                <span className="text-xs text-slate-700 font-medium">{viewingVendor.notes || 'No special notes recorded.'}</span>
+              </div>
+            </div>
+
+            <div className="pt-3 flex items-center justify-between border-t border-slate-100">
               <Button
                 onClick={handlePrintPdf}
                 size="sm"
-                className="flex items-center space-x-1 border border-blue-200 text-blue-700 bg-blue-50/40 hover:bg-blue-50"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center space-x-1.5 px-4"
               >
-                <Printer className="h-3.5 w-3.5" />
-                <span>Print PDF</span>
+                <Printer className="h-4 w-4" />
+                <span>Print PDF Profile</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setIsViewModalOpen(false)}>Close</Button>
+              <Button variant="outline" size="sm" onClick={() => setIsViewModalOpen(false)}>
+                Close Profile
+              </Button>
             </div>
           </div>
         )}
-      </Drawer>
+      </Dialog>
 
       {/* Revision History Modal */}
       <Dialog
