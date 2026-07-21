@@ -4631,16 +4631,17 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
 
   const validateForm = () => {
     const errors = {};
-    if (!formData.name.trim()) errors.name = 'Vendor representative name is required';
-    if (!formData.company.trim()) errors.company = 'Company name is required';
-    if (!formData.email.trim()) {
+    if (!formData.name || !formData.name.trim()) errors.name = 'Vendor representative name is required';
+    if (!formData.email || !formData.email.trim()) {
       errors.email = 'Email address is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) {
       errors.email = 'Invalid email address format';
     }
-    if (!formData.phone.trim()) errors.phone = 'Phone is required';
-    if (!formData.address.trim()) errors.address = 'Address is required';
-    if (!formData.category) errors.category = 'Sourcing Category is required';
+
+    if (!formData.company || !formData.company.trim()) formData.company = formData.name ? formData.name.trim() : 'Company';
+    if (!formData.category) formData.category = 'Food Processor';
+    if (!formData.phone) formData.phone = '';
+    if (!formData.address) formData.address = '';
 
     // Validate GST registrations if checkbox not checked
     if (!formData.hasNoGst) {
@@ -4691,8 +4692,11 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
       const formattedData = {
         ...formData,
         name: formData.name.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
-        company: (formData.company || formData.name).trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
+        company: (formData.company && formData.company.trim()) ? formData.company.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()) : formData.name.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         email: formData.email.trim().toLowerCase(),
+        phone: formData.phone ? formData.phone.trim() : '',
+        address: formData.address ? formData.address.trim() : '',
+        category: formData.category || 'Food Processor',
         primaryContactName: (formData.primaryContactName || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         primaryContactDesignation: (formData.primaryContactDesignation || '').trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         gstList: (formData.gstList || []).map(gst => ({
@@ -5249,25 +5253,23 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
               {showVendorFunctionList && (
                 <>
                   <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowVendorFunctionList(false)} />
-                  
-                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowVendorFunctionList(false)} />
-                  <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
-                    <button onClick={() => { setShowVendorFunctionList(false); handleOpenAddModal(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
-                      <Plus className="h-3.5 w-3.5 text-slate-400" /><span>Manual Entry</span>
+                  <div className="absolute right-0 top-full mt-1.5 w-52 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
+                    <button onClick={() => { setShowVendorFunctionList(false); handleOpenAddModal(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                      <Plus className="h-3.5 w-3.5 text-blue-600" /><span>Manual Entry</span>
                     </button>
-                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(true); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
-                      <Save className="h-3.5 w-3.5 text-slate-400" /><span>Bulk Entry</span>
+                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(true); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /><span>Bulk Entry</span>
                     </button>
-                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(false); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
-                      <Save className="h-3.5 w-3.5 text-slate-400" /><span>Bulk Update</span>
+                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(false); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                      <RefreshCw className="h-3.5 w-3.5 text-amber-600" /><span>Bulk Update</span>
                     </button>
-                    {isVendorSelectionMode && selectedVendorRowIds.size > 0 && (
-<button onClick={() => { setShowVendorFunctionList(false); handleVendorBatchEdit(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 font-medium">
-                      <Edit2 className="h-3.5 w-3.5 text-slate-400" /><span>Edit Selected ({selectedVendorRowIds.size})</span>
+                    <button onClick={() => { setShowVendorFunctionList(false); handleExportVendorGrid(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium border-t border-slate-100">
+                      <Download className="h-3.5 w-3.5 text-purple-600" /><span>Export Grid to Excel</span>
                     </button>
-)}
+                    <button onClick={() => { setShowVendorFunctionList(false); setIsDeletedVendorsModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center space-x-2 font-medium border-t border-slate-100">
+                      <Trash2 className="h-3.5 w-3.5 text-red-500" /><span>Deleted Sheets History ({deletedVendorsHistory.length})</span>
+                    </button>
                   </div>
-
                 </>
               )}
             </div>
@@ -5535,11 +5537,7 @@ const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
                       <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
                     </TableCell>
                     )}
-                    <TableCell
-                      onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
-                      className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600 cursor-pointer hover:underline hover:text-blue-800"
-                      title="Click to view full vendor profile details & print PDF"
-                    >
+                    <TableCell onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }} className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600 cursor-pointer hover:underline hover:text-blue-800" title="Click to view full vendor profile details & print PDF">
                       {v.vendorId || '-'}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize relative group/vtooltip max-w-[140px]">
