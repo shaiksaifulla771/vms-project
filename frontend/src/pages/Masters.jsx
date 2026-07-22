@@ -250,6 +250,14 @@ const MaterialsTab = () => {
   });
 
   const handleRestoreMaterial = async (item) => {
+    // Conflict Check
+    const hasConflict = materials.some(m => (m.code || '').toUpperCase().trim() === (item.code || '').toUpperCase().trim());
+    if (hasConflict) {
+      alert(`Restoration Conflict Validation: The Material Code "${item.code}" is already used by an active material. Restoral aborted.`);
+      showToast(`Conflict Check Failed: Material Code ${item.code} already exists in active grid.`, "error");
+      return;
+    }
+
     try {
       const payload = { ...item };
       delete payload._id;
@@ -270,6 +278,22 @@ const MaterialsTab = () => {
   };
   const [isDeletedMaterialsModalOpen, setIsDeletedMaterialsModalOpen] = useState(false);
   const [materials, setMaterials] = useState([]);
+  const [searchInputVal, setSearchInputVal] = useState('');
+  const [materialBlockingPopupMessage, setMaterialBlockingPopupMessage] = useState('');
+  const [isEditingDeletedRecord, setIsEditingDeletedRecord] = useState(false);
+
+  const handleSearchChange = (val) => {
+    setSearchInputVal(val);
+    if (val === '' || val.length >= 3) {
+      setSearch(val);
+    }
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      setSearch(searchInputVal);
+    }
+  };
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -1196,6 +1220,23 @@ const MaterialsTab = () => {
           }
         });
 
+        // Duplication check against deleted rows
+        const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
+        let foundConflict = false;
+        for (const row of rawRowsMapped) {
+          if (row.code && deletedCodes.has(row.code.toUpperCase().trim())) {
+            foundConflict = true;
+            break;
+          }
+        }
+        if (foundConflict) {
+          setMaterialBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setImportSummary(null);
+          setEditableAcceptedItems([]);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
         const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
         const { processedItems, summary } = recalculateImportSummary(deduplicatedRows, systemExistingCodes, isAutoEntry, baseSequence);
 
@@ -1330,6 +1371,7 @@ const MaterialsTab = () => {
   };
 
   const handleOpenEditModal = (mat) => {
+    setIsEditingDeletedRecord(!!mat.isDeletedHistoryItem);
     setEditingId(mat._id);
     const normalizedType = mat.type === 'Raw' || mat.type === 'Raw Material' ? 'Raw Material' 
                          : mat.type === 'Finished' || mat.type === 'Finished Goods' ? 'Finished Goods'
@@ -1355,6 +1397,7 @@ const MaterialsTab = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setCurrentDraftId(null); // Reset draft state context
+    setIsEditingDeletedRecord(false);
   };
 
   const saveCurrentFormState = (idx) => {
@@ -1508,6 +1551,20 @@ const MaterialsTab = () => {
         description: formData.description.trim()
       };
 
+      if (isEditingDeletedRecord) {
+        setDeletedMaterialsHistory(prev => {
+          const updated = prev.map(d => d._id === editingId ? { ...d, ...formattedData } : d);
+          localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
+          return updated;
+        });
+        showToast("Deleted material record updated locally.", "success");
+        setIsModalOpen(false);
+        setEditingId(null);
+        setIsEditingDeletedRecord(false);
+        setSubmitLoading(false);
+        return;
+      }
+
       if (editingId) {
         await api.put(`/api/materials/${editingId}`, formattedData);
         showToast("Material configurations updated successfully.");
@@ -1568,6 +1625,14 @@ const MaterialsTab = () => {
     for (const id of ids) {
       const item = deletedMaterialsHistory.find(m => m._id === id);
       if (item) {
+        // Conflict Check
+        const hasConflict = materials.some(m => (m.code || '').toUpperCase().trim() === (item.code || '').toUpperCase().trim());
+        if (hasConflict) {
+          alert(`Restoration Conflict Validation: The Material Code "${item.code}" is already used by an active material. Skipping restoral for this record.`);
+          failed++;
+          continue;
+        }
+
         try {
           const payload = { ...item };
           delete payload._id;
@@ -1745,13 +1810,14 @@ const MaterialsTab = () => {
               <input
                 type="text"
                 placeholder="Search materials by name/code..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInputVal}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className="w-full px-2 py-0.5 h-7 pr-7 border border-slate-200 rounded-md text-[11px] text-slate-800 focus:outline-none focus:border-blue-500 placeholder-slate-400"
               />
               {search && (
                 <button
-                  onClick={() => setSearch('')}
+                  onClick={() => { setSearchInputVal(''); setSearch(''); }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none text-[10px] font-bold"
                   title="Clear Search"
                 >
@@ -1893,7 +1959,7 @@ const MaterialsTab = () => {
               activeTags.push({
                 id: 'search',
                 label: `Search: "${search}"`,
-                onClear: () => setSearch('')
+                onClear: () => { setSearchInputVal(''); setSearch(''); }
               });
             }
             if (typeFilter) {
@@ -2425,15 +2491,24 @@ const MaterialsTab = () => {
                     <TableCell className="!px-2 !py-0.5 text-right w-[110px] max-w-[110px] whitespace-nowrap relative overflow-visible">
                       <div className="flex items-center justify-end space-x-1">
                         {mat.isDeletedHistoryItem ? (
-                          <Button
-                            size="sm"
-                            onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-1 px-2.5 flex items-center space-x-1 shadow-xs"
-                            title="Restore Material Record to Active Grid"
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                            <span>Restore</span>
-                          </Button>
+                          <div className="flex items-center space-x-1.5">
+                            <Button
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-1 px-2.5 flex items-center space-x-1 shadow-xs"
+                              title="Restore Material Record to Active Grid"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              <span>Restore</span>
+                            </Button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenEditModal(mat); }}
+                              className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                              title="Edit Deleted Material details locally"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         ) : (
                           <>
                             <button
@@ -3376,7 +3451,24 @@ const MaterialsTab = () => {
                                             };
                                             const updatedList = [...editableAcceptedItems];
                                             updatedList[idx] = updatedItemRaw;
-                                            const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
+                                            // Duplication check against deleted rows
+        const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
+        let foundConflict = false;
+        for (const row of rawRowsMapped) {
+          if (row.code && deletedCodes.has(row.code.toUpperCase().trim())) {
+            foundConflict = true;
+            break;
+          }
+        }
+        if (foundConflict) {
+          setMaterialBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setImportSummary(null);
+          setEditableAcceptedItems([]);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
                                             const { processedItems: nextProcessed, summary: nextSummary } = recalculateImportSummary(updatedList, systemExistingCodes, isAutoEntry);
                                             setEditableAcceptedItems(nextProcessed);
                                             setImportSummary(nextSummary);
@@ -3692,7 +3784,27 @@ const MaterialsTab = () => {
       </Dialog>
 
       {/* Floating Toast Notification Container */}
-      <div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none">
+      
+      {/* Blocking Popup for Bulk Upload Conflicts */}
+      {materialBlockingPopupMessage && (
+        <Dialog
+          isOpen={true}
+          onClose={() => setMaterialBlockingPopupMessage('')}
+          title="Ingestion Blocked — Duplication Detected"
+          className="!max-w-[420px] !w-[420px] !rounded-xl"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 font-semibold flex items-start space-x-2">
+              <span className="text-sm shrink-0 mt-0.5">⚠️</span>
+              <span>{materialBlockingPopupMessage}</span>
+            </div>
+            <div className="flex justify-end pt-2 border-t">
+              <Button size="sm" className="bg-slate-700 hover:bg-slate-800 text-white font-bold" onClick={() => setMaterialBlockingPopupMessage('')}>Close</Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+<div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none">
         {toasts.map(t => (
           <div
             key={t.id}
@@ -3724,6 +3836,22 @@ const VendorsTab = () => {
 
   // Consolidated States at Top of VendorsTab
   const [vendors, setVendors] = useState([]);
+  const [searchInputVal, setSearchInputVal] = useState('');
+  const [vendorBlockingPopupMessage, setVendorBlockingPopupMessage] = useState('');
+  const [isEditingDeletedRecord, setIsEditingDeletedRecord] = useState(false);
+
+  const handleSearchChange = (val) => {
+    setSearchInputVal(val);
+    if (val === '' || val.length >= 3) {
+      setSearch(val);
+    }
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      setSearch(searchInputVal);
+    }
+  };
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -3885,6 +4013,14 @@ const VendorsTab = () => {
   });
 
   const handleRestoreVendor = async (item) => {
+    // Conflict Check
+    const hasConflict = vendors.some(v => (v.vendorId || '').toUpperCase().trim() === (item.vendorId || '').toUpperCase().trim());
+    if (hasConflict) {
+      alert(`Restoration Conflict Validation: The Vendor Code "${item.vendorId}" is already used by an active vendor. Restoral aborted.`);
+      showToast(`Conflict Check Failed: Vendor Code ${item.vendorId} already exists in active grid.`, "error");
+      return;
+    }
+
     try {
       const payload = { ...item };
       delete payload._id;
@@ -3989,6 +4125,14 @@ const VendorsTab = () => {
     for (const id of selectedVendorRowIds) {
       const item = deletedVendorsHistory.find(v => v._id === id);
       if (item) {
+        // Conflict Check
+        const hasConflict = vendors.some(v => (v.vendorId || '').toUpperCase().trim() === (item.vendorId || '').toUpperCase().trim());
+        if (hasConflict) {
+          alert(`Restoration Conflict Validation: The Vendor Code "${item.vendorId}" is already used by an active vendor. Skipping restoral for this record.`);
+          failed++;
+          continue;
+        }
+
         try {
           const payload = { ...item };
           delete payload._id;
@@ -4375,7 +4519,24 @@ const VendorsTab = () => {
 
       if (errors.length === 0) {
         if (!item.vendorId) {
-          const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
+          // Duplication check against deleted rows
+        const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
+        let foundConflict = false;
+        for (const row of rawRowsMapped) {
+          if (row.vendorId && deletedCodes.has(row.vendorId.toUpperCase().trim())) {
+            foundConflict = true;
+            break;
+          }
+        }
+        if (foundConflict) {
+          setVendorBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setVendorImportSummary(null);
+          setEditableVendorItems([]);
+          if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
+          return;
+        }
+
+        const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
           const usedCodes = new Set([
             ...systemExistingCodes,
             ...list.map(i => (i.vendorId || '').toUpperCase().trim()).filter(Boolean)
@@ -4475,6 +4636,23 @@ const VendorsTab = () => {
             deduplicatedRows.push(row);
           }
         });
+
+        // Duplication check against deleted rows
+        const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
+        let foundConflict = false;
+        for (const row of rawRowsMapped) {
+          if (row.vendorId && deletedCodes.has(row.vendorId.toUpperCase().trim())) {
+            foundConflict = true;
+            break;
+          }
+        }
+        if (foundConflict) {
+          setVendorBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setVendorImportSummary(null);
+          setEditableVendorItems([]);
+          if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
+          return;
+        }
 
         const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
         const { processedItems, summary } = recalculateVendorImportSummary(deduplicatedRows, systemExistingCodes, isVendorAutoEntry, baseSequence);
@@ -4828,6 +5006,7 @@ const VendorsTab = () => {
   };
 
   const handleOpenEditModal = (vendor) => {
+    setIsEditingDeletedRecord(!!vendor.isDeletedHistoryItem);
     setEditingId(vendor._id);
     setFormData({
       vendorId: vendor.vendorId || '',
@@ -4868,6 +5047,7 @@ const VendorsTab = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setCurrentDraftId(null); // Reset draft state context
+    setIsEditingDeletedRecord(false);
   };
 
   const validateForm = () => {
@@ -4941,6 +5121,20 @@ const VendorsTab = () => {
           gstin: (gst.gstin || '').trim().toUpperCase()
         }))
       };
+
+      if (isEditingDeletedRecord) {
+        setDeletedVendorsHistory(prev => {
+          const updated = prev.map(d => d._id === editingId ? { ...d, ...formattedData } : d);
+          localStorage.setItem('erp_deleted_vendors_history', JSON.stringify(updated));
+          return updated;
+        });
+        showToast("Deleted vendor record updated locally.", "success");
+        setIsModalOpen(false);
+        setEditingId(null);
+        setIsEditingDeletedRecord(false);
+        setSubmitLoading(false);
+        return;
+      }
 
       if (editingId) {
         const res = await api.put(`/api/vendors/${editingId}`, formattedData);
@@ -5411,13 +5605,14 @@ const VendorsTab = () => {
             <input
               type="text"
               placeholder="Search vendors by name/company..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInputVal}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
               className="w-full px-2 py-0.5 h-7 pr-7 border border-slate-200 rounded-md text-[11px] text-slate-800 focus:outline-none focus:border-blue-500 placeholder-slate-400"
             />
             {search && (
               <button
-                onClick={() => setSearch('')}
+                onClick={() => { setSearchInputVal(''); setSearch(''); }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none text-[10px] font-bold"
                 title="Clear Search"
               >
@@ -5544,7 +5739,7 @@ const VendorsTab = () => {
             activeTags.push({
               id: 'search',
               label: `Search: "${search}"`,
-              onClear: () => setSearch('')
+              onClear: () => { setSearchInputVal(''); setSearch(''); }
             });
           }
           if (category) {
@@ -5873,30 +6068,50 @@ const VendorsTab = () => {
                       )}
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-right border-r border-slate-200 w-[120px] max-w-[120px]">
-                      <div className="flex items-center justify-end space-x-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
-                          className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          title="View Full Details"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
-                          disabled={!!vendorImportSummary}
-                          className={`p-1 rounded text-slate-500 ${!!vendorImportSummary ? 'cursor-not-allowed opacity-50' : 'hover:text-emerald-600 hover:bg-emerald-50 transition-colors'}`}
-                          title={!!vendorImportSummary ? "Edit disabled in Bulk Entry mode" : "Edit Vendor"}
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
-                          className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          title="Delete Vendor"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      {v.isDeletedHistoryItem ? (
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRestoreVendor(v); }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded text-[10px] flex items-center space-x-1 shadow-sm transition-all"
+                            title="Restore Vendor"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                            <span>Restore</span>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="Edit Deleted Vendor details locally"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end space-x-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="View Full Details"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
+                            disabled={!!vendorImportSummary}
+                            className={`p-1 rounded text-slate-500 ${!!vendorImportSummary ? 'cursor-not-allowed opacity-50' : 'hover:text-emerald-600 hover:bg-emerald-50 transition-colors'}`}
+                            title={!!vendorImportSummary ? "Edit disabled in Bulk Entry mode" : "Edit Vendor"}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
+                            className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Delete Vendor"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}</TableBody>
@@ -7183,6 +7398,26 @@ const VendorsTab = () => {
             <div className="flex justify-end space-x-2 pt-2 border-t">
               <Button variant="outline" size="sm" onClick={() => setConfirmActionType(null)}>Cancel</Button>
               <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white font-bold" onClick={handleConfirmSkipAll}>Proceed</Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Blocking Popup for Bulk Upload Conflicts */}
+      {vendorBlockingPopupMessage && (
+        <Dialog
+          isOpen={true}
+          onClose={() => setVendorBlockingPopupMessage('')}
+          title="Ingestion Blocked — Duplication Detected"
+          className="!max-w-[420px] !w-[420px] !rounded-xl"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 font-semibold flex items-start space-x-2">
+              <span className="text-sm shrink-0 mt-0.5">⚠️</span>
+              <span>{vendorBlockingPopupMessage}</span>
+            </div>
+            <div className="flex justify-end pt-2 border-t">
+              <Button size="sm" className="bg-slate-700 hover:bg-slate-800 text-white font-bold" onClick={() => setVendorBlockingPopupMessage('')}>Close</Button>
             </div>
           </div>
         </Dialog>
