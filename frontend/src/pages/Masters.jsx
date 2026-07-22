@@ -1279,6 +1279,15 @@ const MaterialsTab = () => {
       return true; // new items always included
     });
 
+    // Duplication Check against Deleted Table
+    const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
+    const duplicates = validToImport.filter(item => item.code && deletedCodes.has(item.code.toUpperCase().trim()));
+    if (duplicates.length > 0) {
+      alert("This file data already present in deleted rows and sheets");
+      showToast("Ingestion aborted: Duplicate of deleted data detected.", "error");
+      return;
+    }
+
     if (validToImport.length === 0) {
       showToast("No items to import. All existing matches may have been skipped.", "error");
       return;
@@ -3955,7 +3964,7 @@ const VendorsTab = () => {
     }
   };
 
-  const handleConfirmAcceptAll = async () => {
+  const handleConfirmAcceptAll = () => {
     // Process all pending rows
     const updatedItems = editableVendorItems.map((item, idx) => {
       if (!vendorConfirmedReplacements.has(idx) && !vendorSkippedItems.has(idx) && item.userAction !== 'accept' && item.userAction !== 'skip') {
@@ -3976,11 +3985,7 @@ const VendorsTab = () => {
     });
 
     setConfirmActionType(null);
-    
-    // Trigger submit with the newly accepted items
-    setTimeout(async () => {
-      await handleVendorBatchImportSubmit(updatedItems);
-    }, 100);
+    showToast("All remaining pending vendors marked as Accepted in the queue. Please click Save & Import to proceed.", "success");
   };
 
   const handleConfirmSkipAll = () => {
@@ -4684,6 +4689,15 @@ const VendorsTab = () => {
       if (item.userAction === 'skip' || vendorSkippedItems.has(idx)) return false;
       return true;
     });
+
+    // Duplication Check against Deleted Table
+    const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
+    const duplicates = validToImport.filter(item => item.vendorId && deletedCodes.has(item.vendorId.toUpperCase().trim()));
+    if (duplicates.length > 0) {
+      alert("This file data already present in deleted rows and sheets");
+      showToast("Ingestion aborted: Duplicate of deleted data detected.", "error");
+      return;
+    }
 
     if (validToImport.length === 0) {
       showToast("No items to import.", "error");
