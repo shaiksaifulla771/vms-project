@@ -7041,12 +7041,17 @@ const VendorsTab = () => {
 
                         <div className="grid grid-cols-3 gap-3">
                           <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name</label>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name *</label>
                             <input
                               type="text"
                               value={currentItem.name || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('name', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7054,29 +7059,53 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.company || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('company', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
-                            <input
-                              type="text"
-                              value={currentItem.category || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
-                            />
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Category *</label>
+                            {isVendorAutoEntry ? (
+                              <input
+                                type="text"
+                                value={currentItem.category || ''}
+                                disabled={true}
+                                className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              />
+                            ) : (
+                              <select
+                                value={currentItem.category || 'Food Processor'}
+                                onChange={(e) => handleQueueFieldChange('category', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 h-[30px]"
+                              >
+                                <option value="Food Processor">Food Processor</option>
+                                <option value="Contract Manufacturer">Contract Manufacturer</option>
+                                <option value="Retail Brand">Retail Brand</option>
+                                <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            )}
                           </div>
                         </div>
 
                         <div className="grid grid-cols-3 gap-3">
                           <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email</label>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email *</label>
                             <input
                               type="email"
                               value={currentItem.email || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('email', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7084,8 +7113,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.phone || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed font-mono"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('phone', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7093,8 +7127,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.gstin || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed font-mono"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                         </div>
@@ -7105,8 +7144,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.address || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('address', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7114,8 +7158,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.city || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('city', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7123,8 +7172,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.state || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('state', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                         </div>
@@ -7135,8 +7189,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.zipCode || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed font-mono"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7144,8 +7203,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.country || 'India'}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('country', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7153,8 +7217,13 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.notes || ''}
-                              disabled={true}
-                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                              disabled={isVendorAutoEntry}
+                              onChange={(e) => handleQueueFieldChange('notes', e.target.value)}
+                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                isVendorAutoEntry
+                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                         </div>
