@@ -3898,6 +3898,14 @@ const VendorsTab = () => {
   const [activeVendorQueueIdx, setActiveVendorQueueIdx] = useState(0);
   const [confirmActionType, setConfirmActionType] = useState(null);
 
+  const validateQueueItem = (item) => {
+    const missing = [];
+    if (!item.name || !item.name.trim()) missing.push("Vendor Name");
+    if (!item.email || !item.email.trim()) missing.push("Primary Email");
+    if (!item.category || !item.category.trim()) missing.push("Category");
+    return missing;
+  };
+
   const handleQueueFieldChange = (field, val) => {
     setEditableVendorItems(prev => {
       const next = [...prev];
@@ -3909,6 +3917,14 @@ const VendorsTab = () => {
   const handleAcceptQueueItem = (idx) => {
     const item = editableVendorItems[idx];
     if (!item) return;
+
+    // Required fields validation check
+    const missing = validateQueueItem(item);
+    if (missing.length > 0) {
+      alert(`Validation Notice: The following required fields are missing in this record: ${missing.join(', ')}. Please fill them before accepting.`);
+      showToast(`Required fields missing: ${missing.join(', ')}`, 'error');
+      return;
+    }
 
     setEditableVendorItems(prev => {
       const next = [...prev];
@@ -4703,6 +4719,21 @@ const VendorsTab = () => {
       if (item.userAction === 'skip' || vendorSkippedItems.has(idx)) return false;
       return true;
     });
+
+    // Required fields check for all accepted/importing items
+    for (let i = 0; i < validToImport.length; i++) {
+      const item = validToImport[i];
+      const missing = validateQueueItem(item);
+      if (missing.length > 0) {
+        alert(`Validation Notice: Required fields are missing in record #${i+1} (${missing.join(', ')}). Please fill all missing fields.`);
+        showToast(`Import aborted: Record #${i+1} is missing required fields.`, 'error');
+        const origIndex = itemsList.indexOf(item);
+        if (origIndex !== -1) {
+          setActiveVendorQueueIdx(origIndex);
+        }
+        return;
+      }
+    }
 
     // Duplication Check against Active and Deleted Tables
     const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
@@ -7024,7 +7055,7 @@ const VendorsTab = () => {
                     <div className="flex flex-col h-full justify-between space-y-4">
                       
                       {/* Form Area */}
-                      <div className="space-y-3.5 flex-1">
+                      <div className="space-y-4 flex-1 max-h-[58vh] overflow-y-auto pr-2">
                         <div className="flex items-center justify-between border-b pb-2 mb-2">
                           <div>
                             <span className="text-[10px] text-blue-600 font-mono font-bold block">RECORD #{activeVendorQueueIdx + 1} OF {editableVendorItems.length}</span>
@@ -7039,194 +7070,450 @@ const VendorsTab = () => {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name *</label>
-                            <input
-                              type="text"
-                              value={currentItem.name || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('name', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Company Name</label>
-                            <input
-                              type="text"
-                              value={currentItem.company || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('company', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Category *</label>
-                            {isVendorAutoEntry ? (
+                        {/* Section 1: Basic Information */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">1. Basic Information</span>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name *</label>
                               <input
                                 type="text"
-                                value={currentItem.category || ''}
-                                disabled={true}
-                                className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                                value={currentItem.name || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('name', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
                               />
-                            ) : (
-                              <select
-                                value={currentItem.category || 'Food Processor'}
-                                onChange={(e) => handleQueueFieldChange('category', e.target.value)}
-                                className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 h-[30px]"
-                              >
-                                <option value="Food Processor">Food Processor</option>
-                                <option value="Contract Manufacturer">Contract Manufacturer</option>
-                                <option value="Retail Brand">Retail Brand</option>
-                                <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                                <option value="Other">Other</option>
-                              </select>
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Company Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.company || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('company', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Category *</label>
+                              {isVendorAutoEntry ? (
+                                <input
+                                  type="text"
+                                  value={currentItem.category || ''}
+                                  disabled={true}
+                                  className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                                />
+                              ) : (
+                                <select
+                                  value={currentItem.category || 'Food Processor'}
+                                  onChange={(e) => handleQueueFieldChange('category', e.target.value)}
+                                  className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 h-[30px]"
+                                >
+                                  <option value="Food Processor">Food Processor</option>
+                                  <option value="Contract Manufacturer">Contract Manufacturer</option>
+                                  <option value="Retail Brand">Retail Brand</option>
+                                  <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                                  <option value="Other">Other</option>
+                                </select>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Sub-Category</label>
+                              <input
+                                type="text"
+                                value={currentItem.subCategory || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('subCategory', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Notes / description</label>
+                              <input
+                                type="text"
+                                value={currentItem.notes || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('notes', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section 2: Contact & Location Details */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">2. Contact & Location Details</span>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email *</label>
+                              <input
+                                type="email"
+                                value={currentItem.email || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('email', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
+                              <input
+                                type="text"
+                                value={currentItem.phone || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('phone', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN / Tax ID</label>
+                              <input
+                                type="text"
+                                value={currentItem.gstin || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 1</label>
+                              <input
+                                type="text"
+                                value={currentItem.address || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('address', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">City</label>
+                              <input
+                                type="text"
+                                value={currentItem.city || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('city', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                              <input
+                                type="text"
+                                value={currentItem.state || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('state', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Zip Code / PIN</label>
+                              <input
+                                type="text"
+                                value={currentItem.zipCode || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Country</label>
+                              <input
+                                type="text"
+                                value={currentItem.country || 'India'}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('country', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section 3: Certifications */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">3. Certifications</span>
+                          
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id="q_fssai"
+                                checked={currentItem.fssai || false}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('fssai', e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <label htmlFor="q_fssai" className="text-[10px] font-bold text-slate-700 uppercase cursor-pointer">Has FSSAI License</label>
+                            </div>
+                            {currentItem.fssai && (
+                              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Expiry</label>
+                                  <input
+                                    type="date"
+                                    value={currentItem.fssaiExpiry ? currentItem.fssaiExpiry.substring(0, 10) : ''}
+                                    disabled={isVendorAutoEntry}
+                                    onChange={(e) => handleQueueFieldChange('fssaiExpiry', e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Qty Limit (MT)</label>
+                                  <input
+                                    type="number"
+                                    value={currentItem.fssaiQty || ''}
+                                    disabled={isVendorAutoEntry}
+                                    onChange={(e) => handleQueueFieldChange('fssaiQty', e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id="q_ffsc2200"
+                                checked={currentItem.ffsc2200 || false}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('ffsc2200', e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <label htmlFor="q_ffsc2200" className="text-[10px] font-bold text-slate-700 uppercase cursor-pointer">Has FFSC 22000 Certificate</label>
+                            </div>
+                            {currentItem.ffsc2200 && (
+                              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Expiry</label>
+                                  <input
+                                    type="date"
+                                    value={currentItem.ffsc2200Expiry ? currentItem.ffsc2200Expiry.substring(0, 10) : ''}
+                                    disabled={isVendorAutoEntry}
+                                    onChange={(e) => handleQueueFieldChange('ffsc2200Expiry', e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Qty Limit (MT)</label>
+                                  <input
+                                    type="number"
+                                    value={currentItem.ffsc2200Qty || ''}
+                                    disabled={isVendorAutoEntry}
+                                    onChange={(e) => handleQueueFieldChange('ffsc2200Qty', e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                  />
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email *</label>
-                            <input
-                              type="email"
-                              value={currentItem.email || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('email', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
+                        {/* Section 4: Bank Details */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">4. Bank & Payment Details</span>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Holder Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankAccountHolder || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('bankAccountHolder', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Number</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankAccountNumber || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('bankAccountNumber', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
                           </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
-                            <input
-                              type="text"
-                              value={currentItem.phone || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('phone', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN / Tax ID</label>
-                            <input
-                              type="text"
-                              value={currentItem.gstin || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Bank Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankName || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('bankName', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">IFSC Code</label>
+                              <input
+                                type="text"
+                                value={currentItem.ifscCode || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('ifscCode', e.target.value.toUpperCase().trim())}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
+                                  isVendorAutoEntry
+                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
+                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 1</label>
-                            <input
-                              type="text"
-                              value={currentItem.address || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('address', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
+                        {/* Section 5: Department Contacts */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">5. Key Department Contacts</span>
+                          
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
+                            <span className="text-[9px] font-bold text-blue-600 block uppercase">Quality Department</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <input
+                                type="text"
+                                placeholder="Contact Name"
+                                value={currentItem.contactQualityName || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('contactQualityName', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none ${
+                                  isVendorAutoEntry ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Phone Number"
+                                value={currentItem.contactQualityPhone || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('contactQualityPhone', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold font-mono focus:outline-none ${
+                                  isVendorAutoEntry ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
                           </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">City</label>
-                            <input
-                              type="text"
-                              value={currentItem.city || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('city', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
+
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
+                            <span className="text-[9px] font-bold text-emerald-600 block uppercase">Accounts Department</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <input
+                                type="text"
+                                placeholder="Contact Name"
+                                value={currentItem.contactAccountsName || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('contactAccountsName', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none ${
+                                  isVendorAutoEntry ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Phone Number"
+                                value={currentItem.contactAccountsPhone || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('contactAccountsPhone', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold font-mono focus:outline-none ${
+                                  isVendorAutoEntry ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
                           </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
-                            <input
-                              type="text"
-                              value={currentItem.state || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('state', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
+
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
+                            <span className="text-[9px] font-bold text-amber-600 block uppercase">Logistics Department</span>
+                            <div className="grid grid-cols-2 gap-3">
+                              <input
+                                type="text"
+                                placeholder="Contact Name"
+                                value={currentItem.contactLogisticsName || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('contactLogisticsName', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none ${
+                                  isVendorAutoEntry ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Phone Number"
+                                value={currentItem.contactLogisticsPhone || ''}
+                                disabled={isVendorAutoEntry}
+                                onChange={(e) => handleQueueFieldChange('contactLogisticsPhone', e.target.value)}
+                                className={`px-2 py-1.5 border rounded text-xs font-semibold font-mono focus:outline-none ${
+                                  isVendorAutoEntry ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'
+                                }`}
+                              />
+                            </div>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Zip Code / PIN</label>
-                            <input
-                              type="text"
-                              value={currentItem.zipCode || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Country</label>
-                            <input
-                              type="text"
-                              value={currentItem.country || 'India'}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('country', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Notes / description</label>
-                            <input
-                              type="text"
-                              value={currentItem.notes || ''}
-                              disabled={isVendorAutoEntry}
-                              onChange={(e) => handleQueueFieldChange('notes', e.target.value)}
-                              className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                isVendorAutoEntry
-                                  ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                  : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                        </div>
                       </div>
 
                       {/* Action Controls Panel */}
