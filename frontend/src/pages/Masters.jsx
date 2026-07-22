@@ -242,7 +242,32 @@ const validateRowData = (item, isAutoEntryVal, systemExistingCodes, importedCode
 
 
 const MaterialsTab = () => {
-  const [deletedMaterialsHistory, setDeletedMaterialsHistory] = useState([]);
+  const [deletedMaterialsHistory, setDeletedMaterialsHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('erp_deleted_materials_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch(e) { return []; }
+  });
+
+  const handleRestoreMaterial = async (item) => {
+    try {
+      const payload = { ...item };
+      delete payload._id;
+      delete payload.deletedAt;
+      delete payload.deletionType;
+      await api.post('/api/materials', payload);
+      setDeletedMaterialsHistory((prev) => {
+        const updated = prev.filter(d => (d._id && d._id !== item._id) || d.code !== item.code || d.name !== item.name);
+        localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
+        return updated;
+      });
+      showToast(`Success Notification: Material ${item.code || item.name || ''} restored successfully!`, "success");
+      fetchMaterials();
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to restore material record.", "error");
+    }
+  };
   const [isDeletedMaterialsModalOpen, setIsDeletedMaterialsModalOpen] = useState(false);
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1516,7 +1541,11 @@ const MaterialsTab = () => {
     try {
       await api.delete(`/api/materials/${id}`);
       if (target) {
-        setDeletedMaterialsHistory(prev => [{ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() }, ...prev]);
+        setDeletedMaterialsHistory(prev => {
+          const updated = [{ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() }, ...prev];
+          localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
+          return updated;
+        });
       }
       if (selectedMaterialId === id) {
         setSelectedMaterialId(null);
@@ -1596,19 +1625,24 @@ const MaterialsTab = () => {
     return Array.from(new Set(vals.map(v => (v || '').toString().trim()))).filter(Boolean).sort();
   };
 
-  const filteredMaterials = materials.filter(mat => {
-    // 1. Search Query Filter
-    if (search.trim()) {
-      const q = search.toLowerCase().trim();
-      const nameMatch = (mat.name || '').toLowerCase().includes(q);
-      const codeMatch = (mat.code || '').toLowerCase().includes(q);
-      if (!nameMatch && !codeMatch) return false;
+  const filteredMaterials = (() => {
+    let list = materials;
+    if (typeFilter === 'Deleted') {
+      list = deletedMaterialsHistory.map(d => ({ ...d, type: 'Deleted', isDeletedHistoryItem: true }));
     }
+    return list.filter(mat => {
+      // 1. Search Query Filter
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        const nameMatch = (mat.name || '').toLowerCase().includes(q);
+        const codeMatch = (mat.code || '').toLowerCase().includes(q);
+        if (!nameMatch && !codeMatch) return false;
+      }
 
-    // 2. Category Type Filter
-    if (typeFilter && mat.type !== typeFilter) {
-      return false;
-    }
+      // 2. Category Type Filter
+      if (typeFilter && typeFilter !== 'Deleted' && mat.type !== typeFilter) {
+        return false;
+      }
 
     // 3. Import Source File Filter
     if (sourceFilter) {
@@ -1639,6 +1673,7 @@ const MaterialsTab = () => {
     }
     return true;
   });
+  })();
 
   const isEditSelectedActive = React.useMemo(() => {
     return selectedRowIds.size > 0;
@@ -1702,10 +1737,11 @@ const MaterialsTab = () => {
               onChange={(e) => setTypeFilter(e.target.value)}
               className="px-2.5 py-0.5 h-7 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-600 focus:outline-none cursor-pointer"
             >
-              <option value="">All Types</option>
+              <option value="">All Status</option>
               <option value="Raw Material">Raw Materials</option>
               <option value="Finished Goods">Finished Goods</option>
               <option value="Packing Material">Packing Materials</option>
+              <option value="Deleted">Deleted Sheets & Rows ({deletedMaterialsHistory.length})</option>
             </select>
 
 
@@ -2329,65 +2365,71 @@ const MaterialsTab = () => {
                     </TableCell>
                     <TableCell className="!px-2 !py-0.5 text-right w-[110px] max-w-[110px] whitespace-nowrap relative overflow-visible">
                       <div className="flex items-center justify-end space-x-1">
-                        
-                        <button
-                          onClick={() => handleOpenEditModal(mat)}
-                          className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
-                          title="Edit Record"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMaterial(mat._id)}
-                          className="p-0.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                        <div className="relative">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenDropdownId(openDropdownId === mat._id ? null : mat._id);
-                            }}
-                            className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700 focus:outline-none"
-                            title="More actions"
+                        {mat.isDeletedHistoryItem ? (
+                          <Button
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-1 px-2.5 flex items-center space-x-1 shadow-xs"
+                            title="Restore Material Record to Active Grid"
                           >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                          {openDropdownId === mat._id && (
-                            <>
-                              <div 
-                                className="fixed inset-0 z-40 cursor-default"
+                            <RefreshCw className="h-3 w-3" />
+                            <span>Restore</span>
+                          </Button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleOpenEditModal(mat)}
+                              className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
+                              title="Edit Record"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMaterial(mat._id)}
+                              className="p-0.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <div className="relative">
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setOpenDropdownId(null);
+                                  setOpenDropdownId(openDropdownId === mat._id ? null : mat._id);
                                 }}
-                              />
-                              <div className="absolute right-0 top-full mt-1.5 w-36 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-left">
-                                <button
-                                  onClick={() => {
-                                    setOpenDropdownId(null);
-                                    handleViewDetails(mat);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                                >
-                                  <span>View Registered Data</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setOpenDropdownId(null);
-                                    setViewingMaterialAudit(mat);
-                                    setIsAuditModalOpen(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium"
-                                >
-                                  <span>Revision History</span>
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                                className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700 focus:outline-none"
+                                title="More actions"
+                              >
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </button>
+                              {openDropdownId === mat._id && (
+                                <>
+                                  <div 
+                                    className="fixed inset-0 z-40 cursor-default"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenDropdownId(null);
+                                    }}
+                                  />
+                                  <div 
+                                    className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      onClick={() => {
+                                        setViewingMaterialAudit(mat);
+                                        setIsAuditModalOpen(true);
+                                        setOpenDropdownId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium text-xs text-slate-700"
+                                    >
+                                      <span>Revision History</span>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}</div>
                     </TableCell>
                   </TableRow>
                 ))}
