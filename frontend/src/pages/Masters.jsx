@@ -1220,17 +1220,19 @@ const MaterialsTab = () => {
           }
         });
 
-        // Duplication check against deleted rows
+        // Duplication check against active and deleted items
+        const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
         const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
         let foundConflict = false;
         for (const row of rawRowsMapped) {
-          if (row.code && deletedCodes.has(row.code.toUpperCase().trim())) {
+          const rowCode = (row.code || '').toUpperCase().trim();
+          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
             foundConflict = true;
             break;
           }
         }
         if (foundConflict) {
-          setMaterialBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setMaterialBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setImportSummary(null);
           setEditableAcceptedItems([]);
           if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1279,12 +1281,16 @@ const MaterialsTab = () => {
       return true; // new items always included
     });
 
-    // Duplication Check against Deleted Table
+    // Duplication Check against Active and Deleted Tables
+    const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
     const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
-    const duplicates = validToImport.filter(item => item.code && deletedCodes.has(item.code.toUpperCase().trim()));
+    const duplicates = validToImport.filter(item => {
+      const code = (item.code || '').toUpperCase().trim();
+      return code && (activeCodes.has(code) || deletedCodes.has(code));
+    });
     if (duplicates.length > 0) {
-      alert("This file data already present in deleted rows and sheets");
-      showToast("Ingestion aborted: Duplicate of deleted data detected.", "error");
+      alert("This file data already is in database which is presented in deleted rows & sheets status.");
+      showToast("Ingestion aborted: Duplicate data detected.", "error");
       return;
     }
 
@@ -1532,9 +1538,11 @@ const MaterialsTab = () => {
       ? (batchEditItems[batchEditIdx]?._id) 
       : editingId;
 
-    const exists = materials.some(m => m._id !== activeId && m.code.toUpperCase() === finalCode);
-    if (exists) {
-      errors.code = `Material Code '${finalCode}' is already in use`;
+    const existsInActive = materials.some(m => m._id !== activeId && m.code.toUpperCase() === finalCode);
+    const existsInDeleted = deletedMaterialsHistory.some(d => d._id !== activeId && d.code.toUpperCase() === finalCode);
+    if (existsInActive || existsInDeleted) {
+      alert("This file data already is in database which is presented in deleted rows & sheets status.");
+      errors.code = `Material Code '${finalCode}' is already in use (active or deleted).`;
     }
 
     setFormErrors(errors);
@@ -3460,17 +3468,19 @@ const MaterialsTab = () => {
                                             };
                                             const updatedList = [...editableAcceptedItems];
                                             updatedList[idx] = updatedItemRaw;
-                                            // Duplication check against deleted rows
+                                            // Duplication check against active and deleted items
+        const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
         const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
         let foundConflict = false;
         for (const row of rawRowsMapped) {
-          if (row.code && deletedCodes.has(row.code.toUpperCase().trim())) {
+          const rowCode = (row.code || '').toUpperCase().trim();
+          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
             foundConflict = true;
             break;
           }
         }
         if (foundConflict) {
-          setMaterialBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setMaterialBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setImportSummary(null);
           setEditableAcceptedItems([]);
           if (fileInputRef.current) fileInputRef.current.value = '';
@@ -4524,17 +4534,19 @@ const VendorsTab = () => {
 
       if (errors.length === 0) {
         if (!item.vendorId) {
-          // Duplication check against deleted rows
+          // Duplication check against active and deleted items
+        const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
         const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
         let foundConflict = false;
         for (const row of rawRowsMapped) {
-          if (row.vendorId && deletedCodes.has(row.vendorId.toUpperCase().trim())) {
+          const rowCode = (row.vendorId || '').toUpperCase().trim();
+          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
             foundConflict = true;
             break;
           }
         }
         if (foundConflict) {
-          setVendorBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setVendorBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setVendorImportSummary(null);
           setEditableVendorItems([]);
           if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
@@ -4642,17 +4654,19 @@ const VendorsTab = () => {
           }
         });
 
-        // Duplication check against deleted rows
+        // Duplication check against active and deleted items
+        const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
         const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
         let foundConflict = false;
         for (const row of rawRowsMapped) {
-          if (row.vendorId && deletedCodes.has(row.vendorId.toUpperCase().trim())) {
+          const rowCode = (row.vendorId || '').toUpperCase().trim();
+          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
             foundConflict = true;
             break;
           }
         }
         if (foundConflict) {
-          setVendorBlockingPopupMessage("This data is already added and presented in the deleted rows and sheets status.");
+          setVendorBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setVendorImportSummary(null);
           setEditableVendorItems([]);
           if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
@@ -4690,12 +4704,16 @@ const VendorsTab = () => {
       return true;
     });
 
-    // Duplication Check against Deleted Table
+    // Duplication Check against Active and Deleted Tables
+    const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
     const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
-    const duplicates = validToImport.filter(item => item.vendorId && deletedCodes.has(item.vendorId.toUpperCase().trim()));
+    const duplicates = validToImport.filter(item => {
+      const code = (item.vendorId || '').toUpperCase().trim();
+      return code && (activeCodes.has(code) || deletedCodes.has(code));
+    });
     if (duplicates.length > 0) {
-      alert("This file data already present in deleted rows and sheets");
-      showToast("Ingestion aborted: Duplicate of deleted data detected.", "error");
+      alert("This file data already is in database which is presented in deleted rows & sheets status.");
+      showToast("Ingestion aborted: Duplicate data detected.", "error");
       return;
     }
 
@@ -5106,9 +5124,21 @@ const VendorsTab = () => {
       }
     }
 
+    // Duplicate validation checks for Vendor Code
+    const activeId = editingId;
+    const finalCode = (formData.vendorId || '').toUpperCase().trim();
+    if (finalCode) {
+      const existsInActive = vendors.some(v => v._id !== activeId && (v.vendorId || '').toUpperCase().trim() === finalCode);
+      const existsInDeleted = deletedVendorsHistory.some(d => d._id !== activeId && (d.vendorId || '').toUpperCase().trim() === finalCode);
+      if (existsInActive || existsInDeleted) {
+        alert("This file data already is in database which is presented in deleted rows & sheets status.");
+        errors.vendorId = `Vendor Code '${finalCode}' is already in use (active or deleted).`;
+      }
+    }
+
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) {
-      const firstErr = errors.name || errors.email || 'Please check required fields';
+      const firstErr = errors.name || errors.vendorId || errors.email || 'Please check required fields';
       showToast(`Validation Notice: ${firstErr}`, "error");
     }
     return Object.keys(errors).length === 0;
