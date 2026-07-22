@@ -5457,24 +5457,39 @@ const VendorsTab = () => {
 
   const handlePrintPdf = () => {
     if (!viewingVendor) return;
+
+    const displayVal = (val, isCode = false) => {
+      if (val === undefined || val === null || (typeof val === 'string' && val.trim() === '') || val === false) {
+        return '<span style="color: #94a3b8; font-style: italic; font-weight: normal;">[Not Filled]</span>';
+      }
+      if (val === true) {
+        return '<span style="color: #10b981; font-weight: bold;">Yes / Active</span>';
+      }
+      return isCode ? `<span class="value-code">${val}</span>` : val;
+    };
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html>
         <head>
-          <title>Vendor Profile - ${viewingVendor.company}</title>
+          <title>Vendor Profile - ${viewingVendor.company || viewingVendor.name || 'Vendor Details'}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; margin: 0; }
             .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
             .title { font-size: 18px; font-weight: bold; color: #0f172a; }
             .subtitle { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: bold; }
-            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-            .field { display: flex; flex-direction: column; gap: 4px; }
-            .label { font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase; }
-            .value { font-size: 12px; color: #0f172a; font-weight: bold; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; text-transform: capitalize; }
+            
+            .section-title { font-size: 11px; font-weight: bold; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-top: 20px; margin-bottom: 12px; }
+            
+            .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+            .field { display: flex; flex-direction: column; gap: 3px; }
+            .label { font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+            .value { font-size: 11px; color: #0f172a; font-weight: bold; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; }
             .value-code { font-family: monospace; font-size: 11px; color: #2563eb; text-transform: uppercase; }
-            .desc { grid-column: span 2; }
-            .desc-val { font-size: 11px; line-height: 1.5; color: #334155; min-height: 60px; text-transform: none; }
-            .section-title { grid-column: span 2; font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; margin-top: 8px; }
+            
+            .desc { grid-column: span 3; }
+            .desc-val { font-size: 11px; line-height: 1.5; color: #334155; min-height: 45px; }
+            
             .footer { border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 8px; color: #94a3b8; text-align: center; margin-top: 40px; }
           </style>
         </head>
@@ -5485,68 +5500,195 @@ const VendorsTab = () => {
               <div class="title">Vendor Sourcing Record</div>
             </div>
             <div style="text-align: right;">
-              <div style="font-size: 12px; font-weight: bold; color: #2563eb;">CATEGORY: ${viewingVendor.category}</div>
+              <div style="font-size: 12px; font-weight: bold; color: #2563eb;">VENDOR ID: ${viewingVendor.vendorId || '-'}</div>
               <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Date Generated: ${new Date().toLocaleDateString()}</div>
             </div>
           </div>
 
+          <!-- Section 1: Basic Information -->
+          <div class="section-title">1. Basic Information</div>
           <div class="grid">
             <div class="field">
-              <div class="label">Vendor Name</div>
-              <div class="value">${viewingVendor.name}</div>
+              <div class="label">Representative Name</div>
+              <div class="value">${displayVal(viewingVendor.name)}</div>
             </div>
             <div class="field">
               <div class="label">Company Name</div>
-              <div class="value">${viewingVendor.company}</div>
+              <div class="value">${displayVal(viewingVendor.company)}</div>
             </div>
             <div class="field">
-              <div class="label">Email Address</div>
-              <div class="value" style="text-transform: none; font-family: monospace;">${viewingVendor.email}</div>
+              <div class="label">Category</div>
+              <div class="value">${displayVal(viewingVendor.category)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Sub-Category</div>
+              <div class="value">${displayVal(viewingVendor.subCategory)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Status</div>
+              <div class="value">${displayVal(viewingVendor.status)}</div>
+            </div>
+            <div class="field desc">
+              <div class="label">Vendor Description / Sourcing Notes</div>
+              <div class="value desc-val">${displayVal(viewingVendor.notes)}</div>
+            </div>
+          </div>
+
+          <!-- Section 2: Contact & Location Details -->
+          <div class="section-title">2. Contact & Location Details</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">Primary Email</div>
+              <div class="value" style="text-transform: none; font-family: monospace;">${displayVal(viewingVendor.email)}</div>
             </div>
             <div class="field">
               <div class="label">Phone Number</div>
-              <div class="value">${viewingVendor.phone}</div>
+              <div class="value">${displayVal(viewingVendor.phone)}</div>
             </div>
             <div class="field">
-              <div class="label">Office Address</div>
-              <div class="value">${viewingVendor.address}</div>
+              <div class="label">Country</div>
+              <div class="value">${displayVal(viewingVendor.country)}</div>
             </div>
             <div class="field">
-              <div class="label">Alternative Address</div>
-              <div class="value">${viewingVendor.address2 || '-'}</div>
+              <div class="label">Office Address Line 1</div>
+              <div class="value">${displayVal(viewingVendor.address)}</div>
             </div>
+            <div class="field">
+              <div class="label">Office Address Line 2</div>
+              <div class="value">${displayVal(viewingVendor.address2)}</div>
+            </div>
+            <div class="field">
+              <div class="label">City</div>
+              <div class="value">${displayVal(viewingVendor.city)}</div>
+            </div>
+            <div class="field">
+              <div class="label">State</div>
+              <div class="value">${displayVal(viewingVendor.state)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Zip Code / PIN</div>
+              <div class="value font-mono">${displayVal(viewingVendor.zipCode)}</div>
+            </div>
+          </div>
+
+          <!-- Section 3: GST & Tax Configurations -->
+          <div class="section-title">3. GST & Tax Configurations</div>
+          <div class="grid">
             <div class="field desc">
               <div class="label">GST Registrations</div>
               <div class="value desc-val">
                 ${viewingVendor.hasNoGst 
-                  ? 'Unregistered Vendor (No GSTIN)' 
-                  : (viewingVendor.gstList || []).map(gst => `<div style="margin-bottom: 4px;"><strong>${gst.state}:</strong> <span style="font-family: monospace; color: #2563eb;">${gst.gstin}</span></div>`).join('')
+                  ? '<span style="color: #e11d48; font-weight: bold;">Unregistered Vendor (No GSTIN)</span>' 
+                  : (viewingVendor.gstList && viewingVendor.gstList.length > 0)
+                    ? viewingVendor.gstList.map(gst => `<div style="margin-bottom: 4px;"><strong>${gst.state || '[No State]'}:</strong> <span style="font-family: monospace; color: #2563eb;">${gst.gstin || '[No GSTIN]'}</span></div>`).join('')
+                    : (viewingVendor.gstin 
+                      ? `<div style="margin-bottom: 4px;"><strong>Default:</strong> <span style="font-family: monospace; color: #2563eb;">${viewingVendor.gstin}</span></div>`
+                      : '<span style="color: #94a3b8; font-style: italic; font-weight: normal;">[Not Filled]</span>'
+                    )
                 }
               </div>
             </div>
+          </div>
 
-            <div class="section-title">Primary Sourcing Contact</div>
+          <!-- Section 4: Primary Sourcing Contact -->
+          <div class="section-title">4. Primary Sourcing Contact</div>
+          <div class="grid">
             <div class="field">
               <div class="label">Contact Name</div>
-              <div class="value">${viewingVendor.primaryContactName || '-'}</div>
+              <div class="value">${displayVal(viewingVendor.primaryContactName)}</div>
             </div>
             <div class="field">
               <div class="label">Contact Phone</div>
-              <div class="value">${viewingVendor.primaryContactPhone || '-'}</div>
+              <div class="value">${displayVal(viewingVendor.primaryContactPhone)}</div>
             </div>
             <div class="field">
               <div class="label">Designation</div>
-              <div class="value">${viewingVendor.primaryContactDesignation || '-'}</div>
+              <div class="value">${displayVal(viewingVendor.primaryContactDesignation)}</div>
+            </div>
+          </div>
+
+          <!-- Section 5: Certifications -->
+          <div class="section-title">5. Certifications</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">Has FSSAI License</div>
+              <div class="value">${displayVal(viewingVendor.fssai)}</div>
             </div>
             <div class="field">
-              <div class="label">Status</div>
-              <div class="value">${viewingVendor.status}</div>
+              <div class="label">FSSAI Expiry Date</div>
+              <div class="value">${displayVal(viewingVendor.fssaiExpiry ? viewingVendor.fssaiExpiry.substring(0,10) : '')}</div>
             </div>
+            <div class="field">
+              <div class="label">FSSAI Quantity Limit (MT)</div>
+              <div class="value">${displayVal(viewingVendor.fssaiQty)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Has FFSC 22000 Certificate</div>
+              <div class="value">${displayVal(viewingVendor.ffsc2200)}</div>
+            </div>
+            <div class="field">
+              <div class="label">FFSC Expiry Date</div>
+              <div class="value">${displayVal(viewingVendor.ffsc2200Expiry ? viewingVendor.ffsc2200Expiry.substring(0,10) : '')}</div>
+            </div>
+            <div class="field">
+              <div class="label">FFSC Quantity Limit (MT)</div>
+              <div class="value">${displayVal(viewingVendor.ffsc2200Qty)}</div>
+            </div>
+          </div>
 
-            <div class="field desc">
-              <div class="label">Vendor Sourcing Notes</div>
-              <div class="value desc-val">${viewingVendor.notes || 'No notes provided.'}</div>
+          <!-- Section 6: Bank & Payment Details -->
+          <div class="section-title">6. Bank & Payment Details</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">Account Holder Name</div>
+              <div class="value">${displayVal(viewingVendor.bankAccountHolder)}</div>
             </div>
+            <div class="field">
+              <div class="label">Account Number</div>
+              <div class="value font-mono">${displayVal(viewingVendor.bankAccountNumber)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Bank Name</div>
+              <div class="value">${displayVal(viewingVendor.bankName)}</div>
+            </div>
+            <div class="field">
+              <div class="label">IFSC Code</div>
+              <div class="value font-mono">${displayVal(viewingVendor.ifscCode)}</div>
+            </div>
+          </div>
+
+          <!-- Section 7: Key Department Contacts -->
+          <div class="section-title">7. Key Department Contacts</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">Quality Contact Name</div>
+              <div class="value">${displayVal(viewingVendor.contactQualityName)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Quality Contact Phone</div>
+              <div class="value font-mono">${displayVal(viewingVendor.contactQualityPhone)}</div>
+            </div>
+            <div style="background: transparent;"></div>
+            
+            <div class="field">
+              <div class="label">Accounts Contact Name</div>
+              <div class="value">${displayVal(viewingVendor.contactAccountsName)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Accounts Contact Phone</div>
+              <div class="value font-mono">${displayVal(viewingVendor.contactAccountsPhone)}</div>
+            </div>
+            <div style="background: transparent;"></div>
+
+            <div class="field">
+              <div class="label">Logistics Contact Name</div>
+              <div class="value">${displayVal(viewingVendor.contactLogisticsName)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Logistics Contact Phone</div>
+              <div class="value font-mono">${displayVal(viewingVendor.contactLogisticsPhone)}</div>
+            </div>
+            <div style="background: transparent;"></div>
           </div>
 
           <div class="footer">
