@@ -80,7 +80,9 @@ const VendorSchema = new mongoose.Schema({
     {
       name: { type: String, trim: true, default: '' },
       phone: { type: String, trim: true, default: '' },
-      role: { type: String, trim: true, default: 'Other' }
+      role: { type: String, trim: true, default: 'Other' },
+      department: { type: String, trim: true, default: 'Sourcing' },
+      email: { type: String, trim: true, default: '' }
     }
   ],
   primaryContactName: { type: String, default: '', trim: true },

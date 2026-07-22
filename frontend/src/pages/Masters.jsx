@@ -5078,7 +5078,13 @@ const VendorsTab = () => {
       gstList: vendor.gstList && vendor.gstList.length > 0 ? vendor.gstList : [{ state: '', gstin: '' }],
       hasNoGst: vendor.hasNoGst || false,
       
-      contacts: vendor.contacts || [],
+      contacts: (vendor.contacts || []).map(c => ({
+        role: c.role || 'Primary',
+        department: c.department || 'Sourcing',
+        name: c.name || '',
+        phone: c.phone || '',
+        email: c.email || ''
+      })),
       notes: vendor.notes || '',
       category: vendor.category || 'Food Processor',
       subCategory: vendor.subCategory || '',
@@ -5110,10 +5116,12 @@ const VendorsTab = () => {
       errors.name = 'Vendor representative name is required';
     }
 
-    // If user provided email, validate format. If left blank, it will auto-generate!
-    if (formData.email && formData.email.trim()) {
-      if (!/\S+@\S+\.\S+/.test(formData.email.trim())) {
-        errors.email = 'Invalid email address format';
+    // Validate email address of primary contact from contacts list
+    const primaryContact = (formData.contacts || []).find(c => c.role === 'Primary') || (formData.contacts || [])[0];
+    const contactEmail = primaryContact ? (primaryContact.email || '').trim() : '';
+    if (contactEmail) {
+      if (!/\S+@\S+\.\S+/.test(contactEmail)) {
+        errors.email = 'Primary contact email address format is invalid';
       }
     }
 
@@ -5176,7 +5184,7 @@ const VendorsTab = () => {
         ...formData,
         name: formData.name.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
         company: (formData.company && formData.company.trim()) ? formData.company.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()) : formData.name.trim().replace(/(^\w|\s\w)/g, c => c.toUpperCase()),
-        email: formData.email.trim().toLowerCase(),
+        email: ((formData.contacts || []).find(c => c.role === "Primary") || (formData.contacts || [])[0] || {}).email || formData.email || `vendor_${Date.now()}@company.com`,
         phone: formData.phone ? formData.phone.trim() : '',
         address: formData.address ? formData.address.trim() : '',
         category: formData.category || 'Food Processor',
@@ -6381,22 +6389,12 @@ const VendorsTab = () => {
                 onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
                 className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
               />
-              <Input
-                label="Primary Email"
-                id="vemail"
-                type="email"
-                placeholder="vendor@company.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value.toLowerCase() })}
-                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
-                required
-              />
-              <div className="flex flex-col space-y-1.5">
+              <div className="flex flex-col space-y-1.5 col-span-2">
                 <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9"
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9 w-full"
                 >
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
@@ -6417,19 +6415,20 @@ const VendorsTab = () => {
                   <div className="text-xs text-slate-400 italic py-2">No contacts added yet.</div>
                 )}
                 {(formData.contacts || []).map((contact, idx) => (
-                  <div key={idx} className="flex items-end space-x-3 bg-slate-50 p-3 rounded-md border border-slate-200">
-                    <div className="flex-1 flex flex-col space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Role / Dept</label>
+                  <div key={idx} className="grid grid-cols-12 gap-3 bg-slate-50 p-3 rounded-md border border-slate-200 items-end">
+                    <div className="col-span-2 flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Role</label>
                       <select
-                        value={contact.role}
+                        value={contact.role || 'Primary'}
                         onChange={(e) => {
                           const updated = [...(formData.contacts || [])];
                           updated[idx] = { ...updated[idx], role: e.target.value };
                           setFormData({ ...formData, contacts: updated });
                         }}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 cursor-pointer"
                       >
                         <option value="Primary">Primary</option>
+                        <option value="Secondary">Secondary</option>
                         <option value="Quality">Quality</option>
                         <option value="Accounts">Accounts</option>
                         <option value="Logistics">Logistics</option>
@@ -6437,11 +6436,32 @@ const VendorsTab = () => {
                         <option value="Other">Other</option>
                       </select>
                     </div>
-                    <div className="flex-1 flex flex-col space-y-1">
+
+                    <div className="col-span-2 flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Department</label>
+                      <select
+                        value={contact.department || 'Sourcing'}
+                        onChange={(e) => {
+                          const updated = [...(formData.contacts || [])];
+                          updated[idx] = { ...updated[idx], department: e.target.value };
+                          setFormData({ ...formData, contacts: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 cursor-pointer"
+                      >
+                        <option value="Sourcing">Sourcing</option>
+                        <option value="Quality">Quality</option>
+                        <option value="Finance / Accounts">Finance / Accounts</option>
+                        <option value="Logistics">Logistics</option>
+                        <option value="Sales">Sales</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-3 flex flex-col space-y-1">
                       <label className="text-[10px] font-bold text-slate-500 uppercase">Name</label>
                       <input
                         type="text"
-                        value={contact.name}
+                        value={contact.name || ''}
                         onChange={(e) => {
                           const updated = [...(formData.contacts || [])];
                           updated[idx] = { ...updated[idx], name: e.target.value };
@@ -6450,11 +6470,12 @@ const VendorsTab = () => {
                         className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
                       />
                     </div>
-                    <div className="flex-1 flex flex-col space-y-1">
+
+                    <div className="col-span-2 flex flex-col space-y-1">
                       <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
                       <input
                         type="text"
-                        value={contact.phone}
+                        value={contact.phone || ''}
                         onChange={(e) => {
                           const updated = [...(formData.contacts || [])];
                           updated[idx] = { ...updated[idx], phone: e.target.value };
@@ -6463,17 +6484,34 @@ const VendorsTab = () => {
                         className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
                       />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = [...(formData.contacts || [])];
-                        updated.splice(idx, 1);
-                        setFormData({ ...formData, contacts: updated });
-                      }}
-                      className="text-red-500 hover:text-red-700 text-xs font-bold pb-1.5 px-2"
-                    >
-                      Remove
-                    </button>
+
+                    <div className="col-span-2 flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Email Address</label>
+                      <input
+                        type="email"
+                        value={contact.email || ''}
+                        onChange={(e) => {
+                          const updated = [...(formData.contacts || [])];
+                          updated[idx] = { ...updated[idx], email: e.target.value };
+                          setFormData({ ...formData, contacts: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-1 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...(formData.contacts || [])];
+                          updated.splice(idx, 1);
+                          setFormData({ ...formData, contacts: updated });
+                        }}
+                        className="text-red-500 hover:text-red-700 text-xs font-bold pb-2"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 ))}
                 
@@ -6482,7 +6520,7 @@ const VendorsTab = () => {
                   onClick={() => {
                     setFormData({ 
                       ...formData, 
-                      contacts: [...(formData.contacts || []), { role: 'Primary', name: '', phone: '' }] 
+                      contacts: [...(formData.contacts || []), { role: 'Primary', department: 'Sourcing', name: '', phone: '', email: '' }] 
                     });
                   }}
                   className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2"
