@@ -3748,6 +3748,122 @@ const VendorsTab = () => {
   const [vendorConfirmedReplacements, setVendorConfirmedReplacements] = useState(new Set());
   const [vendorSkippedItems, setVendorSkippedItems] = useState(new Set());
   const [vendorCurrentFileName, setVendorCurrentFileName] = useState('');
+  const [activeVendorQueueIdx, setActiveVendorQueueIdx] = useState(0);
+  const [confirmActionType, setConfirmActionType] = useState(null);
+
+  const handleQueueFieldChange = (field, val) => {
+    setEditableVendorItems(prev => {
+      const next = [...prev];
+      next[activeVendorQueueIdx] = { ...next[activeVendorQueueIdx], [field]: val };
+      return next;
+    });
+  };
+
+  const handleAcceptQueueItem = (idx) => {
+    const item = editableVendorItems[idx];
+    if (!item) return;
+
+    setEditableVendorItems(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], userAction: 'accept' };
+      return next;
+    });
+    setVendorConfirmedReplacements(prev => {
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+    setVendorSkippedItems(prev => {
+      const next = new Set(prev);
+      next.delete(idx);
+      return next;
+    });
+
+    showToast(`Vendor ${item.name || item.vendorId || ''} accepted and queued for update.`, 'success');
+
+    // Find the next pending index
+    const nextPendingIdx = editableVendorItems.findIndex((x, i) => i > idx && !vendorConfirmedReplacements.has(i) && !vendorSkippedItems.has(i) && x.userAction !== 'accept' && x.userAction !== 'skip');
+    if (nextPendingIdx !== -1) {
+      setActiveVendorQueueIdx(nextPendingIdx);
+    } else {
+      const firstPendingIdx = editableVendorItems.findIndex((x, i) => !vendorConfirmedReplacements.has(i) && !vendorSkippedItems.has(i) && x.userAction !== 'accept' && x.userAction !== 'skip');
+      if (firstPendingIdx !== -1) {
+        setActiveVendorQueueIdx(firstPendingIdx);
+      }
+    }
+  };
+
+  const handleSkipQueueItem = (idx) => {
+    const item = editableVendorItems[idx];
+    if (!item) return;
+
+    setEditableVendorItems(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], userAction: 'skip' };
+      return next;
+    });
+    setVendorSkippedItems(prev => {
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+    setVendorConfirmedReplacements(prev => {
+      const next = new Set(prev);
+      next.delete(idx);
+      return next;
+    });
+
+    showToast(`Vendor ${item.name || item.vendorId || ''} skipped.`, 'warning');
+
+    // Find the next pending index
+    const nextPendingIdx = editableVendorItems.findIndex((x, i) => i > idx && !vendorConfirmedReplacements.has(i) && !vendorSkippedItems.has(i) && x.userAction !== 'accept' && x.userAction !== 'skip');
+    if (nextPendingIdx !== -1) {
+      setActiveVendorQueueIdx(nextPendingIdx);
+    } else {
+      const firstPendingIdx = editableVendorItems.findIndex((x, i) => !vendorConfirmedReplacements.has(i) && !vendorSkippedItems.has(i) && x.userAction !== 'accept' && x.userAction !== 'skip');
+      if (firstPendingIdx !== -1) {
+        setActiveVendorQueueIdx(firstPendingIdx);
+      }
+    }
+  };
+
+  const handleConfirmAcceptAll = async () => {
+    // Process all pending rows
+    const updatedItems = editableVendorItems.map((item, idx) => {
+      if (!vendorConfirmedReplacements.has(idx) && !vendorSkippedItems.has(idx) && item.userAction !== 'accept' && item.userAction !== 'skip') {
+        return { ...item, userAction: 'accept' };
+      }
+      return item;
+    });
+
+    setEditableVendorItems(updatedItems);
+    setVendorConfirmedReplacements(prev => {
+      const next = new Set(prev);
+      updatedItems.forEach((_, idx) => {
+        if (!vendorSkippedItems.has(idx)) {
+          next.add(idx);
+        }
+      });
+      return next;
+    });
+
+    setConfirmActionType(null);
+    
+    // Trigger submit with the newly accepted items
+    setTimeout(async () => {
+      await handleVendorBatchImportSubmit(updatedItems);
+    }, 100);
+  };
+
+  const handleConfirmSkipAll = () => {
+    setConfirmActionType(null);
+    setVendorImportSummary(null);
+    setEditableVendorItems([]);
+    setVendorConfirmedReplacements(new Set());
+    setVendorSkippedItems(new Set());
+    showToast("Bulk entry cancelled. All remaining records skipped.", 'warning');
+    setIsVendorImportModalOpen(false);
+  };
   const [editingVendorPreviewIdx, setEditingVendorPreviewIdx] = useState(null);
   const [vendorPreviewFormData, setVendorPreviewFormData] = useState({});
   const [vendorPreviewRowData, setVendorPreviewRowData] = useState({});
@@ -3844,6 +3960,8 @@ const VendorsTab = () => {
       setEditableVendorItems([]);
       setVendorConfirmedReplacements(new Set());
       setVendorSkippedItems(new Set());
+      setActiveVendorQueueIdx(0);
+      setConfirmActionType(null);
     }
   }, [isVendorImportModalOpen]);
 
@@ -4306,6 +4424,8 @@ const VendorsTab = () => {
     setVendorCurrentFileName(file.name);
     setVendorConfirmedReplacements(new Set());
     setVendorSkippedItems(new Set());
+    setActiveVendorQueueIdx(0);
+    setConfirmActionType(null);
 
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -4378,14 +4498,12 @@ const VendorsTab = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleVendorBatchImportSubmit = async () => {
-    const validToImport = editableVendorItems.filter((item, idx) => {
+  const handleVendorBatchImportSubmit = async (customItems = null) => {
+    const itemsList = customItems || editableVendorItems;
+    const validToImport = itemsList.filter((item, idx) => {
       if (item.validationErrors && item.validationErrors.length > 0) return false;
       if (item.isDuplicate) return false;
-      if (item.isExistingMatch) {
-        if (item.userAction === 'skip' || vendorSkippedItems.has(idx)) return false;
-        return true;
-      }
+      if (item.userAction === 'skip' || vendorSkippedItems.has(idx)) return false;
       return true;
     });
 
@@ -5765,8 +5883,9 @@ const VendorsTab = () => {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
-                          className="p-1 rounded text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                          title="Edit Vendor"
+                          disabled={!!vendorImportSummary}
+                          className={`p-1 rounded text-slate-500 ${!!vendorImportSummary ? 'cursor-not-allowed opacity-50' : 'hover:text-emerald-600 hover:bg-emerald-50 transition-colors'}`}
+                          title={!!vendorImportSummary ? "Edit disabled in Bulk Entry mode" : "Edit Vendor"}
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
@@ -6528,8 +6647,8 @@ const VendorsTab = () => {
       <Dialog
         isOpen={isVendorImportModalOpen}
         onClose={() => setIsVendorImportModalOpen(false)}
-        title={isVendorAutoEntry ? 'Bulk Entry — Create Vendors (Auto-assigning V-codes)' : 'Bulk Update Vendors (Apply spreadsheet details)'}
-        className={isVendorAutoEntry ? "!max-w-[65vw] !w-[65vw] !rounded-none" : "!max-w-[92vw] !w-[92vw] !rounded-none"}
+        title={vendorImportSummary ? 'Bulk Entry Review Ingestion Queue' : (isVendorAutoEntry ? 'Bulk Entry — Create Vendors (Auto-assigning V-codes)' : 'Bulk Update Vendors (Apply spreadsheet details)')}
+        className={vendorImportSummary ? "!max-w-[90vw] !w-[90vw] !rounded-xl" : (isVendorAutoEntry ? "!max-w-[65vw] !w-[65vw] !rounded-none" : "!max-w-[92vw] !w-[92vw] !rounded-none")}
       >
         <div className="space-y-4">
           {/* Upload Area */}
@@ -6568,358 +6687,270 @@ const VendorsTab = () => {
 
           {/* Results after file uploaded */}
           {vendorImportSummary && (
-            <div className="space-y-3.5 p-4 border border-slate-200 rounded-lg bg-white">
-              {/* File success banner */}
-              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md flex items-center space-x-2 text-emerald-800 font-semibold">
+          <div className="space-y-4 text-xs">
+            {/* File success banner */}
+            <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg flex items-center justify-between text-emerald-800 font-semibold shadow-sm">
+              <div className="flex items-center space-x-2">
                 <div className="p-0.5 bg-emerald-100 rounded-full text-emerald-600">
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
                 </div>
                 <div>
-                  <span className="block text-xs font-bold">File read and validated successfully!</span>
+                  <span className="block text-xs font-bold">Ingested and Validated Cleanly!</span>
                   <span className="block font-mono text-[10px] text-emerald-600 mt-0.5">{vendorCurrentFileName}</span>
                 </div>
               </div>
-
-              {/* Validation Results Summary Header */}
-              <div className="flex items-center justify-between border-b pb-1.5">
-                <span className="text-xs font-bold text-slate-700">Validation Results Summary</span>
-                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded">Total: {vendorImportSummary.total} rows</span>
+              <div className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                Queue: {editableVendorItems.filter((x, i) => !vendorConfirmedReplacements.has(i) && !vendorSkippedItems.has(i)).length} Pending / {editableVendorItems.length} Total
               </div>
-
-              {/* 3 Summary Cards Grid */}
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="bg-emerald-50/70 border border-emerald-100 p-2.5 rounded-md">
-                  <span className="text-[10px] text-emerald-600 font-bold block">✓ New Vendors</span>
-                  <span className="text-lg font-extrabold text-emerald-700">{vendorImportSummary.acceptedCount || 0}</span>
-                </div>
-                <div className="bg-amber-50/70 border border-amber-100 p-2.5 rounded-md">
-                  <span className="text-[10px] text-amber-700 font-bold block">⚠️ Already Existing</span>
-                  <span className="text-lg font-extrabold text-amber-700">{vendorImportSummary.existingMatchCount || 0}</span>
-                </div>
-                <div className="bg-red-50/70 border border-red-100 p-2.5 rounded-md">
-                  <span className="text-[10px] text-red-600 font-bold block">✕ Errors</span>
-                  <span className="text-lg font-extrabold text-red-700">{(vendorImportSummary.rejectedCount || 0) + (vendorImportSummary.duplicateCount || 0)}</span>
-                </div>
-              </div>
-
-              {/* BULK UPDATE REVIEW BOX */}
-              {(() => {
-                const changedItems = editableVendorItems.filter(i => i.isExistingMatch && i.fieldChanges && i.fieldChanges.length > 0 && i.validationErrors.length === 0);
-                const noChangeItems = editableVendorItems.filter(i => i.isExistingMatch && (!i.fieldChanges || i.fieldChanges.length === 0) && i.validationErrors.length === 0);
-                const newItems = editableVendorItems.filter(i => !i.isExistingMatch && i.validationErrors.length === 0);
-
-                const filteredRows = editableVendorItems.filter(item => {
-                  if (item.validationErrors && item.validationErrors.length > 0) return false;
-                  if (vendorImportSearch) {
-                    const q = vendorImportSearch.toLowerCase();
-                    const nameMatch = (item.name || '').toLowerCase().includes(q);
-                    const codeMatch = (item.vendorId || '').toLowerCase().includes(q);
-                    const emailMatch = (item.email || '').toLowerCase().includes(q);
-                    if (!nameMatch && !codeMatch && !emailMatch) return false;
-                  }
-                  if (vendorBulkUpdateTab === 'changed') return item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0;
-                  if (vendorBulkUpdateTab === 'nochange') return item.isExistingMatch && (!item.fieldChanges || item.fieldChanges.length === 0);
-                  if (vendorBulkUpdateTab === 'new') return !item.isExistingMatch;
-                  return true;
-                });
-
-                return (
-                  <div className="border border-blue-200 rounded-lg p-3.5 bg-blue-50/20 space-y-3">
-                    {/* Header line inside BULK UPDATE REVIEW */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-1.5 text-xs font-extrabold text-blue-900">
-                        <Info className="h-4 w-4 text-blue-600" />
-                        <span>BULK UPDATE REVIEW</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] text-slate-500 font-medium">{noChangeItems.length} unchanged (auto-kept)</span>
-                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-bold">Ready to import</Badge>
-                      </div>
-                    </div>
-
-                    {/* Filter Tabs & Search Bar */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5">
-                      <div className="flex items-center space-x-1.5">
-                        <button
-                          onClick={() => setVendorBulkUpdateTab('changed')}
-                          className={`text-xs font-bold px-3 py-1 rounded-md border transition-all ${vendorBulkUpdateTab === 'changed' ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                        >
-                          Changed ({changedItems.length})
-                        </button>
-                        <button
-                          onClick={() => setVendorBulkUpdateTab('nochange')}
-                          className={`text-xs font-bold px-3 py-1 rounded-md border transition-all ${vendorBulkUpdateTab === 'nochange' ? 'bg-slate-700 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                        >
-                          No Change ({noChangeItems.length})
-                        </button>
-                        <button
-                          onClick={() => setVendorBulkUpdateTab('new')}
-                          className={`text-xs font-bold px-3 py-1 rounded-md border transition-all ${vendorBulkUpdateTab === 'new' ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                        >
-                          New ({newItems.length})
-                        </button>
-                      </div>
-
-                      <div className="relative w-full lg:w-[360px]">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                        <input
-                          type="text"
-                          value={vendorImportSearch}
-                          onChange={(e) => setVendorImportSearch(e.target.value)}
-                          placeholder="Search vendor name or code to edit..."
-                          className="w-full pl-8 pr-7 py-1.5 border border-blue-200 rounded-md text-xs focus:outline-none focus:border-blue-500 bg-white font-semibold shadow-sm"
-                        />
-                        {vendorImportSearch && (
-                          <button onClick={() => setVendorImportSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Quick bulk actions for Changed items */}
-                    {vendorBulkUpdateTab === 'changed' && changedItems.length > 0 && (
-                      <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200 px-3.5 py-2 rounded-lg mb-3 shadow-xs">
-                        <span className="text-xs font-extrabold text-amber-900 flex items-center space-x-1.5">
-                          <span>⚡ Bulk Actions for {changedItems.length} Changed Records:</span>
-                        </span>
-                        <div className="flex items-center space-x-3 text-xs">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newItems = editableVendorItems.map(item => {
-                                if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
-                                  return { ...item, userAction: 'accept' };
-                                }
-                                return item;
-                              });
-                              setEditableVendorItems(newItems);
-                              const sConf = new Set();
-                              const sSkip = new Set();
-                              newItems.forEach((item, i) => {
-                                if (item.userAction === 'accept') sConf.add(i);
-                                if (item.userAction === 'skip') sSkip.add(i);
-                              });
-                              setVendorConfirmedReplacements(sConf);
-                              setVendorSkippedItems(sSkip);
-                              showToast("All changed vendor records accepted for update.", "success");
-                            }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-3 py-1 rounded shadow-xs transition-all flex items-center space-x-1"
-                          >
-                            <span>✓ Accept All</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newItems = editableVendorItems.map(item => {
-                                if (item.isExistingMatch && item.fieldChanges && item.fieldChanges.length > 0) {
-                                  return { ...item, userAction: 'skip' };
-                                }
-                                return item;
-                              });
-                              setEditableVendorItems(newItems);
-                              const sConf = new Set();
-                              const sSkip = new Set();
-                              newItems.forEach((item, i) => {
-                                if (item.userAction === 'accept') sConf.add(i);
-                                if (item.userAction === 'skip') sSkip.add(i);
-                              });
-                              setVendorConfirmedReplacements(sConf);
-                              setVendorSkippedItems(sSkip);
-                              showToast("All changed vendor records skipped.", "error");
-                            }}
-                            className="bg-red-600 hover:bg-red-700 text-white font-extrabold px-3 py-1 rounded shadow-xs transition-all flex items-center space-x-1"
-                          >
-                            <span>✕ Skip All</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Filtered items list */}
-                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                      {filteredRows.length === 0 ? (
-                        <div className="py-6 text-center text-slate-400 text-xs font-medium bg-white rounded-lg border border-slate-200">
-                          No records match this view.
-                        </div>
-                      ) : (
-                        filteredRows.map((item) => {
-                          const origIdx = editableVendorItems.indexOf(item);
-                          const isSkipped = vendorSkippedItems.has(origIdx);
-                          const isEditing = editingVendorPreviewIdx === origIdx;
-                          const isNew = !item.isExistingMatch || item.status === 'New';
-
-                          return (
-                            <div key={origIdx} className={`p-3 rounded-lg border text-xs transition-all bg-white ${isSkipped ? 'border-slate-200 opacity-60 bg-slate-50' : 'border-slate-200 shadow-sm'}`}>
-                              {/* Row Card Header */}
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-bold text-slate-800 text-xs capitalize">{item.name}</span>
-                                  <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">#{item.vendorId || 'Auto'}</span>
-                                  
-                                  {/* Edit Button: Disabled for New Data as requested */}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (isNew) {
-                                        showToast("Edit option is disabled for new vendor data records during Bulk Update.", "error");
-                                        return;
-                                      }
-                                      if (isEditing) {
-                                        setEditingVendorPreviewIdx(null);
-                                      } else {
-                                        setEditingVendorPreviewIdx(origIdx);
-                                        setVendorPreviewRowData({ ...item });
-                                      }
-                                    }}
-                                    disabled={isNew}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors flex items-center space-x-1 ${
-                                      isNew 
-                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50' 
-                                        : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
-                                    }`}
-                                    title={isNew ? 'Edit option is not permitted for new data records' : 'Edit row details'}
-                                  >
-                                    <span>Edit</span>
-                                  </button>
-
-                                  {!item.fieldChanges || item.fieldChanges.length === 0 ? (
-                                    <span className="text-[11px] text-slate-400 italic font-medium">✓ No changes</span>
-                                  ) : null}
-                                </div>
-
-                                {/* Right Side Actions: Accept / Skip Toggles */}
-                                {item.fieldChanges && item.fieldChanges.length > 0 && (
-                                  <div className="flex items-center space-x-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setVendorConfirmedReplacements(prev => new Set(prev).add(origIdx));
-                                        setVendorSkippedItems(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
-                                        showToast(`Accepted changes for ${item.name}`);
-                                      }}
-                                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${
-                                        !isSkipped
-                                          ? 'bg-blue-600 text-white shadow-sm'
-                                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                                      }`}
-                                    >
-                                      ✓ Accept
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setVendorSkippedItems(prev => new Set(prev).add(origIdx));
-                                        setVendorConfirmedReplacements(prev => { const n = new Set(prev); n.delete(origIdx); return n; });
-                                        showToast(`Skipped changes for ${item.name}`, 'error');
-                                      }}
-                                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${
-                                        isSkipped
-                                          ? 'bg-red-600 text-white shadow-sm'
-                                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                                      }`}
-                                    >
-                                      ✕ Skip
-                                    </button>
-                                  </div>
-                                )}                          </div>
-
-                              {/* Diff Table (Matches Screenshot 1) */}
-                              {item.fieldChanges && item.fieldChanges.length > 0 && !isEditing && (
-                                <div className="mt-2.5 border-t border-slate-100 pt-2 space-y-1">
-                                  <div className="grid grid-cols-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1">
-                                    <span>FIELD</span>
-                                    <span>CURRENT (IN DB)</span>
-                                    <span>NEW (FROM EXCEL)</span>
-                                  </div>
-                                  {item.fieldChanges.map((fc, fcIdx) => (
-                                    <div key={fcIdx} className="grid grid-cols-3 text-xs items-center px-1 py-0.5 rounded hover:bg-slate-50">
-                                      <span className="font-semibold text-slate-600">{fc.label}</span>
-                                      <span className="line-through text-red-500 font-medium bg-red-50 px-1.5 py-0.5 rounded w-fit">{fc.oldVal || '(empty)'}</span>
-                                      <div className="flex items-center space-x-1">
-                                        <span className="text-slate-400">→</span>
-                                        <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{fc.newVal}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Inline Edit Form (Matches Screenshot 3) */}
-                              {isEditing && (
-                                <div className="mt-2.5 border-t border-slate-200 pt-2.5 bg-slate-50 p-2.5 rounded-md space-y-2">
-                                  <div className="grid grid-cols-4 gap-2">
-                                    <div>
-                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Vendor Name</label>
-                                      <input
-                                        type="text"
-                                        value={vendorPreviewRowData.name || ''}
-                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, name: e.target.value })}
-                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Category</label>
-                                      <input
-                                        type="text"
-                                        value={vendorPreviewRowData.category || ''}
-                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, category: e.target.value })}
-                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Email</label>
-                                      <input
-                                        type="text"
-                                        value={vendorPreviewRowData.email || ''}
-                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, email: e.target.value })}
-                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Phone</label>
-                                      <input
-                                        type="text"
-                                        value={vendorPreviewRowData.phone || ''}
-                                        onChange={(e) => setVendorPreviewRowData({ ...vendorPreviewRowData, phone: e.target.value })}
-                                        className="w-full text-xs px-2 py-1 border border-slate-300 rounded bg-white font-medium"
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center justify-end space-x-1.5 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingVendorPreviewIdx(null)}
-                                      className="px-2.5 py-1 rounded text-xs font-bold border border-slate-200 hover:bg-slate-100 text-slate-600"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditableVendorItems(prev => {
-                                          const next = [...prev];
-                                          next[origIdx] = { ...next[origIdx], ...vendorPreviewRowData };
-                                          return next;
-                                        });
-                                        setEditingVendorPreviewIdx(null);
-                                        showToast("Row details updated locally.");
-                                      }}
-                                      className="px-3 py-1 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
-                                    >
-                                      Save
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
-          )}
+
+            {/* Split-Screen Review Queue Layout */}
+            <div className="grid grid-cols-12 gap-4">
+              
+              {/* Left Column: Vendor Ingestion Queue List */}
+              <div className="col-span-4 border border-slate-200 rounded-lg p-3 bg-slate-50 flex flex-col space-y-2 max-h-[55vh] overflow-y-auto">
+                <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider pb-1.5 border-b border-slate-200">
+                  Vendor Review Ingestion List
+                </div>
+                <div className="space-y-1.5 flex-1 overflow-y-auto">
+                  {editableVendorItems.map((item, idx) => {
+                    const isSelected = activeVendorQueueIdx === idx;
+                    const isAccepted = vendorConfirmedReplacements.has(idx) || item.userAction === 'accept';
+                    const isSkipped = vendorSkippedItems.has(idx) || item.userAction === 'skip';
+                    
+                    let statusBadge = <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[9px] font-bold">Pending</Badge>;
+                    if (isAccepted) statusBadge = <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] font-bold">✓ Accepted</Badge>;
+                    if (isSkipped) statusBadge = <Badge className="bg-red-100 text-red-800 border-red-200 text-[9px] font-bold">✕ Skipped</Badge>;
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => setActiveVendorQueueIdx(idx)}
+                        className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between min-w-0 ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-700 shadow-md transform scale-[1.01]'
+                            : isSkipped
+                              ? 'bg-red-50/50 text-slate-400 border-red-100 opacity-60'
+                              : isAccepted
+                                ? 'bg-emerald-50/50 text-slate-700 border-emerald-100'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <div className="font-bold truncate text-[11px] capitalize">{item.name || 'Untitled Vendor'}</div>
+                          <div className={`text-[10px] truncate ${isSelected ? 'text-blue-200' : 'text-slate-400'}`}>
+                            {item.company || 'No Company'} • {item.vendorId || 'Auto ID'}
+                          </div>
+                        </div>
+                        <div className="shrink-0">{statusBadge}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right Column: Active Vendor Details Form & Actions */}
+              <div className="col-span-8 border border-slate-200 rounded-lg p-4 bg-white flex flex-col justify-between max-h-[55vh] overflow-y-auto shadow-sm">
+                {(() => {
+                  const currentItem = editableVendorItems[activeVendorQueueIdx];
+                  if (!currentItem) {
+                    return (
+                      <div className="py-20 text-center text-slate-400 font-bold">
+                        No active vendor selected. Please click a vendor from the list.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="flex flex-col h-full justify-between space-y-4">
+                      
+                      {/* Form Area */}
+                      <div className="space-y-3.5 flex-1">
+                        <div className="flex items-center justify-between border-b pb-2 mb-2">
+                          <div>
+                            <span className="text-[10px] text-blue-600 font-mono font-bold block">RECORD #{activeVendorQueueIdx + 1} OF {editableVendorItems.length}</span>
+                            <span className="text-xs font-bold text-slate-800">Reviewing: {currentItem.name}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            {currentItem.isExistingMatch ? (
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-200 font-bold text-[9px]">Existing Match in DB</Badge>
+                            ) : (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 font-bold text-[9px]">New Vendor Record</Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name *</label>
+                            <input
+                              type="text"
+                              value={currentItem.name || ''}
+                              onChange={(e) => handleQueueFieldChange('name', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Company Name</label>
+                            <input
+                              type="text"
+                              value={currentItem.company || ''}
+                              onChange={(e) => handleQueueFieldChange('company', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Category *</label>
+                            <select
+                              value={currentItem.category || 'Food Processor'}
+                              onChange={(e) => handleQueueFieldChange('category', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 h-[30px]"
+                            >
+                              <option value="Food Processor">Food Processor</option>
+                              <option value="Contract Manufacturer">Contract Manufacturer</option>
+                              <option value="Retail Brand">Retail Brand</option>
+                              <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email *</label>
+                            <input
+                              type="email"
+                              value={currentItem.email || ''}
+                              onChange={(e) => handleQueueFieldChange('email', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
+                            <input
+                              type="text"
+                              value={currentItem.phone || ''}
+                              onChange={(e) => handleQueueFieldChange('phone', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN / Tax ID</label>
+                            <input
+                              type="text"
+                              value={currentItem.gstin || ''}
+                              onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 1</label>
+                            <input
+                              type="text"
+                              value={currentItem.address || ''}
+                              onChange={(e) => handleQueueFieldChange('address', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">City</label>
+                            <input
+                              type="text"
+                              value={currentItem.city || ''}
+                              onChange={(e) => handleQueueFieldChange('city', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                            <input
+                              type="text"
+                              value={currentItem.state || ''}
+                              onChange={(e) => handleQueueFieldChange('state', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Zip Code / PIN</label>
+                            <input
+                              type="text"
+                              value={currentItem.zipCode || ''}
+                              onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Country</label>
+                            <input
+                              type="text"
+                              value={currentItem.country || 'India'}
+                              onChange={(e) => handleQueueFieldChange('country', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Notes / description</label>
+                            <input
+                              type="text"
+                              value={currentItem.notes || ''}
+                              onChange={(e) => handleQueueFieldChange('notes', e.target.value)}
+                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Controls Panel */}
+                      <div className="border-t border-slate-100 pt-3 flex items-center justify-between mt-3 bg-slate-50 p-2.5 rounded-lg border">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptQueueItem(activeVendorQueueIdx)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-1.5 rounded-md shadow-sm transition-all flex items-center space-x-1"
+                          >
+                            <span>✓ Accept</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSkipQueueItem(activeVendorQueueIdx)}
+                            className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-1.5 rounded-md shadow-sm transition-all flex items-center space-x-1"
+                          >
+                            <span>✕ Skip</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmActionType('accept_all')}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-3 py-1.5 rounded-md shadow-sm transition-all flex items-center space-x-1"
+                          >
+                            <span>Accept All</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmActionType('skip_all')}
+                            className="bg-red-600 hover:bg-red-700 text-white font-extrabold px-3 py-1.5 rounded-md shadow-sm transition-all flex items-center space-x-1"
+                          >
+                            <span>Skip All</span>
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })()}
+              </div>
+
+            </div>
+          </div>
+)}
 
           {/* Bottom Action Footer Bar */}
           <div className="pt-3 flex items-center justify-between border-t border-slate-200 mt-4">
@@ -7115,7 +7146,48 @@ const VendorsTab = () => {
       </Dialog>
 
       {/* Floating Toast Notifications Container for Vendor Master */}
-      <div className="fixed top-4 right-4 z-[9999] space-y-2.5 pointer-events-none">
+      
+      {/* Confirmation Overlays for Bulk Queue */}
+      {confirmActionType === 'accept_all' && (
+        <Dialog
+          isOpen={true}
+          onClose={() => setConfirmActionType(null)}
+          title="Confirm Accept All"
+          className="!max-w-[400px] !w-[400px] !rounded-xl"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 font-semibold flex items-start space-x-2">
+              <Info className="h-4 w-4 shrink-0 text-blue-600 mt-0.5" />
+              <span>Are you sure you want to accept all remaining pending vendors? This will queue them for database update.</span>
+            </div>
+            <div className="flex justify-end space-x-2 pt-2 border-t">
+              <Button variant="outline" size="sm" onClick={() => setConfirmActionType(null)}>Cancel</Button>
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={handleConfirmAcceptAll}>Proceed</Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {confirmActionType === 'skip_all' && (
+        <Dialog
+          isOpen={true}
+          onClose={() => setConfirmActionType(null)}
+          title="Confirm Skip All / Cancel Ingestion"
+          className="!max-w-[400px] !w-[400px] !rounded-xl"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 font-semibold flex items-start space-x-2">
+              <Info className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+              <span>Are you sure you want to cancel the bulk entry? All remaining vendors in the queue will be skipped.</span>
+            </div>
+            <div className="flex justify-end space-x-2 pt-2 border-t">
+              <Button variant="outline" size="sm" onClick={() => setConfirmActionType(null)}>Cancel</Button>
+              <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white font-bold" onClick={handleConfirmSkipAll}>Proceed</Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+<div className="fixed top-4 right-4 z-[9999] space-y-2.5 pointer-events-none">
         {vendorToasts.map(t => (
           <div
             key={t.id}
