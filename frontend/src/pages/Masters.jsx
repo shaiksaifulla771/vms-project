@@ -2110,7 +2110,7 @@ const MaterialsTab = () => {
                 ))}
               </div>
             </div>
-          ) : materials.length === 0 ? (
+          ) : (typeFilter === 'Deleted' ? deletedMaterialsHistory.length === 0 : materials.length === 0) ? (
             <div className="p-20 text-center text-slate-400 font-medium">No materials registered.</div>
           ) : (
             <>
@@ -5898,7 +5898,7 @@ const VendorsTab = () => {
                 ))}
               </div>
             </div>
-          ) : vendors.length === 0 ? (
+          ) : (status === 'Deleted' ? deletedVendorsHistory.length === 0 : vendors.length === 0) ? (
             <div className="p-20 text-center text-slate-400 font-medium">No vendors registered.</div>
           ) : (
             <Table className="border border-slate-200 w-full table-fixed">
@@ -6997,12 +6997,12 @@ const VendorsTab = () => {
 
                         <div className="grid grid-cols-3 gap-3">
                           <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name *</label>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name</label>
                             <input
                               type="text"
                               value={currentItem.name || ''}
-                              onChange={(e) => handleQueueFieldChange('name', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7010,34 +7010,29 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.company || ''}
-                              onChange={(e) => handleQueueFieldChange('company', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Category *</label>
-                            <select
-                              value={currentItem.category || 'Food Processor'}
-                              onChange={(e) => handleQueueFieldChange('category', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 h-[30px]"
-                            >
-                              <option value="Food Processor">Food Processor</option>
-                              <option value="Contract Manufacturer">Contract Manufacturer</option>
-                              <option value="Retail Brand">Retail Brand</option>
-                              <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                              <option value="Other">Other</option>
-                            </select>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
+                            <input
+                              type="text"
+                              value={currentItem.category || ''}
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
+                            />
                           </div>
                         </div>
 
                         <div className="grid grid-cols-3 gap-3">
                           <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email *</label>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email</label>
                             <input
                               type="email"
                               value={currentItem.email || ''}
-                              onChange={(e) => handleQueueFieldChange('email', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7045,8 +7040,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.phone || ''}
-                              onChange={(e) => handleQueueFieldChange('phone', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed font-mono"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7054,8 +7049,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.gstin || ''}
-                              onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed font-mono"
                             />
                           </div>
                         </div>
@@ -7066,8 +7061,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.address || ''}
-                              onChange={(e) => handleQueueFieldChange('address', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7075,8 +7070,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.city || ''}
-                              onChange={(e) => handleQueueFieldChange('city', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7084,8 +7079,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.state || ''}
-                              onChange={(e) => handleQueueFieldChange('state', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                         </div>
@@ -7096,8 +7091,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.zipCode || ''}
-                              onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed font-mono"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7105,8 +7100,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.country || 'India'}
-                              onChange={(e) => handleQueueFieldChange('country', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                           <div className="flex flex-col space-y-1">
@@ -7114,8 +7109,8 @@ const VendorsTab = () => {
                             <input
                               type="text"
                               value={currentItem.notes || ''}
-                              onChange={(e) => handleQueueFieldChange('notes', e.target.value)}
-                              className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              disabled={true}
+                              className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
                             />
                           </div>
                         </div>
