@@ -1559,6 +1559,42 @@ const MaterialsTab = () => {
     }
   };
 
+  const handleRestoreSelectedMaterials = async () => {
+    const ids = Array.from(selectedRowIds);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Restore ${ids.length} selected material(s)?`)) return;
+    let restored = 0, failed = 0;
+    const restoredMaterialIds = [];
+    for (const id of ids) {
+      const item = deletedMaterialsHistory.find(m => m._id === id);
+      if (item) {
+        try {
+          const payload = { ...item };
+          delete payload._id;
+          delete payload.deletedAt;
+          delete payload.deletionType;
+          delete payload.isDeletedHistoryItem;
+          await api.post('/api/materials', payload);
+          restored++;
+          restoredMaterialIds.push(id);
+        } catch (e) {
+          console.error(e);
+          failed++;
+        }
+      }
+    }
+    if (restoredMaterialIds.length > 0) {
+      setDeletedMaterialsHistory(prev => {
+        const updated = prev.filter(d => !restoredMaterialIds.includes(d._id));
+        localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    showToast(`Success Notification: ${restored} material(s) restored successfully!`, "success");
+    setSelectedRowIds(new Set());
+    fetchMaterials();
+  };
+
   const handleDeleteSelectedMaterials = async () => {
     const ids = Array.from(selectedRowIds);
     if (ids.length === 0) {
@@ -1569,7 +1605,21 @@ const MaterialsTab = () => {
     if (!window.confirm(`Delete ${ids.length} selected material(s)? This will update MongoDB, BOM, production, quality, purchase, inventory, and related records.`)) return;
 
     try {
+      const deletedItems = [];
+      ids.forEach(id => {
+        const target = materials.find(m => m._id === id);
+        if (target) {
+          deletedItems.push({ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() });
+        }
+      });
       const res = await api.post('/api/materials/batch-delete', { ids });
+      if (deletedItems.length > 0) {
+        setDeletedMaterialsHistory(prev => {
+          const updated = [...deletedItems, ...prev];
+          localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
+          return updated;
+        });
+      }
       showToast(res.data?.message || `Deleted ${ids.length} selected material(s).`, 'success');
       setSelectedRowIds(new Set());
       setIsSelectionMode(false);
@@ -1766,7 +1816,7 @@ const MaterialsTab = () => {
                 : <span>Select</span>}
             </label>
 
-            {isSelectionMode && (
+            {(isSelectionMode || typeFilter === "Deleted") && (
               <button
                 onClick={() => {
                   setSelectedRowIds(new Set());
@@ -1787,6 +1837,17 @@ const MaterialsTab = () => {
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>Delete</span>
+              </button>
+            )}
+
+            {selectedRowIds.size > 0 && typeFilter === 'Deleted' && (
+              <button
+                onClick={handleRestoreSelectedMaterials}
+                className="h-7 px-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 text-xs font-semibold flex items-center gap-1.5 transition-colors animate-pulse"
+                title="Restore selected materials to active grid"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Restore Selected ({selectedRowIds.size})</span>
               </button>
             )}
 
@@ -1994,7 +2055,7 @@ const MaterialsTab = () => {
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        {isSelectionMode && (
+                        {(isSelectionMode || typeFilter === "Deleted") && (
                           <input
                             type="checkbox"
                             checked={selectedRowIds.size > 0 && selectedRowIds.size === filteredMaterials.length}
@@ -2283,7 +2344,7 @@ const MaterialsTab = () => {
                   >
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap">
                       <div className="flex items-center gap-2 max-w-[220px]">
-                        {isSelectionMode && (
+                        {(isSelectionMode || typeFilter === "Deleted") && (
                           <input
                             type="checkbox"
                             checked={selectedRowIds.has(mat._id)}
@@ -3802,14 +3863,65 @@ const VendorsTab = () => {
     setSelectedVendorRowIds(newSet);
   };
 
+  const handleRestoreSelectedVendors = async () => {
+    if (selectedVendorRowIds.size === 0) return;
+    if (!window.confirm(`Restore ${selectedVendorRowIds.size} selected vendor(s)?`)) return;
+    let restored = 0, failed = 0;
+    const restoredVendorIds = [];
+    for (const id of selectedVendorRowIds) {
+      const item = deletedVendorsHistory.find(v => v._id === id);
+      if (item) {
+        try {
+          const payload = { ...item };
+          delete payload._id;
+          delete payload.deletedAt;
+          delete payload.deletionType;
+          await api.post('/api/vendors', payload);
+          restored++;
+          restoredVendorIds.push(id);
+        } catch (e) {
+          console.error(e);
+          failed++;
+        }
+      }
+    }
+    if (restoredVendorIds.length > 0) {
+      setDeletedVendorsHistory(prev => {
+        const updated = prev.filter(d => !restoredVendorIds.includes(d._id));
+        localStorage.setItem('erp_deleted_vendors_history', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    showToast(`Success Notification: ${restored} vendor(s) restored successfully!`, "success");
+    setSelectedVendorRowIds(new Set());
+    fetchVendors();
+  };
+
   // Delete selected vendors
   const handleDeleteSelectedVendors = async () => {
     if (selectedVendorRowIds.size === 0) return;
-    if (!window.confirm(`Delete ${selectedVendorRowIds.size} selected vendor(s)? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${selectedVendorRowIds.size} selected vendor(s)?`)) return;
     let deleted = 0, failed = 0;
+    const deletedItems = [];
     for (const id of selectedVendorRowIds) {
-      try { await api.delete(`/api/vendors/${id}`); deleted++; }
-      catch (e) { console.error(e); failed++; }
+      const target = vendors.find(v => v._id === id);
+      try {
+        await api.delete(`/api/vendors/${id}`);
+        deleted++;
+        if (target) {
+          deletedItems.push({ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() });
+        }
+      } catch (e) {
+        console.error(e);
+        failed++;
+      }
+    }
+    if (deletedItems.length > 0) {
+      setDeletedVendorsHistory(prev => {
+        const updated = [...deletedItems, ...prev];
+        localStorage.setItem('erp_deleted_vendors_history', JSON.stringify(updated));
+        return updated;
+      });
     }
     showToast(`${deleted} vendor(s) deleted${failed > 0 ? `, ${failed} failed` : ''}`, deleted > 0 ? 'success' : 'error');
     setSelectedVendorRowIds(new Set());
@@ -5231,6 +5343,16 @@ const VendorsTab = () => {
                 <span>Delete Selected ({selectedVendorRowIds.size})</span>
               </button>
             )}
+
+            {(isVendorSelectionMode || status === 'Deleted') && selectedVendorRowIds.size > 0 && status === 'Deleted' && (
+              <button
+                onClick={handleRestoreSelectedVendors}
+                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm text-xs animate-pulse"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Restore Selected ({selectedVendorRowIds.size})</span>
+              </button>
+            )}
             {(search || category || status || Object.values(columnFilters).some(v => v && v.length > 0)) && (
               <button
                 onClick={handleResetAllFilters}
@@ -5469,7 +5591,7 @@ const VendorsTab = () => {
             <Table className="border border-slate-200 w-full table-fixed">
               <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                 <TableRow>
-                  {isVendorSelectionMode && (
+                  {(isVendorSelectionMode || status === "Deleted") && (
                   <TableHead className="!px-3 !py-1 w-[40px] max-w-[40px] text-center border-r border-slate-200 relative z-20">
                     <input
                       type="checkbox"
@@ -5553,7 +5675,7 @@ const VendorsTab = () => {
               <TableBody>
                 {filteredVendors.map((v) => (
                   <TableRow key={v._id} className="hover:bg-slate-50/50 border-b border-slate-200">
-                    {isVendorSelectionMode && (
+                    {(isVendorSelectionMode || status === "Deleted") && (
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center" onClick={(e) => { e.stopPropagation(); handleVendorRowSelect(v._id); }}>
                       <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
                     </TableCell>
