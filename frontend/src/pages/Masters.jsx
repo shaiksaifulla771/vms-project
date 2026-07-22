@@ -2509,15 +2509,6 @@ const MaterialsTab = () => {
                       <div className="flex items-center justify-end space-x-1">
                         {mat.isDeletedHistoryItem ? (
                           <div className="flex items-center space-x-1.5">
-                            <Button
-                              size="sm"
-                              onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] py-1 px-2.5 flex items-center space-x-1 shadow-xs"
-                              title="Restore Material Record to Active Grid"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                              <span>Restore</span>
-                            </Button>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleOpenEditModal(mat); }}
                               className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -6145,14 +6136,6 @@ const VendorsTab = () => {
                     <TableCell className="!px-2 !py-0.5 text-right border-r border-slate-200 w-[120px] max-w-[120px]">
                       {v.isDeletedHistoryItem ? (
                         <div className="flex items-center justify-end space-x-1.5">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRestoreVendor(v); }}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded text-[10px] flex items-center space-x-1 shadow-sm transition-all"
-                            title="Restore Vendor"
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                            <span>Restore</span>
-                          </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
                             className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
