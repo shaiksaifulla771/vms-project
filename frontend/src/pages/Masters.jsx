@@ -3884,6 +3884,7 @@ const VendorsTab = () => {
   const [vendorBulkUpdateTab, setVendorBulkUpdateTab] = useState('new');
   const [editableVendorItems, setEditableVendorItems] = useState([]);
   const [vendorConfirmedReplacements, setVendorConfirmedReplacements] = useState(new Set());
+  const [vendorQueueSearchTerm, setVendorQueueSearchTerm] = useState('');
   const [vendorSkippedItems, setVendorSkippedItems] = useState(new Set());
   const [vendorCurrentFileName, setVendorCurrentFileName] = useState('');
   const [activeVendorQueueIdx, setActiveVendorQueueIdx] = useState(0);
@@ -5665,51 +5666,7 @@ const VendorsTab = () => {
             </div>
           </div>
 
-          <!-- Section 7: Key Department Contacts -->
-          <div class="section-title">7. Key Department Contacts</div>
-          <div class="grid">
-            <div class="field">
-              <div class="label">Quality Contact Name</div>
-              <div class="value">${displayVal(viewingVendor.contactQualityName)}</div>
-            </div>
-            <div class="field">
-              <div class="label">Quality Contact Phone</div>
-              <div class="value font-mono">${displayVal(viewingVendor.contactQualityPhone)}</div>
-            </div>
-            <div style="background: transparent;"></div>
-            
-            <div class="field">
-              <div class="label">Accounts Contact Name</div>
-              <div class="value">${displayVal(viewingVendor.contactAccountsName)}</div>
-            </div>
-            <div class="field">
-              <div class="label">Accounts Contact Phone</div>
-              <div class="value font-mono">${displayVal(viewingVendor.contactAccountsPhone)}</div>
-            </div>
-            <div style="background: transparent;"></div>
-
-            <div class="field">
-              <div class="label">Logistics Contact Name</div>
-              <div class="value">${displayVal(viewingVendor.contactLogisticsName)}</div>
-            </div>
-            <div class="field">
-              <div class="label">Logistics Contact Phone</div>
-              <div class="value font-mono">${displayVal(viewingVendor.contactLogisticsPhone)}</div>
-            </div>
-            <div style="background: transparent;"></div>
-          </div>
-
-          <div class="footer">
-            ERP Portal Vendor Profile Document. Confidential & Internal Use Only.
-          </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            };
-          </script>
-        </body>
+          </body>
       </html>
     `);
     printWindow.document.close();
@@ -7162,14 +7119,32 @@ const VendorsTab = () => {
               
               {/* Left Column: Vendor Ingestion Queue List */}
               <div className="col-span-4 border border-slate-200 rounded-lg p-3 bg-slate-50 flex flex-col space-y-2 max-h-[55vh] overflow-y-auto">
-                <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider pb-1.5 border-b border-slate-200">
-                  Vendor Review Ingestion List
+                <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider pb-1.5 border-b border-slate-200 flex items-center justify-between">
+                  <span>Vendor Review Ingestion List</span>
+                  <span className="text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-bold">
+                    {editableVendorItems.filter((item) => !vendorQueueSearchTerm || (item.name || '').toLowerCase().includes(vendorQueueSearchTerm.toLowerCase()) || (item.vendorId || '').toLowerCase().includes(vendorQueueSearchTerm.toLowerCase()) || (item.company || '').toLowerCase().includes(vendorQueueSearchTerm.toLowerCase())).length} of {editableVendorItems.length}
+                  </span>
+                </div>
+                <div className="relative my-1.5">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by Code or Vendor Name..."
+                    value={vendorQueueSearchTerm}
+                    onChange={(e) => setVendorQueueSearchTerm(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
                 </div>
                 <div className="space-y-1.5 flex-1 overflow-y-auto">
                   {editableVendorItems.map((item, idx) => {
                     const isSelected = activeVendorQueueIdx === idx;
                     const isAccepted = vendorConfirmedReplacements.has(idx) || item.userAction === 'accept';
                     const isSkipped = vendorSkippedItems.has(idx) || item.userAction === 'skip';
+                    const matchesSearch = !vendorQueueSearchTerm || 
+                      (item.name || '').toLowerCase().includes(vendorQueueSearchTerm.toLowerCase()) || 
+                      (item.vendorId || '').toLowerCase().includes(vendorQueueSearchTerm.toLowerCase()) || 
+                      (item.company || '').toLowerCase().includes(vendorQueueSearchTerm.toLowerCase());
+                    if (!matchesSearch) return null;
                     
                     let statusBadge = <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[9px] font-bold">Pending</Badge>;
                     if (isAccepted) statusBadge = <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] font-bold">✓ Accepted</Badge>;
@@ -7525,72 +7500,6 @@ const VendorsTab = () => {
                                 </div>
                               </div>
                             )}
-                          </div>
-                        </div>
-
-                        {/* Section 4: Bank Details */}
-                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
-                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">4. Bank & Payment Details</span>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Holder Name</label>
-                              <input
-                                type="text"
-                                value={currentItem.bankAccountHolder || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('bankAccountHolder', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Number</label>
-                              <input
-                                type="text"
-                                value={currentItem.bankAccountNumber || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('bankAccountNumber', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Bank Name</label>
-                              <input
-                                type="text"
-                                value={currentItem.bankName || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('bankName', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">IFSC Code</label>
-                              <input
-                                type="text"
-                                value={currentItem.ifscCode || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('ifscCode', e.target.value.toUpperCase().trim())}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
                           </div>
                         </div>
 
