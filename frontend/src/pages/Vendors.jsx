@@ -4,297 +4,465 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Button } from '../components/ui/Button';
-import { Input, Select, TextArea } from '../components/ui/Input';
+import { Input, Select } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
-import { Search, Filter, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, ArrowLeft, ArrowRight, Save } from 'lucide-react';
+import { 
+  Search, 
+  Plus, 
+  Trash2, 
+  Upload, 
+  Database, 
+  FileCheck, 
+  RefreshCw, 
+  FileX, 
+  Sparkles, 
+  ShieldAlert, 
+  X,
+  UserCheck,
+  Building2,
+  Lock,
+  Mail,
+  Fingerprint
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const Vendors = () => {
   const { user } = useAuth();
   
-  // State for raw data
-  const [vendors, setVendors] = useState([]);
-  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 10 });
+  // Tabs & Views
+  const [viewTab, setViewTab] = useState('active'); // 'active' or 'archived'
+  
+  // Data lists
+  const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Search & Filter State
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [status, setStatus] = useState('');
-  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('');
+  
+  // Toast notifications state
+  const [toasts, setToasts] = useState([]);
 
-  // Form Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Manual Form Dialog
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  
-  // Form Field State
   const [formData, setFormData] = useState({
-    name: '',
-    company: '',
-    email: '',
-    phone: '',
-    address: '',
-    category: 'Software',
-    status: 'Active'
+    Vendor_ID: '',
+    Company_Name: '',
+    Tax_ID: '',
+    Contact_Email: '',
+    Status: 'Active'
   });
-  
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
-  const [draftMessage, setDraftMessage] = useState('');
-  
-  const autoSaveIntervalRef = useRef(null);
 
-  // Categories list
-  const categoryOptions = [
-    { value: 'Software', label: 'Software' },
-    { value: 'Hardware', label: 'Hardware' },
-    { value: 'Consulting', label: 'Consulting' },
-    { value: 'Logistics', label: 'Logistics' },
-    { value: 'Marketing', label: 'Marketing' },
-    { value: 'Office Supplies', label: 'Office Supplies' },
-    { value: 'Other', label: 'Other' }
-  ];
+  // Bulk Upload Dialog & States
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [bulkErrors, setBulkErrors] = useState([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  // Fetch Vendors
-  const fetchVendors = async () => {
+  const showToast = (message, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev.slice(-4), { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
+  const fetchData = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const params = {
-        page,
-        limit: 10,
-        ...(search && { search }),
-        ...(category && { category }),
-        ...(status && { status })
-      };
-      const res = await api.get('/api/vendors', { params });
+      const res = await api.get('/api/vendor-masters', {
+        params: { view: viewTab }
+      });
       if (res.data && res.data.success) {
-        setVendors(res.data.data);
-        setPagination(res.data.pagination);
+        setRecords(res.data.data);
       }
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch vendors. Please check backend connection.');
+      showToast('Failed to fetch vendor directory.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchVendors();
-  }, [page, category, status]);
+    fetchData();
+  }, [viewTab]);
 
-  // Debounced search trigger
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      setPage(1);
-      fetchVendors();
-    }, 400);
+  const handleInputBlur = async (field, value) => {
+    if (!value || !value.trim()) return;
 
-    return () => clearTimeout(delayDebounceFn);
-  }, [search]);
-
-  // -------------------------------------------------------------
-  // AUTO-SAVE SYSTEM (localStorage)
-  // -------------------------------------------------------------
-  // Trigger auto-save every 5 seconds when modal is open
-  useEffect(() => {
-    if (isModalOpen) {
-      // Check if draft exists in localStorage on open
-      const savedDraft = localStorage.getItem('vms_vendor_form_draft');
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          // Only offer to restore if fields are not completely empty
-          if (parsed.name || parsed.company || parsed.email) {
-            setFormData(parsed);
-            setDraftMessage(`Restored draft from local storage`);
-          }
-        } catch (e) {
-          console.error(e);
-        }
+    try {
+      const payload = { [field]: value.trim() };
+      if (editingId) {
+        payload.excludeId = editingId;
       }
 
-      autoSaveIntervalRef.current = setInterval(() => {
-        // We read state directly in the interval hook
-        setFormData((currData) => {
-          localStorage.setItem('vms_vendor_form_draft', JSON.stringify(currData));
-          const timestamp = new Date().toLocaleTimeString();
-          setDraftMessage(`Draft autosaved at ${timestamp}`);
-          return currData;
+      const res = await api.post('/api/vendor-masters/check-duplicate', payload);
+      if (res.data && res.data.exists) {
+        setFormErrors(prev => ({
+          ...prev,
+          [field]: res.data.message
+        }));
+        showToast(res.data.message, 'error');
+      } else {
+        setFormErrors(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
         });
-      }, 5000);
-    } else {
-      clearInterval(autoSaveIntervalRef.current);
-      setDraftMessage('');
+      }
+    } catch (err) {
+      console.error('Focus-loss duplicate validation check failed:', err);
     }
-
-    return () => {
-      clearInterval(autoSaveIntervalRef.current);
-    };
-  }, [isModalOpen]);
-
-  // Clean form and local storage
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setEditingId(null);
-    setFormData({
-      name: '',
-      company: '',
-      email: '',
-      phone: '',
-      address: '',
-      category: 'Software',
-      status: 'Active'
-    });
-    setFormErrors({});
-    localStorage.removeItem('vms_vendor_form_draft');
-  };
-
-  const handleOpenAddModal = () => {
-    setEditingId(null);
-    setFormErrors({});
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEditModal = (vendor) => {
-    setEditingId(vendor._id);
-    setFormData({
-      name: vendor.name,
-      company: vendor.company,
-      email: vendor.email,
-      phone: vendor.phone,
-      address: vendor.address,
-      category: vendor.category,
-      status: vendor.status
-    });
-    setFormErrors({});
-    setIsModalOpen(true);
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    if (!formData.name.trim()) errors.name = 'Contact Name is required';
-    if (!formData.company.trim()) errors.company = 'Company name is required';
-    
-    if (!formData.email.trim()) {
-      errors.email = 'Corporate Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      errors.email = 'Invalid email address format';
-    }
-
-    if (!formData.phone.trim()) errors.phone = 'Phone number is required';
-    if (!formData.address.trim()) errors.address = 'Office Address is required';
-    
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
   };
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    
+    // Check if any errors are already flagged by onBlur
+    if (Object.keys(formErrors).length > 0) {
+      const firstErr = Object.values(formErrors)[0];
+      showToast(firstErr, 'error');
+      return;
+    }
 
     setSubmitLoading(true);
     try {
       if (editingId) {
-        // Update Vendor
-        await api.put(`/api/vendors/${editingId}`, formData);
+        const res = await api.put(`/api/vendor-masters/${editingId}`, formData);
+        if (res.data && res.data.success) {
+          showToast(`Vendor ${formData.Company_Name} updated successfully.`, 'success');
+          setIsFormOpen(false);
+          fetchData();
+        }
       } else {
-        // Create Vendor
-        await api.post('/api/vendors', formData);
+        const res = await api.post('/api/vendor-masters', formData);
+        if (res.data && res.data.success) {
+          showToast(`Vendor ${formData.Company_Name} registered successfully.`, 'success');
+          setIsFormOpen(false);
+          fetchData();
+        }
       }
-      fetchVendors();
-      handleCloseModal();
     } catch (err) {
       console.error(err);
-      const msg = err.response?.data?.error || 'Failed to submit vendor form details.';
-      setFormErrors({ form: msg });
+      const errorMsg = err.response?.data?.error || 'Database operation failed.';
+      showToast(errorMsg, 'error');
+      setFormErrors({ form: errorMsg });
     } finally {
       setSubmitLoading(false);
     }
   };
 
-  const handleToggleStatus = async (vendor) => {
+  const handleOpenAddModal = () => {
+    setEditingId(null);
+    setFormData({
+      Vendor_ID: '',
+      Company_Name: '',
+      Tax_ID: '',
+      Contact_Email: '',
+      Status: 'Active'
+    });
+    setFormErrors({});
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEditModal = (rec) => {
+    setEditingId(rec._id);
+    setFormData({
+      Vendor_ID: rec.Vendor_ID,
+      Company_Name: rec.Company_Name,
+      Tax_ID: rec.Tax_ID,
+      Contact_Email: rec.Contact_Email,
+      Status: rec.Status
+    });
+    setFormErrors({});
+    setIsFormOpen(true);
+  };
+
+  const handleSoftDelete = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to archive/soft-delete vendor "${name}"?`)) return;
+
     try {
-      await api.patch(`/api/vendors/${vendor._id}/status`);
-      // Update local state directly to be fast and responsive
-      setVendors(vendors.map(v => 
-        v._id === vendor._id ? { ...v, status: v.status === 'Active' ? 'Inactive' : 'Active' } : v
-      ));
+      await api.delete(`/api/vendor-masters/${id}`);
+      showToast(`Vendor "${name}" moved to Archived repository.`, 'success');
+      fetchData();
     } catch (err) {
       console.error(err);
-      alert('Failed to toggle vendor status.');
+      showToast('Failed to archive vendor.', 'error');
     }
   };
 
-  const handleDeleteVendor = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this vendor record? This action checks database references.')) return;
-    
+  const handleRestore = async (id, name) => {
     try {
-      await api.delete(`/api/vendors/${id}`);
-      fetchVendors();
+      await api.patch(`/api/vendor-masters/${id}/restore`);
+      showToast(`Vendor "${name}" restored back to active database.`, 'success');
+      fetchData();
     } catch (err) {
       console.error(err);
-      const errorMsg = err.response?.data?.error || 'relational integrity violation: linked contracts or purchase requests prevent deleting this vendor.';
-      alert(`Relational Integrity Check: ${errorMsg}`);
+      showToast('Failed to restore vendor.', 'error');
     }
   };
+
+  // Drag and Drop files handlers
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const processFile = (file) => {
+    const isExcel = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.name.endsWith('.xlsx');
+    const isCsv = file.type === 'text/csv' || file.name.endsWith('.csv');
+
+    if (!isExcel && !isCsv) {
+      showToast('Invalid file format. Please upload .xlsx or .csv files.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+        if (jsonData.length === 0) {
+          showToast('Uploaded spreadsheet contains no data rows.', 'error');
+          return;
+        }
+
+        // Standardize headers
+        const normalizedRows = jsonData.map(row => ({
+          Vendor_ID: row['Vendor_ID'] || row['Vendor ID'] || row['VendorCode'] || row['vendor_id'] || '',
+          Company_Name: row['Company_Name'] || row['Company Name'] || row['Company'] || row['company_name'] || '',
+          Tax_ID: row['Tax_ID'] || row['Tax ID'] || row['GSTIN'] || row['tax_id'] || '',
+          Contact_Email: row['Contact_Email'] || row['Contact Email'] || row['Email'] || row['contact_email'] || '',
+          Status: row['Status'] || row['status'] || 'Active'
+        }));
+
+        setBulkLoading(true);
+        setBulkErrors([]);
+
+        try {
+          const res = await api.post('/api/vendor-masters/bulk', { rows: normalizedRows });
+          if (res.data && res.data.success) {
+            showToast(`Upload complete: Ingested ${res.data.count} vendors successfully.`, 'success');
+            setIsUploadOpen(false);
+            fetchData();
+          }
+        } catch (err) {
+          console.error(err);
+          const itemized = err.response?.data?.itemizedErrors || [];
+          if (itemized.length > 0) {
+            setBulkErrors(itemized);
+            showToast('Upload blocked due to database duplicate intersections.', 'error');
+          } else {
+            showToast(err.response?.data?.error || 'Validation check failed.', 'error');
+          }
+        } finally {
+          setBulkLoading(false);
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Error parsing file content.', 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const downloadSampleTemplate = () => {
+    const sampleData = [
+      {
+        'Vendor_ID': 'VND-2026-001',
+        'Company_Name': 'Relational Materials Corp',
+        'Tax_ID': '27ABCDE1234F1Z5',
+        'Contact_Email': 'sourcing@relationalcorp.com',
+        'Status': 'Active'
+      },
+      {
+        'Vendor_ID': 'VND-2026-002',
+        'Company_Name': 'Apex Logistic Solutions',
+        'Tax_ID': '27FGHIJ5678K2Z9',
+        'Contact_Email': 'ops@apexlogistics.com',
+        'Status': 'Active'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendor Master');
+    XLSX.writeFile(workbook, 'vendor_master_template.xlsx');
+    showToast('Download complete: vendor_master_template.xlsx', 'success');
+  };
+
+  // Search & filter computations
+  const filteredRecords = records.filter(rec => {
+    const matchSearch = 
+      (rec.Vendor_ID || '').toLowerCase().includes(search.toLowerCase()) ||
+      (rec.Company_Name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (rec.Tax_ID || '').toLowerCase().includes(search.toLowerCase()) ||
+      (rec.Contact_Email || '').toLowerCase().includes(search.toLowerCase());
+    
+    const matchStatus = statusFilter === '' || rec.Status === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   return (
     <div className="space-y-6">
-      {/* Search and Filters Bar */}
+      {/* Toast Alert Popups */}
+      <div className="fixed top-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none max-w-sm w-full">
+        {toasts.map(toast => (
+          <div 
+            key={toast.id} 
+            className={`p-3.5 rounded-lg border shadow-lg flex items-start space-x-2.5 transition-all duration-300 animate-slide-in pointer-events-auto ${
+              toast.type === 'error' 
+                ? 'bg-rose-50 border-rose-200 text-rose-800' 
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            }`}
+          >
+            <ShieldAlert className={`h-4.5 w-4.5 shrink-0 mt-0.5 ${toast.type === 'error' ? 'text-rose-500' : 'text-emerald-500'}`} />
+            <div className="flex-1 text-xs font-semibold leading-relaxed">
+              {toast.message}
+            </div>
+            <button 
+              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+              className="text-slate-400 hover:text-slate-600 transition-colors shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Main Top Header Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-slate-900 text-white rounded-2xl p-5 flex flex-col justify-between shadow-md relative overflow-hidden group">
+          <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 opacity-10 group-hover:scale-110 transition-transform duration-300 text-white">
+            <Database className="h-28 w-28" />
+          </div>
+          <span className="text-[10px] text-blue-400 font-extrabold uppercase tracking-wider block">Registry View</span>
+          <div className="mt-2.5 flex items-baseline space-x-1.5">
+            <span className="text-3xl font-extrabold">{viewTab === 'active' ? 'Active List' : 'Archive List'}</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-medium block mt-1">Dual-check engine validation enabled</span>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-xs relative overflow-hidden group">
+          <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 opacity-5 group-hover:scale-110 transition-transform duration-300 text-slate-900">
+            <UserCheck className="h-28 w-28" />
+          </div>
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Database Records</span>
+          <div className="mt-2.5 flex items-baseline space-x-1.5">
+            <span className="text-3xl font-extrabold text-slate-800">{filteredRecords.length}</span>
+            <span className="text-xs font-bold text-slate-500">vendors</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-medium block mt-1">Found matching current filter states</span>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-xs relative overflow-hidden group">
+          <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 opacity-5 group-hover:scale-110 transition-transform duration-300 text-slate-900">
+            <Sparkles className="h-28 w-28" />
+          </div>
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Core Engine Status</span>
+          <div className="mt-2.5 flex items-center space-x-1.5">
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span className="text-sm font-extrabold text-slate-800">DUAL-CHECK ACTIVE</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-medium block mt-1">Scanning active and soft-deleted states</span>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-xs relative overflow-hidden group">
+          <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 opacity-5 group-hover:scale-110 transition-transform duration-300 text-slate-900">
+            <FileCheck className="h-28 w-28" />
+          </div>
+          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Relational Schema</span>
+          <div className="mt-2.5 flex items-baseline space-x-1.5">
+            <span className="text-sm font-extrabold text-blue-600 uppercase">vendor_master</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-medium block mt-1">Soft-delete (is_deleted 0/1) logic enabled</span>
+        </div>
+      </div>
+
+      {/* Toolbar & Filter Options */}
       <Card>
         <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex-1 relative">
+          <div className="flex items-center space-x-1 border border-slate-200 rounded-xl p-1 bg-slate-50/50">
+            <button
+              onClick={() => setViewTab('active')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewTab === 'active' 
+                  ? 'bg-white text-slate-800 shadow-sm border border-slate-200' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Vendor Directory
+            </button>
+            <button
+              onClick={() => setViewTab('archived')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewTab === 'archived' 
+                  ? 'bg-white text-slate-800 shadow-sm border border-slate-200' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Archived / Deleted
+            </button>
+          </div>
+
+          <div className="flex-1 max-w-sm relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by name, company, email..."
+              placeholder="Search by ID, company, email, tax..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Category Filter */}
-            <div className="flex items-center space-x-2">
-              <Filter className="h-4 w-4 text-slate-400" />
-              <select
-                value={category}
-                onChange={(e) => { setCategory(e.target.value); setPage(1); }}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-              >
-                <option value="">All Categories</option>
-                {categoryOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Filter */}
+          <div className="flex items-center gap-2">
             <select
-              value={status}
-              onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
             >
               <option value="">All Statuses</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
+              <option value="Draft">Draft</option>
             </select>
 
-            {/* Clear filters shortcut */}
-            {(category || status || search) && (
-              <button
-                onClick={() => { setCategory(''); setStatus(''); setSearch(''); setPage(1); }}
-                className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
-              >
-                Reset Filters
-              </button>
-            )}
+            <Button onClick={() => setIsUploadOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center space-x-1 rounded-xl">
+              <Upload className="h-3.5 w-3.5" />
+              <span>Bulk Upload</span>
+            </Button>
 
-            <Button onClick={handleOpenAddModal} className="flex items-center space-x-1">
+            <Button onClick={handleOpenAddModal} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center space-x-1 rounded-xl">
               <Plus className="h-4 w-4" />
               <span>Add Vendor</span>
             </Button>
@@ -302,220 +470,293 @@ const Vendors = () => {
         </CardContent>
       </Card>
 
-      {/* Main Vendor Data Table */}
+      {/* Main Vendor directory list table */}
       <Card>
         <CardContent className="p-0">
-          {error && (
-            <div className="p-5 text-center text-sm font-semibold text-red-500 bg-red-50/50 border-b border-red-50">
-              {error}
-            </div>
-          )}
-
           {loading ? (
             <div className="flex flex-col items-center justify-center p-20 space-y-3">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
-              <p className="text-xs text-slate-400 font-medium">Querying vendor database...</p>
+              <p className="text-xs text-slate-400 font-medium">Scanning relational records...</p>
             </div>
-          ) : vendors.length === 0 ? (
-            <div className="p-20 text-center text-slate-400 font-medium">
-              No vendor records matching the criteria found.
+          ) : filteredRecords.length === 0 ? (
+            <div className="p-20 text-center text-slate-400 text-xs font-semibold italic">
+              No vendor records matching the filters found.
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Vendor Representative</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Email Address</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>Vendor ID</TableHead>
+                  <TableHead>Company Name</TableHead>
+                  <TableHead>Tax ID (GSTIN)</TableHead>
+                  <TableHead>Contact Email</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {vendors.map((vendor) => (
-                  <TableRow key={vendor._id}>
-                    <TableCell>
-                      <div className="font-bold text-slate-800">{vendor.name}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{vendor.phone}</div>
+                {filteredRecords.map((rec) => (
+                  <TableRow key={rec._id}>
+                    <TableCell className="font-mono text-xs font-bold text-blue-600 uppercase">
+                      {rec.Vendor_ID}
                     </TableCell>
-                    <TableCell className="font-medium text-slate-700">{vendor.company}</TableCell>
-                    <TableCell className="text-slate-600 font-mono text-xs">{vendor.email}</TableCell>
-                    <TableCell>
-                      <Badge variant="info">{vendor.category}</Badge>
+                    <TableCell className="font-extrabold text-slate-700">
+                      {rec.Company_Name}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-bold text-slate-500 uppercase">
+                      {rec.Tax_ID}
+                    </TableCell>
+                    <TableCell className="text-slate-600 text-xs font-semibold">
+                      {rec.Contact_Email}
                     </TableCell>
                     <TableCell>
-                      <Badge>{vendor.status}</Badge>
+                      <Badge className={
+                        rec.Status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        rec.Status === 'Inactive' ? 'bg-slate-50 text-slate-600 border-slate-200' :
+                        'bg-blue-50 text-blue-700 border-blue-200'
+                      }>
+                        {rec.Status}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end space-x-1.5">
-                        <button
-                          onClick={() => handleToggleStatus(vendor)}
-                          title="Toggle Status (Active/Inactive)"
-                          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-                        >
-                          {vendor.status === 'Active' ? (
-                            <ToggleRight className="h-4.5 w-4.5 text-blue-600" />
-                          ) : (
-                            <ToggleLeft className="h-4.5 w-4.5 text-slate-400" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleOpenEditModal(vendor)}
-                          title="Edit Vendor details"
-                          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteVendor(vendor._id)}
-                          title="Delete Vendor"
-                          className="p-1.5 rounded-md hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                      {viewTab === 'active' ? (
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => handleOpenEditModal(rec)}
+                            className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="Edit details"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleSoftDelete(rec._id, rec.Company_Name)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="Archive / Soft-Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end">
+                          <button
+                            onClick={() => handleRestore(rec._id, rec.Company_Name)}
+                            className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-extrabold px-3 py-1 rounded-lg text-[10px] flex items-center space-x-1 transition-all"
+                            title="Restore to Active Database"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                            <span>Restore</span>
+                          </button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
-
-          {/* Pagination Controls */}
-          {pagination.pages > 1 && (
-            <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-500 bg-slate-50/20">
-              <p>Showing page {pagination.page} of {pagination.pages} ({pagination.total} total vendor profiles)</p>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  disabled={page === 1}
-                  onClick={() => setPage(page - 1)}
-                  className="p-1.5 bg-white border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-                <button
-                  disabled={page === pagination.pages}
-                  onClick={() => setPage(page + 1)}
-                  className="p-1.5 bg-white border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                >
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* CRUD Form Modal */}
+      {/* Dialog Form for Manual Registry */}
       <Dialog
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        title={editingId ? 'Edit Supplier Record' : 'Register New Vendor'}
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={editingId ? 'Edit Relational Vendor Record' : 'Register New Relational Vendor'}
       >
         <form onSubmit={handleFormSubmit} className="space-y-4">
-          {formErrors.form && (
-            <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-600 font-semibold">
-              {formErrors.form}
-            </div>
-          )}
-
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Contact Representative Name"
-              id="name"
-              placeholder="e.g. John Doe"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              error={formErrors.name}
-              required
-            />
-            
-            <Input
-              label="Company Name"
-              id="company"
-              placeholder="e.g. Oracle Corp"
-              value={formData.company}
-              onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-              error={formErrors.company}
-              required
-            />
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center space-x-1">
+                <Fingerprint className="h-3 w-3 text-slate-400" />
+                <span>Vendor ID *</span>
+              </label>
+              <input
+                type="text"
+                value={formData.Vendor_ID}
+                onChange={(e) => setFormData({ ...formData, Vendor_ID: e.target.value.toUpperCase() })}
+                onBlur={(e) => handleInputBlur('Vendor_ID', e.target.value)}
+                className={`px-3 py-2 bg-white border rounded-xl text-xs font-semibold focus:outline-none transition-all ${
+                  formErrors.Vendor_ID ? 'border-rose-300 focus:ring-1 focus:ring-rose-500' : 'border-slate-200 focus:ring-1 focus:ring-blue-500'
+                }`}
+                placeholder="e.g. VND-2026-001"
+                required
+              />
+              {formErrors.Vendor_ID && (
+                <span className="text-[10px] font-bold text-rose-600 mt-1 block">{formErrors.Vendor_ID}</span>
+              )}
+            </div>
+
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center space-x-1">
+                <Building2 className="h-3 w-3 text-slate-400" />
+                <span>Company Name *</span>
+              </label>
+              <input
+                type="text"
+                value={formData.Company_Name}
+                onChange={(e) => setFormData({ ...formData, Company_Name: e.target.value })}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="e.g. Relational Corp"
+                required
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Corporate Email Address"
-              id="email"
-              type="email"
-              placeholder="name@company.com"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              error={formErrors.email}
-              required
-            />
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center space-x-1">
+                <Lock className="h-3 w-3 text-slate-400" />
+                <span>Tax ID (GSTIN) *</span>
+              </label>
+              <input
+                type="text"
+                value={formData.Tax_ID}
+                onChange={(e) => setFormData({ ...formData, Tax_ID: e.target.value.toUpperCase() })}
+                onBlur={(e) => handleInputBlur('Tax_ID', e.target.value)}
+                className={`px-3 py-2 bg-white border rounded-xl text-xs font-semibold focus:outline-none transition-all ${
+                  formErrors.Tax_ID ? 'border-rose-300 focus:ring-1 focus:ring-rose-500' : 'border-slate-200 focus:ring-1 focus:ring-blue-500'
+                }`}
+                placeholder="e.g. 27ABCDE1234F1Z5"
+                required
+              />
+              {formErrors.Tax_ID && (
+                <span className="text-[10px] font-bold text-rose-600 mt-1 block">{formErrors.Tax_ID}</span>
+              )}
+            </div>
 
-            <Input
-              label="Phone Number"
-              id="phone"
-              placeholder="+1 (555) 000-111"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              error={formErrors.phone}
-              required
-            />
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center space-x-1">
+                <Mail className="h-3 w-3 text-slate-400" />
+                <span>Contact Email *</span>
+              </label>
+              <input
+                type="email"
+                value={formData.Contact_Email}
+                onChange={(e) => setFormData({ ...formData, Contact_Email: e.target.value.toLowerCase() })}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                placeholder="e.g. contact@company.com"
+                required
+              />
+            </div>
           </div>
 
-          <Select
-            label="Procurement Category"
-            id="category"
-            options={categoryOptions}
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            error={formErrors.category}
-            required
-          />
-
-          <TextArea
-            label="Corporate Office Address"
-            id="address"
-            placeholder="Specify street address, building number, zip, state"
-            value={formData.address}
-            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-            error={formErrors.address}
-            required
-          />
-
-          <Select
-            label="Initial Registry Status"
-            id="status"
-            options={[
-              { value: 'Active', label: 'Active' },
-              { value: 'Inactive', label: 'Inactive' }
-            ]}
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-            required
-          />
-
-          {/* Draft Notification Alert */}
-          {draftMessage && (
-            <div className="flex items-center space-x-1.5 text-[10px] text-blue-500 font-bold bg-blue-50 py-1.5 px-2.5 rounded-md border border-blue-100">
-              <Save className="h-3 w-3 shrink-0" />
-              <span>{draftMessage}</span>
-            </div>
-          )}
+          <div className="flex flex-col space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-600 uppercase">Registry Status</label>
+            <select
+              value={formData.Status}
+              onChange={(e) => setFormData({ ...formData, Status: e.target.value })}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none h-9 cursor-pointer"
+            >
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+              <option value="Draft">Draft</option>
+            </select>
+          </div>
 
           <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100 mt-5">
-            <Button variant="outline" onClick={handleCloseModal}>
+            <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" isLoading={submitLoading}>
+            <Button type="submit" isLoading={submitLoading} className="bg-blue-600 text-white font-bold rounded-xl px-4 py-2">
               {editingId ? 'Apply Changes' : 'Register Vendor'}
             </Button>
           </div>
         </form>
       </Dialog>
+
+      {/* Dialog for Bulk Spreadsheet Upload */}
+      <Dialog
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        title="Ingest Bulk Spreadsheet Data"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-2 mb-2">
+            <span className="text-[10px] text-slate-400 font-bold block uppercase">Drag & Drop Upload Zone</span>
+            <button
+              onClick={downloadSampleTemplate}
+              className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline"
+            >
+              Download Sample template
+            </button>
+          </div>
+
+          {/* Itemized error logs panel */}
+          {bulkErrors.length > 0 && (
+            <div className="border border-rose-200 bg-rose-50/50 rounded-xl p-3.5 space-y-2.5 max-h-[30vh] overflow-y-auto">
+              <div className="flex items-center space-x-1.5 text-rose-800 font-extrabold text-xs">
+                <FileX className="h-4.5 w-4.5 text-rose-600" />
+                <span>Bulk Upload Intercepted: Ingestion Blocked</span>
+              </div>
+              <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                The duplication validation engine caught conflicting entries in the uploaded file against the active grid and soft-deleted history. The entire batch has been blocked.
+              </p>
+              <div className="border rounded-lg overflow-hidden bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-rose-50/20">
+                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Row #</TableHead>
+                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Vendor ID</TableHead>
+                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Tax ID</TableHead>
+                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Conflict Details</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bulkErrors.map((err, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="!py-1 text-[10px] font-mono font-bold">{err.row}</TableCell>
+                        <TableCell className="!py-1 text-[10px] font-mono font-semibold">{err.Vendor_ID}</TableCell>
+                        <TableCell className="!py-1 text-[10px] font-mono font-semibold">{err.Tax_ID}</TableCell>
+                        <TableCell className="!py-1 text-[10px] font-bold text-rose-600">{err.error}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* Drag & Drop Area */}
+          <div
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl p-10 text-center flex flex-col items-center justify-center space-y-3.5 transition-all cursor-pointer ${
+              isDragActive 
+                ? 'border-blue-500 bg-blue-50/40' 
+                : 'border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50'
+            }`}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".xlsx,.csv"
+              className="hidden"
+            />
+            <div className="p-3.5 rounded-full bg-slate-100 text-slate-500">
+              <Upload className="h-7 w-7" />
+            </div>
+            <div>
+              <p className="text-xs font-extrabold text-slate-800">
+                Drag and drop your spreadsheet here, or click to browse
+              </p>
+              <p className="text-[10px] text-slate-400 font-medium mt-1">
+                Supports Excel (.xlsx) or CSV files
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100 mt-5">
+            <Button type="button" variant="outline" onClick={() => setIsUploadOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
     </div>
   );
 };

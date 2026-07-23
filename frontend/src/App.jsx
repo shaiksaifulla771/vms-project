@@ -5,6 +5,7 @@ import Header from './components/Header';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Masters from './pages/Masters';
+import Vendors from './pages/Vendors';
 import BOM from './pages/BOM';
 import Planning from './pages/Planning';
 import Inventory from './pages/Inventory';
@@ -36,6 +37,7 @@ const AppContent = () => {
   const pageRoles = {
     dashboard: ['Admin', 'Inventory Manager', 'Production Manager'],
     masters: ['Admin', 'Inventory Manager'],
+    vendors: ['Admin', 'Inventory Manager'],
     boms: ['Admin', 'Production Manager'],
     planning: ['Admin', 'Inventory Manager', 'Production Manager'],
     inventory: ['Admin', 'Inventory Manager'],
@@ -69,6 +71,8 @@ const AppContent = () => {
         return <Dashboard />;
       case 'masters':
         return <Masters />;
+      case 'vendors':
+        return <Vendors />;
       case 'boms':
         return <BOM />;
       case 'planning':

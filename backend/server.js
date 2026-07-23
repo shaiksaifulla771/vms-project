@@ -262,6 +262,7 @@ app.use(cors({
 // Mount routers
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/vendors', require('./routes/vendorRoutes'));
+app.use('/api/vendor-masters', require('./routes/vendorMasterRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/boms', require('./routes/bomRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
