@@ -59,26 +59,55 @@ exports.getVendorMasters = async (req, res, next) => {
   try {
     const { view } = req.query; // 'active' or 'archived'
 
-    // Automatically migrate/seed from original Vendor collection if VendorMaster is empty
-    const count = await VendorMaster.countDocuments();
+    // Automatically seed from all_recipes.json if VendorMaster is empty
+    let count = await VendorMaster.countDocuments();
     if (count === 0) {
-      const oldVendors = await Vendor.find({});
-      if (oldVendors.length > 0) {
-        const migrated = oldVendors.map(v => {
-          const firstContact = v.contacts?.[0] || {};
+      const fs = require('fs');
+      const path = require('path');
+      const recipePath = path.join(__dirname, '..', 'config', 'all_recipes.json');
+      if (fs.existsSync(recipePath)) {
+        const rawData = fs.readFileSync(recipePath, 'utf8');
+        const parsedData = JSON.parse(rawData);
+        
+        let idx = 1001;
+        const vendorMasterDocs = parsedData.vendors.map(vendorName => {
+          const slug = vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const email = `contact@${slug || 'sourcing'}.com`;
+          const vId = `VND-${idx}`;
+          const taxId = `27${(slug + 'ABCDE').slice(0, 5).toUpperCase()}1234F${(idx % 9) + 1}Z5`;
+
+          let dept = 'Procurement';
+          let role = 'Sourcing Specialist';
+          if (vendorName.toLowerCase().includes('agro') || vendorName.toLowerCase().includes('traders')) {
+            dept = 'Procurement';
+            role = 'Buyer';
+          } else if (vendorName.toLowerCase().includes('pack') || vendorName.toLowerCase().includes('flex')) {
+            dept = 'Logistics';
+            role = 'Supply Chain Coordinator';
+          }
+
+          idx++;
           return {
-            Vendor_ID: v.vendorId || `VND-${v._id.toString().slice(-4).toUpperCase()}`,
-            Company_Name: v.company || v.name,
-            Tax_ID: v.gstin || `GSTIN-${v._id.toString().slice(-4).toUpperCase()}`,
-            Contact_Email: v.email || 'info@company.com',
-            Department: firstContact.department || 'Procurement',
-            Role: firstContact.role || 'Buyer',
-            Status: v.status || 'Active',
-            contacts: v.contacts || [],
-            is_deleted: false
+            Vendor_ID: vId,
+            Company_Name: vendorName,
+            Tax_ID: taxId,
+            Contact_Email: email,
+            Department: dept,
+            Role: role,
+            Status: 'Active',
+            is_deleted: false,
+            contacts: [
+              {
+                name: `${vendorName.split(' ')[0]} Representative`,
+                phone: `+91 98765 ${idx}`,
+                role: role,
+                department: dept,
+                email: email
+              }
+            ]
           };
         });
-        await VendorMaster.insertMany(migrated);
+        await VendorMaster.insertMany(vendorMasterDocs);
       }
     }
 

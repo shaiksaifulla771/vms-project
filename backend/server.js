@@ -285,7 +285,7 @@ const server = app.listen(PORT, () => {
   console.log(`Server running in mode on port ${PORT}`);
 });
 
-// Handle unhandled rejections
+// Server restart trigger
 process.on('unhandledRejection', (err, promise) => {
   console.error(`Unhandled Rejection Error: ${err.message}`);
   server.close(() => process.exit(1));

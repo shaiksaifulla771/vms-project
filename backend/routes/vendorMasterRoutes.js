@@ -9,15 +9,8 @@ const {
   softDeleteVendorMaster,
   restoreVendorMaster
 } = require('../controllers/vendorMasterController');
-const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
-
-router.use(protect); // Secure all VMS dashboard routes
-
-router.route('/')
-  .get(getVendorMasters)
-  .post(createVendorMaster);
 
 router.route('/check-duplicate')
   .post(checkDuplicate);
@@ -27,6 +20,10 @@ router.route('/validate-batch')
 
 router.route('/bulk')
   .post(bulkUploadVendorMasters);
+
+router.route('/')
+  .get(getVendorMasters)
+  .post(createVendorMaster);
 
 router.route('/:id')
   .put(updateVendorMaster)
