@@ -8,7 +8,7 @@ import { Input, Select, TextArea } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
 import { Drawer } from '../components/ui/Drawer';
-import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, ArrowRight, ShieldCheck, Printer, MoreVertical, Eye, Filter, Info, FileSpreadsheet, Download, RefreshCw, Fingerprint, Building2, Lock, Mail, FileCheck, FileX, CheckCircle, Briefcase, ShieldAlert, X, Database } from 'lucide-react';
+import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, ArrowRight, ShieldCheck, Printer, MoreVertical, Eye, Filter, Info, FileSpreadsheet, Download, RefreshCw, Fingerprint, Building2, Lock, Mail, FileCheck, FileX, CheckCircle, Briefcase, ShieldAlert, X, Database, Sparkles, Upload, UserCheck } from 'lucide-react';
 
 const Masters = () => {
   const [activeTab, setActiveTab] = useState('materials');
