@@ -750,10 +750,8 @@ const MaterialsTab = () => {
           </div>
 
           <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            };
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
           </script>
         </body>
       </html>
@@ -5666,7 +5664,11 @@ const VendorsTab = () => {
             </div>
           </div>
 
-          </body>
+          <script>
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          </script>
+        </body>
       </html>
     `);
     printWindow.document.close();
@@ -7209,155 +7211,205 @@ const VendorsTab = () => {
                         </div>
 
                         {/* Section 1: Basic Information */}
-                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
-                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">1. Basic Information</span>
-                          <div className="grid grid-cols-3 gap-3">
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Basic Information</span>
+                          
+                          <div className="grid grid-cols-2 gap-3">
                             <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name *</label>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor ID</label>
                               <input
                                 type="text"
+                                value={currentItem.vendorId || ''}
+                                disabled={true}
+                                className="px-2 py-1.5 border border-slate-100 rounded text-xs font-mono text-slate-500 bg-slate-100 cursor-not-allowed font-bold"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Vendor Name</label>
+                              <input
+                                type="text"
+                                placeholder="Tyson"
                                 value={currentItem.name || ''}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('name', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Company Name</label>
-                              <input
-                                type="text"
-                                value={currentItem.company || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('company', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Category *</label>
-                              {isVendorAutoEntry ? (
-                                <input
-                                  type="text"
-                                  value={currentItem.category || ''}
-                                  disabled={true}
-                                  className="px-2 py-1.5 border border-slate-100 bg-slate-50 text-slate-500 rounded text-xs font-semibold focus:outline-none cursor-not-allowed"
-                                />
-                              ) : (
-                                <select
-                                  value={currentItem.category || 'Food Processor'}
-                                  onChange={(e) => handleQueueFieldChange('category', e.target.value)}
-                                  className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 h-[30px]"
-                                >
-                                  <option value="Food Processor">Food Processor</option>
-                                  <option value="Contract Manufacturer">Contract Manufacturer</option>
-                                  <option value="Retail Brand">Retail Brand</option>
-                                  <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                                  <option value="Other">Other</option>
-                                </select>
-                              )}
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
+                              <select
+                                value={currentItem.category || 'Food Processor'}
+                                onChange={(e) => handleQueueFieldChange('category', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 cursor-pointer h-8"
+                              >
+                                <option value="Food Processor">Food Processor</option>
+                                <option value="Contract Manufacturer">Contract Manufacturer</option>
+                                <option value="Retail Brand">Retail Brand</option>
+                                <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
                             <div className="flex flex-col space-y-1">
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Sub-Category</label>
                               <input
                                 type="text"
+                                placeholder="e.g. Packaging, Raw Material"
                                 value={currentItem.subCategory || ''}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('subCategory', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
                             <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Notes / description</label>
-                              <input
-                                type="text"
-                                value={currentItem.notes || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('notes', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Status</label>
+                              <select
+                                value={currentItem.status || 'Active'}
+                                onChange={(e) => handleQueueFieldChange('status', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 cursor-pointer h-8"
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="Draft">Draft</option>
+                              </select>
                             </div>
                           </div>
                         </div>
 
-                        {/* Section 2: Contact & Location Details */}
-                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
-                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">2. Contact & Location Details</span>
-                          <div className="grid grid-cols-3 gap-3">
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Primary Email *</label>
-                              <input
-                                type="email"
-                                value={currentItem.email || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('email', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
+                        {/* Contacts Directory */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Contacts Directory</span>
+                          
+                          {(!currentItem.contacts || currentItem.contacts.length === 0) ? (
+                            <div className="text-xs text-slate-400 italic">No contacts added yet.</div>
+                          ) : (
+                            <div className="space-y-2">
+                              {currentItem.contacts.map((c, cIdx) => (
+                                <div key={cIdx} className="grid grid-cols-12 gap-1.5 items-center bg-white p-2 border border-slate-200 rounded text-xs">
+                                  <div className="col-span-3">
+                                    <select
+                                      value={c.role || 'Primary'}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], role: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded bg-white font-semibold"
+                                    >
+                                      <option value="Primary">Primary</option>
+                                      <option value="Secondary">Secondary</option>
+                                      <option value="Billing">Billing</option>
+                                    </select>
+                                  </div>
+                                  <div className="col-span-3">
+                                    <select
+                                      value={c.department || 'Sourcing'}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], department: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded bg-white font-semibold"
+                                    >
+                                      <option value="Sourcing">Sourcing</option>
+                                      <option value="Quality">Quality</option>
+                                      <option value="Finance / Accounts">Finance / Accounts</option>
+                                      <option value="Logistics">Logistics</option>
+                                      <option value="Sales">Sales</option>
+                                      <option value="Other">Other</option>
+                                    </select>
+                                  </div>
+                                  <div className="col-span-3">
+                                    <input
+                                      type="text"
+                                      placeholder="Name"
+                                      value={c.name || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], name: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded font-semibold"
+                                    />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Phone / Email"
+                                      value={c.phone || c.email || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], phone: e.target.value, email: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded font-mono"
+                                    />
+                                  </div>
+                                  <div className="col-span-1 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...currentItem.contacts];
+                                        updated.splice(cIdx, 1);
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="text-red-500 hover:text-red-700 font-bold text-[11px]"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
-                              <input
-                                type="text"
-                                value={currentItem.phone || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('phone', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN / Tax ID</label>
-                              <input
-                                type="text"
-                                value={currentItem.gstin || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                          </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(currentItem.contacts || []), { role: 'Primary', department: 'Sourcing', name: '', phone: '', email: '' }];
+                              handleQueueFieldChange('contacts', updated);
+                            }}
+                            className="text-[10px] text-blue-600 font-bold hover:underline flex items-center space-x-1"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>Add Contact</span>
+                          </button>
+                        </div>
 
-                          <div className="grid grid-cols-3 gap-3">
+                        {/* Address & Location */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Address & Location</span>
+                          
+                          <div className="grid grid-cols-2 gap-3">
                             <div className="flex flex-col space-y-1">
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 1</label>
                               <input
                                 type="text"
+                                placeholder="Phase 2 Industrial Area"
                                 value={currentItem.address || ''}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('address', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 2</label>
+                              <input
+                                type="text"
+                                placeholder="Address Line 2"
+                                value={currentItem.address2 || ''}
+                                onChange={(e) => handleQueueFieldChange('address2', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Zip Code (PIN)</label>
+                              <input
+                                type="text"
+                                value={currentItem.zipCode || ''}
+                                onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 font-mono"
                               />
                             </div>
                             <div className="flex flex-col space-y-1">
@@ -7365,13 +7417,8 @@ const VendorsTab = () => {
                               <input
                                 type="text"
                                 value={currentItem.city || ''}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('city', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
                             <div className="flex flex-col space-y-1">
@@ -7379,30 +7426,8 @@ const VendorsTab = () => {
                               <input
                                 type="text"
                                 value={currentItem.state || ''}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('state', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Zip Code / PIN</label>
-                              <input
-                                type="text"
-                                value={currentItem.zipCode || ''}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all font-mono ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
                             <div className="flex flex-col space-y-1">
@@ -7410,102 +7435,312 @@ const VendorsTab = () => {
                               <input
                                 type="text"
                                 value={currentItem.country || 'India'}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('country', e.target.value)}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none transition-all ${
-                                  isVendorAutoEntry
-                                    ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
-                                    : 'bg-white text-slate-800 border-slate-200 focus:ring-1 focus:ring-blue-500'
-                                }`}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
                           </div>
-                        </div>
 
-                        {/* Section 3: Certifications */}
-                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs">
-                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">3. Certifications</span>
-                          
-                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
-                            <div className="flex items-center space-x-2">
+                          <div className="pt-2 border-t border-slate-200/60">
+                            <label className="flex items-center space-x-1.5 text-[10px] font-bold text-blue-600 cursor-pointer hover:underline">
                               <input
                                 type="checkbox"
-                                id="q_fssai"
-                                checked={currentItem.fssai || false}
-                                disabled={isVendorAutoEntry}
-                                onChange={(e) => handleQueueFieldChange('fssai', e.target.checked)}
+                                checked={currentItem.hasSecondaryAddress || false}
+                                onChange={(e) => handleQueueFieldChange('hasSecondaryAddress', e.target.checked)}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
                               />
-                              <label htmlFor="q_fssai" className="text-[10px] font-bold text-slate-700 uppercase cursor-pointer">Has FSSAI License</label>
-                            </div>
-                            {currentItem.fssai && (
-                              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+                              <span>+ Add Secondary Plant / Branch Address</span>
+                            </label>
+                          </div>
+
+                          {currentItem.hasSecondaryAddress && (
+                            <div className="space-y-3 pt-2 border-t border-slate-100 bg-white p-2.5 rounded border border-slate-200">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase block">Secondary Plant / Branch Details</span>
+                              <div className="grid grid-cols-2 gap-3">
                                 <div className="flex flex-col space-y-1">
-                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Expiry</label>
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">Secondary Address Line 1</label>
                                   <input
-                                    type="date"
-                                    value={currentItem.fssaiExpiry ? currentItem.fssaiExpiry.substring(0, 10) : ''}
-                                    disabled={isVendorAutoEntry}
-                                    onChange={(e) => handleQueueFieldChange('fssaiExpiry', e.target.value)}
-                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                    type="text"
+                                    value={currentItem.secondaryAddress || ''}
+                                    onChange={(e) => handleQueueFieldChange('secondaryAddress', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
                                   />
                                 </div>
                                 <div className="flex flex-col space-y-1">
-                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Qty Limit (MT)</label>
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">Secondary Address Line 2</label>
                                   <input
-                                    type="number"
-                                    value={currentItem.fssaiQty || ''}
-                                    disabled={isVendorAutoEntry}
-                                    onChange={(e) => handleQueueFieldChange('fssaiQty', e.target.value)}
-                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                    type="text"
+                                    value={currentItem.secondaryAddress2 || ''}
+                                    onChange={(e) => handleQueueFieldChange('secondaryAddress2', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
                                   />
                                 </div>
                               </div>
-                            )}
-                          </div>
+                              <div className="grid grid-cols-4 gap-3">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">Zip Code</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.secondaryZipCode || ''}
+                                    onChange={(e) => handleQueueFieldChange('secondaryZipCode', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs font-mono"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">City</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.secondaryCity || ''}
+                                    onChange={(e) => handleQueueFieldChange('secondaryCity', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">State</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.secondaryState || ''}
+                                    onChange={(e) => handleQueueFieldChange('secondaryState', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">Country</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.secondaryCountry || 'India'}
+                                    onChange={(e) => handleQueueFieldChange('secondaryCountry', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
-                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
-                            <div className="flex items-center space-x-2">
+                        {/* GST Details */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">GST Details</span>
+                          
+                          <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-600 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={currentItem.hasNoGst || false}
+                              onChange={(e) => handleQueueFieldChange('hasNoGst', e.target.checked)}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                            />
+                            <span>No GSTIN (Composition/Unregistered)</span>
+                          </label>
+
+                          {!currentItem.hasNoGst && (
+                            <div className="space-y-3 pt-2 border-t border-slate-200/60">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                                  <select
+                                    value={currentItem.state || ''}
+                                    onChange={(e) => handleQueueFieldChange('state', e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold bg-white cursor-pointer h-8"
+                                  >
+                                    <option value="">Select State</option>
+                                    {["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
+                                      <option key={s} value={s}>{s}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN Code</label>
+                                  <input
+                                    type="text"
+                                    placeholder="15-char GSTIN"
+                                    value={currentItem.gstin || ''}
+                                    onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white font-mono"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Multi-state GST registrations */}
+                              <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <span className="text-[9px] font-bold text-slate-500 uppercase block">Additional GST Registrations ({(currentItem.gstList || []).length})</span>
+                                {(currentItem.gstList || []).map((gst, idx) => (
+                                  <div key={idx} className="flex items-center space-x-2 bg-white p-2 border border-slate-200 rounded text-xs">
+                                    <select
+                                      value={gst.state || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.gstList];
+                                        updated[idx] = { ...updated[idx], state: e.target.value };
+                                        handleQueueFieldChange('gstList', updated);
+                                      }}
+                                      className="w-1/3 px-1.5 py-1 text-xs border border-slate-200 rounded bg-white"
+                                    >
+                                      <option value="">Select State</option>
+                                      {["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
+                                        <option key={s} value={s}>{s}</option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="text"
+                                      placeholder="15-char GSTIN"
+                                      value={gst.gstin || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.gstList];
+                                        updated[idx] = { ...updated[idx], gstin: e.target.value.toUpperCase().trim() };
+                                        handleQueueFieldChange('gstList', updated);
+                                      }}
+                                      className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs font-mono font-bold"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...currentItem.gstList];
+                                        updated.splice(idx, 1);
+                                        handleQueueFieldChange('gstList', updated);
+                                      }}
+                                      className="text-red-500 hover:text-red-700 font-bold px-1 text-[11px]"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...(currentItem.gstList || []), { state: '', gstin: '' }];
+                                    handleQueueFieldChange('gstList', updated);
+                                  }}
+                                  className="text-[10px] text-blue-600 font-bold hover:underline flex items-center space-x-1"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>Add Another GST Registration</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Certifications */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Certifications</span>
+                          
+                          <div className="flex items-center space-x-6">
+                            <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-700 cursor-pointer">
                               <input
                                 type="checkbox"
-                                id="q_ffsc2200"
                                 checked={currentItem.ffsc2200 || false}
-                                disabled={isVendorAutoEntry}
                                 onChange={(e) => handleQueueFieldChange('ffsc2200', e.target.checked)}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
                               />
-                              <label htmlFor="q_ffsc2200" className="text-[10px] font-bold text-slate-700 uppercase cursor-pointer">Has FFSC 22000 Certificate</label>
-                            </div>
-                            {currentItem.ffsc2200 && (
-                              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+                              <span>FFSC2200 Certified</span>
+                            </label>
+
+                            <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={currentItem.fssai || false}
+                                onChange={(e) => handleQueueFieldChange('fssai', e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <span>FSSAI Certified</span>
+                            </label>
+                          </div>
+
+                          {currentItem.ffsc2200 && (
+                            <div className="space-y-3 pt-2 border-t border-slate-200/60 bg-white p-2.5 rounded border border-slate-200">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase block">FFSC 22000 Details</span>
+                              <div className="grid grid-cols-2 gap-3">
                                 <div className="flex flex-col space-y-1">
                                   <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Expiry</label>
                                   <input
                                     type="date"
                                     value={currentItem.ffsc2200Expiry ? currentItem.ffsc2200Expiry.substring(0, 10) : ''}
-                                    disabled={isVendorAutoEntry}
                                     onChange={(e) => handleQueueFieldChange('ffsc2200Expiry', e.target.value)}
-                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
                                   />
                                 </div>
                                 <div className="flex flex-col space-y-1">
-                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Qty Limit (MT)</label>
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Scope / Qty</label>
                                   <input
-                                    type="number"
+                                    type="text"
                                     value={currentItem.ffsc2200Qty || ''}
-                                    disabled={isVendorAutoEntry}
                                     onChange={(e) => handleQueueFieldChange('ffsc2200Qty', e.target.value)}
-                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 font-semibold focus:outline-none"
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
                                   />
                                 </div>
                               </div>
-                            )}
+                            </div>
+                          )}
+
+                          {currentItem.fssai && (
+                            <div className="space-y-3 pt-2 border-t border-slate-200/60 bg-white p-2.5 rounded border border-slate-200">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase block">FSSAI License Details</span>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Expiry</label>
+                                  <input
+                                    type="date"
+                                    value={currentItem.fssaiExpiry ? currentItem.fssaiExpiry.substring(0, 10) : ''}
+                                    onChange={(e) => handleQueueFieldChange('fssaiExpiry', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI License / Qty</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.fssaiQty || ''}
+                                    onChange={(e) => handleQueueFieldChange('fssaiQty', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bank Details */}
+                        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Bank Details</span>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Holder Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankAccountHolder || ''}
+                                onChange={(e) => handleQueueFieldChange('bankAccountHolder', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Number</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankAccountNumber || ''}
+                                onChange={(e) => handleQueueFieldChange('bankAccountNumber', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 font-mono"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Bank Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankName || ''}
+                                onChange={(e) => handleQueueFieldChange('bankName', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">IFSC Code</label>
+                              <input
+                                type="text"
+                                value={currentItem.ifscCode || ''}
+                                onChange={(e) => handleQueueFieldChange('ifscCode', e.target.value.toUpperCase().trim())}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 font-mono"
+                              />
+                            </div>
                           </div>
                         </div>
-
-                        </div>
-
-                      {/* Action Controls Panel */}
+                      </div>{/* Action Controls Panel */}
                       <div className="border-t border-slate-100 pt-3 flex items-center justify-between mt-3 bg-slate-50 p-2.5 rounded-lg border">
                         <div className="flex items-center space-x-2">
                           <button
