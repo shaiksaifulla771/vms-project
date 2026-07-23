@@ -4,6 +4,7 @@ const {
   getVendorMasters,
   createVendorMaster,
   updateVendorMaster,
+  validateBatch,
   bulkUploadVendorMasters,
   softDeleteVendorMaster,
   restoreVendorMaster
@@ -20,6 +21,9 @@ router.route('/')
 
 router.route('/check-duplicate')
   .post(checkDuplicate);
+
+router.route('/validate-batch')
+  .post(validateBatch);
 
 router.route('/bulk')
   .post(bulkUploadVendorMasters);

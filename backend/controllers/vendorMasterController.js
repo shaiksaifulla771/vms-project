@@ -71,7 +71,7 @@ exports.getVendorMasters = async (req, res, next) => {
 // @access  Private
 exports.createVendorMaster = async (req, res, next) => {
   try {
-    const { Vendor_ID, Company_Name, Tax_ID, Contact_Email, Status } = req.body;
+    const { Vendor_ID, Company_Name, Tax_ID, Contact_Email, Department, Role, Status, contacts } = req.body;
 
     if (!Vendor_ID || !Company_Name || !Tax_ID || !Contact_Email) {
       return res.status(400).json({ success: false, error: 'Please provide all required fields.' });
@@ -81,7 +81,6 @@ exports.createVendorMaster = async (req, res, next) => {
     const cleanTaxId = Tax_ID.trim();
 
     // 1. Dual-Check Validation logic (Stop Upload Engine)
-    // Check active
     const activeConflict = await VendorMaster.findOne({
       is_deleted: false,
       $or: [{ Vendor_ID: cleanVendorId }, { Tax_ID: cleanTaxId }]
@@ -93,7 +92,6 @@ exports.createVendorMaster = async (req, res, next) => {
       });
     }
 
-    // Check soft-deleted
     const deletedConflict = await VendorMaster.findOne({
       is_deleted: true,
       $or: [{ Vendor_ID: cleanVendorId }, { Tax_ID: cleanTaxId }]
@@ -111,7 +109,10 @@ exports.createVendorMaster = async (req, res, next) => {
       Company_Name: Company_Name.trim(),
       Tax_ID: cleanTaxId,
       Contact_Email: Contact_Email.trim(),
+      Department: Department ? Department.trim() : '',
+      Role: Role ? Role.trim() : '',
       Status: Status || 'Active',
+      contacts: contacts || [],
       is_deleted: false
     });
 
@@ -127,7 +128,7 @@ exports.createVendorMaster = async (req, res, next) => {
 exports.updateVendorMaster = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { Vendor_ID, Company_Name, Tax_ID, Contact_Email, Status } = req.body;
+    const { Vendor_ID, Company_Name, Tax_ID, Contact_Email, Department, Role, Status, contacts } = req.body;
 
     const record = await VendorMaster.findById(id);
     if (!record) {
@@ -167,10 +168,108 @@ exports.updateVendorMaster = async (req, res, next) => {
     if (Company_Name) record.Company_Name = Company_Name.trim();
     record.Tax_ID = cleanTaxId;
     if (Contact_Email) record.Contact_Email = Contact_Email.trim();
+    if (Department !== undefined) record.Department = Department.trim();
+    if (Role !== undefined) record.Role = Role.trim();
     if (Status) record.Status = Status;
+    if (contacts) record.contacts = contacts;
 
     await record.save();
     res.status(200).json({ success: true, data: record });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Pre-validate batch rows before final ingestion
+// @route   POST /api/vendor-masters/validate-batch
+// @access  Private
+exports.validateBatch = async (req, res, next) => {
+  try {
+    const { rows } = req.body; // Array of { Vendor_ID, Company_Name, Tax_ID, Contact_Email, Department, Role, Status }
+
+    if (!rows || !Array.isArray(rows)) {
+      return res.status(400).json({ success: false, error: 'Provide rows array' });
+    }
+
+    // Load active and archived states to check duplicate intersections in memory
+    const allRecords = await VendorMaster.find({});
+    const activeVendorIds = new Set();
+    const activeTaxIds = new Set();
+    const deletedVendorIds = new Set();
+    const deletedTaxIds = new Set();
+
+    allRecords.forEach(rec => {
+      const vId = rec.Vendor_ID.toUpperCase().trim();
+      const tId = rec.Tax_ID.toUpperCase().trim();
+      if (rec.is_deleted) {
+        deletedVendorIds.add(vId);
+        deletedTaxIds.add(tId);
+      } else {
+        activeVendorIds.add(vId);
+        activeTaxIds.add(tId);
+      }
+    });
+
+    const fileVendorIds = new Set();
+    const fileTaxIds = new Set();
+
+    const validatedRows = rows.map((row, index) => {
+      const rowNum = index + 1;
+      const vId = (row.Vendor_ID || '').toString().trim();
+      const company = (row.Company_Name || '').toString().trim();
+      const tId = (row.Tax_ID || '').toString().trim();
+      const email = (row.Contact_Email || '').toString().trim();
+      const dept = (row.Department || '').toString().trim();
+      const role = (row.Role || '').toString().trim();
+      const status = row.Status || 'Active';
+
+      let error = null;
+      let state = 'valid';
+
+      if (!vId || !company || !tId || !email) {
+        error = 'Error: Missing required fields (Vendor_ID, Company_Name, Tax_ID, and Contact_Email are all required).';
+        state = 'invalid';
+      } else {
+        const vIdUpper = vId.toUpperCase();
+        const tIdUpper = tId.toUpperCase();
+
+        // Check internal file duplicate
+        if (fileVendorIds.has(vIdUpper) || fileTaxIds.has(tIdUpper)) {
+          error = `Error: Duplicate Vendor ID "${vId}" or Tax ID "${tId}" found within the uploaded file.`;
+          state = 'invalid';
+        }
+
+        fileVendorIds.add(vIdUpper);
+        fileTaxIds.add(tIdUpper);
+
+        // Check active database
+        if (state === 'valid' && (activeVendorIds.has(vIdUpper) || activeTaxIds.has(tIdUpper))) {
+          error = 'Error: This data is already present in the main database.';
+          state = 'active_duplicate';
+        }
+
+        // Check soft-deleted database
+        if (state === 'valid' && (deletedVendorIds.has(vIdUpper) || deletedTaxIds.has(tIdUpper))) {
+          error = 'Error: This data is present in deleted rows and sheets.';
+          state = 'deleted_duplicate';
+        }
+      }
+
+      return {
+        row: rowNum,
+        Vendor_ID: vId,
+        Company_Name: company,
+        Tax_ID: tId,
+        Contact_Email: email,
+        Department: dept,
+        Role: role,
+        Status: status,
+        state,
+        error
+      };
+    });
+
+    res.status(200).json({ success: true, validatedRows });
   } catch (err) {
     next(err);
   }
@@ -181,13 +280,12 @@ exports.updateVendorMaster = async (req, res, next) => {
 // @access  Private
 exports.bulkUploadVendorMasters = async (req, res, next) => {
   try {
-    const { rows } = req.body; // Array of { Vendor_ID, Company_Name, Tax_ID, Contact_Email, Status }
+    const { rows } = req.body;
 
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, error: 'No data rows provided.' });
     }
 
-    // Load all active and soft-deleted records for quick in-memory cross-checks
     const allRecords = await VendorMaster.find({});
     const activeVendorIds = new Set();
     const activeTaxIds = new Set();
@@ -208,8 +306,6 @@ exports.bulkUploadVendorMasters = async (req, res, next) => {
 
     const itemizedErrors = [];
     const parsedRows = [];
-
-    // Track internal file duplicates to ensure the file itself doesn't contain duplicates
     const fileVendorIds = new Set();
     const fileTaxIds = new Set();
 
@@ -219,15 +315,16 @@ exports.bulkUploadVendorMasters = async (req, res, next) => {
       const company = (row.Company_Name || '').toString().trim();
       const tId = (row.Tax_ID || '').toString().trim();
       const email = (row.Contact_Email || '').toString().trim();
+      const dept = (row.Department || '').toString().trim();
+      const role = (row.Role || '').toString().trim();
       const status = row.Status || 'Active';
 
-      // 1. Field validation
       if (!vId || !company || !tId || !email) {
         itemizedErrors.push({
           row: rowNum,
           Vendor_ID: vId || 'N/A',
           Tax_ID: tId || 'N/A',
-          error: 'Error: Missing required fields (Vendor_ID, Company_Name, Tax_ID, and Contact_Email are all required).'
+          error: 'Error: Missing required fields.'
         });
         return;
       }
@@ -235,29 +332,18 @@ exports.bulkUploadVendorMasters = async (req, res, next) => {
       const vIdUpper = vId.toUpperCase();
       const tIdUpper = tId.toUpperCase();
 
-      // 2. Check internal file duplicates
-      if (fileVendorIds.has(vIdUpper)) {
+      if (fileVendorIds.has(vIdUpper) || fileTaxIds.has(tIdUpper)) {
         itemizedErrors.push({
           row: rowNum,
           Vendor_ID: vId,
           Tax_ID: tId,
-          error: `Error: Duplicate Vendor ID "${vId}" found within the uploaded file.`
-        });
-      }
-      if (fileTaxIds.has(tIdUpper)) {
-        itemizedErrors.push({
-          row: rowNum,
-          Vendor_ID: vId,
-          Tax_ID: tId,
-          error: `Error: Duplicate Tax ID "${tId}" found within the uploaded file.`
+          error: 'Error: Internal file duplicate.'
         });
       }
 
       fileVendorIds.add(vIdUpper);
       fileTaxIds.add(tIdUpper);
 
-      // 3. Database intersection checks
-      // Check active
       if (activeVendorIds.has(vIdUpper) || activeTaxIds.has(tIdUpper)) {
         itemizedErrors.push({
           row: rowNum,
@@ -267,7 +353,6 @@ exports.bulkUploadVendorMasters = async (req, res, next) => {
         });
       }
 
-      // Check deleted
       if (deletedVendorIds.has(vIdUpper) || deletedTaxIds.has(tIdUpper)) {
         itemizedErrors.push({
           row: rowNum,
@@ -282,12 +367,13 @@ exports.bulkUploadVendorMasters = async (req, res, next) => {
         Company_Name: company,
         Tax_ID: tId,
         Contact_Email: email,
+        Department: dept,
+        Role: role,
         Status: status,
         is_deleted: false
       });
     });
 
-    // If there is ANY error, block the entire batch upload
     if (itemizedErrors.length > 0) {
       return res.status(400).json({
         success: false,
@@ -296,7 +382,6 @@ exports.bulkUploadVendorMasters = async (req, res, next) => {
       });
     }
 
-    // Insert entire batch
     const records = await VendorMaster.insertMany(parsedRows);
     res.status(201).json({ success: true, count: records.length, message: 'Batch uploaded successfully' });
   } catch (err) {

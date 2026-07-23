@@ -27,6 +27,16 @@ const VendorMasterSchema = new mongoose.Schema({
       'Please provide a valid email address',
     ],
   },
+  Department: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  Role: {
+    type: String,
+    default: '',
+    trim: true,
+  },
   Status: {
     type: String,
     enum: ['Active', 'Inactive', 'Draft'],
@@ -36,6 +46,15 @@ const VendorMasterSchema = new mongoose.Schema({
     type: Boolean,
     default: false, // false = 0 (Active), true = 1 (Soft-Deleted/Archived)
   },
+  contacts: [
+    {
+      name: { type: String, trim: true, default: '' },
+      phone: { type: String, trim: true, default: '' },
+      role: { type: String, trim: true, default: 'Other' },
+      department: { type: String, trim: true, default: 'Sourcing' },
+      email: { type: String, trim: true, default: '' }
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now,

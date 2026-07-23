@@ -23,9 +23,20 @@ import {
   Building2,
   Lock,
   Mail,
-  Fingerprint
+  Fingerprint,
+  CheckCircle,
+  Briefcase
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+// Department & Role dictionary mapping rules
+const DEPARTMENT_ROLE_MAP = {
+  Procurement: ['Buyer', 'Procurement Manager', 'Sourcing Specialist'],
+  Finance: ['Billing Clerk', 'Accounts Payable Analyst', 'Financial Controller'],
+  IT: ['System Administrator', 'Security Engineer', 'IT Support'],
+  Logistics: ['Supply Chain Coordinator', 'Warehouse Manager', 'Dispatcher'],
+  Legal: ['Compliance Officer', 'Legal Counsel', 'Contract Administrator']
+};
 
 const Vendors = () => {
   const { user } = useAuth();
@@ -50,7 +61,10 @@ const Vendors = () => {
     Company_Name: '',
     Tax_ID: '',
     Contact_Email: '',
-    Status: 'Active'
+    Department: '',
+    Role: '',
+    Status: 'Active',
+    contacts: []
   });
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -58,8 +72,12 @@ const Vendors = () => {
   // Bulk Upload Dialog & States
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
-  const [bulkErrors, setBulkErrors] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
+  
+  // Bulk Preview & Filter States
+  const [previewRows, setPreviewRows] = useState([]);
+  const [bulkSearch, setBulkSearch] = useState('');
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false);
   const fileInputRef = useRef(null);
 
   const showToast = (message, type = 'success') => {
@@ -106,7 +124,13 @@ const Vendors = () => {
           ...prev,
           [field]: res.data.message
         }));
-        showToast(res.data.message, 'error');
+        
+        // Show prominent red / orange toast notifications matching rules
+        if (res.data.state === 'active') {
+          showToast(res.data.message, 'error'); // Red error toast
+        } else {
+          showToast(res.data.message, 'warning'); // Orange warning toast
+        }
       } else {
         setFormErrors(prev => {
           const next = { ...prev };
@@ -129,17 +153,31 @@ const Vendors = () => {
       return;
     }
 
+    // Capture the primary contact (or first contact) details to sync with root fields
+    const primaryContact = (formData.contacts || []).find(c => c.role && c.role.toLowerCase().includes('manager')) || (formData.contacts || [])[0];
+    
+    const rootEmail = primaryContact ? (primaryContact.email || '').trim().toLowerCase() : formData.Contact_Email.trim().toLowerCase();
+    const rootDept = primaryContact ? (primaryContact.department || '') : formData.Department;
+    const rootRole = primaryContact ? (primaryContact.role || '') : formData.Role;
+
+    const payload = {
+      ...formData,
+      Contact_Email: rootEmail,
+      Department: rootDept,
+      Role: rootRole
+    };
+
     setSubmitLoading(true);
     try {
       if (editingId) {
-        const res = await api.put(`/api/vendor-masters/${editingId}`, formData);
+        const res = await api.put(`/api/vendor-masters/${editingId}`, payload);
         if (res.data && res.data.success) {
           showToast(`Vendor ${formData.Company_Name} updated successfully.`, 'success');
           setIsFormOpen(false);
           fetchData();
         }
       } else {
-        const res = await api.post('/api/vendor-masters', formData);
+        const res = await api.post('/api/vendor-masters', payload);
         if (res.data && res.data.success) {
           showToast(`Vendor ${formData.Company_Name} registered successfully.`, 'success');
           setIsFormOpen(false);
@@ -163,7 +201,10 @@ const Vendors = () => {
       Company_Name: '',
       Tax_ID: '',
       Contact_Email: '',
-      Status: 'Active'
+      Department: '',
+      Role: '',
+      Status: 'Active',
+      contacts: []
     });
     setFormErrors({});
     setIsFormOpen(true);
@@ -176,7 +217,16 @@ const Vendors = () => {
       Company_Name: rec.Company_Name,
       Tax_ID: rec.Tax_ID,
       Contact_Email: rec.Contact_Email,
-      Status: rec.Status
+      Department: rec.Department || '',
+      Role: rec.Role || '',
+      Status: rec.Status,
+      contacts: (rec.contacts || []).map(c => ({
+        role: c.role || '',
+        department: c.department || '',
+        name: c.name || '',
+        phone: c.phone || '',
+        email: c.email || ''
+      }))
     });
     setFormErrors({});
     setIsFormOpen(true);
@@ -204,6 +254,37 @@ const Vendors = () => {
       console.error(err);
       showToast('Failed to restore vendor.', 'error');
     }
+  };
+
+  // Contacts Directory Form Helpers
+  const handleAddContact = () => {
+    setFormData(prev => ({
+      ...prev,
+      contacts: [...prev.contacts, { role: '', department: '', name: '', phone: '', email: '' }]
+    }));
+  };
+
+  const handleRemoveContact = (idx) => {
+    setFormData(prev => {
+      const updated = [...prev.contacts];
+      updated.splice(idx, 1);
+      return { ...prev, contacts: updated };
+    });
+  };
+
+  const handleContactChange = (idx, field, value) => {
+    setFormData(prev => {
+      const updated = [...prev.contacts];
+      const contact = { ...updated[idx], [field]: value };
+      
+      // If department changed, reset role since roles are cascading dependent
+      if (field === 'department') {
+        contact.role = '';
+      }
+      
+      updated[idx] = contact;
+      return { ...prev, contacts: updated };
+    });
   };
 
   // Drag and Drop files handlers
@@ -262,28 +343,21 @@ const Vendors = () => {
           Company_Name: row['Company_Name'] || row['Company Name'] || row['Company'] || row['company_name'] || '',
           Tax_ID: row['Tax_ID'] || row['Tax ID'] || row['GSTIN'] || row['tax_id'] || '',
           Contact_Email: row['Contact_Email'] || row['Contact Email'] || row['Email'] || row['contact_email'] || '',
+          Department: row['Department'] || row['department'] || '',
+          Role: row['Role'] || row['role'] || '',
           Status: row['Status'] || row['status'] || 'Active'
         }));
 
         setBulkLoading(true);
-        setBulkErrors([]);
-
         try {
-          const res = await api.post('/api/vendor-masters/bulk', { rows: normalizedRows });
+          const res = await api.post('/api/vendor-masters/validate-batch', { rows: normalizedRows });
           if (res.data && res.data.success) {
-            showToast(`Upload complete: Ingested ${res.data.count} vendors successfully.`, 'success');
-            setIsUploadOpen(false);
-            fetchData();
+            setPreviewRows(res.data.validatedRows);
+            showToast('Spreadsheet parsed. Please review conflicts.', 'success');
           }
         } catch (err) {
           console.error(err);
-          const itemized = err.response?.data?.itemizedErrors || [];
-          if (itemized.length > 0) {
-            setBulkErrors(itemized);
-            showToast('Upload blocked due to database duplicate intersections.', 'error');
-          } else {
-            showToast(err.response?.data?.error || 'Validation check failed.', 'error');
-          }
+          showToast('Error validating spreadsheet records.', 'error');
         } finally {
           setBulkLoading(false);
         }
@@ -295,20 +369,51 @@ const Vendors = () => {
     reader.readAsArrayBuffer(file);
   };
 
+  const handleCommitBulkUpdate = async () => {
+    // Verification check: disable ingestion if any invalid rows remain
+    const hasConflicts = previewRows.some(row => row.state !== 'valid');
+    if (hasConflicts) {
+      showToast('Validation Block: Resolve all duplicate rows in the preview before committing.', 'error');
+      return;
+    }
+
+    setBulkLoading(true);
+    try {
+      const res = await api.post('/api/vendor-masters/bulk', { rows: previewRows });
+      if (res.data && res.data.success) {
+        showToast(`Ingested ${res.data.count} records successfully!`, 'success');
+        setIsUploadOpen(false);
+        setPreviewRows([]);
+        setBulkSearch('');
+        setShowErrorsOnly(false);
+        fetchData();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast(err.response?.data?.error || 'Ingestion engine failure.', 'error');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const downloadSampleTemplate = () => {
     const sampleData = [
       {
-        'Vendor_ID': 'VND-2026-001',
-        'Company_Name': 'Relational Materials Corp',
+        'Vendor_ID': 'VND-2026-901',
+        'Company_Name': 'Sourcing Master Co',
         'Tax_ID': '27ABCDE1234F1Z5',
-        'Contact_Email': 'sourcing@relationalcorp.com',
+        'Contact_Email': 'ops@sourcingmaster.com',
+        'Department': 'Procurement',
+        'Role': 'Sourcing Specialist',
         'Status': 'Active'
       },
       {
-        'Vendor_ID': 'VND-2026-002',
-        'Company_Name': 'Apex Logistic Solutions',
+        'Vendor_ID': 'VND-2026-902',
+        'Company_Name': 'Apex Legal Advisory',
         'Tax_ID': '27FGHIJ5678K2Z9',
-        'Contact_Email': 'ops@apexlogistics.com',
+        'Contact_Email': 'compliance@apexlegal.com',
+        'Department': 'Legal',
+        'Role': 'Compliance Officer',
         'Status': 'Active'
       }
     ];
@@ -316,11 +421,129 @@ const Vendors = () => {
     const worksheet = XLSX.utils.json_to_sheet(sampleData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendor Master');
-    XLSX.writeFile(workbook, 'vendor_master_template.xlsx');
-    showToast('Download complete: vendor_master_template.xlsx', 'success');
+    XLSX.writeFile(workbook, 'vendor_master_relational_template.xlsx');
+    showToast('Download complete: vendor_master_relational_template.xlsx', 'success');
   };
 
-  // Search & filter computations
+  // Profile PDF Generation (Completely expunges Key Department Contacts)
+  const handlePrintPdf = (rec) => {
+    const displayVal = (val) => {
+      if (val === undefined || val === null || (typeof val === 'string' && val.trim() === '') || val === false) {
+        return '<span style="color: #94a3b8; font-style: italic; font-weight: normal;">[Not Filled]</span>';
+      }
+      if (val === true) {
+        return '<span style="color: #10b981; font-weight: bold;">Yes</span>';
+      }
+      return val;
+    };
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Vendor Profile - ${rec.Company_Name || rec.Vendor_ID}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; margin: 0; }
+            .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+            .title { font-size: 18px; font-weight: bold; color: #0f172a; }
+            .subtitle { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: bold; }
+            .section-title { font-size: 11px; font-weight: bold; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-top: 20px; margin-bottom: 12px; }
+            .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+            .field { display: flex; flex-direction: column; gap: 3px; }
+            .label { font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+            .value { font-size: 11px; color: #0f172a; font-weight: bold; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; }
+            .footer { border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 8px; color: #94a3b8; text-align: center; margin-top: 40px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="subtitle">Enterprise Resource Planning Portal</div>
+              <div class="title">Vendor Sourcing Record</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 12px; font-weight: bold; color: #2563eb;">VENDOR ID: ${rec.Vendor_ID}</div>
+              <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Date Generated: ${new Date().toLocaleDateString()}</div>
+            </div>
+          </div>
+
+          <!-- Section 1: Basic Information -->
+          <div class="section-title">1. Basic Information</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">Company Name</div>
+              <div class="value">${displayVal(rec.Company_Name)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Tax ID (GSTIN)</div>
+              <div class="value">${displayVal(rec.Tax_ID)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Contact Email</div>
+              <div class="value" style="font-family: monospace;">${displayVal(rec.Contact_Email)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Primary Department</div>
+              <div class="value">${displayVal(rec.Department)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Primary Role</div>
+              <div class="value">${displayVal(rec.Role)}</div>
+            </div>
+            <div class="field">
+              <div class="label">Status</div>
+              <div class="value">${displayVal(rec.Status)}</div>
+            </div>
+          </div>
+
+          <!-- Section 2: Contacts Directory -->
+          <div class="section-title">2. Contacts Directory</div>
+          ${rec.contacts && rec.contacts.length > 0 ? `
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px;">
+              <thead>
+                <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left;">
+                  <th style="padding: 8px; font-weight: 700; text-transform: uppercase; color: #64748b;">Name</th>
+                  <th style="padding: 8px; font-weight: 700; text-transform: uppercase; color: #64748b;">Phone</th>
+                  <th style="padding: 8px; font-weight: 700; text-transform: uppercase; color: #64748b;">Email</th>
+                  <th style="padding: 8px; font-weight: 700; text-transform: uppercase; color: #64748b;">Department</th>
+                  <th style="padding: 8px; font-weight: 700; text-transform: uppercase; color: #64748b;">Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rec.contacts.map(c => `
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 8px; font-weight: bold; color: #0f172a;">${c.name || '-'}</td>
+                    <td style="padding: 8px; font-family: monospace;">${c.phone || '-'}</td>
+                    <td style="padding: 8px; font-family: monospace;">${c.email || '-'}</td>
+                    <td style="padding: 8px; font-weight: 600; color: #475569;">${c.department || '-'}</td>
+                    <td style="padding: 8px; font-weight: 600; color: #475569;">${c.role || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : `
+            <div style="font-size: 11px; color: #94a3b8; font-style: italic; padding: 10px 0;">No additional contact representatives registered in the directory.</div>
+          `}
+
+          <!-- System-wide Removal: 'Key Department Contacts' block is completely expunged from PDF layout -->
+
+          <div class="footer">
+            ERP Portal Vendor Profile Document. Confidential & Internal Use Only.
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Search & filter computations for main directory view
   const filteredRecords = records.filter(rec => {
     const matchSearch = 
       (rec.Vendor_ID || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -332,9 +555,22 @@ const Vendors = () => {
     return matchSearch && matchStatus;
   });
 
+  // Bulk Upload Preview Live Filtering Computations
+  const filteredPreviewRows = previewRows.filter(row => {
+    const matchSearch = 
+      (row.Vendor_ID || '').toLowerCase().includes(bulkSearch.toLowerCase()) ||
+      (row.Company_Name || '').toLowerCase().includes(bulkSearch.toLowerCase()) ||
+      (row.Tax_ID || '').toLowerCase().includes(bulkSearch.toLowerCase());
+
+    const matchErrorOnly = !showErrorsOnly || row.state !== 'valid';
+    return matchSearch && matchErrorOnly;
+  });
+
+  const previewHasErrors = previewRows.some(row => row.state !== 'valid');
+
   return (
     <div className="space-y-6">
-      {/* Toast Alert Popups */}
+      {/* Toast Alert Popups (Red for active conflict, orange for archived warning, green success) */}
       <div className="fixed top-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none max-w-sm w-full">
         {toasts.map(toast => (
           <div 
@@ -342,10 +578,14 @@ const Vendors = () => {
             className={`p-3.5 rounded-lg border shadow-lg flex items-start space-x-2.5 transition-all duration-300 animate-slide-in pointer-events-auto ${
               toast.type === 'error' 
                 ? 'bg-rose-50 border-rose-200 text-rose-800' 
-                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : toast.type === 'warning'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
             }`}
           >
-            <ShieldAlert className={`h-4.5 w-4.5 shrink-0 mt-0.5 ${toast.type === 'error' ? 'text-rose-500' : 'text-emerald-500'}`} />
+            <ShieldAlert className={`h-4.5 w-4.5 shrink-0 mt-0.5 ${
+              toast.type === 'error' ? 'text-rose-500' : toast.type === 'warning' ? 'text-amber-500' : 'text-emerald-500'
+            }`} />
             <div className="flex-1 text-xs font-semibold leading-relaxed">
               {toast.message}
             </div>
@@ -459,7 +699,7 @@ const Vendors = () => {
 
             <Button onClick={() => setIsUploadOpen(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center space-x-1 rounded-xl">
               <Upload className="h-3.5 w-3.5" />
-              <span>Bulk Upload</span>
+              <span>Bulk Update</span>
             </Button>
 
             <Button onClick={handleOpenAddModal} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center space-x-1 rounded-xl">
@@ -489,7 +729,8 @@ const Vendors = () => {
                   <TableHead>Vendor ID</TableHead>
                   <TableHead>Company Name</TableHead>
                   <TableHead>Tax ID (GSTIN)</TableHead>
-                  <TableHead>Contact Email</TableHead>
+                  <TableHead>Primary Department</TableHead>
+                  <TableHead>Primary Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -507,7 +748,10 @@ const Vendors = () => {
                       {rec.Tax_ID}
                     </TableCell>
                     <TableCell className="text-slate-600 text-xs font-semibold">
-                      {rec.Contact_Email}
+                      {rec.Department || <span className="text-slate-300 italic">None</span>}
+                    </TableCell>
+                    <TableCell className="text-slate-600 text-xs font-semibold">
+                      {rec.Role || <span className="text-slate-300 italic">None</span>}
                     </TableCell>
                     <TableCell>
                       <Badge className={
@@ -521,6 +765,13 @@ const Vendors = () => {
                     <TableCell className="text-right">
                       {viewTab === 'active' ? (
                         <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => handlePrintPdf(rec)}
+                            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                            title="Print PDF Profile"
+                          >
+                            <FileCheck className="h-3.5 w-3.5" />
+                          </button>
                           <button
                             onClick={() => handleOpenEditModal(rec)}
                             className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -635,22 +886,151 @@ const Vendors = () => {
                 onChange={(e) => setFormData({ ...formData, Contact_Email: e.target.value.toLowerCase() })}
                 className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
                 placeholder="e.g. contact@company.com"
-                required
+                required={formData.contacts.length === 0}
               />
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-600 uppercase">Registry Status</label>
+              <select
+                value={formData.Status}
+                onChange={(e) => setFormData({ ...formData, Status: e.target.value })}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none h-9 cursor-pointer"
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Draft">Draft</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-600 uppercase">Primary Contact Department</label>
+              <select
+                value={formData.Department}
+                onChange={(e) => setFormData({ ...formData, Department: e.target.value, Role: '' })}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none h-9 cursor-pointer"
+              >
+                <option value="">Choose Department</option>
+                <option value="Procurement">Procurement</option>
+                <option value="Finance">Finance</option>
+                <option value="IT">IT</option>
+                <option value="Logistics">Logistics</option>
+                <option value="Legal">Legal</option>
+              </select>
+            </div>
+          </div>
+
           <div className="flex flex-col space-y-1.5">
-            <label className="text-[11px] font-bold text-slate-600 uppercase">Registry Status</label>
+            <label className="text-[11px] font-bold text-slate-600 uppercase">Primary Contact Role</label>
             <select
-              value={formData.Status}
-              onChange={(e) => setFormData({ ...formData, Status: e.target.value })}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none h-9 cursor-pointer"
+              value={formData.Role}
+              onChange={(e) => setFormData({ ...formData, Role: e.target.value })}
+              disabled={!formData.Department}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:outline-none h-9 cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
             >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Draft">Draft</option>
+              <option value="">Choose Role</option>
+              {formData.Department && DEPARTMENT_ROLE_MAP[formData.Department]?.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
             </select>
+          </div>
+
+          {/* Section 2: Contacts Directory Card Lists with Cascading drop downs */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs mt-4">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+              <h4 className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Contacts Directory</h4>
+              <button
+                type="button"
+                onClick={handleAddContact}
+                className="text-[10px] text-blue-600 hover:text-blue-800 font-extrabold"
+              >
+                + Add Contact Representative
+              </button>
+            </div>
+            <div className="p-4 bg-white space-y-4 max-h-[30vh] overflow-y-auto">
+              {formData.contacts.length === 0 && (
+                <p className="text-xs text-slate-400 italic text-center py-4">No contact representatives added yet.</p>
+              )}
+              {formData.contacts.map((contact, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 items-end">
+                  <div className="col-span-2 flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase">Department</label>
+                    <select
+                      value={contact.department}
+                      onChange={(e) => handleContactChange(idx, 'department', e.target.value)}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-800 focus:outline-none cursor-pointer h-8"
+                    >
+                      <option value="">Select</option>
+                      <option value="Procurement">Procurement</option>
+                      <option value="Finance">Finance</option>
+                      <option value="IT">IT</option>
+                      <option value="Logistics">Logistics</option>
+                      <option value="Legal">Legal</option>
+                    </select>
+                  </div>
+
+                  <div className="col-span-2 flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase">Role</label>
+                    <select
+                      value={contact.role}
+                      onChange={(e) => handleContactChange(idx, 'role', e.target.value)}
+                      disabled={!contact.department}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-800 focus:outline-none cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed h-8"
+                    >
+                      <option value="">Select</option>
+                      {contact.department && DEPARTMENT_ROLE_MAP[contact.department]?.map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="col-span-3 flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase">Name</label>
+                    <input
+                      type="text"
+                      value={contact.name}
+                      onChange={(e) => handleContactChange(idx, 'name', e.target.value)}
+                      placeholder="Name"
+                      className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-800 focus:outline-none h-8"
+                    />
+                  </div>
+
+                  <div className="col-span-2 flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase">Phone</label>
+                    <input
+                      type="text"
+                      value={contact.phone}
+                      onChange={(e) => handleContactChange(idx, 'phone', e.target.value)}
+                      placeholder="Phone"
+                      className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-800 focus:outline-none h-8 font-mono"
+                    />
+                  </div>
+
+                  <div className="col-span-2 flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase">Email</label>
+                    <input
+                      type="email"
+                      value={contact.email}
+                      onChange={(e) => handleContactChange(idx, 'email', e.target.value)}
+                      placeholder="Email"
+                      className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-800 focus:outline-none h-8 font-mono"
+                    />
+                  </div>
+
+                  <div className="col-span-1 flex justify-center pb-1">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveContact(idx)}
+                      className="text-rose-500 hover:text-rose-700 text-xs font-bold"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100 mt-5">
@@ -664,95 +1044,182 @@ const Vendors = () => {
         </form>
       </Dialog>
 
-      {/* Dialog for Bulk Spreadsheet Upload */}
+      {/* Dialog for Bulk Spreadsheet Upload with Real-time Search & Filter Preview Table */}
       <Dialog
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         title="Ingest Bulk Spreadsheet Data"
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-w-4xl">
           <div className="flex items-center justify-between border-b pb-2 mb-2">
             <span className="text-[10px] text-slate-400 font-bold block uppercase">Drag & Drop Upload Zone</span>
             <button
               onClick={downloadSampleTemplate}
               className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline"
             >
-              Download Sample template
+              Download Sample Template
             </button>
           </div>
 
-          {/* Itemized error logs panel */}
-          {bulkErrors.length > 0 && (
-            <div className="border border-rose-200 bg-rose-50/50 rounded-xl p-3.5 space-y-2.5 max-h-[30vh] overflow-y-auto">
-              <div className="flex items-center space-x-1.5 text-rose-800 font-extrabold text-xs">
-                <FileX className="h-4.5 w-4.5 text-rose-600" />
-                <span>Bulk Upload Intercepted: Ingestion Blocked</span>
+          {/* Drag & Drop Area (Only visible when no preview is loaded) */}
+          {previewRows.length === 0 && (
+            <div
+              onDragEnter={handleDrag}
+              onDragOver={handleDrag}
+              onDragLeave={handleDrag}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-10 text-center flex flex-col items-center justify-center space-y-3.5 transition-all cursor-pointer ${
+                isDragActive 
+                  ? 'border-blue-500 bg-blue-50/40' 
+                  : 'border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50'
+              }`}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".xlsx,.csv"
+                className="hidden"
+              />
+              <div className="p-3.5 rounded-full bg-slate-100 text-slate-500">
+                <Upload className="h-7 w-7" />
               </div>
-              <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
-                The duplication validation engine caught conflicting entries in the uploaded file against the active grid and soft-deleted history. The entire batch has been blocked.
-              </p>
-              <div className="border rounded-lg overflow-hidden bg-white">
+              <div>
+                <p className="text-xs font-extrabold text-slate-800">
+                  Drag and drop your spreadsheet here, or click to browse
+                </p>
+                <p className="text-[10px] text-slate-400 font-medium mt-1">
+                  Supports Excel (.xlsx) or CSV files
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Integrated Real-Time Preview Table & Filtering Tools */}
+          {previewRows.length > 0 && (
+            <div className="space-y-3">
+              {/* Responsive Search Bar & Count Badge */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search preview by Vendor ID, Company Name, or Tax ID..."
+                    value={bulkSearch}
+                    onChange={(e) => setBulkSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 border border-slate-200 bg-white rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <div className="flex items-center space-x-3 shrink-0">
+                  {/* Validation errors check */}
+                  <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showErrorsOnly}
+                      onChange={(e) => setShowErrorsOnly(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                    />
+                    <span>Show Validation Errors Only</span>
+                  </label>
+
+                  {/* Real-time row count badge */}
+                  <Badge className="bg-slate-200 text-slate-800 font-mono text-[10px] font-bold py-1 px-2.5 rounded-lg border border-slate-300">
+                    Showing {filteredPreviewRows.length} of {previewRows.length} rows
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Data Preview Table */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-[35vh] overflow-y-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-rose-50/20">
-                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Row #</TableHead>
-                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Vendor ID</TableHead>
-                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Tax ID</TableHead>
-                      <TableHead className="!py-1.5 !text-[9px] font-bold text-rose-900">Conflict Details</TableHead>
+                    <TableRow className="bg-slate-50">
+                      <TableHead className="!py-2 !text-[10px] font-bold">Row</TableHead>
+                      <TableHead className="!py-2 !text-[10px] font-bold">Vendor ID</TableHead>
+                      <TableHead className="!py-2 !text-[10px] font-bold">Company Name</TableHead>
+                      <TableHead className="!py-2 !text-[10px] font-bold">Tax ID</TableHead>
+                      <TableHead className="!py-2 !text-[10px] font-bold">Department</TableHead>
+                      <TableHead className="!py-2 !text-[10px] font-bold">Role</TableHead>
+                      <TableHead className="!py-2 !text-[10px] font-bold">Validation Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {bulkErrors.map((err, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="!py-1 text-[10px] font-mono font-bold">{err.row}</TableCell>
-                        <TableCell className="!py-1 text-[10px] font-mono font-semibold">{err.Vendor_ID}</TableCell>
-                        <TableCell className="!py-1 text-[10px] font-mono font-semibold">{err.Tax_ID}</TableCell>
-                        <TableCell className="!py-1 text-[10px] font-bold text-rose-600">{err.error}</TableCell>
+                    {filteredPreviewRows.map((row, i) => (
+                      <TableRow key={i} className={row.state !== 'valid' ? 'bg-rose-50/20' : ''}>
+                        <TableCell className="font-mono text-[10px] !py-1.5">{row.row}</TableCell>
+                        <TableCell className="font-mono text-[10px] font-bold !py-1.5 text-blue-600 uppercase">{row.Vendor_ID}</TableCell>
+                        <TableCell className="font-extrabold text-slate-700 text-[10px] !py-1.5">{row.Company_Name}</TableCell>
+                        <TableCell className="font-mono text-[10px] !py-1.5">{row.Tax_ID}</TableCell>
+                        <TableCell className="text-[10px] !py-1.5">{row.Department || '-'}</TableCell>
+                        <TableCell className="text-[10px] !py-1.5">{row.Role || '-'}</TableCell>
+                        <TableCell className="!py-1.5">
+                          {row.state === 'valid' ? (
+                            <div className="flex items-center space-x-1 text-emerald-600">
+                              <CheckCircle className="h-3.5 w-3.5 shrink-0" />
+                              <span className="text-[9px] font-extrabold uppercase">Valid</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col space-y-0.5">
+                              <div className="flex items-center space-x-1 text-rose-600">
+                                <FileX className="h-3.5 w-3.5 shrink-0" />
+                                <span className="text-[9px] font-extrabold uppercase">{row.state.replace('_', ' ')}</span>
+                              </div>
+                              <span className="text-[9px] text-rose-500 font-bold block">{row.error}</span>
+                            </div>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Status Warning Panel if any duplicates are found in upload set */}
+              {previewHasErrors && (
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex items-start space-x-2.5">
+                  <ShieldAlert className="h-4.5 w-4.5 text-rose-600 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-[11px] font-extrabold text-rose-800 uppercase block tracking-wider">Duplicate Intersections Detected</span>
+                    <p className="text-[10px] text-rose-700 font-semibold leading-relaxed mt-0.5">
+                      The active database or deleted rows archive contains matching Vendor IDs or Tax IDs found in this spreadsheet. Submission is blocked until this file is cleaned and re-uploaded.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Drag & Drop Area */}
-          <div
-            onDragEnter={handleDrag}
-            onDragOver={handleDrag}
-            onDragLeave={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-10 text-center flex flex-col items-center justify-center space-y-3.5 transition-all cursor-pointer ${
-              isDragActive 
-                ? 'border-blue-500 bg-blue-50/40' 
-                : 'border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50'
-            }`}
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".xlsx,.csv"
-              className="hidden"
-            />
-            <div className="p-3.5 rounded-full bg-slate-100 text-slate-500">
-              <Upload className="h-7 w-7" />
-            </div>
-            <div>
-              <p className="text-xs font-extrabold text-slate-800">
-                Drag and drop your spreadsheet here, or click to browse
-              </p>
-              <p className="text-[10px] text-slate-400 font-medium mt-1">
-                Supports Excel (.xlsx) or CSV files
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100 mt-5">
-            <Button type="button" variant="outline" onClick={() => setIsUploadOpen(false)}>
-              Cancel
+          <div className="pt-2 flex items-center justify-between border-t border-slate-100 mt-5">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setPreviewRows([]);
+                setBulkSearch('');
+                setShowErrorsOnly(false);
+              }}
+              disabled={previewRows.length === 0}
+              className="text-xs rounded-xl"
+            >
+              Clear Preview
             </Button>
+            
+            <div className="flex items-center space-x-2">
+              <Button type="button" variant="outline" onClick={() => setIsUploadOpen(false)} className="text-xs rounded-xl">
+                Cancel
+              </Button>
+              {previewRows.length > 0 && (
+                <Button
+                  onClick={handleCommitBulkUpdate}
+                  disabled={previewHasErrors || bulkLoading}
+                  className="bg-blue-600 text-white font-extrabold text-xs px-4 py-2 rounded-xl disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                >
+                  {bulkLoading ? 'Processing Ingestion...' : 'Commit Bulk Update'}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </Dialog>
