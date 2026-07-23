@@ -1,4 +1,5 @@
 const VendorMaster = require('../models/VendorMaster');
+const Vendor = require('../models/Vendor');
 
 // @desc    Check single duplicate for onBlur validation
 // @route   POST /api/vendor-masters/check-duplicate
@@ -57,8 +58,31 @@ exports.checkDuplicate = async (req, res, next) => {
 exports.getVendorMasters = async (req, res, next) => {
   try {
     const { view } = req.query; // 'active' or 'archived'
-    const query = { is_deleted: view === 'archived' };
 
+    // Automatically migrate/seed from original Vendor collection if VendorMaster is empty
+    const count = await VendorMaster.countDocuments();
+    if (count === 0) {
+      const oldVendors = await Vendor.find({});
+      if (oldVendors.length > 0) {
+        const migrated = oldVendors.map(v => {
+          const firstContact = v.contacts?.[0] || {};
+          return {
+            Vendor_ID: v.vendorId || `VND-${v._id.toString().slice(-4).toUpperCase()}`,
+            Company_Name: v.company || v.name,
+            Tax_ID: v.gstin || `GSTIN-${v._id.toString().slice(-4).toUpperCase()}`,
+            Contact_Email: v.email || 'info@company.com',
+            Department: firstContact.department || 'Procurement',
+            Role: firstContact.role || 'Buyer',
+            Status: v.status || 'Active',
+            contacts: v.contacts || [],
+            is_deleted: false
+          };
+        });
+        await VendorMaster.insertMany(migrated);
+      }
+    }
+
+    const query = { is_deleted: view === 'archived' };
     const records = await VendorMaster.find(query).sort({ createdAt: -1 });
     res.status(200).json({ success: true, count: records.length, data: records });
   } catch (err) {
