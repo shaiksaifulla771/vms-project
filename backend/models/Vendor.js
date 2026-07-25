@@ -118,6 +118,19 @@ const VendorSchema = new mongoose.Schema({
   secondaryGstOption: { type: String, default: 'same' },
   secondaryGstState: { type: String, default: '', trim: true },
   secondaryGstin: { type: String, default: '', trim: true },
+  secondaryAddresses: [
+    {
+      address: { type: String, default: '', trim: true },
+      address2: { type: String, default: '', trim: true },
+      zipCode: { type: String, default: '', trim: true },
+      city: { type: String, default: '', trim: true },
+      state: { type: String, default: '', trim: true },
+      country: { type: String, default: 'India', trim: true },
+      gstOption: { type: String, default: 'same' },
+      gstState: { type: String, default: '', trim: true },
+      gstin: { type: String, default: '', trim: true }
+    }
+  ],
   fssai: { type: Boolean, default: false },
   fssaiExpiry: { type: Date, default: null },
   fssaiQty: { type: Number, default: 0 },
@@ -127,7 +140,7 @@ const VendorSchema = new mongoose.Schema({
   ifscCode: { type: String, default: '', trim: true },
   status: {
     type: String,
-    enum: ['Active', 'Inactive', 'Draft'],
+    enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
     default: 'Active',
   },
   createdAt: {

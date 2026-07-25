@@ -13,8 +13,13 @@ exports.getMaterials = async (req, res, next) => {
     const { type, search } = req.query;
     const query = {};
 
-    if (type) {
-      query.type = type;
+    if (type === 'Deleted') {
+      query.status = 'Deleted';
+    } else {
+      query.status = { $ne: 'Deleted' };
+      if (type) {
+        query.type = type;
+      }
     }
 
     if (search) {
@@ -174,15 +179,15 @@ exports.deleteMaterial = async (req, res, next) => {
       });
     }
 
-    const material = await Material.findByIdAndDelete(materialId);
+    const material = await Material.findById(materialId);
     if (!material) {
       return res.status(404).json({ success: false, error: 'Material not found' });
     }
 
-    // Delete associated inventory item
-    await InventoryItem.findOneAndDelete({ materialId });
+    material.status = 'Deleted';
+    await material.save();
 
-    res.status(200).json({ success: true, message: 'Material deleted successfully', data: {} });
+    res.status(200).json({ success: true, message: 'Material moved to deleted history successfully', data: {} });
   } catch (err) {
     next(err);
   }
@@ -321,9 +326,12 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
 
     let nextAutoCounter = (() => {
       const numericCodes = materialsList
-        .map(m => parseInt(m.code, 10))
-        .filter(num => !isNaN(num) && num >= 2001 && num <= 9999);
-      return numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 2001;
+        .map(m => {
+          const match = String(m.code || '').match(/\d+/);
+          return match ? parseInt(match[0], 10) : null;
+        })
+        .filter(num => num !== null && !isNaN(num) && num >= 1001 && num <= 9999);
+      return numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 1001;
     })();
 
     const errors = [];
@@ -336,7 +344,7 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
       const unit = (getRowValueIgnoreCase(row, ["unit", "uom", "unitofmeasurement", "unit of measurement"]) || '').toString().trim();
       const type = (getRowValueIgnoreCase(row, ["type", "category", "materialtype", "material type"]) || '').toString().trim();
       const subcategory = (getRowValueIgnoreCase(row, ["subcategory", "sub-category", "sub category", "sub_category"]) || '').toString().trim();
-      const description = (getRowValueIgnoreCase(row, ["description", "desc", "notes", "materialdescription", "material description"]) || '').toString().trim();
+      const description = (getRowValueIgnoreCase(row, ["description", "notes", "materialdescription", "material description"]) || '').toString().trim();
       const status = (getRowValueIgnoreCase(row, ["status", "state"]) || 'Active').toString().trim();
 
       if (!name || !unit) {
@@ -353,10 +361,10 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
         if (existingByName) {
           code = existingByName.code;
         } else {
-          let generatedCode = nextAutoCounter.toString();
+          let generatedCode = `M${nextAutoCounter}`;
           nextAutoCounter++;
-          while (systemExistingCodes.includes(generatedCode) || importedCodesInBatch.has(generatedCode)) {
-            generatedCode = nextAutoCounter.toString();
+          while (systemExistingCodes.includes(generatedCode.toUpperCase()) || importedCodesInBatch.has(generatedCode.toUpperCase())) {
+            generatedCode = `M${nextAutoCounter}`;
             nextAutoCounter++;
           }
           code = generatedCode;
@@ -468,13 +476,12 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
       });
     }
 
-    // Perform deletion
-    await Material.deleteMany({ _id: { $in: materialIds } });
-    await InventoryItem.deleteMany({ materialId: { $in: materialIds } });
+    // Perform soft deletion
+    await Material.updateMany({ _id: { $in: materialIds } }, { $set: { status: 'Deleted' } });
 
     res.status(200).json({
       success: true,
-      message: `Successfully deleted all ${materialIds.length} materials imported from ${source}`
+      message: `Successfully moved all ${materialIds.length} materials imported from ${source} to deleted history`
     });
   } catch (err) {
     next(err);
@@ -488,9 +495,22 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
 exports.peekNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
+    const allMaterials = await Material.find({}, { code: 1 });
+    let maxNum = 1000;
+    allMaterials.forEach(m => {
+      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
+        const num = parseInt(m.code.replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+      }
+    });
+
     const seqDoc = await Sequence.findById('materialCode');
-    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
-    res.status(200).json({ success: true, nextCode });
+    const seqNum = (seqDoc && seqDoc.seq < 10000) ? seqDoc.seq : 1000;
+    
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+    await Sequence.findByIdAndUpdate('materialCode', { $set: { seq: nextNum - 1 } }, { upsert: true });
+
+    res.status(200).json({ success: true, nextCode: `M${nextNum}` });
   } catch (err) {
     next(err);
   }
@@ -520,8 +540,8 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
   try {
     const { source } = req.body;
     if (!source) return res.status(400).json({success: false, error: 'Source required'});
-    const result = await Material.deleteMany({ importSource: source });
-    res.status(200).json({success: true, count: result.deletedCount});
+    const result = await Material.updateMany({ importSource: source }, { $set: { status: 'Deleted' } });
+    res.status(200).json({success: true, count: result.modifiedCount});
   } catch(err) {
     next(err);
   }
@@ -531,8 +551,8 @@ exports.batchDeleteMaterials = async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!ids || !Array.isArray(ids)) return res.status(400).json({success: false, error: 'Invalid ids array'});
-    const result = await Material.deleteMany({ _id: { $in: ids } });
-    res.status(200).json({success: true, count: result.deletedCount});
+    const result = await Material.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
+    res.status(200).json({success: true, count: result.modifiedCount});
   } catch(err) {
     next(err);
   }

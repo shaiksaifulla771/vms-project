@@ -10,7 +10,11 @@ exports.getVendors = async (req, res, next) => {
     const { category, search, status, page = 1, limit = 50 } = req.query;
     const query = {};
     if (category) query.category = category;
-    if (status) query.status = status;
+    if (status) {
+      query.status = status;
+    } else {
+      query.status = { $ne: 'Deleted' };
+    }
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -61,21 +65,31 @@ exports.createVendor = async (req, res, next) => {
     if (existing) return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
 
     if (!vendorId) {
-      const seqDoc = await Sequence.findById('vendorCode');
-      let nextCode = 1001;
-      if (seqDoc) nextCode = seqDoc.seq + 1;
-      await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: nextCode } }, { upsert: true });
-      vendorId = `V${nextCode}`;
-    } else {
-      const match = vendorId.match(/\d+/);
-      if (match) {
-        const num = parseInt(match[0], 10);
-        if (!isNaN(num)) {
-          const seqDoc = await Sequence.findById('vendorCode');
-          if (!seqDoc || num > seqDoc.seq) {
-            await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: num } }, { upsert: true });
-          }
+      const allVendors = await Vendor.find({}, { vendorId: 1 });
+      let maxNum = 1000;
+      allVendors.forEach(v => {
+        const match = (v.vendorId || '').match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
         }
+      });
+      vendorId = `V${maxNum + 1}`;
+      await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
+    } else {
+      const existingVendorCode = await Vendor.findOne({ vendorId });
+      if (existingVendorCode) {
+        const allVendors = await Vendor.find({}, { vendorId: 1 });
+        let maxNum = 1000;
+        allVendors.forEach(v => {
+          const match = (v.vendorId || '').match(/\d+/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          }
+        });
+        vendorId = `V${maxNum + 1}`;
+        await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
       }
     }
 
@@ -90,6 +104,7 @@ exports.createVendor = async (req, res, next) => {
       fssai, fssaiExpiry, fssaiQty,
       bankAccountHolder, bankAccountNumber, bankName, ifscCode,
       status: status || 'Active',
+      secondaryAddresses: req.body.secondaryAddresses || [],
     });
     res.status(201).json({ success: true, data: vendor });
   } catch (err) {
@@ -119,8 +134,9 @@ exports.deleteVendor = async (req, res, next) => {
   try {
     const vendor = await Vendor.findById(req.params.id);
     if (!vendor) return res.status(404).json({ success: false, error: 'Vendor not found' });
-    await vendor.deleteOne();
-    res.status(200).json({ success: true, data: {} });
+    vendor.status = 'Deleted';
+    await vendor.save();
+    res.status(200).json({ success: true, message: 'Vendor moved to deleted history successfully', data: {} });
   } catch (err) {
     next(err);
   }
@@ -128,9 +144,23 @@ exports.deleteVendor = async (req, res, next) => {
 
 exports.peekNextVendorCode = async (req, res, next) => {
   try {
+    const allVendors = await Vendor.find({}, { vendorId: 1 });
+    let maxNum = 1000;
+    allVendors.forEach(v => {
+      const match = (v.vendorId || '').match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+
     const seqDoc = await Sequence.findById('vendorCode');
-    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
-    res.status(200).json({ success: true, nextCode: `V${nextCode}` });
+    const seqNum = seqDoc ? seqDoc.seq : 1000;
+    
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+    await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: nextNum - 1 } }, { upsert: true });
+
+    res.status(200).json({ success: true, nextCode: `V${nextNum}` });
   } catch (err) {
     next(err);
   }
@@ -354,11 +384,11 @@ exports.deleteVendorsBySource = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'No vendors found for this source' });
     }
 
-    const result = await Vendor.deleteMany({ importSource: source });
+    const result = await Vendor.updateMany({ importSource: source }, { $set: { status: 'Deleted' } });
 
     res.status(200).json({
       success: true,
-      message: `Successfully deleted ${result.deletedCount} vendors imported from ${source}.`
+      message: `Successfully moved ${result.modifiedCount} vendors imported from ${source} to deleted history.`
     });
   } catch (err) {
     next(err);
@@ -372,11 +402,11 @@ exports.batchDeleteVendors = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'No vendor IDs provided' });
     }
 
-    const result = await Vendor.deleteMany({ _id: { $in: ids } });
+    const result = await Vendor.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
 
     res.status(200).json({
       success: true,
-      message: `Successfully deleted ${result.deletedCount} vendor(s).`
+      message: `Successfully moved ${result.modifiedCount} vendor(s) to deleted history.`
     });
   } catch (err) {
     next(err);

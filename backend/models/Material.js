@@ -29,7 +29,7 @@ const MaterialSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Active', 'Inactive', 'Draft'],
+    enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
     default: 'Active',
   },
   description: {

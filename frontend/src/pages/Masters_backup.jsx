@@ -9,7 +9,6 @@ import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
 import { Drawer } from '../components/ui/Drawer';
 import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, ArrowRight, ShieldCheck, Printer, MoreVertical, Eye, Filter, Info, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
-import BulkVendorUploadGrid from '../components/BulkVendorUploadGrid';
 
 const Masters = () => {
   const [activeTab, setActiveTab] = useState('materials');
@@ -51,12 +50,7 @@ const Masters = () => {
 let toastIdCounter = 0;
 
 const getNextAutoCounter = (baseSequence = null) => {
-  if (baseSequence !== null && baseSequence !== undefined) {
-    // Strip leading 'M' prefix if server returned it as e.g. 'M1032'
-    const raw = String(baseSequence).replace(/^[Mm]+/, '');
-    const num = parseInt(raw, 10);
-    if (!isNaN(num)) return num;
-  }
+  if (baseSequence) return baseSequence;
   
   // Fallback if sequence fails
   let maxCounter = 1000;
@@ -165,16 +159,19 @@ const validateRowData = (item, isAutoEntryVal, systemExistingCodes, importedCode
     const excelCode = (code || '').toString().trim().toUpperCase();
 
     if (excelCode) {
-      // Automatically prepend 'M' if it's just a number
-      const isPureNum = /^\d+$/.test(excelCode);
-      finalCode = isPureNum ? `M${excelCode}` : excelCode;
-
-      const existingByCode = (fullMaterialsList || []).find(
-        m => m.code.toUpperCase().trim() === finalCode
-      );
+      const rawCode = excelCode.trim();
+        const existingByCode = (fullMaterialsList || []).find(m => {
+          const dbCode = (m.code || '').toString().trim().toUpperCase();
+          if (!dbCode) return false;
+          return dbCode === rawCode ||
+                 dbCode === `M${rawCode}` ||
+                 `M${dbCode}` === rawCode ||
+                 dbCode.replace(/^M/i, '') === rawCode.replace(/^M/i, '');
+        });
 
       if (existingByCode) {
-        isUpdatingExisting = true;
+          finalCode = existingByCode.code;
+          isUpdatingExisting = true;
 
         const newStatus = ['active', 'inactive'].includes(status.toLowerCase())
           ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive')
@@ -255,85 +252,27 @@ const MaterialsTab = () => {
     } catch(e) { return []; }
   });
 
-  useEffect(() => {
-    localStorage.setItem('erp_deleted_materials_history', JSON.stringify(deletedMaterialsHistory));
-  }, [deletedMaterialsHistory]);
-
-  const resolveMaterialConflictAndRestore = async (item, activeMaterials) => {
-    let finalCode = item.code || '';
-    let isCodeReassigned = false;
-
-    const activeMaterialsOnly = activeMaterials.filter(m => m.status !== 'Deleted');
-    const codeConflict = activeMaterialsOnly.some(m => (m.code || '').toUpperCase().trim() === (finalCode || '').toUpperCase().trim());
-    if (codeConflict || !finalCode) {
-      let maxNum = 1000;
-      activeMaterialsOnly.forEach(m => {
-        const num = parseInt((m.code || '').replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
-      });
-      finalCode = `M${maxNum + 1}`;
-      isCodeReassigned = true;
-    }
-
-    const payload = { 
-      ...item, 
-      code: finalCode, 
-      status: 'Active' 
-    };
-    delete payload.deletedAt;
-    delete payload.deletionType;
-    delete payload.isDeletedHistoryItem;
-
-    if (item._id) {
-      try {
-        const putRes = await api.put(`/api/materials/${item._id}`, payload);
-        if (putRes.data && putRes.data.success) {
-          return { success: true, item: putRes.data.data, isCodeReassigned, newCode: finalCode };
-        }
-      } catch (err) {
-        console.warn("PUT by _id failed, attempting fallback restore", err);
-      }
-    }
-
-    if (item.code) {
-      try {
-        const searchRes = await api.get(`/api/materials?search=${encodeURIComponent(item.code)}`);
-        if (searchRes.data && searchRes.data.success && Array.isArray(searchRes.data.data)) {
-          const match = searchRes.data.data.find(m => (m.code || '').toUpperCase() === item.code.toUpperCase());
-          if (match && match._id) {
-            const putRes = await api.put(`/api/materials/${match._id}`, payload);
-            if (putRes.data && putRes.data.success) {
-              return { success: true, item: putRes.data.data, isCodeReassigned, newCode: finalCode };
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Search fallback failed", e);
-      }
-    }
-
-    delete payload._id;
-    const postRes = await api.post('/api/materials', payload);
-    return { success: true, item: postRes.data.data, isCodeReassigned, newCode: finalCode };
-  };
-
   const handleRestoreMaterial = async (item) => {
+    // Conflict Check
+    const hasConflict = materials.some(m => (m.code || '').toUpperCase().trim() === (item.code || '').toUpperCase().trim());
+    if (hasConflict) {
+      alert(`Restoration Conflict Validation: The Material Code "${item.code}" is already used by an active material. Restoral aborted.`);
+      showToast(`Conflict Check Failed: Material Code ${item.code} already exists in active grid.`, "error");
+      return;
+    }
+
     try {
-      const result = await resolveMaterialConflictAndRestore(item, materials);
+      const payload = { ...item };
+      delete payload._id;
+      delete payload.deletedAt;
+      delete payload.deletionType;
+      await api.post('/api/materials', payload);
       setDeletedMaterialsHistory((prev) => {
-        const updated = prev.filter(d => {
-          if (d._id && item._id) return d._id !== item._id;
-          if (d.code && item.code) return d.code !== item.code;
-          return d.name !== item.name;
-        });
+        const updated = prev.filter(d => (d._id && d._id !== item._id) || d.code !== item.code || d.name !== item.name);
         localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
         return updated;
       });
-      if (result.isCodeReassigned) {
-        showToast(`Material "${item.name}" restored with re-assigned code ${result.newCode} (resolved active conflict).`, "success");
-      } else {
-        showToast(`Material ${result.newCode || item.name || ''} restored successfully!`, "success");
-      }
+      showToast(`Success Notification: Material ${item.code || item.name || ''} restored successfully!`, "success");
       fetchMaterials();
     } catch (err) {
       console.error(err);
@@ -344,6 +283,7 @@ const MaterialsTab = () => {
   const [materials, setMaterials] = useState([]);
   const [searchInputVal, setSearchInputVal] = useState('');
   const [materialBlockingPopupMessage, setMaterialBlockingPopupMessage] = useState('');
+  const [bulkUpdateSuccessModal, setBulkUpdateSuccessModal] = useState(null);
   const [isEditingDeletedRecord, setIsEditingDeletedRecord] = useState(false);
 
   const handleSearchChange = (val) => {
@@ -361,7 +301,6 @@ const MaterialsTab = () => {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [status, setStatus] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [currentFileName, setCurrentFileName] = useState('');
   const [selectedMaterialId, setSelectedMaterialId] = useState(null);
@@ -516,35 +455,7 @@ const MaterialsTab = () => {
       };
       const res = await api.get('/api/materials', { params });
       if (res.data && res.data.success) {
-        const sorted = [...res.data.data].sort((a, b) => {
-          const numA = parseInt((a.code || '').replace(/\D/g, '') || '0', 10);
-          const numB = parseInt((b.code || '').replace(/\D/g, '') || '0', 10);
-          return numB - numA;
-        });
-        setMaterials(sorted);
-      }
-
-      try {
-        const deletedRes = await api.get('/api/materials?type=Deleted');
-        if (deletedRes.data && deletedRes.data.success && Array.isArray(deletedRes.data.data)) {
-          setDeletedMaterialsHistory(prev => {
-            const combinedMap = new Map();
-            prev.forEach(item => {
-              const key = item._id || item.code || item.name;
-              if (key) combinedMap.set(key.toString().toUpperCase(), item);
-            });
-            deletedRes.data.data.forEach(item => {
-              const key = item._id || item.code || item.name;
-              if (key) {
-                const existing = combinedMap.get(key.toString().toUpperCase());
-                combinedMap.set(key.toString().toUpperCase(), { ...existing, ...item, status: 'Deleted', isDeletedHistoryItem: true });
-              }
-            });
-            return Array.from(combinedMap.values());
-          });
-        }
-      } catch (e) {
-        console.warn("Failed to fetch deleted materials from server", e);
+        setMaterials(res.data.data);
       }
     } catch (err) {
       console.error(err);
@@ -695,19 +606,9 @@ const MaterialsTab = () => {
     setActiveFilterCol(null);
   };
 
-  const handleRowSelect = (id) => {
-    setSelectedRowIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const handleResetAllFilters = () => {
     setSearch('');
     setTypeFilter('');
-    setStatus('');
     setSourceFilter('');
     setColumnFilters({});
     setTempFilters({});
@@ -717,11 +618,7 @@ const MaterialsTab = () => {
   const renderFilterPopupContent = (col) => {
     let rawOptions = [];
     if (col === 'status') {
-      rawOptions = ["Active", "Inactive", "Draft", "Deleted"];
-    } else if (col === 'type') {
-      const predefined = ["Raw Material", "Packaging", "Finished Goods", "Services"];
-      const dynamic = getUniqueValues('type');
-      rawOptions = Array.from(new Set([...predefined, ...dynamic])).filter(Boolean).sort();
+      rawOptions = ["Active", "Inactive"];
     } else {
       rawOptions = getUniqueValues(col);
     }
@@ -730,7 +627,7 @@ const MaterialsTab = () => {
     const filteredOptions = rawOptions.filter(val => {
       if (val.toLowerCase().includes(searchStr)) return true;
       if (col === 'name') {
-        const matchingMaterials = materials.filter(m => (m.name || '').toLowerCase() === val.toLowerCase());
+        const matchingMaterials = materials.filter(m => m.name.toLowerCase() === val.toLowerCase());
         const hasMatchingCategory = matchingMaterials.some(m => 
           (m.type || '').toLowerCase().includes(searchStr) || 
           (m.subcategory || '').toLowerCase().includes(searchStr)
@@ -740,68 +637,50 @@ const MaterialsTab = () => {
       return false;
     });
 
-    const colTitle = col === 'name' ? 'Material Name' 
-                   : col === 'unit' ? 'UOM' 
-                   : col === 'type' ? 'Category' 
-                   : col === 'subcategory' ? 'Sub-Category' 
-                   : col.charAt(0).toUpperCase() + col.slice(1);
+    if (filteredOptions.length === 0) {
+      return (
+        <div className="py-3 text-center space-y-1">
+          <span className="text-[11px] text-slate-400 font-semibold block">No matching options found</span>
+          <div className="flex items-center justify-center space-x-1.5 pt-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterSearchText({ ...filterSearchText, [col]: '' });
+              }}
+              className="text-[10px] text-blue-600 hover:underline font-bold"
+            >
+              Clear Search
+            </button>
+            <span className="text-slate-300 text-[10px]">|</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                clearColumnFilter(col);
+              }}
+              className="text-[10px] text-slate-500 hover:underline font-bold"
+            >
+              Clear Filter
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
-      <div className="space-y-2">
-        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pb-1 border-b">
-          Filter {colTitle}
-        </div>
-        <input
-          type="text"
-          placeholder="Search options..."
-          value={filterSearchText[col] || ''}
-          onChange={(e) => setFilterSearchText({ ...filterSearchText, [col]: e.target.value })}
-          className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:border-blue-500 bg-white"
-        />
-
-        <div className="max-h-36 overflow-y-auto space-y-1 py-1">
-          {filteredOptions.length === 0 ? (
-            <div className="text-[10px] text-slate-400 italic text-center py-2">No matching options</div>
-          ) : (
-            filteredOptions.map((opt, idx) => {
-              const checked = (tempFilters[col] || []).includes(opt);
-              return (
-                <label key={idx} className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => handleCheckboxChange(col, opt, e.target.checked)}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                  />
-                  <span className={col === 'unit' ? 'uppercase' : 'truncate'}>{opt}</span>
-                </label>
-              );
-            })
-          )}
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              clearColumnFilter(col);
-            }}
-            className="text-[10px] text-slate-500 hover:text-slate-700 font-bold underline px-1"
-          >
-            Clear Filter
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              applyColumnFilter(col);
-            }}
-            className="text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1 rounded transition-colors"
-          >
-            Apply Filter
-          </button>
-        </div>
+      <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+        {filteredOptions.map(val => (
+          <label key={val} className="flex items-center space-x-1.5 cursor-pointer text-slate-700 hover:text-slate-900 text-[11px] font-medium font-sans">
+            <input
+              type="checkbox"
+              checked={(tempFilters[col] || []).includes(val)}
+              onChange={(e) => handleCheckboxChange(col, val, e.target.checked)}
+              className="rounded border-slate-300 text-blue-600 focus:ring-0 h-3 w-3 cursor-pointer"
+            />
+            <span className={col === 'unit' ? 'uppercase' : col === 'name' ? '' : 'capitalize'}>
+              {col === 'name' || col === 'unit' ? val : val.toLowerCase()}
+            </span>
+          </label>
+        ))}
       </div>
     );
   };
@@ -887,18 +766,13 @@ const MaterialsTab = () => {
   const getNextManualCode = () => {
     let maxCounter = 1000;
     materials.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxCounter) {
-          maxCounter = num;
-        }
-      }
-    });
-    deletedMaterialsHistory.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxCounter) {
-          maxCounter = num;
+      if (m.code) {
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
+            maxCounter = num;
+          }
         }
       }
     });
@@ -906,20 +780,18 @@ const MaterialsTab = () => {
   };
 
   const getNextAutoCounter = (baseSequence = null) => {
-    if (baseSequence !== null && baseSequence !== undefined) {
-      // Strip leading 'M' prefix if server returned it as e.g. 'M1032'
-      const raw = String(baseSequence).replace(/^[Mm]+/, '');
-      const num = parseInt(raw, 10);
-      if (!isNaN(num)) return num;
-    }
+    if (baseSequence) return baseSequence;
     
     // Fallback if sequence fails
     let maxCounter = 1000;
     materials.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxCounter) {
-          maxCounter = num;
+      if (m.code) {
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
+            maxCounter = num;
+          }
         }
       }
     });
@@ -931,20 +803,16 @@ const MaterialsTab = () => {
     setCurrentDraftId(null);
     setFormErrors({});
     
-    let nextCodeStr = getNextManualCode();
+    // Default fallback code
+    let nextCodeStr = "M1001";
     try {
       const res = await api.get('/api/materials/sequence-peek');
       if (res.data && res.data.nextCode) {
-        const rawCode = String(res.data.nextCode);
-        const serverCode = rawCode.startsWith('M') ? rawCode : `M${rawCode}`;
-        const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
-        if (!activeCodes.has(serverCode.toUpperCase()) && !deletedCodes.has(serverCode.toUpperCase())) {
-          nextCodeStr = serverCode;
-        }
+        nextCodeStr = `M${res.data.nextCode}`;
       }
     } catch (e) {
       console.warn("Failed to fetch sequence peek", e);
+      nextCodeStr = getNextManualCode(); // fallback
     }
 
     setFormData({ 
@@ -1127,15 +995,18 @@ const MaterialsTab = () => {
       const excelCode = (code || '').toString().trim().toUpperCase();
 
       if (excelCode) {
-        // Automatically prepend 'M' if it's just a number
-        const isPureNum = /^\d+$/.test(excelCode);
-        finalCode = isPureNum ? `M${excelCode}` : excelCode;
-
-        const existingByCode = (fullMaterialsList || []).find(
-          m => m.code.toUpperCase().trim() === finalCode
-        );
+        const rawCode = excelCode.trim();
+        const existingByCode = (fullMaterialsList || []).find(m => {
+          const dbCode = (m.code || '').toString().trim().toUpperCase();
+          if (!dbCode) return false;
+          return dbCode === rawCode ||
+                 dbCode === `M${rawCode}` ||
+                 `M${dbCode}` === rawCode ||
+                 dbCode.replace(/^M/i, '') === rawCode.replace(/^M/i, '');
+        });
 
         if (existingByCode) {
+          finalCode = existingByCode.code;
           isUpdatingExisting = true;
 
           const newStatus = ['active', 'inactive'].includes(status.toLowerCase())
@@ -1162,9 +1033,8 @@ const MaterialsTab = () => {
           } else {
             warnings.push(`Code '${finalCode}': ${fieldChanges.length} field(s) will be updated. Review and confirm.`);
           }
-        } else {
-          errors.push(`Material code '${finalCode}' does not exist in database. Bulk Update can only update existing materials. Please use Bulk Entry to create new materials.`);
         }
+        // else: code not in DB → treat as new, use provided code as-is
 
       } else {
         // No code in Excel — fall back to name+type lookup
@@ -1175,9 +1045,41 @@ const MaterialsTab = () => {
         if (existingByName) {
           finalCode = existingByName.code.toUpperCase();
           isUpdatingExisting = true;
-          warnings.push(`'${name}' matched by name in database (Code: ${existingByName.code}). Review and confirm.`);
+
+          const newStatus = ['active', 'inactive'].includes(status.toLowerCase())
+            ? (status.toLowerCase() === 'active' ? 'Active' : 'Inactive')
+            : 'Active';
+          const newSubcat = matchedSubcat ? matchedSubcat.value : subcategory;
+          const newType   = normalizedType || type;
+
+          const fieldDefs = [
+            { label: 'Name',         oldVal: existingByName.name        || '', newVal: name        },
+            { label: 'UOM',          oldVal: existingByName.unit        || '', newVal: unit        },
+            { label: 'Category',     oldVal: existingByName.type        || '', newVal: newType     },
+            { label: 'Sub-Category', oldVal: existingByName.subcategory || '', newVal: newSubcat   },
+            { label: 'Status',       oldVal: existingByName.status      || '', newVal: newStatus   },
+            { label: 'Description',  oldVal: existingByName.description || '', newVal: description },
+          ];
+
+          fieldChanges = fieldDefs.filter(f =>
+            f.oldVal.toString().trim().toLowerCase() !== f.newVal.toString().trim().toLowerCase()
+          );
+
+          if (fieldChanges.length === 0) {
+            warnings.push(`Code '${finalCode}': No changes detected — data is identical to database record.`);
+          } else {
+            warnings.push(`'${name}' matched by name in database (Code: ${existingByName.code}). ${fieldChanges.length} field(s) modified.`);
+          }
         } else {
-          errors.push(`Material '${name}' does not exist in database. Bulk Update can only update existing materials. Please use Bulk Entry to create new materials.`);
+          // Genuinely new — auto-generate code
+          let nextVal = autoCounterRef.val;
+          finalCode = `M${nextVal}`;
+          autoCounterRef.val++;
+          while (systemExistingCodes.includes(finalCode) || importedCodesInBatch.has(finalCode)) {
+            nextVal = autoCounterRef.val;
+            finalCode = `M${nextVal}`;
+            autoCounterRef.val++;
+          }
         }
       }
     }
@@ -1353,18 +1255,12 @@ const MaterialsTab = () => {
         let foundConflict = false;
         for (const row of rawRowsMapped) {
           const rowCode = (row.code || '').toUpperCase().trim();
-          if (rowCode) {
-            if (deletedCodes.has(rowCode)) {
-              foundConflict = true;
-              break;
-            }
-            if (isAutoEntry && activeCodes.has(rowCode)) {
-              foundConflict = true;
-              break;
-            }
+          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
+            foundConflict = true;
+            break;
           }
         }
-        if (foundConflict) {
+        if (isAutoEntry && foundConflict) {
           setMaterialBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setImportSummary(null);
           setEditableAcceptedItems([]);
@@ -1375,11 +1271,10 @@ const MaterialsTab = () => {
         const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
         const { processedItems, summary } = recalculateImportSummary(deduplicatedRows, systemExistingCodes, isAutoEntry, baseSequence);
 
-        if (!isAutoEntry && summary.existingMatchCount === 0) {
-          setMaterialBlockingPopupMessage("Bulk Update cannot be used for new data. Please enter the data first using Bulk Entry or Manual Entry.");
+        if (!isAutoEntry && summary.existingMatchCount === 0 && summary.acceptedCount > 0) {
+          showToast("System Notice: Bulk update will not work when all materials are new. Please add materials through Bulk Entry or Manual Entry", "error");
           setIsImportModalOpen(false);
           setImportSummary(null);
-          if (fileInputRef.current) fileInputRef.current.value = '';
           return;
         }
 
@@ -1420,12 +1315,9 @@ const MaterialsTab = () => {
     const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
     const duplicates = validToImport.filter(item => {
       const code = (item.code || '').toUpperCase().trim();
-      if (!code) return false;
-      if (deletedCodes.has(code)) return true;
-      if (!item.isExistingMatch && activeCodes.has(code)) return true;
-      return false;
+      return code && (activeCodes.has(code) || deletedCodes.has(code));
     });
-    if (duplicates.length > 0) {
+    if ((typeof isAutoEntry !== "undefined" ? isAutoEntry : (typeof isVendorAutoEntry !== "undefined" ? isVendorAutoEntry : true)) && duplicates.length > 0) {
       alert("This file data already is in database which is presented in deleted rows & sheets status.");
       showToast("Ingestion aborted: Duplicate data detected.", "error");
       return;
@@ -1489,8 +1381,9 @@ const MaterialsTab = () => {
     }
 
     let finalCode = editRowData.code.trim().toUpperCase();
-    if (!finalCode.startsWith('M') && /^\d+$/.test(finalCode)) {
-      finalCode = `M${finalCode}`;
+    const parsedNum = parseInt(finalCode, 10);
+    if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 1999) {
+      finalCode = parsedNum.toString().padStart(5, '0');
     }
 
     const codeConflict = materials.some(m => m._id !== id && m.code.toUpperCase() === finalCode);
@@ -1551,33 +1444,6 @@ const MaterialsTab = () => {
     setIsEditingDeletedRecord(false);
   };
 
-  const handleBatchEdit = () => {
-    const itemsToEdit = materials.filter(m => selectedRowIds.has(m._id || m.code || m.name));
-    if (itemsToEdit.length > 0) {
-      setBatchEditItems(itemsToEdit.map(i => ({...i})));
-      setBatchEditIdx(0);
-      const firstItem = itemsToEdit[0];
-      const normalizedType = firstItem.type === 'Raw' || firstItem.type === 'Raw Material' ? 'Raw Material' 
-                           : firstItem.type === 'Finished' || firstItem.type === 'Finished Goods' ? 'Finished Goods'
-                           : firstItem.type === 'Packing' || firstItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
-      const subcats = subcategoryMap[normalizedType] || [];
-      const matched = subcats.find(s => s.value.toLowerCase() === (firstItem.subcategory || '').toLowerCase());
-      const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
-
-      setFormData({
-        name: firstItem.name,
-        code: firstItem.code,
-        unit: firstItem.unit,
-        type: normalizedType,
-        subcategory: finalSubcat,
-        status: firstItem.status || 'Active',
-        description: firstItem.description || ''
-      });
-      setFormErrors({});
-      setIsBatchEditModalOpen(true);
-    }
-  };
-
   const saveCurrentFormState = (idx) => {
     const updated = [...batchEditItems];
     if (updated[idx]) {
@@ -1603,8 +1469,9 @@ const MaterialsTab = () => {
     try {
       const activeItem = batchEditItems[batchEditIdx];
       let finalCode = formData.code.trim().toUpperCase();
-      if (!finalCode.startsWith('M') && /^\d+$/.test(finalCode)) {
-        finalCode = `M${finalCode}`;
+      const parsedNum = parseInt(finalCode, 10);
+      if (!isNaN(parsedNum) && parsedNum >= 1001 && parsedNum <= 1999) {
+        finalCode = parsedNum.toString();
       }
 
       const formattedData = {
@@ -1691,16 +1558,17 @@ const MaterialsTab = () => {
     if (!formData.subcategory) errors.subcategory = 'Sub-category is required';
 
     let finalCode = formData.code.trim().toUpperCase();
-    if (!finalCode.startsWith('M') && /^\d+$/.test(finalCode)) {
-      finalCode = `M${finalCode}`;
+    const parsedNum = parseInt(finalCode, 10);
+    if (!isNaN(parsedNum) && parsedNum >= 1001 && parsedNum <= 1999) {
+      finalCode = parsedNum.toString();
     }
 
     const activeId = isBatchEditModalOpen 
       ? (batchEditItems[batchEditIdx]?._id) 
       : editingId;
 
-    const existsInActive = materials.some(m => m._id !== activeId && (m.code || '').toUpperCase() === finalCode);
-    const existsInDeleted = deletedMaterialsHistory.some(d => d._id !== activeId && (d.code || '').toUpperCase() === finalCode);
+    const existsInActive = materials.some(m => m._id !== activeId && m.code.toUpperCase() === finalCode);
+    const existsInDeleted = deletedMaterialsHistory.some(d => d._id !== activeId && d.code.toUpperCase() === finalCode);
     if (existsInActive || existsInDeleted) {
       alert("This file data already is in database which is presented in deleted rows & sheets status.");
       errors.code = `Material Code '${finalCode}' is already in use (active or deleted).`;
@@ -1717,8 +1585,9 @@ const MaterialsTab = () => {
     setSubmitLoading(true);
     try {
       let finalCode = formData.code.trim().toUpperCase();
-      if (!finalCode.startsWith('M') && /^\d+$/.test(finalCode)) {
-        finalCode = `M${finalCode}`;
+      const parsedNum = parseInt(finalCode, 10);
+      if (!isNaN(parsedNum) && parsedNum >= 1001 && parsedNum <= 1999) {
+        finalCode = parsedNum.toString();
       }
 
       const formattedData = {
@@ -1799,16 +1668,24 @@ const MaterialsTab = () => {
     if (!window.confirm(`Restore ${ids.length} selected material(s)?`)) return;
     let restored = 0, failed = 0;
     const restoredMaterialIds = [];
-    let currentActiveMaterials = [...materials];
-
     for (const id of ids) {
-      const item = deletedMaterialsHistory.find(m => (m._id || m.code || m.name) === id);
+      const item = deletedMaterialsHistory.find(m => m._id === id);
       if (item) {
+        // Conflict Check
+        const hasConflict = materials.some(m => (m.code || '').toUpperCase().trim() === (item.code || '').toUpperCase().trim());
+        if (hasConflict) {
+          alert(`Restoration Conflict Validation: The Material Code "${item.code}" is already used by an active material. Skipping restoral for this record.`);
+          failed++;
+          continue;
+        }
+
         try {
-          const result = await resolveMaterialConflictAndRestore(item, currentActiveMaterials);
-          if (result.item) {
-            currentActiveMaterials.push(result.item);
-          }
+          const payload = { ...item };
+          delete payload._id;
+          delete payload.deletedAt;
+          delete payload.deletionType;
+          delete payload.isDeletedHistoryItem;
+          await api.post('/api/materials', payload);
           restored++;
           restoredMaterialIds.push(id);
         } catch (e) {
@@ -1841,7 +1718,7 @@ const MaterialsTab = () => {
     try {
       const deletedItems = [];
       ids.forEach(id => {
-        const target = materials.find(m => (m._id || m.code || m.name) === id);
+        const target = materials.find(m => m._id === id);
         if (target) {
           deletedItems.push({ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() });
         }
@@ -1911,64 +1788,52 @@ const MaterialsTab = () => {
 
   const filteredMaterials = (() => {
     let list = materials;
-    const selectedStatuses = columnFilters['status'] || [];
-    const isDeletedSelected = status === 'Deleted' || selectedStatuses.includes('Deleted');
-    
-    if (isDeletedSelected) {
-      list = [...materials, ...deletedMaterialsHistory.map(d => ({ ...d, status: 'Deleted', isDeletedHistoryItem: true }))];
+    if (typeFilter === 'Deleted') {
+      list = deletedMaterialsHistory.map(d => ({ ...d, type: 'Deleted', isDeletedHistoryItem: true }));
     }
-
     return list.filter(mat => {
-      const matStatus = mat.status || 'Active';
-
-      // 1. Top Status Dropdown Filter
-      if (status === 'Deleted') {
-        if (matStatus !== 'Deleted' && !mat.isDeletedHistoryItem) return false;
-      } else if (status) {
-        if (matStatus !== status) return false;
-      } else {
-        // Default "All status" should NOT show deleted items unless header filter selected 'Deleted'
-        if ((matStatus === 'Deleted' || mat.isDeletedHistoryItem) && !selectedStatuses.includes('Deleted')) {
-          return false;
-        }
-      }
-
-      // 2. Search Query Filter
+      // 1. Search Query Filter
       if (search.trim()) {
         const q = search.toLowerCase().trim();
         const nameMatch = (mat.name || '').toLowerCase().includes(q);
         const codeMatch = (mat.code || '').toLowerCase().includes(q);
-        const catMatch = (mat.type || '').toLowerCase().includes(q);
-        if (!nameMatch && !codeMatch && !catMatch) return false;
+        if (!nameMatch && !codeMatch) return false;
       }
 
-      // 3. Category Filter
-      if (typeFilter && (mat.type || '') !== typeFilter) {
+      // 2. Category Type Filter
+      if (typeFilter && typeFilter !== 'Deleted' && mat.type !== typeFilter) {
         return false;
       }
 
-      // 4. Import Source File Filter
-      if (sourceFilter) {
-        if (sourceFilter === 'Manual Entry') {
-          if (mat.importSource) return false;
-        } else {
-          if (mat.importSource !== sourceFilter) return false;
-        }
+    // 3. Import Source File Filter
+    if (sourceFilter) {
+      if (sourceFilter === 'Manual Entry') {
+        if (mat.importSource) return false;
+      } else {
+        if (mat.importSource !== sourceFilter) return false;
       }
+    }
 
-      // 5. Grid Column Filters
-      for (const col in columnFilters) {
-        const selectedVals = columnFilters[col];
-        if (selectedVals && selectedVals.length > 0) {
-          let attrVal = col === 'unit' ? (mat.unit || '') : col === 'type' ? (mat.type || '') : (mat[col] || '');
-          const val = attrVal.toString().trim().toLowerCase();
-          if (!selectedVals.map(sv => sv.toString().trim().toLowerCase()).includes(val)) {
-            return false;
-          }
+    // 4. Grid Column Filters
+    for (const col in columnFilters) {
+      const selectedVals = columnFilters[col];
+      if (selectedVals && selectedVals.length > 0) {
+        let attrVal = '';
+        if (col === 'unit') {
+          attrVal = (mat.unit || '');
+        } else if (col === 'type') {
+          attrVal = (mat.type || '');
+        } else {
+          attrVal = (mat[col] || '');
+        }
+        const val = attrVal.toString().trim().toLowerCase();
+        if (!selectedVals.map(sv => sv.toString().trim().toLowerCase()).includes(val)) {
+          return false;
         }
       }
-      return true;
-    });
+    }
+    return true;
+  });
   })();
 
   const isEditSelectedActive = React.useMemo(() => {
@@ -1979,7 +1844,7 @@ const MaterialsTab = () => {
   React.useEffect(() => {
     setSelectedMaterialId(null);
     setSelectedRowIds(new Set());
-  }, [search, typeFilter, status, sourceFilter, columnFilters]);
+  }, [search, typeFilter, sourceFilter, columnFilters]);
 
   return (
     <div className="space-y-3 w-full">
@@ -2020,50 +1885,7 @@ const MaterialsTab = () => {
               </Button>
             )}
 
-            <Button
-              size="sm"
-              variant={isSelectionMode ? "solid" : "outline"}
-              onClick={() => {
-                setIsSelectionMode(!isSelectionMode);
-                if (isSelectionMode) setSelectedRowIds(new Set());
-              }}
-              className={`h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold text-xs shadow-sm transition-colors ${isSelectionMode ? 'bg-blue-600 text-white hover:bg-blue-700 border-transparent' : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-50'}`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>{isSelectionMode ? 'Cancel Selection' : 'Select Options'}</span>
-            </Button>
-
-            {isSelectionMode && selectedRowIds.size > 0 && status !== 'Deleted' && (
-              <button
-                onClick={handleBatchEdit}
-                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-blue-600 text-white hover:bg-blue-700 shadow-sm text-xs transition-colors"
-              >
-                <Edit2 className="h-3.5 w-3.5" />
-                <span>Edit Selected ({selectedRowIds.size})</span>
-              </button>
-            )}
-
-            {isSelectionMode && selectedRowIds.size > 0 && status !== 'Deleted' && (
-              <button
-                onClick={handleDeleteSelectedMaterials}
-                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm text-xs"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>Delete Selected ({selectedRowIds.size})</span>
-              </button>
-            )}
-
-            {(isSelectionMode || status === 'Deleted') && selectedRowIds.size > 0 && status === 'Deleted' && (
-              <button
-                onClick={handleRestoreSelectedMaterials}
-                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm text-xs animate-pulse"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                <span>Restore Selected ({selectedRowIds.size})</span>
-              </button>
-            )}
-
-            {(search || typeFilter || status || sourceFilter || Object.values(columnFilters).some(v => v && v.length > 0)) && (
+            {(search || typeFilter || sourceFilter || Object.values(columnFilters).some(v => v && v.length > 0)) && (
               <button
                 onClick={handleResetAllFilters}
                 className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-2.5 py-1 rounded h-7 border border-slate-200 transition-colors"
@@ -2077,24 +1899,69 @@ const MaterialsTab = () => {
               onChange={(e) => setTypeFilter(e.target.value)}
               className="px-2.5 py-0.5 h-7 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-600 focus:outline-none cursor-pointer"
             >
-              <option value="">All Categories</option>
-              <option value="Raw Material">Raw Material</option>
-              <option value="Packaging">Packaging</option>
+              <option value="">All Status</option>
+              <option value="Raw Material">Raw Materials</option>
               <option value="Finished Goods">Finished Goods</option>
-              <option value="Services">Services</option>
-            </select>
-
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="px-2.5 py-0.5 h-7 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-600 focus:outline-none cursor-pointer"
-            >
-              <option value="">All status</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Draft">Draft</option>
+              <option value="Packing Material">Packing Materials</option>
               <option value="Deleted">Deleted Sheets & Rows ({deletedMaterialsHistory.length})</option>
             </select>
+
+
+
+            {/* Single 'Select All' checkbox — professional, no per-row clutter */}
+            <label className={`flex items-center gap-1.5 cursor-pointer select-none px-2 py-1 rounded border transition-all text-xs font-semibold ${
+              selectedRowIds.size > 0
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+            }`} title="Show material checkboxes">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={isSelectionMode}
+                onChange={e => {
+                  setIsSelectionMode(e.target.checked);
+                  if (!e.target.checked) setSelectedRowIds(new Set());
+                }}
+              />
+              {selectedRowIds.size > 0
+                ? <span>{selectedRowIds.size} selected</span>
+                : <span>Select</span>}
+            </label>
+
+            {(isSelectionMode || typeFilter === "Deleted") && (
+              <button
+                onClick={() => {
+                  setSelectedRowIds(new Set());
+                  setIsSelectionMode(false);
+                }}
+                className="h-7 px-3 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800 text-xs font-semibold transition-colors"
+                title="Clear selection and hide checkboxes"
+              >
+                Clear
+              </button>
+            )}
+
+            {selectedRowIds.size > 0 && (
+              <button
+                onClick={handleDeleteSelectedMaterials}
+                className="h-7 px-3 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                title="Delete selected materials"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete</span>
+              </button>
+            )}
+
+            {selectedRowIds.size > 0 && typeFilter === 'Deleted' && (
+              <button
+                onClick={handleRestoreSelectedMaterials}
+                className="h-7 px-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 text-xs font-semibold flex items-center gap-1.5 transition-colors animate-pulse"
+                title="Restore selected materials to active grid"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Restore Selected ({selectedRowIds.size})</span>
+              </button>
+            )}
 
             <div className="relative">
               <Button
@@ -2117,16 +1984,7 @@ const MaterialsTab = () => {
                     <button onClick={() => { setShowFunctionList(false); setImportSummary(null); setIsAutoEntry(true); setIsImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
                       <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /><span>Bulk Entry</span>
                     </button>
-                    <button onClick={() => {
-                      setShowFunctionList(false);
-                      if (materials.length === 0) {
-                        setMaterialBlockingPopupMessage("No material data exists in the database. Please enter material data first using Bulk Entry or Manual Entry.");
-                        return;
-                      }
-                      setImportSummary(null);
-                      setIsAutoEntry(false);
-                      setIsImportModalOpen(true);
-                    }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                    <button onClick={() => { setShowFunctionList(false); setImportSummary(null); setIsAutoEntry(false); setIsImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
                       <RefreshCw className="h-3.5 w-3.5 text-amber-600" /><span>Bulk Update</span>
                     </button>
                     <button onClick={() => { setShowFunctionList(false); handleExportData(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium border-t border-slate-100">
@@ -2302,34 +2160,35 @@ const MaterialsTab = () => {
             <div className="p-20 text-center text-slate-400 font-medium">No materials registered.</div>
           ) : (
             <>
-              <Table className="border border-slate-200 w-full table-fixed text-xs">
+              <Table className="border border-slate-200 w-full table-fixed">
               <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                 <TableRow>
-                  {(isSelectionMode || status === "Deleted") && (
-                    <TableHead className="!px-2.5 !py-1.5 w-[40px] max-w-[40px] text-center border-r border-slate-200 relative z-20">
-                      <input
-                        type="checkbox"
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
-                        checked={filteredMaterials.length > 0 && filteredMaterials.every(m => selectedRowIds.has(m._id || m.code || m.name))}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedRowIds(new Set(filteredMaterials.map(m => m._id || m.code || m.name)));
-                          } else {
-                            setSelectedRowIds(new Set());
-                          }
-                        }}
-                      />
-                    </TableHead>
-                  )}
-                  
-                  {/* 1. Material Name */}
+                  {/* Name Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
-                      <span>Material Name</span>
+                      <div className="flex items-center space-x-2">
+                        {(isSelectionMode || typeFilter === "Deleted") && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIds.size > 0 && selectedRowIds.size === filteredMaterials.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedRowIds(new Set(filteredMaterials.map(m => m._id)));
+                                setIsSelectionMode(true);
+                              } else {
+                                setSelectedRowIds(new Set());
+                                setIsSelectionMode(false);
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                        )}
+                        <span>Material Name</span>
+                      </div>
                       <button
                         onClick={(e) => toggleFilterPopup('name', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter Material Name"
                       >
@@ -2337,20 +2196,36 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'name' && (
-                      <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('name')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute left-1 top-full mt-1.5 w-48 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Name</div>
+                          <input
+                            type="text"
+                            placeholder="Search categories..."
+                            value={filterSearchText['name'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, name: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('name')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('name')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('name')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 2. Code */}
+                  {/* Code Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[80px] max-w-[80px] whitespace-nowrap relative group ${activeFilterCol === 'code' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Code</span>
                       <button
                         onClick={(e) => toggleFilterPopup('code', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['code'] && columnFilters['code'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['code'] && columnFilters['code'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter Code"
                       >
@@ -2358,20 +2233,36 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'code' && (
-                      <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('code')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute left-1 top-full mt-1.5 w-36 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Code</div>
+                          <input
+                            type="text"
+                            placeholder="Search codes..."
+                            value={filterSearchText['code'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, code: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('code')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('code')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('code')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 3. UOM */}
+                  {/* UOM Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[65px] max-w-[65px] whitespace-nowrap relative group ${activeFilterCol === 'unit' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>UOM</span>
                       <button
                         onClick={(e) => toggleFilterPopup('unit', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['unit'] && columnFilters['unit'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['unit'] && columnFilters['unit'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter UOM"
                       >
@@ -2379,20 +2270,36 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'unit' && (
-                      <div className="absolute left-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('unit')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute left-1 top-full mt-1.5 w-32 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter UOM</div>
+                          <input
+                            type="text"
+                            placeholder="Search UOMs..."
+                            value={filterSearchText['unit'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, unit: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('unit')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('unit')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('unit')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 4. Category */}
+                  {/* Category Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative group ${activeFilterCol === 'type' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Category</span>
                       <button
                         onClick={(e) => toggleFilterPopup('type', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['type'] && columnFilters['type'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['type'] && columnFilters['type'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter Category"
                       >
@@ -2400,20 +2307,36 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'type' && (
-                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('type')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute left-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Category</div>
+                          <input
+                            type="text"
+                            placeholder="Search categories..."
+                            value={filterSearchText['type'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, type: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('type')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('type')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('type')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 5. Sub-Category */}
+                  {/* Sub-category Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[130px] max-w-[130px] whitespace-nowrap relative group ${activeFilterCol === 'subcategory' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Sub-Category</span>
                       <button
                         onClick={(e) => toggleFilterPopup('subcategory', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['subcategory'] && columnFilters['subcategory'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['subcategory'] && columnFilters['subcategory'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter Sub-Category"
                       >
@@ -2421,20 +2344,36 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'subcategory' && (
-                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('subcategory')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute right-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Sub-Category</div>
+                          <input
+                            type="text"
+                            placeholder="Search sub-categories..."
+                            value={filterSearchText['subcategory'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, subcategory: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('subcategory')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('subcategory')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('subcategory')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 6. Status */}
+                  {/* Status Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[75px] max-w-[75px] whitespace-nowrap relative group ${activeFilterCol === 'status' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Status</span>
                       <button
                         onClick={(e) => toggleFilterPopup('status', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter Status"
                       >
@@ -2442,20 +2381,36 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'status' && (
-                      <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('status')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute right-1 top-full mt-1.5 w-32 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Status</div>
+                          <input
+                            type="text"
+                            placeholder="Search status..."
+                            value={filterSearchText['status'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, status: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('status')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('status')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('status')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 7. Description */}
+                  {/* Description Filter */}
                   <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-auto relative group ${activeFilterCol === 'description' ? 'z-50' : 'z-10'}`}>
                     <div className="flex items-center justify-between">
                       <span>Description</span>
                       <button
                         onClick={(e) => toggleFilterPopup('description', e)}
                         className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
-                          (columnFilters['description'] && columnFilters['description'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                          (columnFilters['description'] && columnFilters['description'].length > 0) ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
                         }`}
                         title="Filter Description"
                       >
@@ -2463,14 +2418,29 @@ const MaterialsTab = () => {
                       </button>
                     </div>
                     {activeFilterCol === 'description' && (
-                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                        {renderFilterPopupContent('description')}
-                      </div>
+                      <>
+                        <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveFilterCol(null); }} />
+                        <div className="absolute right-1 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded shadow-md z-50 p-2 text-left font-normal normal-case">
+                          <div className="text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider pb-1 border-b">Filter Description</div>
+                          <input
+                            type="text"
+                            placeholder="Search description..."
+                            value={filterSearchText['description'] || ''}
+                            onChange={(e) => setFilterSearchText({ ...filterSearchText, description: e.target.value })}
+                            className="w-full px-1.5 py-0.5 mb-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-blue-500 font-sans"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {renderFilterPopupContent('description')}
+                          <div className="flex items-center justify-between pt-2 border-t mt-2">
+                            <button onClick={() => clearColumnFilter('description')} className="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            <button onClick={() => applyColumnFilter('description')} className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">Apply</button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </TableHead>
 
-                  {/* 8. Actions */}
-                  <TableHead className="!px-2 !py-0.5 text-center text-slate-600 font-bold text-[11px] w-[110px] max-w-[110px]">Actions</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-right text-slate-600 font-bold text-[11px] w-[110px] max-w-[110px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2479,34 +2449,41 @@ const MaterialsTab = () => {
                     key={mat._id}
                     onClick={() => setSelectedMaterialId(selectedMaterialId === mat._id ? null : mat._id)}
                     className={`hover:bg-slate-50/50 border-b border-slate-200 cursor-pointer transition-all ${
-                      selectedRowIds.has(mat._id || mat.code || mat.name)
+                      selectedRowIds.has(mat._id)
                         ? 'bg-blue-50/40 hover:bg-blue-50/50'
                         : selectedMaterialId === mat._id ? 'bg-blue-50/40 hover:bg-blue-50/50 border-l-2 border-l-blue-600' : ''
-                    } ${
-                      (mat.status === 'Deleted' || status === 'Deleted') ? 'bg-red-50/70 hover:bg-red-100/80 border-l-[4px] border-l-red-600 text-red-900 font-semibold' : ''
                     }`}
                   >
-                    {(isSelectionMode || status === "Deleted") && (
-                      <TableCell className="!px-2.5 !py-1.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center" onClick={(e) => { e.stopPropagation(); handleRowSelect(mat._id || mat.code || mat.name); }}>
-                        <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedRowIds.has(mat._id || mat.code || mat.name)} onClick={(e) => e.stopPropagation()} onChange={() => handleRowSelect(mat._id || mat.code || mat.name)} />
-                      </TableCell>
-                    )}
-                    
-                    {/* 1. Material Name */}
                     <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap">
-                      <div className="relative group min-w-0 flex-1">
-                        <span className="block truncate text-xs text-slate-700 font-semibold cursor-pointer capitalize" title={mat.name || ''}>
-                          {(mat.name || '').toLowerCase()}
-                        </span>
-                        {mat.name && (
-                          <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
-                            {mat.name}
-                          </div>
+                      <div className="flex items-center gap-2 max-w-[220px]">
+                        {(isSelectionMode || typeFilter === "Deleted") && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIds.has(mat._id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedRowIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(mat._id)) next.delete(mat._id);
+                                else next.add(mat._id);
+                                return next;
+                              });
+                            }}
+                            className="w-3.5 h-3.5 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          />
                         )}
+                      <div className="relative group min-w-0 flex-1">
+                        <span className="block truncate text-xs text-slate-500 cursor-pointer capitalize">
+                          {mat.name.toLowerCase()}
+                        </span>
+                        {/* Compact side-pop tooltip on hover matching font-size */}
+                        <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
+                          {mat.name.toLowerCase()}
+                        </div>
+                      </div>
                       </div>
                     </TableCell>
-
-                    {/* 2. Code */}
                     <TableCell className="!px-2 !py-0.5 font-mono text-[11px] border-r border-slate-200 w-[80px] max-w-[80px] whitespace-nowrap">
                       <div className="relative group max-w-[80px]">
                         <button
@@ -2516,23 +2493,18 @@ const MaterialsTab = () => {
                         >
                           {mat.code}
                         </button>
+                        {/* Custom sideways hover tooltip showing full code next to it */}
                         <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none font-sans capitalize-none">
                           {mat.code}
                         </div>
                       </div>
                     </TableCell>
-
-                    {/* 3. UOM */}
                     <TableCell className="!px-2 !py-0.5 font-semibold text-xs text-slate-600 border-r border-slate-200 w-[65px] max-w-[65px] truncate whitespace-nowrap">{mat.unit}</TableCell>
-
-                    {/* 4. Category */}
                     <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[110px] max-w-[110px] truncate whitespace-nowrap">
                       <span className="text-xs text-slate-700 capitalize block truncate" title={mat.type}>
                         {mat.type}
                       </span>
                     </TableCell>
-
-                    {/* 5. Sub-Category */}
                     <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[130px] max-w-[130px] truncate whitespace-nowrap">
                       {mat.subcategory ? (
                         <span className="text-xs text-slate-700 capitalize block truncate cursor-pointer text-left" title={mat.subcategory}>
@@ -2542,8 +2514,6 @@ const MaterialsTab = () => {
                         <span className="text-slate-400 italic text-xs block text-left pl-2">-</span>
                       )}
                     </TableCell>
-
-                    {/* 6. Status */}
                     <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[75px] max-w-[75px] truncate whitespace-nowrap">
                       <span className={`text-xs font-semibold whitespace-nowrap ${
                         mat.status === 'Active' ? 'text-green-600' : 'text-slate-500'
@@ -2551,13 +2521,12 @@ const MaterialsTab = () => {
                         {mat.status || 'Active'}
                       </span>
                     </TableCell>
-
-                    {/* 7. Description */}
                     <TableCell className="!px-2 !py-0.5 text-xs text-slate-500 border-r border-slate-200 w-auto whitespace-nowrap">
                       <div className="relative group w-full">
-                        <span className="block truncate cursor-pointer text-xs text-slate-500" title={mat.description || ''}>
+                        <span className="block truncate cursor-pointer text-xs text-slate-500">
                           {mat.description || '-'}
                         </span>
+                        {/* Custom hover tooltip showing full description above it to prevent overlapping buttons */}
                         {mat.description && (
                           <div className="absolute hidden group-hover:block bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none">
                             {mat.description}
@@ -2565,53 +2534,73 @@ const MaterialsTab = () => {
                         )}
                       </div>
                     </TableCell>
-
-                    {/* 8. Actions */}
-                    <TableCell className="!px-2 !py-0.5 text-center border-r border-slate-200 w-[110px] max-w-[110px]">
-                      {(mat.isDeletedHistoryItem || mat.status === 'Deleted' || status === 'Deleted') ? (
-                        <div className="flex items-center justify-center space-x-2 text-slate-400">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleViewDetails(mat); }}
-                            className="hover:text-blue-600 transition-colors"
-                            title="View Material Details"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
-                            className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 p-1 rounded font-bold text-xs flex items-center space-x-1 transition-colors"
-                            title="Restore Material"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5 text-emerald-600" />
-                            <span className="text-[10px]">Restore</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center space-x-3 text-slate-400">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleViewDetails(mat); }}
-                            className="hover:text-blue-600 transition-colors"
-                            title="View Material Details"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleOpenEditModal(mat); }}
-                            disabled={!!importSummary}
-                            className={`hover:text-blue-600 transition-colors ${!!importSummary ? 'cursor-not-allowed opacity-50' : ''}`}
-                            title={!!importSummary ? "Edit disabled in Bulk Entry mode" : "Edit Record"}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteMaterial(mat._id); }}
-                            className="hover:text-red-600 transition-colors"
-                            title="Delete Material"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
+                    <TableCell className="!px-2 !py-0.5 text-right w-[110px] max-w-[110px] whitespace-nowrap relative overflow-visible">
+                      <div className="flex items-center justify-end space-x-1">
+                        {mat.isDeletedHistoryItem ? (
+                          <div className="flex items-center space-x-1.5">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenEditModal(mat); }}
+                              className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                              title="Edit Deleted Material details locally"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleOpenEditModal(mat)}
+                              className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700"
+                              title="Edit Record"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMaterial(mat._id)}
+                              className="p-0.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenDropdownId(openDropdownId === mat._id ? null : mat._id);
+                                }}
+                                className="p-0.5 rounded hover:bg-slate-150 text-slate-500 hover:text-slate-700 focus:outline-none"
+                                title="More actions"
+                              >
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </button>
+                              {openDropdownId === mat._id && (
+                                <>
+                                  <div 
+                                    className="fixed inset-0 z-40 cursor-default"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenDropdownId(null);
+                                    }}
+                                  />
+                                  <div 
+                                    className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      onClick={() => {
+                                        setViewingMaterialAudit(mat);
+                                        setIsAuditModalOpen(true);
+                                        setOpenDropdownId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 hover:bg-slate-50 flex items-center space-x-1.5 text-left font-medium text-xs text-slate-700"
+                                    >
+                                      <span>Revision History</span>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}</div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -2620,14 +2609,12 @@ const MaterialsTab = () => {
             </>
           )}
         </CardContent>
-      </Card>
-      
-      {/* CRUD Form Modal — Big Screen Format */}
+      </Card>      {/* CRUD Form Modal — Expanded Big Screen */}
       <Dialog
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         title={editingId ? 'Edit Material Details' : 'Register New Material'}
-        className="!max-w-[85vw] !w-[85vw] !rounded-xl p-6 shadow-2xl border border-slate-200"
+        className="!max-w-[75vw] !w-[75vw] !rounded-2xl p-6 shadow-2xl border border-slate-200"
       >
         <form onSubmit={handleFormSubmit} className="space-y-5">
           {formErrors.form && (
@@ -2850,12 +2837,12 @@ const MaterialsTab = () => {
         </div>
       </Dialog>
 
-      {/* Batch Edit Wizard Modal — Big Screen Format */}
+      {/* Batch Edit Wizard Modal */}
       <Dialog
         isOpen={isBatchEditModalOpen}
         onClose={() => setIsBatchEditModalOpen(false)}
         title={`Batch Edit - Item ${batchEditIdx + 1} of ${batchEditItems.length}`}
-        className="!max-w-[85vw] !w-[85vw] !rounded-xl p-6 shadow-2xl border border-slate-200"
+        className="!max-w-[50vw] !w-[50vw] !rounded-none"
       >
         <div className="space-y-4">
           {formErrors.form && (
@@ -3118,10 +3105,6 @@ const MaterialsTab = () => {
                       {importSummary.acceptedCount} new
                     </span>
                   </div>
-                  <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-md text-blue-800 text-[10px] font-semibold my-1">
-                    <svg className="h-3.5 w-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>Read-Only Preview — New material records will be added directly to Master Material with assigned M-codes. Editing is not allowed during bulk entry.</span>
-                  </div>
                   <p className="text-[10px] text-emerald-700 font-medium">
                     These materials are new and will be added directly to All Materials with the assigned codes below.
                   </p>
@@ -3208,7 +3191,7 @@ const MaterialsTab = () => {
               )}
 
               {/* ── BULK UPDATE: Professional Field-level diff panel ── */}
-              {!isAutoEntry && (importSummary.existingMatchCount || 0) > 0 && (() => {
+              {!isAutoEntry && importSummary && (() => {
                 const allExisting = editableAcceptedItems.filter(it => it.isExistingMatch && it.validationErrors.length === 0);
                 const changedItems = allExisting.filter(it => it.fieldChanges && it.fieldChanges.length > 0);
                 const noChangeItems = allExisting.filter(it => !it.fieldChanges || it.fieldChanges.length === 0);
@@ -3505,29 +3488,13 @@ const MaterialsTab = () => {
                                             };
                                             const updatedList = [...editableAcceptedItems];
                                             updatedList[idx] = updatedItemRaw;
-                                            // Duplication check against active and deleted items
-        const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
-        let foundConflict = false;
-        for (const row of rawRowsMapped) {
-          const rowCode = (row.code || '').toUpperCase().trim();
-          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
-            foundConflict = true;
-            break;
-          }
-        }
-        if (foundConflict) {
-          setMaterialBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
-          setImportSummary(null);
-          setEditableAcceptedItems([]);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          return;
-        }
-
-        const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
-                                            const { processedItems: nextProcessed, summary: nextSummary } = recalculateImportSummary(updatedList, systemExistingCodes, isAutoEntry);
-                                            setEditableAcceptedItems(nextProcessed);
-                                            setImportSummary(nextSummary);
+                                             const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
+                                             const { processedItems: nextProcessed, summary: nextSummary } = recalculateImportSummary(updatedList, systemExistingCodes, isAutoEntry);
+                                             setEditableAcceptedItems(nextProcessed);
+                                             setImportSummary(nextSummary);
+                                             const updatedConfirmed = new Set(confirmedReplacements);
+                                             updatedConfirmed.add(idx);
+                                             setConfirmedReplacements(updatedConfirmed);
                                             setEditingPreviewIdx(null);
                                             showToast('Material update edited successfully.', 'success');
                                           }}
@@ -3544,35 +3511,36 @@ const MaterialsTab = () => {
                                       </div>
                                     </div>
                                   )}
-                                  {/* Field diff table */}
-                                  {hasChanges && !isSkipped && (
-                                    <div className="px-3 pb-2 pt-0 border-t border-slate-100">
-                                      <table className="w-full text-[10px] mt-1.5">
-                                        <thead>
-                                          <tr className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">
-                                            <td className="pb-1 w-24">Field</td>
-                                            <td className="pb-1">Current (in DB)</td>
-                                            <td className="pb-1 text-center w-5"></td>
-                                            <td className="pb-1">New (from Excel)</td>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {item.fieldChanges.map((change, ci) => (
-                                            <tr key={ci} className="border-t border-slate-50">
-                                              <td className="py-1 font-bold text-slate-500">{change.label}</td>
-                                              <td className="py-1">
-                                                <span className="text-red-500 line-through bg-red-50 px-1 rounded">{change.oldVal || '—'}</span>
-                                              </td>
-                                              <td className="py-1 text-center text-slate-300 font-bold">→</td>
-                                              <td className="py-1">
-                                                <span className="text-emerald-700 font-bold bg-emerald-50 px-1 rounded">{change.newVal || '—'}</span>
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  )}
+                                  {/* Detected Field Changes Card */}
+                                   {hasChanges && !isSkipped && (
+                                     <div className="px-3 py-2 border-t border-blue-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/30 rounded-b-lg">
+                                       <div className="flex items-center justify-between mb-1.5">
+                                         <span className="text-[10px] font-extrabold text-blue-900 uppercase tracking-wider flex items-center gap-1">
+                                           <Info className="h-3.5 w-3.5 text-blue-600" />
+                                           Detected Field Changes ({item.fieldChanges.length} modified)
+                                         </span>
+                                         <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                                           Database ➔ Excel Sheet
+                                         </span>
+                                       </div>
+                                       <div className="space-y-1">
+                                         {item.fieldChanges.map((change, ci) => (
+                                           <div key={ci} className="bg-white border border-blue-100 p-1.5 rounded flex items-center justify-between text-xs shadow-2xs">
+                                             <span className="font-bold text-slate-700 w-1/3 truncate text-[11px]">{change.label}:</span>
+                                             <div className="flex items-center space-x-2 w-2/3 justify-end font-mono">
+                                               <span className="line-through text-red-500 bg-red-50 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-red-100">
+                                                 {change.oldVal !== undefined && change.oldVal !== null && change.oldVal !== '' ? String(change.oldVal) : '(Empty)'}
+                                               </span>
+                                               <span className="text-slate-400 font-bold">➔</span>
+                                               <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold text-[10px] border border-emerald-100">
+                                                 {change.newVal !== undefined && change.newVal !== null && change.newVal !== '' ? String(change.newVal) : '(Empty)'}
+                                               </span>
+                                             </div>
+                                           </div>
+                                         ))}
+                                       </div>
+                                     </div>
+                                   )}
                                 </div>
                               );
                             })}
@@ -3842,12 +3810,55 @@ const MaterialsTab = () => {
       {/* Floating Toast Notification Container */}
       
       {/* Blocking Popup for Bulk Upload Conflicts */}
+      {bulkUpdateSuccessModal && (
+        <Dialog open={true} onClose={() => setBulkUpdateSuccessModal(null)} title="Bulk Update Completed" className="!max-w-[450px]">
+          <div className="p-4 text-center space-y-4">
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+              <Check className="h-6 w-6 stroke-[3]" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800">Database Updated Successfully!</h3>
+              <p className="text-xs text-slate-500 mt-1 font-medium">
+                The requested changes from your spreadsheet have been verified and saved to the database.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 text-left text-xs font-semibold">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Updated:</span>
+                <span className="font-bold text-emerald-700">{bulkUpdateSuccessModal.updated} records</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">New Added:</span>
+                <span className="font-bold text-blue-700">{bulkUpdateSuccessModal.inserted} records</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Unchanged:</span>
+                <span className="font-bold text-slate-700">{bulkUpdateSuccessModal.autoKept} records</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Skipped:</span>
+                <span className="font-bold text-amber-700">{bulkUpdateSuccessModal.skipped} records</span>
+              </div>
+            </div>
+            <div className="pt-2">
+              <Button
+                size="sm"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded shadow"
+                onClick={() => setBulkUpdateSuccessModal(null)}
+              >
+                Done / Close
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
       {materialBlockingPopupMessage && (
         <Dialog
           isOpen={true}
           onClose={() => setMaterialBlockingPopupMessage('')}
-          title={materialBlockingPopupMessage.includes("Bulk Update") ? "Bulk Update System Notice" : "Ingestion Blocked — Notice"}
-          className="!max-w-[440px] !w-[440px] !rounded-xl"
+          title="Ingestion Blocked — Duplication Detected"
+          className="!max-w-[420px] !w-[420px] !rounded-xl"
         >
           <div className="space-y-4 text-xs">
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 font-semibold flex items-start space-x-2">
@@ -3935,7 +3946,6 @@ const VendorsTab = () => {
   const [vendorCurrentFileName, setVendorCurrentFileName] = useState('');
   const [activeVendorQueueIdx, setActiveVendorQueueIdx] = useState(0);
   const [confirmActionType, setConfirmActionType] = useState(null);
-  const [showBulkVendorUploadGrid, setShowBulkVendorUploadGrid] = useState(false);
 
   const validateQueueItem = (item) => {
     const missing = [];
@@ -4082,93 +4092,27 @@ const VendorsTab = () => {
     } catch(e) { return []; }
   });
 
-  useEffect(() => {
-    localStorage.setItem('erp_deleted_vendors_history', JSON.stringify(deletedVendorsHistory));
-  }, [deletedVendorsHistory]);
-
-  const resolveVendorConflictAndRestore = async (item, activeVendors) => {
-    let finalCode = item.vendorId || '';
-    let finalEmail = item.email || '';
-    let isCodeReassigned = false;
-
-    const activeVendorsOnly = activeVendors.filter(v => v.status !== 'Deleted');
-    const codeConflict = activeVendorsOnly.some(v => (v.vendorId || '').toUpperCase().trim() === (finalCode || '').toUpperCase().trim());
-    if (codeConflict || !finalCode) {
-      let maxNum = 1000;
-      activeVendorsOnly.forEach(v => {
-        const num = parseInt((v.vendorId || '').replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
-      });
-      finalCode = `V${maxNum + 1}`;
-      isCodeReassigned = true;
-    }
-
-    const emailConflict = activeVendorsOnly.some(v => (v.email || '').toLowerCase().trim() === (finalEmail || '').toLowerCase().trim());
-    if (emailConflict) {
-      const emailParts = (finalEmail || 'vendor@vms.com').split('@');
-      finalEmail = `${emailParts[0]}_restored_${Date.now().toString().slice(-4)}@${emailParts[1] || 'vms.com'}`;
-    }
-
-    const payload = { 
-      ...item, 
-      vendorId: finalCode, 
-      email: finalEmail,
-      status: 'Active' 
-    };
-    delete payload.deletedAt;
-    delete payload.deletionType;
-    delete payload.isDeletedHistoryItem;
-
-    if (item._id) {
-      try {
-        const putRes = await api.put(`/api/vendors/${item._id}`, payload);
-        if (putRes.data && putRes.data.success) {
-          return { success: true, item: putRes.data.data, isCodeReassigned, newCode: finalCode };
-        }
-      } catch (err) {
-        console.warn("PUT vendor by _id failed, attempting fallback restore", err);
-      }
-    }
-
-    if (item.vendorId) {
-      try {
-        const searchRes = await api.get(`/api/vendors?search=${encodeURIComponent(item.vendorId)}&limit=100`);
-        if (searchRes.data && searchRes.data.success && Array.isArray(searchRes.data.data)) {
-          const match = searchRes.data.data.find(v => (v.vendorId || '').toUpperCase() === item.vendorId.toUpperCase());
-          if (match && match._id) {
-            const putRes = await api.put(`/api/vendors/${match._id}`, payload);
-            if (putRes.data && putRes.data.success) {
-              return { success: true, item: putRes.data.data, isCodeReassigned, newCode: finalCode };
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Search vendor fallback failed", e);
-      }
-    }
-
-    delete payload._id;
-    const postRes = await api.post('/api/vendors', payload);
-    return { success: true, item: postRes.data.data, isCodeReassigned, newCode: finalCode };
-  };
-
   const handleRestoreVendor = async (item) => {
+    // Conflict Check
+    const hasConflict = vendors.some(v => (v.vendorId || '').toUpperCase().trim() === (item.vendorId || '').toUpperCase().trim());
+    if (hasConflict) {
+      alert(`Restoration Conflict Validation: The Vendor Code "${item.vendorId}" is already used by an active vendor. Restoral aborted.`);
+      showToast(`Conflict Check Failed: Vendor Code ${item.vendorId} already exists in active grid.`, "error");
+      return;
+    }
+
     try {
-      const result = await resolveVendorConflictAndRestore(item, vendors);
+      const payload = { ...item };
+      delete payload._id;
+      delete payload.deletedAt;
+      delete payload.deletionType;
+      const res = await api.post('/api/vendors', payload);
       setDeletedVendorsHistory((prev) => {
-        const updated = prev.filter(d => {
-          if (d._id && item._id) return d._id !== item._id;
-          if (d.vendorId && item.vendorId) return d.vendorId !== item.vendorId;
-          return d.name !== item.name;
-        });
+        const updated = prev.filter(d => (d._id && d._id !== item._id) || d.vendorId !== item.vendorId || d.name !== item.name);
         localStorage.setItem('erp_deleted_vendors_history', JSON.stringify(updated));
         return updated;
       });
-      if (result.isCodeReassigned) {
-        showToast(`Vendor "${item.name}" restored with auto-assigned code ${result.newCode} (resolved active conflict).`, "success");
-      } else {
-        showToast(`Vendor ${result.newCode || item.name || ''} restored successfully!`, "success");
-      }
+      showToast(`Success Notification: Vendor ${item.vendorId || item.name || ''} restored successfully!`, "success");
       await fetchVendors();
     } catch (err) {
       console.error(err);
@@ -4216,29 +4160,6 @@ const VendorsTab = () => {
         });
         setVendors(sorted);
       }
-
-      try {
-        const deletedRes = await api.get('/api/vendors?status=Deleted&limit=1000');
-        if (deletedRes.data && deletedRes.data.success && Array.isArray(deletedRes.data.data)) {
-          setDeletedVendorsHistory(prev => {
-            const combinedMap = new Map();
-            prev.forEach(item => {
-              const key = item._id || item.vendorId || item.name;
-              if (key) combinedMap.set(key.toString().toUpperCase(), item);
-            });
-            deletedRes.data.data.forEach(item => {
-              const key = item._id || item.vendorId || item.name;
-              if (key) {
-                const existing = combinedMap.get(key.toString().toUpperCase());
-                combinedMap.set(key.toString().toUpperCase(), { ...existing, ...item, status: 'Deleted', isDeletedHistoryItem: true });
-              }
-            });
-            return Array.from(combinedMap.values());
-          });
-        }
-      } catch (e) {
-        console.warn("Failed to fetch deleted vendors from server", e);
-      }
     } catch (err) {
       console.error(err);
       setError('Failed to fetch vendors.');
@@ -4262,61 +4183,10 @@ const VendorsTab = () => {
 
   // Bulk Edit selected rows
   const handleVendorBatchEdit = () => {
-    const itemsToEdit = vendors.filter(v => selectedVendorRowIds.has(v._id || v.vendorId || v.name));
+    const itemsToEdit = vendors.filter(v => selectedVendorRowIds.has(v._id));
     if (itemsToEdit.length > 0) {
       setVendorBatchEditItems(itemsToEdit.map(i => ({...i})));
       setVendorBatchEditIdx(0);
-      
-      const firstVendor = itemsToEdit[0];
-      setFormData({
-        vendorId: firstVendor.vendorId || '',
-        name: firstVendor.name || '',
-        company: firstVendor.company || '',
-        email: firstVendor.email || '',
-        phone: firstVendor.phone || '',
-        address: firstVendor.address || '',
-        address2: firstVendor.address2 || '',
-        zipCode: firstVendor.zipCode || '',
-        city: firstVendor.city || '',
-        state: firstVendor.state || '',
-        country: firstVendor.country || '',
-        gstin: firstVendor.gstin || '',
-        gstList: firstVendor.gstList && firstVendor.gstList.length > 0 ? firstVendor.gstList : [{ state: '', gstin: '' }],
-        hasNoGst: firstVendor.hasNoGst || false,
-        contacts: (firstVendor.contacts || []).map(c => ({
-          role: c.role || 'Primary',
-          department: c.department || 'Sourcing',
-          name: c.name || '',
-          phone: c.phone || '',
-          email: c.email || ''
-        })),
-        secondaryAddresses: (firstVendor.secondaryAddresses || []).map(addr => ({
-          address: addr.address || '',
-          address2: addr.address2 || '',
-          zipCode: addr.zipCode || '',
-          city: addr.city || '',
-          state: addr.state || '',
-          country: addr.country || 'India',
-          gstOption: addr.gstOption || 'same',
-          gstState: addr.gstState || '',
-          gstin: addr.gstin || ''
-        })),
-        notes: firstVendor.notes || '',
-        category: firstVendor.category || 'Food Processor',
-        subCategory: firstVendor.subCategory || '',
-        ffsc2200: firstVendor.ffsc2200 || false,
-        ffsc2200Expiry: firstVendor.ffsc2200Expiry ? firstVendor.ffsc2200Expiry.substring(0, 10) : '',
-        ffsc2200LicenseNo: firstVendor.ffsc2200LicenseNo || firstVendor.ffsc2200Qty || '',
-        fssai: firstVendor.fssai || false,
-        fssaiExpiry: firstVendor.fssaiExpiry ? firstVendor.fssaiExpiry.substring(0, 10) : '',
-        fssaiLicenseNo: firstVendor.fssaiLicenseNo || firstVendor.fssaiQty || '',
-        bankAccountHolder: firstVendor.bankAccountHolder || '',
-        bankAccountNumber: firstVendor.bankAccountNumber || '',
-        bankName: firstVendor.bankName || '',
-        ifscCode: firstVendor.ifscCode || '',
-        status: firstVendor.status || 'Active'
-      });
-      setFormErrors({});
       setIsVendorBatchEditModalOpen(true);
     }
   };
@@ -4332,16 +4202,23 @@ const VendorsTab = () => {
     if (!window.confirm(`Restore ${selectedVendorRowIds.size} selected vendor(s)?`)) return;
     let restored = 0, failed = 0;
     const restoredVendorIds = [];
-    let currentActiveVendors = [...vendors];
-
     for (const id of selectedVendorRowIds) {
-      const item = deletedVendorsHistory.find(v => (v._id || v.vendorId || v.name) === id);
+      const item = deletedVendorsHistory.find(v => v._id === id);
       if (item) {
+        // Conflict Check
+        const hasConflict = vendors.some(v => (v.vendorId || '').toUpperCase().trim() === (item.vendorId || '').toUpperCase().trim());
+        if (hasConflict) {
+          alert(`Restoration Conflict Validation: The Vendor Code "${item.vendorId}" is already used by an active vendor. Skipping restoral for this record.`);
+          failed++;
+          continue;
+        }
+
         try {
-          const result = await resolveVendorConflictAndRestore(item, currentActiveVendors);
-          if (result.item) {
-            currentActiveVendors.push(result.item);
-          }
+          const payload = { ...item };
+          delete payload._id;
+          delete payload.deletedAt;
+          delete payload.deletionType;
+          await api.post('/api/vendors', payload);
           restored++;
           restoredVendorIds.push(id);
         } catch (e) {
@@ -4359,7 +4236,7 @@ const VendorsTab = () => {
     }
     showToast(`Success Notification: ${restored} vendor(s) restored successfully!`, "success");
     setSelectedVendorRowIds(new Set());
-    await fetchVendors();
+    fetchVendors();
   };
 
   // Delete selected vendors
@@ -4369,7 +4246,7 @@ const VendorsTab = () => {
     let deleted = 0, failed = 0;
     const deletedItems = [];
     for (const id of selectedVendorRowIds) {
-      const target = vendors.find(v => (v._id || v.vendorId || v.name) === id);
+      const target = vendors.find(v => v._id === id);
       try {
         await api.delete(`/api/vendors/${id}`);
         deleted++;
@@ -4406,11 +4283,7 @@ const VendorsTab = () => {
 
   // Validate and classify a vendor row from Excel
   const getNextVendorAutoCounter = (baseSequence = null) => {
-    if (baseSequence !== null && baseSequence !== undefined) {
-      const raw = String(baseSequence).replace(/^[Vv]+/, '');
-      const num = parseInt(raw, 10);
-      if (!isNaN(num)) return num;
-    }
+    if (baseSequence) return baseSequence;
     let maxCounter = 1000;
     vendors.forEach(v => {
       if (v.vendorId) {
@@ -4521,8 +4394,6 @@ const VendorsTab = () => {
         } else {
           warnings.push(`Vendor '${name}': ${fieldChanges.length} field(s) will be updated. Review and confirm.`);
         }
-      } else {
-        errors.push(`Vendor '${name || excelCode}' does not exist in database. Bulk Update can only update existing vendors. Please use Bulk Entry to add new vendors first.`);
       }
     }
 
@@ -4739,7 +4610,7 @@ const VendorsTab = () => {
             break;
           }
         }
-        if (foundConflict) {
+        if (isVendorAutoEntry && foundConflict) {
           setVendorBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setVendorImportSummary(null);
           setEditableVendorItems([]);
@@ -4854,18 +4725,12 @@ const VendorsTab = () => {
         let foundConflict = false;
         for (const row of rawRowsMapped) {
           const rowCode = (row.vendorId || '').toUpperCase().trim();
-          if (rowCode) {
-            if (deletedCodes.has(rowCode)) {
-              foundConflict = true;
-              break;
-            }
-            if (isVendorAutoEntry && activeCodes.has(rowCode)) {
-              foundConflict = true;
-              break;
-            }
+          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
+            foundConflict = true;
+            break;
           }
         }
-        if (foundConflict) {
+        if ((typeof isVendorAutoEntry !== "undefined" ? isVendorAutoEntry : true) && foundConflict) {
           setVendorBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
           setVendorImportSummary(null);
           setEditableVendorItems([]);
@@ -4876,11 +4741,10 @@ const VendorsTab = () => {
         const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
         const { processedItems, summary } = recalculateVendorImportSummary(deduplicatedRows, systemExistingCodes, isVendorAutoEntry, baseSequence);
 
-        if (!isVendorAutoEntry && summary.existingMatchCount === 0) {
-          setVendorBlockingPopupMessage("Bulk Update cannot be used for new data. Please enter the data first using Bulk Entry or Manual Entry.");
+        if (!isVendorAutoEntry && summary.existingMatchCount === 0 && summary.acceptedCount > 0) {
+          showToast("System Notice: Bulk update will not work when all vendors are new. Please add vendors through Bulk Entry or Manual Entry", "error");
           setIsVendorImportModalOpen(false);
           setVendorImportSummary(null);
-          if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
           return;
         }
 
@@ -4925,12 +4789,9 @@ const VendorsTab = () => {
     const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
     const duplicates = validToImport.filter(item => {
       const code = (item.vendorId || '').toUpperCase().trim();
-      if (!code) return false;
-      if (deletedCodes.has(code)) return true;
-      if (!item.isExistingMatch && activeCodes.has(code)) return true;
-      return false;
+      return code && (activeCodes.has(code) || deletedCodes.has(code));
     });
-    if (duplicates.length > 0) {
+    if ((typeof isAutoEntry !== "undefined" ? isAutoEntry : (typeof isVendorAutoEntry !== "undefined" ? isVendorAutoEntry : true)) && duplicates.length > 0) {
       alert("This file data already is in database which is presented in deleted rows & sheets status.");
       showToast("Ingestion aborted: Duplicate data detected.", "error");
       return;
@@ -5098,7 +4959,6 @@ const VendorsTab = () => {
     gstin: '',
     gstList: [{ state: '', gstin: '' }],
     hasNoGst: false,
-    secondaryAddresses: [],
     
     contactQualityName: '',
     contactQualityPhone: '',
@@ -5223,42 +5083,16 @@ const VendorsTab = () => {
     });
   };
 
-  const getNextVendorAutoCode = () => {
-    let maxCounter = 1000;
-    vendors.forEach(v => {
-      const codeStr = v.vendorId || '';
-      const match = codeStr.match(/\d+/);
-      if (match) {
-        const num = parseInt(match[0], 10);
-        if (!isNaN(num) && num > maxCounter) maxCounter = num;
-      }
-    });
-    deletedVendorsHistory.forEach(v => {
-      const codeStr = v.vendorId || '';
-      const match = codeStr.match(/\d+/);
-      if (match) {
-        const num = parseInt(match[0], 10);
-        if (!isNaN(num) && num > maxCounter) maxCounter = num;
-      }
-    });
-    return `V${maxCounter + 1}`;
-  };
-
   const handleOpenAddModal = async () => {
     setEditingId(null);
     setCurrentDraftId(null); // Clear active draft pointer
     setFormErrors({});
     
-    let nextCodeStr = getNextVendorAutoCode();
+    let nextCodeStr = "V1001";
     try {
       const res = await api.get('/api/vendors/sequence-peek');
       if (res.data && res.data.nextCode) {
-        const serverCode = res.data.nextCode.startsWith('V') ? res.data.nextCode : `V${res.data.nextCode}`;
-        const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
-        if (!activeCodes.has(serverCode.toUpperCase()) && !deletedCodes.has(serverCode.toUpperCase())) {
-          nextCodeStr = serverCode;
-        }
+        nextCodeStr = res.data.nextCode;
       }
     } catch (e) {
       console.warn("Failed to fetch sequence peek", e);
@@ -5269,7 +5103,6 @@ const VendorsTab = () => {
       name: '', company: '', email: '', phone: '', address: '', address2: '',
       zipCode: '', city: '', state: '', country: '',
       gstin: '', gstList: [{ state: '', gstin: '' }], hasNoGst: false,
-      secondaryAddresses: [],
       
       contactQualityName: '', contactQualityPhone: '',
       contactAccountsName: '', contactAccountsPhone: '',
@@ -5309,17 +5142,6 @@ const VendorsTab = () => {
         name: c.name || '',
         phone: c.phone || '',
         email: c.email || ''
-      })),
-      secondaryAddresses: (vendor.secondaryAddresses || []).map(addr => ({
-        address: addr.address || '',
-        address2: addr.address2 || '',
-        zipCode: addr.zipCode || '',
-        city: addr.city || '',
-        state: addr.state || '',
-        country: addr.country || 'India',
-        gstOption: addr.gstOption || 'same',
-        gstState: addr.gstState || '',
-        gstin: addr.gstin || ''
       })),
       notes: vendor.notes || '',
       category: vendor.category || 'Food Processor',
@@ -5519,14 +5341,11 @@ const VendorsTab = () => {
   };
 
   const getUniqueValues = (col) => {
-    const list = status === 'Deleted' 
-      ? deletedVendorsHistory.map(d => ({ ...d, status: 'Deleted', isDeletedHistoryItem: true }))
-      : vendors;
     let vals = [];
     if (col === 'gstList') {
-      vals = list.flatMap(v => (v.gstList || []).map(g => g.gstin));
+      vals = vendors.flatMap(v => (v.gstList || []).map(g => g.gstin));
     } else {
-      vals = list.map(v => v[col]);
+      vals = vendors.map(v => v[col]);
     }
     return Array.from(new Set(vals.map(v => (v || '').toString().trim()))).filter(Boolean).sort();
   };
@@ -5549,21 +5368,18 @@ const VendorsTab = () => {
   };
 
   const handleCheckboxChange = (col, val, checked) => {
-    const current = columnFilters[col] || [];
-    let next = [];
+    const current = tempFilters[col] || [];
     if (checked) {
-      next = [...current, val];
+      setTempFilters({
+        ...tempFilters,
+        [col]: [...current, val]
+      });
     } else {
-      next = current.filter(x => x !== val);
+      setTempFilters({
+        ...tempFilters,
+        [col]: current.filter(x => x !== val)
+      });
     }
-    setColumnFilters(prev => ({
-      ...prev,
-      [col]: next
-    }));
-    setTempFilters(prev => ({
-      ...prev,
-      [col]: next
-    }));
   };
 
   const applyColumnFilter = (col) => {
@@ -5598,11 +5414,7 @@ const VendorsTab = () => {
   const renderFilterPopupContent = (col) => {
     let rawOptions = [];
     if (col === 'status') {
-      rawOptions = ["Active", "Inactive", "Draft", "Deleted"];
-    } else if (col === 'category') {
-      const predefined = categoryOptions.map(opt => opt.value);
-      const dynamic = getUniqueValues('category');
-      rawOptions = Array.from(new Set([...predefined, ...dynamic])).filter(Boolean).sort();
+      rawOptions = ["Active", "Inactive"];
     } else {
       rawOptions = getUniqueValues(col);
     }
@@ -5610,7 +5422,7 @@ const VendorsTab = () => {
     const filteredOptions = rawOptions.filter(val => {
       if (val.toLowerCase().includes(searchStr)) return true;
       if (col === 'name') {
-        const matchingVendors = vendors.filter(v => (v.name || '').toLowerCase() === val.toLowerCase());
+        const matchingVendors = vendors.filter(v => v.name.toLowerCase() === val.toLowerCase());
         const hasMatchingInfo = matchingVendors.some(v => 
           (v.company || '').toLowerCase().includes(searchStr) || 
           (v.category || '').toLowerCase().includes(searchStr)
@@ -5682,38 +5494,10 @@ const VendorsTab = () => {
 
   const filteredVendors = (() => {
     let list = vendors;
-    const selectedStatuses = columnFilters['status'] || [];
-    const isDeletedSelected = status === 'Deleted' || selectedStatuses.includes('Deleted');
-    if (isDeletedSelected) {
-      list = [...vendors, ...deletedVendorsHistory.map(d => ({ ...d, status: 'Deleted', isDeletedHistoryItem: true }))];
+    if (status === 'Deleted') {
+      list = deletedVendorsHistory.map(d => ({ ...d, status: 'Deleted', isDeletedHistoryItem: true }));
     }
     return list.filter(v => {
-      const vStatus = v.status || 'Active';
-
-      // 1. Top Status Dropdown Filter
-      if (status === 'Deleted') {
-        if (vStatus !== 'Deleted' && !v.isDeletedHistoryItem) return false;
-      } else if (status) {
-        if (vStatus !== status) return false;
-      } else {
-        // Default "All status" should NOT show deleted items unless header filter selected 'Deleted'
-        if ((vStatus === 'Deleted' || v.isDeletedHistoryItem) && !selectedStatuses.includes('Deleted')) {
-          return false;
-        }
-      }
-
-      // 2. Top Search Input
-      if (search) {
-        const query = search.toLowerCase();
-        const matchesName = (v.name || '').toLowerCase().includes(query);
-        const matchesCode = (v.vendorId || '').toLowerCase().includes(query);
-        const matchesCat = (v.category || '').toLowerCase().includes(query);
-        if (!matchesName && !matchesCode && !matchesCat) return false;
-      }
-      // 3. Top Category Dropdown
-      if (category && v.category !== category) return false;
-
-      // 4. Header Column Filter Checkboxes
       for (const col in columnFilters) {
         const selectedVals = columnFilters[col];
         if (selectedVals && selectedVals.length > 0) {
@@ -5850,25 +5634,6 @@ const VendorsTab = () => {
             <div class="field">
               <div class="label">Zip Code / PIN</div>
               <div class="value font-mono">${displayVal(viewingVendor.zipCode)}</div>
-            </div>
-          </div>
-
-          <!-- Section 2b: Secondary Plant Addresses -->
-          <div class="section-title">2b. Secondary Plant & Branch Locations</div>
-          <div class="grid">
-            <div class="field desc">
-              <div class="label">Additional Addresses</div>
-              <div class="value desc-val" style="min-height: auto;">
-                ${viewingVendor.secondaryAddresses && viewingVendor.secondaryAddresses.length > 0 
-                  ? viewingVendor.secondaryAddresses.map((addr, idx) => `
-                      <div style="margin-bottom: 6px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 4px; font-weight: normal; font-size: 10px;">
-                        <strong>Location #${idx + 1}:</strong> ${addr.address || ''} ${addr.address2 ? `, ${addr.address2}` : ''} ${addr.city ? `, ${addr.city}` : ''} ${addr.state ? `, ${addr.state}` : ''} ${addr.zipCode ? `- ${addr.zipCode}` : ''}
-                        ${addr.gstOption === 'separate' && addr.gstin ? `<span style="font-family: monospace; color: #2563eb; font-weight: bold; margin-left: 10px;">[GSTIN: ${addr.gstin} (${addr.gstState})]</span>` : ''}
-                      </div>
-                    `).join('')
-                  : '<span style="color: #94a3b8; font-style: italic; font-weight: normal;">No secondary plant or branch addresses registered.</span>'
-                }
-              </div>
             </div>
           </div>
 
@@ -6034,177 +5799,11 @@ const VendorsTab = () => {
 
   // Batch wizard navigation
   const handleVendorBatchWizardBack = () => {
-    const prevIdx = vendorBatchEditIdx - 1;
-    if (prevIdx >= 0) {
-      setVendorBatchEditIdx(prevIdx);
-      const prevVendor = vendorBatchEditItems[prevIdx];
-      setFormData({
-        vendorId: prevVendor.vendorId || '',
-        name: prevVendor.name || '',
-        company: prevVendor.company || '',
-        email: prevVendor.email || '',
-        phone: prevVendor.phone || '',
-        address: prevVendor.address || '',
-        address2: prevVendor.address2 || '',
-        zipCode: prevVendor.zipCode || '',
-        city: prevVendor.city || '',
-        state: prevVendor.state || '',
-        country: prevVendor.country || '',
-        gstin: prevVendor.gstin || '',
-        gstList: prevVendor.gstList && prevVendor.gstList.length > 0 ? prevVendor.gstList : [{ state: '', gstin: '' }],
-        hasNoGst: prevVendor.hasNoGst || false,
-        contacts: (prevVendor.contacts || []).map(c => ({
-          role: c.role || 'Primary',
-          department: c.department || 'Sourcing',
-          name: c.name || '',
-          phone: c.phone || '',
-          email: c.email || ''
-        })),
-        secondaryAddresses: (prevVendor.secondaryAddresses || []).map(addr => ({
-          address: addr.address || '',
-          address2: addr.address2 || '',
-          zipCode: addr.zipCode || '',
-          city: addr.city || '',
-          state: addr.state || '',
-          country: addr.country || 'India',
-          gstOption: addr.gstOption || 'same',
-          gstState: addr.gstState || '',
-          gstin: addr.gstin || ''
-        })),
-        notes: prevVendor.notes || '',
-        category: prevVendor.category || 'Food Processor',
-        subCategory: prevVendor.subCategory || '',
-        ffsc2200: prevVendor.ffsc2200 || false,
-        ffsc2200Expiry: prevVendor.ffsc2200Expiry ? prevVendor.ffsc2200Expiry.substring(0, 10) : '',
-        ffsc2200LicenseNo: prevVendor.ffsc2200LicenseNo || prevVendor.ffsc2200Qty || '',
-        fssai: prevVendor.fssai || false,
-        fssaiExpiry: prevVendor.fssaiExpiry ? prevVendor.fssaiExpiry.substring(0, 10) : '',
-        fssaiLicenseNo: prevVendor.fssaiLicenseNo || prevVendor.fssaiQty || '',
-        bankAccountHolder: prevVendor.bankAccountHolder || '',
-        bankAccountNumber: prevVendor.bankAccountNumber || '',
-        bankName: prevVendor.bankName || '',
-        ifscCode: prevVendor.ifscCode || '',
-        status: prevVendor.status || 'Active'
-      });
-      setFormErrors({});
-    }
+    setVendorBatchEditIdx(prev => Math.max(0, prev - 1));
   };
 
-  const handleVendorBatchWizardSaveCurrent = async () => {
-    if (!formData.name) {
-      showToast("Vendor Name is required.", "error");
-      return;
-    }
-    const currentVendor = vendorBatchEditItems[vendorBatchEditIdx];
-    setSubmitLoading(true);
-    try {
-      const payload = {
-        name: formData.name,
-        company: formData.company,
-        email: formData.email,
-        phone: formData.phone,
-        address: formData.address,
-        address2: formData.address2,
-        zipCode: formData.zipCode,
-        city: formData.city,
-        state: formData.state,
-        country: formData.country,
-        gstin: formData.gstin,
-        gstList: formData.gstList,
-        hasNoGst: formData.hasNoGst,
-        contacts: formData.contacts,
-        secondaryAddresses: formData.secondaryAddresses || [],
-        notes: formData.notes,
-        category: formData.category,
-        subCategory: formData.subCategory,
-        ffsc2200: formData.ffsc2200,
-        ffsc2200Expiry: formData.ffsc2200Expiry || null,
-        ffsc2200LicenseNo: formData.ffsc2200LicenseNo,
-        ffsc2200Qty: formData.ffsc2200LicenseNo,
-        fssai: formData.fssai,
-        fssaiExpiry: formData.fssaiExpiry || null,
-        fssaiLicenseNo: formData.fssaiLicenseNo,
-        fssaiQty: formData.fssaiLicenseNo,
-        bankAccountHolder: formData.bankAccountHolder,
-        bankAccountNumber: formData.bankAccountNumber,
-        bankName: formData.bankName,
-        ifscCode: formData.ifscCode,
-        status: formData.status
-      };
-
-      const res = await api.put(`/api/vendors/${currentVendor._id}`, payload);
-      let updatedItems = [...vendorBatchEditItems];
-      if (res.data) {
-        showToast(`Vendor ${formData.name} updated successfully.`, 'success');
-        updatedItems[vendorBatchEditIdx] = res.data;
-        setVendorBatchEditItems(updatedItems);
-      }
-      
-      if (vendorBatchEditIdx < vendorBatchEditItems.length - 1) {
-        const nextIdx = vendorBatchEditIdx + 1;
-        setVendorBatchEditIdx(nextIdx);
-        const nextVendor = updatedItems[nextIdx];
-        setFormData({
-          vendorId: nextVendor.vendorId || '',
-          name: nextVendor.name || '',
-          company: nextVendor.company || '',
-          email: nextVendor.email || '',
-          phone: nextVendor.phone || '',
-          address: nextVendor.address || '',
-          address2: nextVendor.address2 || '',
-          zipCode: nextVendor.zipCode || '',
-          city: nextVendor.city || '',
-          state: nextVendor.state || '',
-          country: nextVendor.country || '',
-          gstin: nextVendor.gstin || '',
-          gstList: nextVendor.gstList && nextVendor.gstList.length > 0 ? nextVendor.gstList : [{ state: '', gstin: '' }],
-          hasNoGst: nextVendor.hasNoGst || false,
-          contacts: (nextVendor.contacts || []).map(c => ({
-            role: c.role || 'Primary',
-            department: c.department || 'Sourcing',
-            name: c.name || '',
-            phone: c.phone || '',
-            email: c.email || ''
-          })),
-          secondaryAddresses: (nextVendor.secondaryAddresses || []).map(addr => ({
-            address: addr.address || '',
-            address2: addr.address2 || '',
-            zipCode: addr.zipCode || '',
-            city: addr.city || '',
-            state: addr.state || '',
-            country: addr.country || 'India',
-            gstOption: addr.gstOption || 'same',
-            gstState: addr.gstState || '',
-            gstin: addr.gstin || ''
-          })),
-          notes: nextVendor.notes || '',
-          category: nextVendor.category || 'Food Processor',
-          subCategory: nextVendor.subCategory || '',
-          ffsc2200: nextVendor.ffsc2200 || false,
-          ffsc2200Expiry: nextVendor.ffsc2200Expiry ? nextVendor.ffsc2200Expiry.substring(0, 10) : '',
-          ffsc2200LicenseNo: nextVendor.ffsc2200LicenseNo || nextVendor.ffsc2200Qty || '',
-          fssai: nextVendor.fssai || false,
-          fssaiExpiry: nextVendor.fssaiExpiry ? nextVendor.fssaiExpiry.substring(0, 10) : '',
-          fssaiLicenseNo: nextVendor.fssaiLicenseNo || nextVendor.fssaiQty || '',
-          bankAccountHolder: nextVendor.bankAccountHolder || '',
-          bankAccountNumber: nextVendor.bankAccountNumber || '',
-          bankName: nextVendor.bankName || '',
-          ifscCode: nextVendor.ifscCode || '',
-          status: nextVendor.status || 'Active'
-        });
-        setFormErrors({});
-      } else {
-        setIsVendorBatchEditModalOpen(false);
-        setSelectedVendorRowIds(new Set());
-        setIsVendorSelectionMode(false);
-        fetchVendors();
-      }
-    } catch (e) {
-      console.error(e);
-      showToast(e.response?.data?.message || "Failed to update vendor.", "error");
-    } finally {
-      setSubmitLoading(false);
-    }
+  const handleVendorBatchWizardSaveCurrent = () => {
+    setVendorBatchEditIdx(prev => Math.min((vendorBatchEditItems || []).length - 1, prev + 1));
   };
 
   // Zip/PIN code auto-fetch - fills city, state, country from India Post API
@@ -6228,34 +5827,6 @@ const VendorsTab = () => {
       }
     } catch (e) {
       console.warn('PIN lookup failed', e);
-    }
-  };
-
-  const handleSecondaryZipCodeBlur = async (zip, idx) => {
-    const code = (zip || '').trim();
-    if (code.length !== 6 || !/^\d{6}$/.test(code)) return;
-    try {
-      const res = await fetch(`https://api.postalpincode.in/pincode/${code}`);
-      const data = await res.json();
-      if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice?.length > 0) {
-        const po = data[0].PostOffice[0];
-        const newCity = po.District || po.Name || '';
-        const newState = po.State || '';
-        
-        const updatedList = [...(formData.secondaryAddresses || [])];
-        if (updatedList[idx]) {
-          updatedList[idx] = {
-            ...updatedList[idx],
-            city: newCity,
-            state: newState,
-            country: 'India'
-          };
-          setFormData(prev => ({ ...prev, secondaryAddresses: updatedList }));
-          showToast(`Location updated for PIN ${code}: ${newCity}, ${newState}`, 'success');
-        }
-      }
-    } catch (e) {
-      console.warn('Secondary PIN lookup failed', e);
     }
   };
 
@@ -6310,17 +5881,7 @@ const VendorsTab = () => {
               <span>{isVendorSelectionMode ? 'Cancel Selection' : 'Select Options'}</span>
             </Button>
 
-            {isVendorSelectionMode && selectedVendorRowIds.size > 0 && status !== 'Deleted' && (
-              <button
-                onClick={handleVendorBatchEdit}
-                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-blue-600 text-white hover:bg-blue-700 shadow-sm text-xs transition-colors"
-              >
-                <Edit2 className="h-3.5 w-3.5" />
-                <span>Edit Selected ({selectedVendorRowIds.size})</span>
-              </button>
-            )}
-
-            {isVendorSelectionMode && selectedVendorRowIds.size > 0 && status !== 'Deleted' && (
+            {isVendorSelectionMode && selectedVendorRowIds.size > 0 && (
               <button
                 onClick={handleDeleteSelectedVendors}
                 className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm text-xs"
@@ -6391,16 +5952,7 @@ const VendorsTab = () => {
                     <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(true); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
                       <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /><span>Bulk Entry</span>
                     </button>
-                    <button onClick={() => {
-                      setShowVendorFunctionList(false);
-                      if (vendors.length === 0) {
-                        setVendorBlockingPopupMessage("No vendor data exists in the database. Please enter vendor data first using Bulk Entry or Manual Entry.");
-                        return;
-                      }
-                      setVendorImportSummary(null);
-                      setIsVendorAutoEntry(false);
-                      setIsVendorImportModalOpen(true);
-                    }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
+                    <button onClick={() => { setShowVendorFunctionList(false); setIsVendorAutoEntry(false); setIsVendorImportModalOpen(true); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium">
                       <RefreshCw className="h-3.5 w-3.5 text-amber-600" /><span>Bulk Update</span>
                     </button>
                     <button onClick={() => { setShowVendorFunctionList(false); handleExportVendorGrid(); }} className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 font-medium border-t border-slate-100">
@@ -6550,8 +6102,8 @@ const VendorsTab = () => {
         </Card>
       )}
 
-      {/* Grid Container */}
-      <div className="w-full max-w-full bg-slate-50 border border-slate-300 rounded-md shadow-sm flex flex-col font-sans overflow-hidden text-slate-800">
+      {/* Grid */}
+      <Card className="shadow-none border border-slate-200 overflow-visible bg-white">
         <CardContent className="p-0 overflow-visible">
           {error && <div className="p-5 text-center text-sm font-semibold text-red-500 bg-red-50">{error}</div>}
 
@@ -6573,6 +6125,8 @@ const VendorsTab = () => {
                     <div className="w-20 h-3.5 rounded animate-shimmer" />
                     <div className="w-1/5 h-3.5 rounded animate-shimmer" />
                     <div className="w-16 h-3.5 rounded animate-shimmer" />
+                    <div className="w-20 h-3.5 rounded animate-shimmer" />
+                    <div className="w-16 h-3 rounded animate-shimmer" />
                     <div className="w-1/4 h-3.5 rounded animate-shimmer" />
                   </div>
                 ))}
@@ -6581,264 +6135,216 @@ const VendorsTab = () => {
           ) : (status === 'Deleted' ? deletedVendorsHistory.length === 0 : vendors.length === 0) ? (
             <div className="p-20 text-center text-slate-400 font-medium">No vendors registered.</div>
           ) : (
-            <div className="w-full overflow-x-auto overflow-y-auto max-h-[500px] bg-white">
-              <Table className="w-full border-collapse table-fixed select-none text-xs">
-                {/* Explicit Column Sizing Definitions */}
-                <colgroup>
-                  {(isVendorSelectionMode || status === "Deleted") && <col className="w-[3%]" />}
-                  <col className="w-[8%]" />   {/* Code Column */}
-                  <col className="w-[20%]" />  {/* Vendor Name */}
-                  <col className="w-[13%]" />  {/* Category */}
-                  <col className="w-[11%]" />  {/* Sub Category */}
-                  <col className="w-[11%]" />  {/* FSSAI Validity */}
-                  <col className="w-[14%]" />  {/* GSTIN Code */}
-                  <col className="w-[8%]" />   {/* Status Column */}
-                  <col className="w-[10%]" />  {/* Actions Column */}
-                </colgroup>
-
-                <TableHeader className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider text-[12px] sticky top-0 z-10 shadow-sm">
-                  <TableRow className="bg-slate-50 border-b border-slate-200">
-                    {(isVendorSelectionMode || status === "Deleted") && (
-                      <TableHead className="!px-2 !py-0.5 text-center border-r border-slate-200 bg-slate-50 relative z-20 w-[40px] max-w-[40px]">
-                        <input
-                          type="checkbox"
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
-                          checked={filteredVendors.length > 0 && filteredVendors.every(v => selectedVendorRowIds.has(v._id || v.vendorId || v.name))}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedVendorRowIds(new Set(filteredVendors.map(v => v._id || v.vendorId || v.name)));
-                            } else {
-                              setSelectedVendorRowIds(new Set());
-                            }
-                          }}
-                        />
-                      </TableHead>
-                    )}
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider">Code</TableHead>
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider relative">
-                      <div className="flex items-center justify-between">
-                        <span>Vendor Name</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('name', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-0.5 ${
-                            (columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                          }`}
-                          title="Filter Vendor Name"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'name' && (
-                        <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('name')}
-                        </div>
-                      )}
-                    </TableHead>
-                    
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider relative">
-                      <div className="flex items-center justify-between">
-                        <span>Category</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('category', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-0.5 ${
-                            (columnFilters['category'] && columnFilters['category'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                          }`}
-                          title="Filter Category"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'category' && (
-                        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('category')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider">Sub Category</TableHead>
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider">FSSAI Validity</TableHead>
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider">GSTIN Code</TableHead>
-
-                    <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold border-r border-slate-200 bg-slate-50 whitespace-nowrap text-[12px] uppercase tracking-wider relative">
-                      <div className="flex items-center justify-between">
-                        <span>Status</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('status', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-0.5 ${
-                            (columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                          }`}
-                          title="Filter Status"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'status' && (
-                        <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('status')}
-                        </div>
-                      )}
-                    </TableHead>
-                    <TableHead className="!px-2 !py-0.5 text-center text-slate-600 font-bold bg-slate-50 border-r border-slate-200 text-[12px] uppercase tracking-wider">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="divide-y divide-slate-150 text-[13px] text-slate-700 font-normal">
-                  {filteredVendors.map((v) => (
-                    <TableRow 
-                      key={v._id} 
-                      onClick={() => setSelectedVendor(selectedVendor?._id === v._id ? null : v)}
-                      className={`hover:bg-slate-50/50 border-b border-slate-200 cursor-pointer transition-all ${
-                        selectedVendorRowIds.has(v._id || v.vendorId || v.name)
-                          ? 'bg-blue-50/40 hover:bg-blue-50/50'
-                          : selectedVendor?._id === v._id ? 'bg-blue-50/40 hover:bg-blue-50/50 border-l-2 border-l-blue-600' : ''
-                      } ${
-                        (v.status === 'Deleted' || status === 'Deleted') ? 'bg-red-50/70 hover:bg-red-100/80 border-l-[4px] border-l-red-600 text-red-900 font-semibold' : ''
-                      }`}
-                    >
-                      {(isVendorSelectionMode || status === "Deleted") && (
-                        <TableCell className="!px-2.5 !py-1.5 text-left border-r border-slate-200 text-center w-[40px] max-w-[40px]" onClick={(e) => { e.stopPropagation(); handleVendorRowSelect(v._id || v.vendorId || v.name); }}>
-                          <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id || v.vendorId || v.name)} onClick={(e) => e.stopPropagation()} onChange={() => handleVendorRowSelect(v._id || v.vendorId || v.name)} />
-                        </TableCell>
-                      )}
-                      <TableCell
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleViewDetails(v);
-                        }}
-                        className="!px-2 !py-0.5 font-mono text-[12px] text-blue-600 font-bold border-r border-slate-200 cursor-pointer hover:underline truncate"
-                        title="Click to view full vendor profile & print PDF"
+            <Table className="border border-slate-200 w-full table-fixed">
+              <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
+                <TableRow>
+                  {(isVendorSelectionMode || status === "Deleted") && (
+                  <TableHead className="!px-3 !py-1 w-[40px] max-w-[40px] text-center border-r border-slate-200 relative z-20">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                      checked={filteredVendors.length > 0 && filteredVendors.every(v => selectedVendorRowIds.has(v._id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedVendorRowIds(new Set(filteredVendors.map(v => v._id)));
+                        } else {
+                          setSelectedVendorRowIds(new Set());
+                        }
+                      }}
+                    />
+                  </TableHead>
+                )}
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[90px] max-w-[90px] whitespace-nowrap">Code</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[140px] max-w-[140px] whitespace-nowrap relative">
+                    <div className="flex items-center justify-between">
+                      <span>Vendor Name</span>
+                      <button
+                        onClick={(e) => toggleFilterPopup('name', e)}
+                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
+                          (columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        title="Filter Vendor Name"
                       >
-                        <span className="cursor-pointer hover:underline truncate block">{v.vendorId || '-'}</span>
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[13px] font-semibold text-slate-700 truncate whitespace-nowrap overflow-hidden text-ellipsis relative group/vtooltip">
-                        <span className="truncate block cursor-pointer w-full text-ellipsis overflow-hidden whitespace-nowrap capitalize" title={v.name || ''}>
-                          {(v.name || "-").toLowerCase()}
-                        </span>
-                        {v.name && (
-                          <div className="absolute left-2 bottom-full mb-1 hidden group-hover/vtooltip:block z-50 bg-slate-900 text-white text-xs font-semibold px-2 py-0.5 rounded shadow-xl whitespace-nowrap pointer-events-none max-w-[400px] truncate capitalize">
-                            {v.name}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[13px] text-slate-700 capitalize truncate whitespace-nowrap overflow-hidden text-ellipsis" title={v.category || 'Other'}>
-                        {v.category || 'Other'}
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[13px] text-slate-700 capitalize truncate whitespace-nowrap overflow-hidden text-ellipsis" title={v.subCategory || '-'}>
-                        {v.subCategory || '-'}
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[13px] whitespace-nowrap truncate">
-                        {(() => {
-                          if (!v.fssaiExpiry) {
-                            return <span className="text-slate-400 font-semibold">NA</span>;
-                          }
-                          const expiryDate = new Date(v.fssaiExpiry);
-                          if (isNaN(expiryDate.getTime())) {
-                            return <span className="text-slate-400 font-semibold">NA</span>;
-                          }
-                          const isExpired = expiryDate < new Date();
-                          const day = String(expiryDate.getDate()).padStart(2, '0');
-                          const month = String(expiryDate.getMonth() + 1).padStart(2, '0');
-                          const year = expiryDate.getFullYear();
-                          const formattedDate = `${day}/${month}/${year}`;
-                          
-                          if (isExpired) {
-                            return (
-                              <span className="text-red-600 font-bold">
-                                {formattedDate} <span className="text-[9px] text-red-500 font-bold">(Expired)</span>
-                              </span>
-                            );
-                          } else {
-                            return (
-                              <span className="text-green-600 font-semibold truncate">{formattedDate}</span>
-                            );
-                          }
-                        })()}
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 font-mono text-[12px] text-slate-700 truncate whitespace-nowrap" title={v.gstin || (v.gstList && v.gstList[0] ? v.gstList[0].gstin : '') || '-'}>
-                        {v.gstin || (v.gstList && v.gstList[0] ? v.gstList[0].gstin : '') || <span className="text-slate-400 font-semibold italic">NA</span>}
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[13px] whitespace-nowrap">
-                        {(() => {
-                          const statusVal = v.status || 'Active';
-                          if (statusVal === 'Active') {
-                            return <span className="text-green-600 font-semibold">Active</span>;
-                          } else if (statusVal === 'Inactive') {
-                            return <span className="text-slate-500 font-semibold">Inactive</span>;
-                          } else if (statusVal === 'Draft') {
-                            return <span className="text-slate-600 font-semibold">Draft</span>;
-                          } else if (statusVal === 'Deleted') {
-                            return <span className="text-red-700 font-bold uppercase tracking-wider">Deleted</span>;
-                          }
-                          return <span className="text-slate-500 font-medium text-xs">{statusVal}</span>;
-                        })()}
-                      </TableCell>
-                      <TableCell className="!px-2 !py-0.5 text-center border-r border-slate-200">
-                        {(v.isDeletedHistoryItem || v.status === 'Deleted' || status === 'Deleted') ? (
-                          <div className="flex items-center justify-center space-x-2 text-slate-400">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
-                              className="hover:text-blue-600 transition-colors"
-                              title="View Full Details"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRestoreVendor(v); }}
-                              className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 p-1 rounded font-bold text-xs flex items-center space-x-1 transition-colors"
-                              title="Restore Vendor"
-                            >
-                              <RefreshCw className="h-3.5 w-3.5 text-emerald-600" />
-                              <span className="text-[10px]">Restore</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center space-x-3 text-slate-400">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
-                              className="hover:text-blue-600 transition-colors"
-                              title="View Full Details"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
-                              disabled={!!vendorImportSummary}
-                              className={`hover:text-emerald-600 transition-colors ${!!vendorImportSummary ? 'cursor-not-allowed opacity-50' : ''}`}
-                              title={!!vendorImportSummary ? "Edit disabled in Bulk Entry mode" : "Edit Vendor"}
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
-                              className="hover:text-red-600 transition-colors"
-                              title="Delete Vendor"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                        <Filter className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {activeFilterCol === 'name' && (
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                        {renderFilterPopupContent('name')}
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Company</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">Notes/Desc</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap">GST Reg</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative">
+                    <div className="flex items-center justify-between">
+                      <span>Category</span>
+                      <button
+                        onClick={(e) => toggleFilterPopup('category', e)}
+                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
+                          (columnFilters['category'] && columnFilters['category'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        title="Filter Category"
+                      >
+                        <Filter className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {activeFilterCol === 'category' && (
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                        {renderFilterPopupContent('category')}
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative">
+                    <div className="flex items-center justify-between">
+                      <span>Status</span>
+                      <button
+                        onClick={(e) => toggleFilterPopup('status', e)}
+                        className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${
+                          (columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        title="Filter Status"
+                      >
+                        <Filter className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {activeFilterCol === 'status' && (
+                      <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                        {renderFilterPopupContent('status')}
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="border-r border-slate-200">Email</TableHead>
+                  <TableHead className="!px-2 !py-0.5 text-right text-slate-600 font-bold text-[11px] w-[120px] max-w-[120px] border-r border-slate-200">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredVendors.map((v) => (
+                  <TableRow key={v._id} className="hover:bg-slate-50/50 border-b border-slate-200">
+                    {(isVendorSelectionMode || status === "Deleted") && (
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center" onClick={(e) => { e.stopPropagation(); handleVendorRowSelect(v._id); }}>
+                      <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedVendorRowIds.has(v._id)} onChange={() => handleVendorRowSelect(v._id)} />
+                    </TableCell>
+                    )}
+                    <TableCell
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleViewDetails(v);
+                      }}
+                      className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[90px] max-w-[90px] font-mono text-[11px] font-bold text-blue-600 cursor-pointer hover:underline hover:text-blue-800"
+                      title="Click to view full vendor profile & print PDF"
+                    >
+                      <span className="cursor-pointer hover:underline">{v.vendorId || '-'}</span>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-xs font-semibold text-slate-800 capitalize relative group/vtooltip max-w-[140px]">
+                      <span className="truncate block cursor-pointer" title={v.name || ''}>
+                        {v.name ? v.name.toLowerCase() : "-"}
+                      </span>
+                      {v.name && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/vtooltip:block z-50 bg-slate-900 text-white text-[11px] font-semibold px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none capitalize">
+                          {v.name}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700 font-medium relative group/ctooltip max-w-[120px]">
+                      <span className="truncate block cursor-pointer" title={v.company || ''}>
+                        {v.company || "-"}
+                      </span>
+                      {v.company && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/ctooltip:block z-50 bg-slate-900 text-white text-[11px] font-semibold px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none">
+                          {v.company}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-500 max-w-[130px] relative group/ntooltip">
+                      <span className="truncate block cursor-pointer" title={v.notes || ''}>
+                        {v.notes || '-'}
+                      </span>
+                      {v.notes && v.notes.trim().length > 0 && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/ntooltip:block z-50 bg-slate-900 text-white text-[11px] font-medium p-2.5 rounded-lg shadow-2xl max-w-[280px] whitespace-normal pointer-events-none">
+                          <div className="font-bold text-[9px] text-blue-400 uppercase tracking-wider mb-1">Notes & Description</div>
+                          {v.notes}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-600 font-mono">
+                      {v.hasNoGst ? (
+                        <span className="text-[10px] text-slate-400 italic">No GST</span>
+                      ) : (v.gstList && v.gstList.length > 0) ? (
+                        <div className="flex items-center space-x-1" title={v.gstList.map(g => `${g.state}: ${g.gstin}`).join(' | ')}>
+                          <span className="truncate max-w-[85px] font-bold text-blue-600">{v.gstList[0].gstin}</span>
+                          {v.gstList.length > 1 && (
+                            <span className="px-1 py-0.2 bg-blue-100 text-blue-800 text-[9px] font-bold rounded">+${v.gstList.length - 1}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="truncate max-w-[100px]" title={v.gstin || ''}>{v.gstin || '-'}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-slate-700">
+                      {v.category || 'Other'}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[110px] max-w-[110px]">
+                      <Badge className={v.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]' : 'bg-slate-100 text-slate-700 border-slate-200 text-[10px]'}>
+                        {v.status || 'Active'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 text-[11px] text-blue-600 font-medium relative group/etooltip max-w-[140px]">
+                      <span className="truncate block cursor-pointer" title={v.email || ''}>
+                        {v.email || "-"}
+                      </span>
+                      {v.email && (
+                        <div className="absolute left-2 bottom-full mb-1 hidden group-hover/etooltip:block z-50 bg-slate-900 text-white text-[11px] font-semibold px-2.5 py-1 rounded shadow-xl whitespace-nowrap pointer-events-none lowercase">
+                          {v.email}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="!px-2 !py-0.5 text-right border-r border-slate-200 w-[140px] max-w-[140px]">
+                      {v.isDeletedHistoryItem ? (
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="Edit Deleted Vendor details locally"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end space-x-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleViewDetails(v); }}
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="View Full Details"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEditModal(v); }}
+                            disabled={!!vendorImportSummary}
+                            className={`p-1 rounded text-slate-500 ${!!vendorImportSummary ? 'cursor-not-allowed opacity-50' : 'hover:text-emerald-600 hover:bg-emerald-50 transition-colors'}`}
+                            title={!!vendorImportSummary ? "Edit disabled in Bulk Entry mode" : "Edit Vendor"}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
+                            className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Delete Vendor"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}</TableBody>
+            </Table>
           )}
         </CardContent>
-
-        {/* 3. BOTTOM BOUNDARY STATUS BAR CLOSURE */}
-        <div className="px-3 py-1.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-[11px] font-medium text-slate-500">
-          <div className="flex items-center space-x-4">
-            <span>Total Records: <strong className="text-slate-700">{filteredVendors.length} Rows Listed</strong></span>
-            {selectedVendorRowIds.size > 0 && <span>Selected: <strong className="text-blue-600">{selectedVendorRowIds.size}</strong></span>}
-          </div>
-          <div className="flex items-center space-x-1.5 text-[10px]">
-            <span className="text-slate-400">Page 1 of 1</span>
-            <button className="px-1.5 py-0.5 border border-slate-300 rounded bg-white text-slate-400 cursor-not-allowed" disabled>◀</button>
-            <button className="px-1.5 py-0.5 border border-slate-300 rounded bg-white text-slate-400 cursor-not-allowed" disabled>▶</button>
-          </div>
-        </div>
-      </div>
+      </Card>
 
       {/* CRUD Form Modal */}
       <Dialog
@@ -7047,318 +6553,262 @@ const VendorsTab = () => {
           {/* Section 3: Location Details */}
           <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
             <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Address & Location Details</h4>
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Address & Location</h4>
             </div>
-            <div className="p-4 bg-white">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                
-                {/* Primary Location Box */}
-                <div className="border border-blue-150 rounded-lg overflow-hidden bg-slate-50/30">
-                  <div className="bg-blue-50 border-b border-blue-150 px-3 py-1.5 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Primary Location (Default)</span>
-                    <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1.5 py-0.2 rounded-full">Required</span>
-                  </div>
-                  <div className="p-3 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input label="Address Line 1" id="vaddress1" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="!text-xs !h-9" />
-                      <Input label="Address Line 2" id="vaddress2" value={formData.address2} onChange={(e) => setFormData({ ...formData, address2: e.target.value })} className="!text-xs !h-9" />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input 
-                        label="Zip Code (PIN)" 
-                        id="vzip" 
-                        value={formData.zipCode} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setFormData({ ...formData, zipCode: val });
-                          if (val.length === 6) {
-                            handleZipCodeBlur(val);
-                          }
-                        }} 
-                        onBlur={() => { if (formData.zipCode && formData.zipCode.length === 6) handleZipCodeBlur(formData.zipCode); }}
-                        className="!text-xs !h-9 font-mono" 
-                      />
-                      <Input label="City" id="vcity" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="!text-xs !h-9" />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input label="State" id="vstate" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-9" />
-                      <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-9" />
-                    </div>
+            <div className="p-4 bg-white space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Address Line 1" id="vaddress1" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="!text-xs !h-9" />
+                <Input label="Address Line 2" id="vaddress2" value={formData.address2} onChange={(e) => setFormData({ ...formData, address2: e.target.value })} className="!text-xs !h-9" />
+              </div>
+              
+              <div className="grid grid-cols-4 gap-4">
+                <Input 
+                  label="Zip Code (PIN)" 
+                  id="vzip" 
+                  value={formData.zipCode} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData({ ...formData, zipCode: val });
+                    if (val.length === 6) {
+                      handleZipCodeBlur(val);
+                    }
+                  }} 
+                  onBlur={() => { if (formData.zipCode && formData.zipCode.length === 6) handleZipCodeBlur(formData.zipCode); }}
+                  className="!text-xs !h-9 font-mono" 
+                />
+                <Input label="City" id="vcity" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="!text-xs !h-9" />
+                <Input label="State" id="vstate" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-9" />
+                <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-9" />
+              </div>
 
-                    {/* Default Address GSTIN Field */}
-                    <div className="border-t border-blue-150 pt-2.5 mt-1">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Primary Address GSTIN</label>
-                        <label className="flex items-center space-x-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            id="hasNoGst"
-                            checked={formData.hasNoGst}
-                            onChange={(e) => {
-                              setFormData({ 
-                                ...formData, 
-                                hasNoGst: e.target.checked,
-                                gstin: e.target.checked ? '' : formData.gstin,
-                                gstList: e.target.checked ? [] : [{ state: formData.state || '', gstin: formData.gstin || '' }]
-                              });
-                            }}
-                            className="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 border-slate-300"
-                          />
-                          <span className="text-[10px] font-semibold text-slate-500">Unregistered / No GST</span>
-                        </label>
-                      </div>
-
-                      {!formData.hasNoGst && (
-                        <Input 
-                          label="Default GSTIN Code" 
-                          id="vgstin" 
-                          placeholder="15-character GSTIN (e.g. 27ABCDE1234F1Z5)" 
-                          value={formData.gstin || (formData.gstList && formData.gstList[0] ? formData.gstList[0].gstin : '')} 
-                          onChange={(e) => {
-                            const val = e.target.value.toUpperCase().trim();
-                            let detectedState = formData.state;
-                            if (val.length >= 2) {
-                              const prefix = val.substring(0, 2);
-                              if (gstStateMap[prefix]) {
-                                detectedState = gstStateMap[prefix];
-                              }
-                            }
-                            const updatedGstList = [...(formData.gstList || [])];
-                            updatedGstList[0] = { state: detectedState || formData.state || '', gstin: val };
-                            setFormData({ ...formData, gstin: val, state: detectedState || formData.state, gstList: updatedGstList });
-                          }} 
-                          className="!text-xs !h-9 font-mono uppercase" 
-                        />
-                      )}
-                    </div>
+              {/* Secondary Address Options */}
+              <div className="border-t border-slate-200 pt-4 mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="hasSecondaryAddress"
+                      checked={formData.hasSecondaryAddress}
+                      onChange={(e) => setFormData({ ...formData, hasSecondaryAddress: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300 cursor-pointer"
+                    />
+                    <label htmlFor="hasSecondaryAddress" className="text-xs font-bold text-slate-800 cursor-pointer">+ Add Secondary Plant / Branch Address</label>
                   </div>
                 </div>
 
-                {/* Secondary Locations loop */}
-                {(formData.secondaryAddresses || []).map((addr, idx) => (
-                  <div key={idx} className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50/30">
-                    <div className="bg-slate-100 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Secondary Location #{idx + 1}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = (formData.secondaryAddresses || []).filter((_, i) => i !== idx);
-                          setFormData({ ...formData, secondaryAddresses: updated });
-                        }}
-                        className="text-[10px] text-red-600 hover:text-red-800 font-bold flex items-center space-x-1"
-                        title="Remove Address"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        <span>Remove</span>
-                      </button>
+                {formData.hasSecondaryAddress && (
+                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-4">
+                    <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200 pb-1">
+                      Secondary Plant / Branch Location
                     </div>
-                    <div className="p-3 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <Input 
-                          label="Address Line 1" 
-                          id={`vsecaddress1_${idx}`} 
-                          placeholder="Building / Street / Landmark" 
-                          value={addr.address || ''} 
-                          onChange={(e) => {
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], address: e.target.value };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                          }} 
-                          className="!text-xs !h-9" 
-                        />
-                        <Input 
-                          label="Address Line 2" 
-                          id={`vsecaddress2_${idx}`} 
-                          placeholder="Area / Suite / Locality" 
-                          value={addr.address2 || ''} 
-                          onChange={(e) => {
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], address2: e.target.value };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                          }} 
-                          className="!text-xs !h-9" 
-                        />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <Input 
-                          label="Zip Code (PIN)" 
-                          id={`vseczip_${idx}`} 
-                          placeholder="6-digit PIN"
-                          value={addr.zipCode || ''} 
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], zipCode: val };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                            if (val.length === 6) {
-                              handleSecondaryZipCodeBlur(val, idx);
-                            }
-                          }} 
-                          onBlur={() => { if (addr.zipCode && addr.zipCode.length === 6) handleSecondaryZipCodeBlur(addr.zipCode, idx); }}
-                          className="!text-xs !h-9 font-mono" 
-                        />
-                        <Input 
-                          label="City" 
-                          id={`vseccity_${idx}`} 
-                          value={addr.city || ''} 
-                          onChange={(e) => {
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], city: e.target.value };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                          }} 
-                          className="!text-xs !h-9" 
-                        />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <Input 
-                          label="State" 
-                          id={`vsecstate_${idx}`} 
-                          value={addr.state || ''} 
-                          onChange={(e) => {
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], state: e.target.value };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                          }} 
-                          className="!text-xs !h-9" 
-                        />
-                        <Input 
-                          label="Country" 
-                          id={`vseccountry_${idx}`} 
-                          value={addr.country || 'India'} 
-                          onChange={(e) => {
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], country: e.target.value };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                          }} 
-                          className="!text-xs !h-9" 
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input label="Address Line 1" id="vsecaddress1" placeholder="Building / Street / Landmark" value={formData.secondaryAddress || ''} onChange={(e) => setFormData({ ...formData, secondaryAddress: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="Address Line 2" id="vsecaddress2" placeholder="Area / Suite / Locality" value={formData.secondaryAddress2 || ''} onChange={(e) => setFormData({ ...formData, secondaryAddress2: e.target.value })} className="!text-xs !h-9" />
+                    </div>
+                    
+                    <div className="grid grid-cols-4 gap-4">
+                      <Input 
+                        label="Zip Code (PIN)" 
+                        id="vseczip" 
+                        placeholder="6-digit PIN"
+                        value={formData.secondaryZipCode || ''} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, secondaryZipCode: val });
+                          if (val.length === 6) {
+                            handleSecondaryZipCodeBlur(val);
+                          }
+                        }} 
+                        onBlur={() => { if (formData.secondaryZipCode && formData.secondaryZipCode.length === 6) handleSecondaryZipCodeBlur(formData.secondaryZipCode); }}
+                        className="!text-xs !h-9 font-mono" 
+                      />
+                      <Input label="City" id="vseccity" value={formData.secondaryCity || ''} onChange={(e) => setFormData({ ...formData, secondaryCity: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="State" id="vsecstate" value={formData.secondaryState || ''} onChange={(e) => setFormData({ ...formData, secondaryState: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="Country" id="vseccountry" value={formData.secondaryCountry || 'India'} onChange={(e) => setFormData({ ...formData, secondaryCountry: e.target.value })} className="!text-xs !h-9" />
+                    </div>
+
+                    {/* Secondary Address GST Option */}
+                    <div className="border-t border-slate-200 pt-3">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase block mb-2">GST Registration for Secondary Address</label>
+                      <div className="flex items-center space-x-6 text-xs font-semibold text-slate-700">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="secGstOpt"
+                            value="same"
+                            checked={!formData.secondaryGstOption || formData.secondaryGstOption === 'same'}
+                            onChange={() => setFormData({ ...formData, secondaryGstOption: 'same' })}
+                            className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                          />
+                          <span>Use Same GSTIN as Primary Address</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="secGstOpt"
+                            value="separate"
+                            checked={formData.secondaryGstOption === 'separate'}
+                            onChange={() => setFormData({ ...formData, secondaryGstOption: 'separate' })}
+                            className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                          />
+                          <span>Add Separate GSTIN for this Address</span>
+                        </label>
                       </div>
 
-                      {/* GST Options for this secondary address */}
-                      <div className="border-t border-slate-200 pt-3">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase block mb-2">GST Registration for Secondary Address</label>
-                        <div className="flex flex-col space-y-2 text-xs font-semibold text-slate-700">
-                          <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name={`secGstOpt_${idx}`}
-                              value="same"
-                              checked={!addr.gstOption || addr.gstOption === 'same'}
-                              onChange={() => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], gstOption: 'same' };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }}
-                              className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                            />
-                            <span>Use Same GSTIN as Primary Address</span>
-                          </label>
-                          <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name={`secGstOpt_${idx}`}
-                              value="separate"
-                              checked={addr.gstOption === 'separate'}
-                              onChange={() => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], gstOption: 'separate' };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }}
-                              className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                            />
-                            <span>Add Separate GSTIN for this Address</span>
-                          </label>
-                        </div>
-
-                        {addr.gstOption === 'separate' && (
-                          <div className="grid grid-cols-2 gap-3 mt-3 bg-white p-3 rounded border border-slate-200">
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
-                              <select
-                                value={addr.gstState || ''}
-                                onChange={(e) => {
-                                  const selState = e.target.value;
-                                  const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selState);
-                                  let currentGstin = addr.gstin || '';
-                                  if (foundCode) {
-                                    if (currentGstin.length >= 2) {
-                                      currentGstin = foundCode + currentGstin.substring(2);
-                                    } else {
-                                      currentGstin = foundCode;
-                                    }
+                      {formData.secondaryGstOption === 'separate' && (
+                        <div className="grid grid-cols-2 gap-4 mt-3 bg-white p-3 rounded border border-slate-200">
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                            <select
+                              value={formData.secondaryGstState || ''}
+                              onChange={(e) => {
+                                const selState = e.target.value;
+                                const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selState);
+                                let currentGstin = formData.secondaryGstin || '';
+                                if (foundCode) {
+                                  if (currentGstin.length >= 2) {
+                                    currentGstin = foundCode + currentGstin.substring(2);
+                                  } else {
+                                    currentGstin = foundCode;
                                   }
-                                  const updated = [...(formData.secondaryAddresses || [])];
-                                  updated[idx] = { ...updated[idx], gstState: selState, gstin: currentGstin };
-                                  setFormData({ ...formData, secondaryAddresses: updated });
-                                }}
-                                className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
-                              >
-                                <option value="">Select State</option>
-                                {Object.values(gstStateMap).map(st => (
-                                  <option key={st} value={st}>{st}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="flex flex-col space-y-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase">Secondary GSTIN Code</label>
-                              <input
-                                type="text"
-                                placeholder="15-character GSTIN"
-                                value={addr.gstin || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value.toUpperCase().trim();
-                                  let detectedState = addr.gstState;
-                                  if (val.length >= 2) {
-                                    const prefix = val.substring(0, 2);
-                                    if (gstStateMap[prefix]) detectedState = gstStateMap[prefix];
-                                  }
-                                  const updated = [...(formData.secondaryAddresses || [])];
-                                  updated[idx] = { ...updated[idx], gstState: detectedState, gstin: val };
-                                  setFormData({ ...formData, secondaryAddresses: updated });
-                                }}
-                                className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
-                              />
-                            </div>
+                                }
+                                setFormData({ ...formData, secondaryGstState: selState, secondaryGstin: currentGstin });
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                            >
+                              <option value="">Select State</option>
+                              {Object.values(gstStateMap).map(st => (
+                                <option key={st} value={st}>{st}</option>
+                              ))}
+                            </select>
                           </div>
+
+                          <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Secondary GSTIN Code</label>
+                            <input
+                              type="text"
+                              placeholder="15-character GSTIN"
+                              value={formData.secondaryGstin || ''}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase().trim();
+                                let detectedState = formData.secondaryGstState;
+                                if (val.length >= 2) {
+                                  const prefix = val.substring(0, 2);
+                                  if (gstStateMap[prefix]) detectedState = gstStateMap[prefix];
+                                }
+                                setFormData({ ...formData, secondaryGstState: detectedState, secondaryGstin: val });
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 mt-3">
+                <div className="flex items-center space-x-2 mb-3">
+                  <input
+                    type="checkbox"
+                    id="hasNoGst"
+                    checked={formData.hasNoGst}
+                    onChange={(e) => {
+                      setFormData({ 
+                        ...formData, 
+                        hasNoGst: e.target.checked,
+                        gstList: e.target.checked ? [] : [{ state: '', gstin: '' }]
+                      });
+                    }}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 border-slate-300"
+                  />
+                  <label htmlFor="hasNoGst" className="text-[11px] font-semibold text-slate-700">No GSTIN (Composition/Unregistered)</label>
+                </div>
+
+                {!formData.hasNoGst && (
+                  <div className="space-y-3">
+                    {formData.gstList.map((gst, idx) => (
+                      <div key={idx} className="flex items-end space-x-3 bg-slate-50 p-3 rounded-md border border-slate-200">
+                        <div className="flex-1 flex flex-col space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                          <select
+                            value={gst.state}
+                            onChange={(e) => {
+                              const selectedState = e.target.value;
+                              const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selectedState);
+                              const updatedList = [...formData.gstList];
+                              let currentGstin = updatedList[idx].gstin;
+                              if (foundCode) {
+                                if (currentGstin.length >= 2) {
+                                  currentGstin = foundCode + currentGstin.substring(2);
+                                } else {
+                                  currentGstin = foundCode;
+                                }
+                              }
+                              updatedList[idx] = { state: selectedState, gstin: currentGstin };
+                              setFormData({ ...formData, gstList: updatedList });
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
+                          >
+                            <option value="">Select State</option>
+                            {Object.values(gstStateMap).map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 flex flex-col space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN Code</label>
+                          <input
+                            type="text"
+                            placeholder="15-char GSTIN"
+                            value={gst.gstin}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase().trim();
+                              let detectedState = gst.state;
+                              if (val.length >= 2) {
+                                const prefix = val.substring(0, 2);
+                                if (gstStateMap[prefix]) {
+                                  detectedState = gstStateMap[prefix];
+                                }
+                              }
+                              const updatedList = [...formData.gstList];
+                              updatedList[idx] = { state: detectedState, gstin: val };
+                              setFormData({ ...formData, gstList: updatedList });
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
+                          />
+                        </div>
+                        {formData.gstList.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = formData.gstList.filter((_, i) => i !== idx);
+                              setFormData({ ...formData, gstList: updated });
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs font-bold pb-1.5 px-2"
+                          >
+                            Remove
+                          </button>
                         )}
                       </div>
-                    </div>
+                    ))}
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ 
+                          ...formData, 
+                          gstList: [...formData.gstList, { state: '', gstin: '' }] 
+                        });
+                      }}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add Another GST Registration</span>
+                    </button>
                   </div>
-                ))}
-
-                {/* Add Another Address Card */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newAddress = {
-                      address: '',
-                      address2: '',
-                      zipCode: '',
-                      city: '',
-                      state: '',
-                      country: 'India',
-                      gstOption: 'same',
-                      gstState: '',
-                      gstin: ''
-                    };
-                    setFormData({
-                      ...formData,
-                      secondaryAddresses: [...(formData.secondaryAddresses || []), newAddress]
-                    });
-                  }}
-                  className="border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 transition-all group min-h-[220px]"
-                >
-                  <div className="p-3 bg-slate-100 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 rounded-full transition-colors mb-3">
-                    <Plus className="h-6 w-6" />
-                  </div>
-                  <span className="text-xs font-bold text-slate-700 group-hover:text-blue-700">+ Add Another Address & Location</span>
-                  <span className="text-[10px] text-slate-500 mt-1 max-w-[240px]">Define additional branch offices, plants, or warehouses.</span>
-                </button>
+                )}
               </div>
             </div>
           </div>
@@ -7516,22 +6966,10 @@ const VendorsTab = () => {
                 <span className="text-xs text-slate-700 font-medium">{viewingVendor.address || 'N/A'} {viewingVendor.address2 ? `, ${viewingVendor.address2}` : ''} {viewingVendor.city ? `, ${viewingVendor.city}` : ''} {viewingVendor.state ? `, ${viewingVendor.state}` : ''} {viewingVendor.zipCode ? `- ${viewingVendor.zipCode}` : ''}</span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Secondary Plant Addresses</span>
-                <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-                  {viewingVendor.secondaryAddresses && viewingVendor.secondaryAddresses.length > 0 ? (
-                    viewingVendor.secondaryAddresses.map((addr, idx) => (
-                      <div key={idx} className="text-xs text-slate-700 font-medium border-b border-slate-100 pb-1 mb-1 last:border-0 last:pb-0 last:mb-0">
-                        <span className="font-semibold text-slate-500">#{idx + 1}: </span>
-                        {addr.address || ''} {addr.address2 ? `, ${addr.address2}` : ''} {addr.city ? `, ${addr.city}` : ''} {addr.state ? `, ${addr.state}` : ''} {addr.zipCode ? `- ${addr.zipCode}` : ''}
-                        {addr.gstOption === 'separate' && addr.gstin && (
-                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">GSTIN: {addr.gstin} ({addr.gstState})</div>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-400 italic font-medium">No secondary addresses registered</span>
-                  )}
-                </div>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Secondary Plant Address</span>
+                <span className="text-xs text-slate-700 font-medium">
+                  {viewingVendor.hasSecondaryAddress ? `${viewingVendor.secondaryAddress || ''} ${viewingVendor.secondaryAddress2 ? `, ${viewingVendor.secondaryAddress2}` : ''} ${viewingVendor.secondaryCity ? `, ${viewingVendor.secondaryCity}` : ''} ${viewingVendor.secondaryState ? `, ${viewingVendor.secondaryState}` : ''} ${viewingVendor.secondaryZipCode ? `- ${viewingVendor.secondaryZipCode}` : ''}` : 'No secondary address'}
+                </span>
               </div>
             </div>
 
@@ -7611,545 +7049,59 @@ const VendorsTab = () => {
         isOpen={isVendorBatchEditModalOpen}
         onClose={() => setIsVendorBatchEditModalOpen(false)}
         title={`Batch Edit Vendor (${vendorBatchEditIdx + 1} of ${vendorBatchEditItems.length})`}
-        className="!max-w-[85vw] !w-[85vw] !rounded-xl"
       >
         {vendorBatchEditItems.length > 0 && (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center justify-between shadow-xs">
+            <div className="grid grid-cols-2 gap-4">
+              <Input 
+                label="Vendor Name"
+                value={vendorBatchEditItems[vendorBatchEditIdx]?.name || ''}
+                onChange={(e) => {
+                  const newItems = [...vendorBatchEditItems];
+                  newItems[vendorBatchEditIdx].name = e.target.value;
+                  setVendorBatchEditItems(newItems);
+                }}
+              />
+              <Input 
+                label="Company"
+                value={vendorBatchEditItems[vendorBatchEditIdx]?.company || ''}
+                onChange={(e) => {
+                  const newItems = [...vendorBatchEditItems];
+                  newItems[vendorBatchEditIdx].company = e.target.value;
+                  setVendorBatchEditItems(newItems);
+                }}
+              />
+              <Input 
+                label="Category"
+                value={vendorBatchEditItems[vendorBatchEditIdx]?.category || ''}
+                onChange={(e) => {
+                  const newItems = [...vendorBatchEditItems];
+                  newItems[vendorBatchEditIdx].category = e.target.value;
+                  setVendorBatchEditItems(newItems);
+                }}
+              />
               <div>
-                <span className="text-[10px] text-blue-600 font-mono font-bold block uppercase tracking-wider">Currently Editing</span>
-                <span className="text-xs font-bold text-slate-800">{formData.vendorId} — {formData.name || 'Unnamed Vendor'}</span>
-              </div>
-              <div className="text-[10px] bg-blue-100 text-blue-800 font-extrabold px-2.5 py-0.5 rounded-full">
-                Record {vendorBatchEditIdx + 1} of {vendorBatchEditItems.length}
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+                <select 
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                  value={vendorBatchEditItems[vendorBatchEditIdx]?.status || ''}
+                  onChange={(e) => {
+                    const newItems = [...vendorBatchEditItems];
+                    newItems[vendorBatchEditIdx].status = e.target.value;
+                    setVendorBatchEditItems(newItems);
+                  }}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Draft">Draft</option>
+                </select>
               </div>
             </div>
-
-            <div className="space-y-6 text-left max-h-[60vh] overflow-y-auto pr-2">
-              
-              {/* Section 1: Basic Information */}
-              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Basic Information</h4>
-                </div>
-                <div className="p-4 grid grid-cols-2 gap-4 bg-white">
-                  <Input
-                    label="Vendor ID"
-                    value={formData.vendorId || ''}
-                    disabled={true}
-                    className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md font-mono text-slate-500 bg-slate-50 cursor-not-allowed font-bold"
-                  />
-                  <Input
-                    label="Vendor Name"
-                    placeholder="e.g. Acme Supplies Ltd"
-                    value={formData.name || ''}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-                      setFormData({ ...formData, name: val });
-                    }}
-                    className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
-                    required
-                  />
-                  <div className="flex flex-col space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 uppercase">Category</label>
-                    <select
-                      value={formData.category || 'Food Processor'}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9"
-                    >
-                      <option value="Food Processor">Food Processor</option>
-                      <option value="Contract Manufacturer">Contract Manufacturer</option>
-                      <option value="Retail Brand">Retail Brand</option>
-                      <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <Input
-                    label="Sub-Category"
-                    placeholder="e.g. Packaging, Raw Material"
-                    value={formData.subCategory || ''}
-                    onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
-                    className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
-                  />
-                  <div className="flex flex-col space-y-1.5 col-span-2">
-                    <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
-                    <select
-                      value={formData.status || 'Active'}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9 w-full"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                      <option value="Draft">Draft</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Contact List */}
-              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Contacts Directory</h4>
-                </div>
-                <div className="p-4 bg-white space-y-4">
-                  <div className="space-y-3">
-                    {(formData.contacts || []).length === 0 && (
-                      <div className="text-xs text-slate-400 italic py-2">No contacts added yet.</div>
-                    )}
-                    {(formData.contacts || []).map((contact, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-3 bg-slate-50 p-3 rounded-md border border-slate-200 items-end">
-                        <div className="col-span-2 flex flex-col space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Role</label>
-                          <select
-                            value={contact.role || 'Primary'}
-                            onChange={(e) => {
-                              const updated = [...(formData.contacts || [])];
-                              updated[idx] = { ...updated[idx], role: e.target.value };
-                              setFormData({ ...formData, contacts: updated });
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 cursor-pointer"
-                          >
-                            <option value="Primary">Primary</option>
-                            <option value="Secondary">Secondary</option>
-                            <option value="Quality">Quality</option>
-                            <option value="Accounts">Accounts</option>
-                            <option value="Logistics">Logistics</option>
-                            <option value="Sales">Sales</option>
-                            <option value="Other">Other</option>
-                          </select>
-                        </div>
-
-                        <div className="col-span-2 flex flex-col space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Department</label>
-                          <select
-                            value={contact.department || 'Sourcing'}
-                            onChange={(e) => {
-                              const updated = [...(formData.contacts || [])];
-                              updated[idx] = { ...updated[idx], department: e.target.value };
-                              setFormData({ ...formData, contacts: updated });
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 cursor-pointer"
-                          >
-                            <option value="Sourcing">Sourcing</option>
-                            <option value="Quality">Quality</option>
-                            <option value="Finance / Accounts">Finance / Accounts</option>
-                            <option value="Logistics">Logistics</option>
-                            <option value="Sales">Sales</option>
-                            <option value="Other">Other</option>
-                          </select>
-                        </div>
-
-                        <div className="col-span-3 flex flex-col space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Name</label>
-                          <input
-                            type="text"
-                            value={contact.name || ''}
-                            onChange={(e) => {
-                              const updated = [...(formData.contacts || [])];
-                              updated[idx] = { ...updated[idx], name: e.target.value };
-                              setFormData({ ...formData, contacts: updated });
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
-                          />
-                        </div>
-
-                        <div className="col-span-2 flex flex-col space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
-                          <input
-                            type="text"
-                            value={contact.phone || ''}
-                            onChange={(e) => {
-                              const updated = [...(formData.contacts || [])];
-                              updated[idx] = { ...updated[idx], phone: e.target.value };
-                              setFormData({ ...formData, contacts: updated });
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
-                          />
-                        </div>
-
-                        <div className="col-span-2 flex flex-col space-y-1">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase">Email Address</label>
-                          <input
-                            type="email"
-                            value={contact.email || ''}
-                            onChange={(e) => {
-                              const updated = [...(formData.contacts || [])];
-                              updated[idx] = { ...updated[idx], email: e.target.value };
-                              setFormData({ ...formData, contacts: updated });
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
-                          />
-                        </div>
-
-                        <div className="col-span-1 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (formData.contacts || []).filter((_, i) => i !== idx);
-                              setFormData({ ...formData, contacts: updated });
-                            }}
-                            className="text-red-500 hover:text-red-700 font-bold text-xs pb-2"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData({ 
-                        ...formData, 
-                        contacts: [...(formData.contacts || []), { role: 'Primary', department: 'Sourcing', name: '', phone: '', email: '' }] 
-                      });
-                    }}
-                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Contact</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Section 3: Location Details */}
-              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Address & Location Details</h4>
-                </div>
-                <div className="p-4 bg-white">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    
-                    {/* Primary Location Box */}
-                    <div className="border border-blue-150 rounded-lg overflow-hidden bg-slate-50/30">
-                      <div className="bg-blue-50 border-b border-blue-150 px-3 py-1.5 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Primary Location (Default)</span>
-                        <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1.5 py-0.2 rounded-full">Required</span>
-                      </div>
-                      <div className="p-3 space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input label="Address Line 1" value={formData.address || ''} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="!text-xs !h-9" />
-                          <Input label="Address Line 2" value={formData.address2 || ''} onChange={(e) => setFormData({ ...formData, address2: e.target.value })} className="!text-xs !h-9" />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input 
-                            label="Zip Code (PIN)" 
-                            value={formData.zipCode || ''} 
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setFormData({ ...formData, zipCode: val });
-                              if (val.length === 6) {
-                                handleZipCodeBlur(val);
-                              }
-                            }} 
-                            onBlur={() => { if (formData.zipCode && formData.zipCode.length === 6) handleZipCodeBlur(formData.zipCode); }}
-                            className="!text-xs !h-9 font-mono" 
-                          />
-                          <Input label="City" value={formData.city || ''} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="!text-xs !h-9" />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input label="State" value={formData.state || ''} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-9" />
-                          <Input label="Country" value={formData.country || ''} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-9" />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Secondary Locations loop */}
-                    {(formData.secondaryAddresses || []).map((addr, idx) => (
-                      <div key={idx} className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50/30">
-                        <div className="bg-slate-100 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Secondary Location #{idx + 1}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (formData.secondaryAddresses || []).filter((_, i) => i !== idx);
-                              setFormData({ ...formData, secondaryAddresses: updated });
-                            }}
-                            className="text-[10px] text-red-600 hover:text-red-800 font-bold flex items-center space-x-1"
-                            title="Remove Address"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            <span>Remove</span>
-                          </button>
-                        </div>
-                        <div className="p-3 space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <Input 
-                              label="Address Line 1" 
-                              placeholder="Building / Street / Landmark" 
-                              value={addr.address || ''} 
-                              onChange={(e) => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], address: e.target.value };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }} 
-                              className="!text-xs !h-9" 
-                            />
-                            <Input 
-                              label="Address Line 2" 
-                              placeholder="Area / Suite / Locality" 
-                              value={addr.address2 || ''} 
-                              onChange={(e) => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], address2: e.target.value };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }} 
-                              className="!text-xs !h-9" 
-                            />
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-3">
-                            <Input 
-                              label="Zip Code (PIN)" 
-                              placeholder="6-digit PIN"
-                              value={addr.zipCode || ''} 
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], zipCode: val };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                                if (val.length === 6) {
-                                  handleSecondaryZipCodeBlur(val, idx);
-                                }
-                              }} 
-                              onBlur={() => { if (addr.zipCode && addr.zipCode.length === 6) handleSecondaryZipCodeBlur(addr.zipCode, idx); }}
-                              className="!text-xs !h-9 font-mono" 
-                            />
-                            <Input 
-                              label="City" 
-                              value={addr.city || ''} 
-                              onChange={(e) => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], city: e.target.value };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }} 
-                              className="!text-xs !h-9" 
-                            />
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-3">
-                            <Input 
-                              label="State" 
-                              value={addr.state || ''} 
-                              onChange={(e) => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], state: e.target.value };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }} 
-                              className="!text-xs !h-9" 
-                            />
-                            <Input 
-                              label="Country" 
-                              value={addr.country || 'India'} 
-                              onChange={(e) => {
-                                const updated = [...(formData.secondaryAddresses || [])];
-                                updated[idx] = { ...updated[idx], country: e.target.value };
-                                setFormData({ ...formData, secondaryAddresses: updated });
-                              }} 
-                              className="!text-xs !h-9" 
-                            />
-                          </div>
-
-                          {/* GST Options for this secondary address */}
-                          <div className="border-t border-slate-200 pt-3">
-                            <label className="text-[10px] font-bold text-slate-700 uppercase block mb-2">GST Registration for Secondary Address</label>
-                            <div className="flex flex-col space-y-2 text-xs font-semibold text-slate-700">
-                              <label className="flex items-center space-x-2 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name={`batchSecGstOpt_${idx}`}
-                                  value="same"
-                                  checked={!addr.gstOption || addr.gstOption === 'same'}
-                                  onChange={() => {
-                                    const updated = [...(formData.secondaryAddresses || [])];
-                                    updated[idx] = { ...updated[idx], gstOption: 'same' };
-                                    setFormData({ ...formData, secondaryAddresses: updated });
-                                  }}
-                                  className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                                />
-                                <span>Use Same GSTIN as Primary Address</span>
-                              </label>
-                              <label className="flex items-center space-x-2 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name={`batchSecGstOpt_${idx}`}
-                                  value="separate"
-                                  checked={addr.gstOption === 'separate'}
-                                  onChange={() => {
-                                    const updated = [...(formData.secondaryAddresses || [])];
-                                    updated[idx] = { ...updated[idx], gstOption: 'separate' };
-                                    setFormData({ ...formData, secondaryAddresses: updated });
-                                  }}
-                                  className="text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                                />
-                                <span>Add Separate GSTIN for this Address</span>
-                              </label>
-                            </div>
-
-                            {addr.gstOption === 'separate' && (
-                              <div className="grid grid-cols-2 gap-3 mt-3 bg-white p-3 rounded border border-slate-200">
-                                <div className="flex flex-col space-y-1">
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
-                                  <select
-                                    value={addr.gstState || ''}
-                                    onChange={(e) => {
-                                      const selState = e.target.value;
-                                      const foundCode = Object.keys(gstStateMap).find(code => gstStateMap[code] === selState);
-                                      let currentGstin = addr.gstin || '';
-                                      if (foundCode) {
-                                        if (currentGstin.length >= 2) {
-                                          currentGstin = foundCode + currentGstin.substring(2);
-                                        } else {
-                                          currentGstin = foundCode;
-                                        }
-                                      }
-                                      const updated = [...(formData.secondaryAddresses || [])];
-                                      updated[idx] = { ...updated[idx], gstState: selState, gstin: currentGstin };
-                                      setFormData({ ...formData, secondaryAddresses: updated });
-                                    }}
-                                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
-                                  >
-                                    <option value="">Select State</option>
-                                    {Object.values(gstStateMap).map(st => (
-                                      <option key={st} value={st}>{st}</option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div className="flex flex-col space-y-1">
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Secondary GSTIN Code</label>
-                                  <input
-                                    type="text"
-                                    placeholder="15-character GSTIN"
-                                    value={addr.gstin || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value.toUpperCase().trim();
-                                      let detectedState = addr.gstState;
-                                      if (val.length >= 2) {
-                                        const prefix = val.substring(0, 2);
-                                        if (gstStateMap[prefix]) detectedState = gstStateMap[prefix];
-                                      }
-                                      const updated = [...(formData.secondaryAddresses || [])];
-                                      updated[idx] = { ...updated[idx], gstState: detectedState, gstin: val };
-                                      setFormData({ ...formData, secondaryAddresses: updated });
-                                    }}
-                                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Add Another Address Card */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newAddress = {
-                          address: '',
-                          address2: '',
-                          zipCode: '',
-                          city: '',
-                          state: '',
-                          country: 'India',
-                          gstOption: 'same',
-                          gstState: '',
-                          gstin: ''
-                        };
-                        setFormData({
-                          ...formData,
-                          secondaryAddresses: [...(formData.secondaryAddresses || []), newAddress]
-                        });
-                      }}
-                      className="border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 transition-all group min-h-[220px]"
-                    >
-                      <div className="p-3 bg-slate-100 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 rounded-full transition-colors mb-3">
-                        <Plus className="h-6 w-6" />
-                      </div>
-                      <span className="text-xs font-bold text-slate-700 group-hover:text-blue-700">+ Add Another Address & Location</span>
-                      <span className="text-[10px] text-slate-500 mt-1 max-w-[240px]">Define additional branch offices, plants, or warehouses.</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 4: Certifications */}
-              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Certifications</h4>
-                </div>
-                <div className="p-4 bg-white grid grid-cols-2 gap-6">
-                  
-                  {/* FFSC2200 */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="batchvffsc2200"
-                        checked={formData.ffsc2200 || false}
-                        onChange={(e) => setFormData({ ...formData, ffsc2200: e.target.checked })}
-                        className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300"
-                      />
-                      <label htmlFor="batchvffsc2200" className="text-xs font-bold text-slate-800">FFSC2200 Certified</label>
-                    </div>
-                    {formData.ffsc2200 && (
-                      <div className="grid grid-cols-2 gap-3 pl-6">
-                        <Input label="Expiry Date" type="date" value={formData.ffsc2200Expiry || ''} onChange={(e) => setFormData({ ...formData, ffsc2200Expiry: e.target.value })} className="!text-xs !h-8" />
-                        <Input label="License No." type="text" placeholder="e.g. LIC-FFSC-10029" value={formData.ffsc2200LicenseNo || ''} onChange={(e) => setFormData({ ...formData, ffsc2200LicenseNo: e.target.value })} className="!text-xs !h-8 font-mono" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* FSSAI */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="batchvfssai"
-                        checked={formData.fssai || false}
-                        onChange={(e) => setFormData({ ...formData, fssai: e.target.checked })}
-                        className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300"
-                      />
-                      <label htmlFor="batchvfssai" className="text-xs font-bold text-slate-800">FSSAI Certified</label>
-                    </div>
-                    {formData.fssai && (
-                      <div className="grid grid-cols-2 gap-3 pl-6">
-                        <Input label="Expiry Date" type="date" value={formData.fssaiExpiry || ''} onChange={(e) => setFormData({ ...formData, fssaiExpiry: e.target.value })} className="!text-xs !h-8" />
-                        <Input label="License No." type="text" placeholder="e.g. 10024011000123" value={formData.fssaiLicenseNo || ''} onChange={(e) => setFormData({ ...formData, fssaiLicenseNo: e.target.value })} className="!text-xs !h-8 font-mono" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 5: Bank Details */}
-              <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Bank Details</h4>
-                </div>
-                <div className="p-4 grid grid-cols-2 gap-4 bg-white">
-                  <Input label="Account Holder Name" value={formData.bankAccountHolder || ''} onChange={(e) => setFormData({ ...formData, bankAccountHolder: e.target.value })} className="!text-xs !h-9" />
-                  <Input label="Account Number" type="text" value={formData.bankAccountNumber || ''} onChange={(e) => setFormData({ ...formData, bankAccountNumber: e.target.value })} className="!text-xs !h-9 font-mono" />
-                  <Input label="Bank Name" value={formData.bankName || ''} onChange={(e) => setFormData({ ...formData, bankName: e.target.value })} className="!text-xs !h-9" />
-                  <Input label="IFSC Code" value={formData.ifscCode || ''} onChange={(e) => setFormData({ ...formData, ifscCode: e.target.value.toUpperCase() })} className="!text-xs !h-9 font-mono uppercase" />
-                </div>
-              </div>
-
-            </div>
-
-            <div className="pt-4 flex items-center justify-between border-t border-slate-200 mt-4 bg-slate-50 p-3 rounded-lg">
-              <Button variant="outline" type="button" onClick={() => setIsVendorBatchEditModalOpen(false)}>Cancel</Button>
-              <div className="flex items-center space-x-2">
-                <Button variant="outline" type="button" onClick={handleVendorBatchWizardBack} disabled={vendorBatchEditIdx === 0}>Back</Button>
-                <Button type="button" onClick={handleVendorBatchWizardSaveCurrent} isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 shadow-sm px-6">
-                  {vendorBatchEditIdx < vendorBatchEditItems.length - 1 ? "Save & Next" : "Save & Finish"}
-                </Button>
-              </div>
+            <div className="pt-4 flex justify-between border-t border-slate-100">
+              <Button variant="outline" type="button" onClick={handleVendorBatchWizardBack} disabled={vendorBatchEditIdx === 0}>Back</Button>
+              <Button type="button" onClick={() => handleVendorBatchWizardSaveCurrent(vendorBatchEditItems[vendorBatchEditIdx])} isLoading={submitLoading}>
+                {vendorBatchEditIdx < vendorBatchEditItems.length - 1 ? "Save & Next" : "Save & Finish"}
+              </Button>
             </div>
           </div>
         )}
@@ -8166,7 +7118,7 @@ const VendorsTab = () => {
       <Dialog
         isOpen={isVendorImportModalOpen}
         onClose={() => setIsVendorImportModalOpen(false)}
-        title={vendorImportSummary ? (isVendorAutoEntry ? 'Bulk Entry — Review Ingestion Queue' : 'Bulk Update Vendors — Review Queue') : (isVendorAutoEntry ? 'Bulk Entry — Create Vendors (Auto-assigning V-codes)' : 'Bulk Update Vendors (Apply spreadsheet details)')}
+        title={vendorImportSummary ? 'Bulk Entry Review Ingestion Queue' : (isVendorAutoEntry ? 'Bulk Entry — Create Vendors (Auto-assigning V-codes)' : 'Bulk Update Vendors (Apply spreadsheet details)')}
         className={vendorImportSummary ? "!max-w-[90vw] !w-[90vw] !rounded-xl" : (isVendorAutoEntry ? "!max-w-[65vw] !w-[65vw] !rounded-none" : "!max-w-[92vw] !w-[92vw] !rounded-none")}
       >
         <div className="space-y-4">
@@ -8317,13 +7269,33 @@ const VendorsTab = () => {
                           </div>
                         </div>
 
-                        {/* Read-Only Notice for New Records */}
-                        {!currentItem.isExistingMatch && (
-                          <div className="mb-3 flex items-start space-x-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                            <svg className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <div>
-                              <span className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wide block">Read-Only Preview — New Record</span>
-                              <span className="text-[10px] text-blue-600 font-medium">This is a new vendor entry from your spreadsheet. You can review the data below, then click <strong>Accept</strong> to import it or <strong>Skip</strong> to exclude it. Editing is not allowed for new bulk entries.</span>
+                                                {/* Detected Field Changes Card (From DB ➔ To Excel File) */}
+                        {currentItem.isExistingMatch && currentItem.fieldChanges && currentItem.fieldChanges.length > 0 && (
+                          <div className="border border-blue-200 rounded-lg p-3 bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-white space-y-2 mb-3 shadow-xs">
+                            <div className="flex items-center justify-between border-b border-blue-100 pb-1.5">
+                              <span className="text-[10px] font-extrabold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                                <Info className="h-3.5 w-3.5 text-blue-600" />
+                                Detected Field Changes ({currentItem.fieldChanges.length} modified)
+                              </span>
+                              <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                                Current DB Value ➔ New Excel Sheet Value
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 gap-1.5 pt-1">
+                              {currentItem.fieldChanges.map((ch, ci) => (
+                                <div key={ci} className="bg-white border border-blue-100 p-2 rounded flex items-center justify-between text-xs shadow-2xs">
+                                  <span className="font-bold text-slate-700 w-1/3 truncate text-[11px]">{ch.label}:</span>
+                                  <div className="flex items-center space-x-2 w-2/3 justify-end font-mono">
+                                    <span className="line-through text-red-500 bg-red-50 px-2 py-0.5 rounded text-[10px] font-semibold border border-red-100">
+                                      {ch.oldVal !== undefined && ch.oldVal !== null && ch.oldVal !== '' ? String(ch.oldVal) : '(Empty)'}
+                                    </span>
+                                    <span className="text-slate-400 font-bold">➔</span>
+                                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold text-[10px] border border-emerald-100">
+                                      {ch.newVal !== undefined && ch.newVal !== null && ch.newVal !== '' ? String(ch.newVal) : '(Empty)'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -8348,9 +7320,8 @@ const VendorsTab = () => {
                                 type="text"
                                 placeholder="Tyson"
                                 value={currentItem.name || ''}
-                                onChange={(e) => currentItem.isExistingMatch && handleQueueFieldChange('name', e.target.value)}
-                                readOnly={!currentItem.isExistingMatch}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none text-slate-800 ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'}`}
+                                onChange={(e) => handleQueueFieldChange('name', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
                           </div>
@@ -8358,21 +7329,17 @@ const VendorsTab = () => {
                           <div className="grid grid-cols-3 gap-3">
                             <div className="flex flex-col space-y-1">
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
-                              {currentItem.isExistingMatch ? (
-                                <select
-                                  value={currentItem.category || 'Food Processor'}
-                                  onChange={(e) => handleQueueFieldChange('category', e.target.value)}
-                                  className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 cursor-pointer h-8"
-                                >
-                                  <option value="Food Processor">Food Processor</option>
-                                  <option value="Contract Manufacturer">Contract Manufacturer</option>
-                                  <option value="Retail Brand">Retail Brand</option>
-                                  <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                                  <option value="Other">Other</option>
-                                </select>
-                              ) : (
-                                <input type="text" readOnly value={currentItem.category || ''} className="px-2 py-1.5 border border-slate-100 rounded text-xs font-semibold bg-slate-50 text-slate-500 cursor-not-allowed" />
-                              )}
+                              <select
+                                value={currentItem.category || 'Food Processor'}
+                                onChange={(e) => handleQueueFieldChange('category', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 cursor-pointer h-8"
+                              >
+                                <option value="Food Processor">Food Processor</option>
+                                <option value="Contract Manufacturer">Contract Manufacturer</option>
+                                <option value="Retail Brand">Retail Brand</option>
+                                <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                                <option value="Other">Other</option>
+                              </select>
                             </div>
                             <div className="flex flex-col space-y-1">
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Sub-Category</label>
@@ -8380,26 +7347,21 @@ const VendorsTab = () => {
                                 type="text"
                                 placeholder="e.g. Packaging, Raw Material"
                                 value={currentItem.subCategory || ''}
-                                onChange={(e) => currentItem.isExistingMatch && handleQueueFieldChange('subCategory', e.target.value)}
-                                readOnly={!currentItem.isExistingMatch}
-                                className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none text-slate-800 ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'}`}
+                                onChange={(e) => handleQueueFieldChange('subCategory', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
                               />
                             </div>
                             <div className="flex flex-col space-y-1">
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Status</label>
-                              {currentItem.isExistingMatch ? (
-                                <select
-                                  value={currentItem.status || 'Active'}
-                                  onChange={(e) => handleQueueFieldChange('status', e.target.value)}
-                                  className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 cursor-pointer h-8"
-                                >
-                                  <option value="Active">Active</option>
-                                  <option value="Inactive">Inactive</option>
-                                  <option value="Draft">Draft</option>
-                                </select>
-                              ) : (
-                                <input type="text" readOnly value={currentItem.status || 'Active'} className="px-2 py-1.5 border border-slate-100 rounded text-xs font-semibold bg-slate-50 text-slate-500 cursor-not-allowed h-8" />
-                              )}
+                              <select
+                                value={currentItem.status || 'Active'}
+                                onChange={(e) => handleQueueFieldChange('status', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 cursor-pointer h-8"
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="Draft">Draft</option>
+                              </select>
                             </div>
                           </div>
                         </div>
@@ -8409,40 +7371,98 @@ const VendorsTab = () => {
                           <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Contacts Directory</span>
                           
                           {(!currentItem.contacts || currentItem.contacts.length === 0) ? (
-                            <div className="text-xs text-slate-400 italic">No contacts in spreadsheet.</div>
+                            <div className="text-xs text-slate-400 italic">No contacts added yet.</div>
                           ) : (
                             <div className="space-y-2">
                               {currentItem.contacts.map((c, cIdx) => (
                                 <div key={cIdx} className="grid grid-cols-12 gap-1.5 items-center bg-white p-2 border border-slate-200 rounded text-xs">
                                   <div className="col-span-3">
-                                    <input readOnly value={c.role || 'Primary'} className={`w-full px-1.5 py-1 text-[11px] border rounded font-semibold ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'border-slate-200 bg-white'}`} />
+                                    <select
+                                      value={c.role || 'Primary'}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], role: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded bg-white font-semibold"
+                                    >
+                                      <option value="Primary">Primary</option>
+                                      <option value="Secondary">Secondary</option>
+                                      <option value="Billing">Billing</option>
+                                    </select>
                                   </div>
                                   <div className="col-span-3">
-                                    <input readOnly value={c.department || 'Sourcing'} className={`w-full px-1.5 py-1 text-[11px] border rounded font-semibold ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'border-slate-200 bg-white'}`} />
+                                    <select
+                                      value={c.department || 'Sourcing'}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], department: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded bg-white font-semibold"
+                                    >
+                                      <option value="Sourcing">Sourcing</option>
+                                      <option value="Quality">Quality</option>
+                                      <option value="Finance / Accounts">Finance / Accounts</option>
+                                      <option value="Logistics">Logistics</option>
+                                      <option value="Sales">Sales</option>
+                                      <option value="Other">Other</option>
+                                    </select>
                                   </div>
                                   <div className="col-span-3">
-                                    <input readOnly value={c.name || ''} placeholder="Name" className={`w-full px-1.5 py-1 text-[11px] border rounded font-semibold ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'border-slate-200'}`} />
+                                    <input
+                                      type="text"
+                                      placeholder="Name"
+                                      value={c.name || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], name: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded font-semibold"
+                                    />
                                   </div>
-                                  <div className="col-span-3">
-                                    <input readOnly value={c.phone || c.email || ''} placeholder="Phone / Email" className={`w-full px-1.5 py-1 text-[11px] border rounded font-mono ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'border-slate-200'}`} />
+                                  <div className="col-span-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Phone / Email"
+                                      value={c.phone || c.email || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.contacts];
+                                        updated[cIdx] = { ...updated[cIdx], phone: e.target.value, email: e.target.value };
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-[11px] border border-slate-200 rounded font-mono"
+                                    />
+                                  </div>
+                                  <div className="col-span-1 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...currentItem.contacts];
+                                        updated.splice(cIdx, 1);
+                                        handleQueueFieldChange('contacts', updated);
+                                      }}
+                                      className="text-red-500 hover:text-red-700 font-bold text-[11px]"
+                                    >
+                                      ✕
+                                    </button>
                                   </div>
                                 </div>
                               ))}
                             </div>
                           )}
-                          {currentItem.isExistingMatch && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = [...(currentItem.contacts || []), { role: 'Primary', department: 'Sourcing', name: '', phone: '', email: '' }];
-                                handleQueueFieldChange('contacts', updated);
-                              }}
-                              className="text-[10px] text-blue-600 font-bold hover:underline flex items-center space-x-1"
-                            >
-                              <Plus className="h-3 w-3" />
-                              <span>Add Contact</span>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(currentItem.contacts || []), { role: 'Primary', department: 'Sourcing', name: '', phone: '', email: '' }];
+                              handleQueueFieldChange('contacts', updated);
+                            }}
+                            className="text-[10px] text-blue-600 font-bold hover:underline flex items-center space-x-1"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>Add Contact</span>
+                          </button>
                         </div>
 
                         {/* Address & Location */}
@@ -8450,31 +7470,78 @@ const VendorsTab = () => {
                           <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Address & Location</span>
                           
                           <div className="grid grid-cols-2 gap-3">
-                            {[['address','Address Line 1','Phase 2 Industrial Area'],['address2','Address Line 2','Address Line 2']].map(([field, lbl, ph]) => (
-                              <div key={field} className="flex flex-col space-y-1">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase">{lbl}</label>
-                                <input type="text" placeholder={ph} value={currentItem[field] || ''} readOnly={!currentItem.isExistingMatch} onChange={(e) => currentItem.isExistingMatch && handleQueueFieldChange(field, e.target.value)} className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none text-slate-800 ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'}`} />
-                              </div>
-                            ))}
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 1</label>
+                              <input
+                                type="text"
+                                placeholder="Phase 2 Industrial Area"
+                                value={currentItem.address || ''}
+                                onChange={(e) => handleQueueFieldChange('address', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Address Line 2</label>
+                              <input
+                                type="text"
+                                placeholder="Address Line 2"
+                                value={currentItem.address2 || ''}
+                                onChange={(e) => handleQueueFieldChange('address2', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-4 gap-3">
-                            {[['zipCode','Zip Code (PIN)','font-mono'],['city','City',''],['state','State',''],['country','Country','']].map(([field, lbl, extra]) => (
-                              <div key={field} className="flex flex-col space-y-1">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase">{lbl}</label>
-                                <input type="text" value={field === 'country' ? (currentItem[field] || 'India') : (currentItem[field] || '')} readOnly={!currentItem.isExistingMatch} onChange={(e) => currentItem.isExistingMatch && handleQueueFieldChange(field, e.target.value)} className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none text-slate-800 ${extra} ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'}`} />
-                              </div>
-                            ))}
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Zip Code (PIN)</label>
+                              <input
+                                type="text"
+                                value={currentItem.zipCode || ''}
+                                onChange={(e) => handleQueueFieldChange('zipCode', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 font-mono"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">City</label>
+                              <input
+                                type="text"
+                                value={currentItem.city || ''}
+                                onChange={(e) => handleQueueFieldChange('city', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                              <input
+                                type="text"
+                                value={currentItem.state || ''}
+                                onChange={(e) => handleQueueFieldChange('state', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Country</label>
+                              <input
+                                type="text"
+                                value={currentItem.country || 'India'}
+                                onChange={(e) => handleQueueFieldChange('country', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
                           </div>
 
-                          {currentItem.isExistingMatch && (
-                            <div className="pt-2 border-t border-slate-200/60">
-                              <label className="flex items-center space-x-1.5 text-[10px] font-bold text-blue-600 cursor-pointer hover:underline">
-                                <input type="checkbox" checked={currentItem.hasSecondaryAddress || false} onChange={(e) => handleQueueFieldChange('hasSecondaryAddress', e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" />
-                                <span>+ Add Secondary Plant / Branch Address</span>
-                              </label>
-                            </div>
-                          )}
+                          <div className="pt-2 border-t border-slate-200/60">
+                            <label className="flex items-center space-x-1.5 text-[10px] font-bold text-blue-600 cursor-pointer hover:underline">
+                              <input
+                                type="checkbox"
+                                checked={currentItem.hasSecondaryAddress || false}
+                                onChange={(e) => handleQueueFieldChange('hasSecondaryAddress', e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <span>+ Add Secondary Plant / Branch Address</span>
+                            </label>
+                          </div>
 
                           {currentItem.hasSecondaryAddress && (
                             <div className="space-y-3 pt-2 border-t border-slate-100 bg-white p-2.5 rounded border border-slate-200">
@@ -8544,217 +7611,180 @@ const VendorsTab = () => {
                         {/* GST Details */}
                         <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
                           <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">GST Details</span>
+                          
+                          <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-600 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={currentItem.hasNoGst || false}
+                              onChange={(e) => handleQueueFieldChange('hasNoGst', e.target.checked)}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                            />
+                            <span>No GSTIN (Composition/Unregistered)</span>
+                          </label>
 
-                          {!currentItem.isExistingMatch ? (
-                            <div className="space-y-2">
-                              <div className="flex items-center space-x-1.5 px-2 py-1.5 bg-slate-50 border border-slate-100 rounded">
-                                <svg className="h-3 w-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                <span className="text-[10px] text-slate-400 italic">GST & Tax details are locked for Bulk Entry. Use Bulk Update or Edit to modify.</span>
-                              </div>
-                              {currentItem.hasNoGst ? (
-                                <div className="px-2 py-1 bg-red-50 border border-red-100 rounded text-[10px] text-red-600 font-semibold">Unregistered Vendor (No GSTIN)</div>
-                              ) : (
-                                <div className="space-y-1">
-                                  {(currentItem.gstList && currentItem.gstList.length > 0) ? currentItem.gstList.map((gst, idx) => (
-                                    <div key={idx} className="flex items-center space-x-2 bg-white px-2 py-1 border border-slate-100 rounded text-[11px]">
-                                      <span className="text-slate-500 font-semibold w-1/3 truncate">{gst.state || '—'}</span>
-                                      <span className="font-mono text-blue-600 font-bold tracking-wide">{gst.gstin || '—'}</span>
-                                    </div>
-                                  )) : (
-                                    currentItem.gstin ? (
-                                      <div className="flex items-center space-x-2 bg-white px-2 py-1 border border-slate-100 rounded text-[11px]">
-                                        <span className="text-slate-500 font-semibold">Default:</span>
-                                        <span className="font-mono text-blue-600 font-bold">{currentItem.gstin}</span>
-                                      </div>
-                                    ) : (
-                                      <div className="text-[10px] text-slate-400 italic px-1">No GSTIN data in spreadsheet.</div>
-                                    )
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <>
-                              <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-600 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={currentItem.hasNoGst || false}
-                                  onChange={(e) => handleQueueFieldChange('hasNoGst', e.target.checked)}
-                                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
-                                />
-                                <span>No GSTIN (Composition/Unregistered)</span>
-                              </label>
-
-                              {!currentItem.hasNoGst && (
-                                <div className="space-y-3 pt-2 border-t border-slate-200/60">
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="flex flex-col space-y-1">
-                                      <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
-                                      <select
-                                        value={currentItem.state || ''}
-                                        onChange={(e) => handleQueueFieldChange('state', e.target.value)}
-                                        className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold bg-white cursor-pointer h-8"
-                                      >
-                                        <option value="">Select State</option>
-                                        {["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Andaman and Nicobar Islands","Chandigarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry"].map(s => (
-                                          <option key={s} value={s}>{s}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div className="flex flex-col space-y-1">
-                                      <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN Code</label>
-                                      <input
-                                        type="text"
-                                        placeholder="15-char GSTIN"
-                                        value={currentItem.gstin || ''}
-                                        onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
-                                        className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white font-mono"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                                    <span className="text-[9px] font-bold text-slate-500 uppercase block">Additional GST Registrations ({(currentItem.gstList || []).length})</span>
-                                    {(currentItem.gstList || []).map((gst, idx) => (
-                                      <div key={idx} className="flex items-center space-x-2 bg-white p-2 border border-slate-200 rounded text-xs">
-                                        <select
-                                          value={gst.state || ''}
-                                          onChange={(e) => {
-                                            const updated = [...currentItem.gstList];
-                                            updated[idx] = { ...updated[idx], state: e.target.value };
-                                            handleQueueFieldChange('gstList', updated);
-                                          }}
-                                          className="w-1/3 px-1.5 py-1 text-xs border border-slate-200 rounded bg-white"
-                                        >
-                                          <option value="">Select State</option>
-                                          {["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Andaman and Nicobar Islands","Chandigarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry"].map(s => (
-                                            <option key={s} value={s}>{s}</option>
-                                          ))}
-                                        </select>
-                                        <input
-                                          type="text"
-                                          placeholder="15-char GSTIN"
-                                          value={gst.gstin || ''}
-                                          onChange={(e) => {
-                                            const updated = [...currentItem.gstList];
-                                            updated[idx] = { ...updated[idx], gstin: e.target.value.toUpperCase().trim() };
-                                            handleQueueFieldChange('gstList', updated);
-                                          }}
-                                          className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs font-mono font-bold"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const updated = [...currentItem.gstList];
-                                            updated.splice(idx, 1);
-                                            handleQueueFieldChange('gstList', updated);
-                                          }}
-                                          className="text-red-500 hover:text-red-700 font-bold px-1 text-[11px]"
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
+                          {!currentItem.hasNoGst && (
+                            <div className="space-y-3 pt-2 border-t border-slate-200/60">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">State</label>
+                                  <select
+                                    value={currentItem.state || ''}
+                                    onChange={(e) => handleQueueFieldChange('state', e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold bg-white cursor-pointer h-8"
+                                  >
+                                    <option value="">Select State</option>
+                                    {["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
+                                      <option key={s} value={s}>{s}</option>
                                     ))}
+                                  </select>
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">GSTIN Code</label>
+                                  <input
+                                    type="text"
+                                    placeholder="15-char GSTIN"
+                                    value={currentItem.gstin || ''}
+                                    onChange={(e) => handleQueueFieldChange('gstin', e.target.value.toUpperCase().trim())}
+                                    className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white font-mono"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Multi-state GST registrations */}
+                              <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <span className="text-[9px] font-bold text-slate-500 uppercase block">Additional GST Registrations ({(currentItem.gstList || []).length})</span>
+                                {(currentItem.gstList || []).map((gst, idx) => (
+                                  <div key={idx} className="flex items-center space-x-2 bg-white p-2 border border-slate-200 rounded text-xs">
+                                    <select
+                                      value={gst.state || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.gstList];
+                                        updated[idx] = { ...updated[idx], state: e.target.value };
+                                        handleQueueFieldChange('gstList', updated);
+                                      }}
+                                      className="w-1/3 px-1.5 py-1 text-xs border border-slate-200 rounded bg-white"
+                                    >
+                                      <option value="">Select State</option>
+                                      {["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
+                                        <option key={s} value={s}>{s}</option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="text"
+                                      placeholder="15-char GSTIN"
+                                      value={gst.gstin || ''}
+                                      onChange={(e) => {
+                                        const updated = [...currentItem.gstList];
+                                        updated[idx] = { ...updated[idx], gstin: e.target.value.toUpperCase().trim() };
+                                        handleQueueFieldChange('gstList', updated);
+                                      }}
+                                      className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs font-mono font-bold"
+                                    />
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const updated = [...(currentItem.gstList || []), { state: '', gstin: '' }];
+                                        const updated = [...currentItem.gstList];
+                                        updated.splice(idx, 1);
                                         handleQueueFieldChange('gstList', updated);
                                       }}
-                                      className="text-[10px] text-blue-600 font-bold hover:underline flex items-center space-x-1"
+                                      className="text-red-500 hover:text-red-700 font-bold px-1 text-[11px]"
                                     >
-                                      <Plus className="h-3 w-3" />
-                                      <span>Add Another GST Registration</span>
+                                      ✕
                                     </button>
                                   </div>
-                                </div>
-                              )}
-                            </>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...(currentItem.gstList || []), { state: '', gstin: '' }];
+                                    handleQueueFieldChange('gstList', updated);
+                                  }}
+                                  className="text-[10px] text-blue-600 font-bold hover:underline flex items-center space-x-1"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>Add Another GST Registration</span>
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </div>
 
                         {/* Certifications */}
                         <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
                           <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Certifications</span>
+                          
+                          <div className="flex items-center space-x-6">
+                            <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={currentItem.ffsc2200 || false}
+                                onChange={(e) => handleQueueFieldChange('ffsc2200', e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <span>FFSC2200 Certified</span>
+                            </label>
 
-                          {!currentItem.isExistingMatch ? (
-                            /* NEW RECORD — read-only certifications display */
-                            <div className="space-y-2">
-                              <div className="flex items-center space-x-1.5 px-2 py-1.5 bg-slate-50 border border-slate-100 rounded">
-                                <svg className="h-3 w-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                <span className="text-[10px] text-slate-400 italic">Certification details are locked for Bulk Entry. Use Bulk Update or Edit to modify.</span>
+                            <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={currentItem.fssai || false}
+                                onChange={(e) => handleQueueFieldChange('fssai', e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                              />
+                              <span>FSSAI Certified</span>
+                            </label>
+                          </div>
+
+                          {currentItem.ffsc2200 && (
+                            <div className="space-y-3 pt-2 border-t border-slate-200/60 bg-white p-2.5 rounded border border-slate-200">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase block">FFSC 22000 Details</span>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Expiry</label>
+                                  <input
+                                    type="date"
+                                    value={currentItem.ffsc2200Expiry ? currentItem.ffsc2200Expiry.substring(0, 10) : ''}
+                                    onChange={(e) => handleQueueFieldChange('ffsc2200Expiry', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Scope / Qty</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.ffsc2200Qty || ''}
+                                    onChange={(e) => handleQueueFieldChange('ffsc2200Qty', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
                               </div>
-                              <div className="flex items-center space-x-4">
-                                <div className={`flex items-center space-x-1.5 px-2 py-1 rounded text-[10px] font-semibold border ${currentItem.ffsc2200 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-                                  <span>{currentItem.ffsc2200 ? '✓' : '✗'}</span>
-                                  <span>FFSC 22000</span>
-                                </div>
-                                <div className={`flex items-center space-x-1.5 px-2 py-1 rounded text-[10px] font-semibold border ${currentItem.fssai ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-                                  <span>{currentItem.fssai ? '✓' : '✗'}</span>
-                                  <span>FSSAI</span>
-                                </div>
-                              </div>
-                              {(currentItem.ffsc2200 || currentItem.fssai) && (
-                                <div className="grid grid-cols-2 gap-2">
-                                  {currentItem.ffsc2200 && (
-                                    <div className="bg-white border border-slate-100 rounded px-2 py-1.5 text-[10px]">
-                                      <span className="text-slate-400 block uppercase font-bold text-[9px]">FFSC Expiry</span>
-                                      <span className="font-semibold text-slate-600">{currentItem.ffsc2200Expiry ? currentItem.ffsc2200Expiry.substring(0,10) : '—'}</span>
-                                    </div>
-                                  )}
-                                  {currentItem.fssai && (
-                                    <div className="bg-white border border-slate-100 rounded px-2 py-1.5 text-[10px]">
-                                      <span className="text-slate-400 block uppercase font-bold text-[9px]">FSSAI Expiry</span>
-                                      <span className="font-semibold text-slate-600">{currentItem.fssaiExpiry ? currentItem.fssaiExpiry.substring(0,10) : '—'}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
                             </div>
-                          ) : (
-                            /* EXISTING MATCH — full edit controls */
-                            <>
-                              <div className="flex items-center space-x-6">
-                                <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-700 cursor-pointer">
-                                  <input type="checkbox" checked={currentItem.ffsc2200 || false} onChange={(e) => handleQueueFieldChange('ffsc2200', e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" />
-                                  <span>FFSC2200 Certified</span>
-                                </label>
-                                <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-700 cursor-pointer">
-                                  <input type="checkbox" checked={currentItem.fssai || false} onChange={(e) => handleQueueFieldChange('fssai', e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" />
-                                  <span>FSSAI Certified</span>
-                                </label>
+                          )}
+
+                          {currentItem.fssai && (
+                            <div className="space-y-3 pt-2 border-t border-slate-200/60 bg-white p-2.5 rounded border border-slate-200">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase block">FSSAI License Details</span>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Expiry</label>
+                                  <input
+                                    type="date"
+                                    value={currentItem.fssaiExpiry ? currentItem.fssaiExpiry.substring(0, 10) : ''}
+                                    onChange={(e) => handleQueueFieldChange('fssaiExpiry', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
+                                <div className="flex flex-col space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI License / Qty</label>
+                                  <input
+                                    type="text"
+                                    value={currentItem.fssaiQty || ''}
+                                    onChange={(e) => handleQueueFieldChange('fssaiQty', e.target.value)}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs"
+                                  />
+                                </div>
                               </div>
-                              {currentItem.ffsc2200 && (
-                                <div className="space-y-3 pt-2 border-t border-slate-200/60 bg-white p-2.5 rounded border border-slate-200">
-                                  <span className="text-[9px] font-bold text-slate-500 uppercase block">FFSC 22000 Details</span>
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="flex flex-col space-y-1">
-                                      <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Expiry</label>
-                                      <input type="date" value={currentItem.ffsc2200Expiry ? currentItem.ffsc2200Expiry.substring(0, 10) : ''} onChange={(e) => handleQueueFieldChange('ffsc2200Expiry', e.target.value)} className="px-2 py-1 border border-slate-200 rounded text-xs" />
-                                    </div>
-                                    <div className="flex flex-col space-y-1">
-                                      <label className="text-[9px] font-bold text-slate-500 uppercase">FFSC Scope / Qty</label>
-                                      <input type="text" value={currentItem.ffsc2200Qty || ''} onChange={(e) => handleQueueFieldChange('ffsc2200Qty', e.target.value)} className="px-2 py-1 border border-slate-200 rounded text-xs" />
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                              {currentItem.fssai && (
-                                <div className="space-y-3 pt-2 border-t border-slate-200/60 bg-white p-2.5 rounded border border-slate-200">
-                                  <span className="text-[9px] font-bold text-slate-500 uppercase block">FSSAI License Details</span>
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="flex flex-col space-y-1">
-                                      <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI Expiry</label>
-                                      <input type="date" value={currentItem.fssaiExpiry ? currentItem.fssaiExpiry.substring(0, 10) : ''} onChange={(e) => handleQueueFieldChange('fssaiExpiry', e.target.value)} className="px-2 py-1 border border-slate-200 rounded text-xs" />
-                                    </div>
-                                    <div className="flex flex-col space-y-1">
-                                      <label className="text-[9px] font-bold text-slate-500 uppercase">FSSAI License / Qty</label>
-                                      <input type="text" value={currentItem.fssaiQty || ''} onChange={(e) => handleQueueFieldChange('fssaiQty', e.target.value)} className="px-2 py-1 border border-slate-200 rounded text-xs" />
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </>
+                            </div>
                           )}
                         </div>
 
@@ -8762,23 +7792,42 @@ const VendorsTab = () => {
                         <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3 shadow-xs mb-3">
                           <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Bank Details</span>
                           <div className="grid grid-cols-2 gap-3">
-                            {[
-                              ['bankAccountHolder','Account Holder Name','',''],
-                              ['bankAccountNumber','Account Number','font-mono',''],
-                              ['bankName','Bank Name','',''],
-                              ['ifscCode','IFSC Code','font-mono','toUpper']
-                            ].map(([field, lbl, extra, transform]) => (
-                              <div key={field} className="flex flex-col space-y-1">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase">{lbl}</label>
-                                <input
-                                  type="text"
-                                  value={currentItem[field] || ''}
-                                  readOnly={!currentItem.isExistingMatch}
-                                  onChange={(e) => currentItem.isExistingMatch && handleQueueFieldChange(field, transform === 'toUpper' ? e.target.value.toUpperCase().trim() : e.target.value)}
-                                  className={`px-2 py-1.5 border rounded text-xs font-semibold focus:outline-none text-slate-800 ${extra} ${!currentItem.isExistingMatch ? 'bg-slate-50 border-slate-100 cursor-not-allowed text-slate-500' : 'bg-white border-slate-200 focus:ring-1 focus:ring-blue-500'}`}
-                                />
-                              </div>
-                            ))}
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Holder Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankAccountHolder || ''}
+                                onChange={(e) => handleQueueFieldChange('bankAccountHolder', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Account Number</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankAccountNumber || ''}
+                                onChange={(e) => handleQueueFieldChange('bankAccountNumber', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 font-mono"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Bank Name</label>
+                              <input
+                                type="text"
+                                value={currentItem.bankName || ''}
+                                onChange={(e) => handleQueueFieldChange('bankName', e.target.value)}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">IFSC Code</label>
+                              <input
+                                type="text"
+                                value={currentItem.ifscCode || ''}
+                                onChange={(e) => handleQueueFieldChange('ifscCode', e.target.value.toUpperCase().trim())}
+                                className="px-2 py-1.5 border border-slate-200 rounded text-xs font-semibold focus:outline-none bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 font-mono"
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>{/* Action Controls Panel */}
@@ -9068,8 +8117,8 @@ const VendorsTab = () => {
         <Dialog
           isOpen={true}
           onClose={() => setVendorBlockingPopupMessage('')}
-          title={vendorBlockingPopupMessage.includes("Bulk Update") ? "Bulk Update System Notice" : "Ingestion Blocked — Notice"}
-          className="!max-w-[440px] !w-[440px] !rounded-xl"
+          title="Ingestion Blocked — Duplication Detected"
+          className="!max-w-[420px] !w-[420px] !rounded-xl"
         >
           <div className="space-y-4 text-xs">
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 font-semibold flex items-start space-x-2">

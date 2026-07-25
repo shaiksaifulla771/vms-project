@@ -17,7 +17,7 @@ import Settings from './pages/Settings';
 
 const AppContent = () => {
   const { user, loading } = useAuth();
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState('masters');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   if (loading) {
@@ -35,9 +35,7 @@ const AppContent = () => {
   }
 
   const pageRoles = {
-    dashboard: ['Admin', 'Inventory Manager', 'Production Manager'],
     masters: ['Admin', 'Inventory Manager'],
-    vendors: ['Admin', 'Inventory Manager'],
     boms: ['Admin', 'Production Manager'],
     planning: ['Admin', 'Inventory Manager', 'Production Manager'],
     inventory: ['Admin', 'Inventory Manager'],
@@ -67,12 +65,8 @@ const AppContent = () => {
     }
 
     switch (activePage) {
-      case 'dashboard':
-        return <Dashboard />;
       case 'masters':
         return <Masters />;
-      case 'vendors':
-        return <Vendors />;
       case 'boms':
         return <BOM />;
       case 'planning':
@@ -90,7 +84,7 @@ const AppContent = () => {
       case 'settings':
         return <Settings />;
       default:
-        return <Dashboard />;
+        return <Masters />;
     }
   };
 
