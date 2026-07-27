@@ -1,9 +1,8 @@
 const Vendor = require('../models/Vendor');
 const Sequence = require('../models/Sequence');
-
 const { syncExcelToMongoDB } = require('../utils/dbSync');
+const { escapeRegex } = require('../utils/security');
 const XLSX = require('xlsx');
-
 
 exports.getVendors = async (req, res, next) => {
   try {
@@ -16,18 +15,19 @@ exports.getVendors = async (req, res, next) => {
       query.status = { $ne: 'Deleted' };
     }
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
-        { vendorId: { $regex: search, $options: 'i' } }
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { email: { $regex: safeSearch, $options: 'i' } },
+        { company: { $regex: safeSearch, $options: 'i' } },
+        { vendorId: { $regex: safeSearch, $options: 'i' } }
       ];
     }
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const startIndex = (pageNum - 1) * limitNum;
     const total = await Vendor.countDocuments(query);
-    const vendors = await Vendor.find(query).sort({ createdAt: -1 }).skip(startIndex).limit(limitNum);
+    const vendors = await Vendor.find(query).select('-bankAccountNumber -ifscCode').sort({ createdAt: -1 }).skip(startIndex).limit(limitNum);
     res.status(200).json({ success: true, count: vendors.length, pagination: { total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum }, data: vendors });
   } catch (err) {
     next(err);

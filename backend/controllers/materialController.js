@@ -4,6 +4,7 @@ const BOM = require('../models/BOM');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const ProductionOrder = require('../models/ProductionOrder');
 const { syncExcelToMongoDB } = require('../utils/dbSync');
+const { escapeRegex } = require('../utils/security');
 
 // @desc    Get all materials
 // @route   GET /api/materials
@@ -23,9 +24,10 @@ exports.getMaterials = async (req, res, next) => {
     }
 
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { code: { $regex: search, $options: 'i' } }
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { code: { $regex: safeSearch, $options: 'i' } }
       ];
     }
 

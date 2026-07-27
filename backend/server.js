@@ -243,11 +243,16 @@ connectDB().then(async () => {
   }
 });
 
+const mongoSanitize = require('express-mongo-sanitize');
+
 const app = express();
 
 // Body parser
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Sanitize data against NoSQL query operator injection ($ and .)
+app.use(mongoSanitize());
 
 // Enable CORS
 app.use(cors({
