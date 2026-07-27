@@ -2195,6 +2195,13 @@ const MaterialsTab = () => {
                 onClear: () => setTypeFilter('')
               });
             }
+            if (status) {
+              activeTags.push({
+                id: 'statusFilter',
+                label: `Status: ${status}`,
+                onClear: () => setStatus('')
+              });
+            }
 
             // Column filters
             Object.entries(columnFilters).forEach(([col, vals]) => {
@@ -2583,11 +2590,15 @@ const MaterialsTab = () => {
 
                     {/* 6. Status */}
                     <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[75px] max-w-[75px] truncate whitespace-nowrap">
-                      <span className={`text-xs font-semibold whitespace-nowrap ${
-                        mat.status === 'Active' ? 'text-green-600' : 'text-slate-500'
-                      }`}>
-                        {mat.status || 'Active'}
-                      </span>
+                      {mat.status === 'Active' ? (
+                        <span className="text-green-600 font-semibold text-xs">Active</span>
+                      ) : mat.status === 'Inactive' ? (
+                        <span className="text-slate-500 font-semibold text-xs">Inactive</span>
+                      ) : mat.status === 'Draft' ? (
+                        <span className="text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[10px]">Draft</span>
+                      ) : (
+                        <span className="text-slate-500 font-medium text-xs">{mat.status || 'Active'}</span>
+                      )}
                     </TableCell>
 
                     {/* 7. Description */}
