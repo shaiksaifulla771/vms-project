@@ -922,18 +922,13 @@ const MaterialsTab = () => {
   const getNextManualCode = () => {
     let maxCounter = 1000;
     materials.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxCounter) {
-          maxCounter = num;
-        }
-      }
-    });
-    deletedMaterialsHistory.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxCounter) {
-          maxCounter = num;
+      if (m.code && m.status !== 'Deleted') {
+        const match = m.code.match(/^M(\d{4})$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num < 5000 && num > maxCounter) {
+            maxCounter = num;
+          }
         }
       }
     });
@@ -942,19 +937,20 @@ const MaterialsTab = () => {
 
   const getNextAutoCounter = (baseSequence = null) => {
     if (baseSequence !== null && baseSequence !== undefined) {
-      // Strip leading 'M' prefix if server returned it as e.g. 'M1032'
       const raw = String(baseSequence).replace(/^[Mm]+/, '');
       const num = parseInt(raw, 10);
       if (!isNaN(num)) return num;
     }
     
-    // Fallback if sequence fails
     let maxCounter = 1000;
     materials.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxCounter) {
-          maxCounter = num;
+      if (m.code && m.status !== 'Deleted') {
+        const match = m.code.match(/^M(\d{4})$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num < 5000 && num > maxCounter) {
+            maxCounter = num;
+          }
         }
       }
     });
@@ -971,12 +967,7 @@ const MaterialsTab = () => {
       const res = await api.get('/api/materials/sequence-peek');
       if (res.data && res.data.nextCode) {
         const rawCode = String(res.data.nextCode);
-        const serverCode = rawCode.startsWith('M') ? rawCode : `M${rawCode}`;
-        const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
-        if (!activeCodes.has(serverCode.toUpperCase()) && !deletedCodes.has(serverCode.toUpperCase())) {
-          nextCodeStr = serverCode;
-        }
+        nextCodeStr = rawCode.startsWith('M') ? rawCode : `M${rawCode}`;
       }
     } catch (e) {
       console.warn("Failed to fetch sequence peek", e);
