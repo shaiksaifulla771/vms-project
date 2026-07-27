@@ -86,20 +86,17 @@ exports.createMaterial = async (req, res, next) => {
       balance: 0
     });
 
-    // Update sequence to reflect this new manual code if it's the highest
-    const match = material.code.match(/\d+/);
+    // Update sequence to reflect manually-typed code if it falls within the auto-generation range (1000-9999)
+    const match = material.code.match(/^M(\d{4})$/i);
     if (match) {
-      const num = parseInt(match[0], 10);
-      if (!isNaN(num)) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num >= 1000 && num < 10000) {
         const Sequence = require('../models/Sequence');
-        const seqDoc = await Sequence.findById('materialCode');
-        if (!seqDoc || num > seqDoc.seq) {
-          await Sequence.findByIdAndUpdate(
-            'materialCode',
-            { $set: { seq: num } },
-            { upsert: true }
-          );
-        }
+        console.log(`[SEQUENCE SYNC] Manual code created: M${num}. Updating sequence table...`);
+        await Sequence.updateMany(
+          { $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] },
+          { $set: { seq: num } }
+        );
       }
     }
 
@@ -503,6 +500,61 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
   }
 };
 
+// @desc    Batch delete materials by IDs
+// @route   POST /api/materials/batch-delete
+// @access  Private
+exports.batchDeleteMaterials = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Invalid or empty ids array' });
+    }
+
+    // Check BOM references
+    const linkedBOM = await BOM.findOne({
+      $or: [
+        { productId: { $in: ids } },
+        { 'components.materialId': { $in: ids } }
+      ]
+    });
+    if (linkedBOM) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete materials: one or more items are currently referenced in Bill of Materials (BOM) configurations.'
+      });
+    }
+
+    // Check Purchase Order references
+    const linkedPO = await PurchaseOrder.findOne({ 'materials.materialId': { $in: ids } });
+    if (linkedPO) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete materials: one or more items are linked to historical or active Purchase Orders.'
+      });
+    }
+
+    // Check inventory stock balance
+    const inventory = await InventoryItem.findOne({ materialId: { $in: ids }, balance: { $gt: 0 } });
+    if (inventory) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete materials: material ${inventory.materialId} has an active stock balance in inventory.`
+      });
+    }
+
+    // Perform soft deletion
+    const result = await Material.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully moved ${result.modifiedCount} materials to deleted history`,
+      count: result.modifiedCount
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 // @desc    Peek next available material code without incrementing
 // @route   GET /api/materials/sequence-peek
@@ -510,20 +562,24 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
 exports.peekNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
-    const allMaterials = await Material.find({}, { code: 1 });
+    const activeMaterials = await Material.find(
+      { status: { $ne: 'Deleted' }, code: /^M\d{4}$/i },
+      { code: 1 }
+    );
+    
     let maxNum = 1000;
-    allMaterials.forEach(m => {
-      if (m.code && (/^M\d+$/i.test(m.code.trim()) || (/^\d+$/.test(m.code.trim()) && parseInt(m.code, 10) < 10000))) {
-        const num = parseInt(m.code.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+    activeMaterials.forEach(m => {
+      if (m.code) {
+        const num = parseInt(m.code.substring(1), 10);
+        if (!isNaN(num) && num < 10000 && num > maxNum) {
+          maxNum = num;
+        }
       }
     });
 
-    const seqDoc = await Sequence.findById('materialCode');
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
     const seqNum = (seqDoc && seqDoc.seq < 10000) ? seqDoc.seq : 1000;
-    
     const nextNum = Math.max(maxNum, seqNum) + 1;
-    await Sequence.findByIdAndUpdate('materialCode', { $set: { seq: nextNum - 1 } }, { upsert: true });
 
     res.status(200).json({ success: true, nextCode: `M${nextNum}` });
   } catch (err) {
@@ -531,57 +587,38 @@ exports.peekNextMaterialCode = async (req, res, next) => {
   }
 };
 
-// @desc    Get next available material code (Legacy)
+// @desc    Get next available material code and increment sequence
 // @route   GET /api/materials/next-code
 // @access  Private
 exports.getNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
-    const seqDoc = await Sequence.findById('materialCode');
-    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
-    await Sequence.findByIdAndUpdate(
-      'materialCode',
-      { $set: { seq: nextCode } },
-      { upsert: true }
+    const activeMaterials = await Material.find(
+      { status: { $ne: 'Deleted' }, code: /^M\d{4}$/i },
+      { code: 1 }
     );
-    res.status(200).json({ success: true, nextCode });
+
+    let maxNum = 1000;
+    activeMaterials.forEach(m => {
+      if (m.code) {
+        const num = parseInt(m.code.substring(1), 10);
+        if (!isNaN(num) && num < 10000 && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
+    const seqNum = (seqDoc && seqDoc.seq < 10000) ? seqDoc.seq : 1000;
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+
+    await Sequence.updateMany(
+      { $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] },
+      { $set: { seq: nextNum } }
+    );
+
+    res.status(200).json({ success: true, nextCode: `M${nextNum}` });
   } catch (err) {
-    next(err);
-  }
-};
-
-
-exports.deleteMaterialsBySource = async (req, res, next) => {
-  try {
-    const { source } = req.body;
-    if (!source) return res.status(400).json({success: false, error: 'Source required'});
-    const result = await Material.updateMany({ importSource: source }, { $set: { status: 'Deleted' } });
-    res.status(200).json({success: true, count: result.modifiedCount});
-  } catch(err) {
-    next(err);
-  }
-};
-
-exports.batchDeleteMaterials = async (req, res, next) => {
-  try {
-    const { ids } = req.body;
-    if (!ids || !Array.isArray(ids)) return res.status(400).json({success: false, error: 'Invalid ids array'});
-    const result = await Material.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
-    res.status(200).json({success: true, count: result.modifiedCount});
-  } catch(err) {
-    next(err);
-  }
-};
-
-exports.getNextMaterialCode = async (req, res, next) => {
-  try {
-    const Sequence = require('../models/Sequence');
-    const seqDoc = await Sequence.findById('materialCode');
-    let nextCode = 1001;
-    if (seqDoc) nextCode = seqDoc.seq + 1;
-    await Sequence.findByIdAndUpdate('materialCode', { $set: { seq: nextCode } }, { upsert: true });
-    res.status(200).json({ success: true, nextCode });
-  } catch(err) {
     next(err);
   }
 };
