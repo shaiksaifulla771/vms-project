@@ -419,8 +419,43 @@ exports.batchDeleteVendors = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Successfully moved ${result.modifiedCount} vendor(s) to deleted history.`
+      message: `Successfully moved ${result.modifiedCount} vendor(s) to deleted history.`,
+      count: result.modifiedCount
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Peek next available vendor code without incrementing
+// @route   GET /api/vendors/sequence-peek
+// @access  Private
+exports.peekNextVendorCode = async (req, res, next) => {
+  try {
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] });
+    const seqNum = seqDoc ? seqDoc.seq : 1000;
+    const nextCode = `V${seqNum + 1}`;
+    res.status(200).json({ success: true, nextCode });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get next available vendor code and increment sequence
+// @route   GET /api/vendors/next-code
+// @access  Private
+exports.getNextVendorCode = async (req, res, next) => {
+  try {
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] });
+    const seqNum = seqDoc ? seqDoc.seq : 1000;
+    const nextNum = seqNum + 1;
+    await Sequence.updateMany(
+      { $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] },
+      { $set: { seq: nextNum } }
+    );
+    res.status(200).json({ success: true, nextCode: `V${nextNum}` });
   } catch (err) {
     next(err);
   }
