@@ -249,7 +249,7 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
-// Security headers
+// Security headers: Content Security Policy (CSP) disabled explicitly because the frontend SPA relies on dynamic asset loading and Tailwind inline utility classes.
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // Rate limiting scoped to write/mutating routes
