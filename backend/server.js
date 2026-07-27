@@ -244,8 +244,29 @@ connectDB().then(async () => {
 });
 
 const mongoSanitize = require('express-mongo-sanitize');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+
+// Security headers
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// Rate limiting scoped to write/mutating routes
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 500, // 500 mutating requests per 15 min per IP (ERP safe)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many write requests from this IP, please try again after 15 minutes.' }
+});
+
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    return writeLimiter(req, res, next);
+  }
+  next();
+});
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
@@ -263,6 +284,15 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
+
+// Healthcheck endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Mount routers
 app.use('/api/auth', require('./routes/authRoutes'));
