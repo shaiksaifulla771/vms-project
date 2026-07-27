@@ -21,6 +21,11 @@ const BOMSchema = new mongoose.Schema({
     unique: true,
   },
   components: [BOMComponentSchema],
+  status: {
+    type: String,
+    enum: ['Active', 'Deleted'],
+    default: 'Active',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

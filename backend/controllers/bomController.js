@@ -1,13 +1,14 @@
 const BOM = require('../models/BOM');
 const Material = require('../models/Material');
 const ProductionOrder = require('../models/ProductionOrder');
+const { detectCycle } = require('../utils/bomGraph');
 
 // @desc    Get all BOMs
 // @route   GET /api/boms
 // @access  Private
 exports.getBOMs = async (req, res, next) => {
   try {
-    const boms = await BOM.find()
+    const boms = await BOM.find({ status: { $ne: 'Deleted' } })
       .populate('productId', 'name code unit type')
       .populate('components.materialId', 'name code unit type')
       .sort({ createdAt: -1 });
@@ -27,7 +28,7 @@ exports.getBOM = async (req, res, next) => {
       .populate('productId', 'name code unit type')
       .populate('components.materialId', 'name code unit type');
 
-    if (!bom) {
+    if (!bom || bom.status === 'Deleted') {
       return res.status(404).json({ success: false, error: 'Bill of Materials not found' });
     }
 
@@ -35,6 +36,53 @@ exports.getBOM = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// Helper function to validate component list integrity (Duplicates + Batched N+1 Exist Check + Cycle Detection)
+const validateBOMComponents = async (productId, components, currentBomId = null) => {
+  // 1. Check duplicate components within submission
+  const seenMaterialIds = new Set();
+  for (const comp of components) {
+    if (!comp.materialId) continue;
+    const matIdStr = comp.materialId.toString();
+    if (seenMaterialIds.has(matIdStr)) {
+      const dupMaterial = await Material.findById(comp.materialId);
+      const name = dupMaterial ? dupMaterial.name : matIdStr;
+      return {
+        isValid: false,
+        statusCode: 400,
+        error: `Duplicate component found in BOM submission: Material '${name}' appears more than once.`
+      };
+    }
+    seenMaterialIds.add(matIdStr);
+  }
+
+  // 2. Batched existence query (N+1 query optimization)
+  const componentIds = components.map(c => c.materialId).filter(Boolean);
+  const foundMaterials = await Material.find({ _id: { $in: componentIds } });
+  const foundIds = new Set(foundMaterials.map(m => m._id.toString()));
+  const missing = componentIds.filter(id => !foundIds.has(id.toString()));
+
+  if (missing.length > 0) {
+    return {
+      isValid: false,
+      statusCode: 404,
+      error: `Component material(s) with ID(s) ${missing.join(', ')} not found`
+    };
+  }
+
+  // 3. Multi-level cycle detection
+  const cycleResult = await detectCycle(productId, components, currentBomId);
+  if (cycleResult.hasCycle) {
+    const pathStr = cycleResult.cycleNames.join(' → ');
+    return {
+      isValid: false,
+      statusCode: 400,
+      error: `Cannot save BOM: Component '${cycleResult.cycleNames[1]}' would create a circular dependency (${pathStr}).`
+    };
+  }
+
+  return { isValid: true };
 };
 
 // @desc    Create BOM
@@ -48,33 +96,28 @@ exports.createBOM = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please provide productId and a list of component materials' });
     }
 
-    // Verify product exists and is of Finished Good type
+    // Verify product exists and is of Finished Good or Semi-Finished type
     const product = await Material.findById(productId);
-    if (!product) {
+    if (!product || product.status === 'Deleted') {
       return res.status(404).json({ success: false, error: 'Target product material not found' });
     }
     if (product.type !== 'Finished' && product.type !== 'Semi-Finished') {
       return res.status(400).json({ success: false, error: 'BOM recipe configurations can only be created for Finished or Semi-Finished Products' });
     }
 
-    // Check if BOM already exists for this product
-    const existing = await BOM.findOne({ productId });
+    // Check if Active BOM already exists for this product
+    const existing = await BOM.findOne({ productId, status: { $ne: 'Deleted' } });
     if (existing) {
       return res.status(400).json({ success: false, error: 'A Bill of Materials (BOM) already exists for this product' });
     }
 
-    // Validate component integrity (no recursive links, components exist)
-    for (let comp of components) {
-      if (comp.materialId.toString() === productId.toString()) {
-        return res.status(400).json({ success: false, error: 'A product cannot be specified as a raw component of its own assembly BOM' });
-      }
-      const compMaterial = await Material.findById(comp.materialId);
-      if (!compMaterial) {
-        return res.status(404).json({ success: false, error: `Component material with ID ${comp.materialId} not found` });
-      }
+    // Validate component integrity (Duplicates, Batched existence, Cycle check)
+    const validation = await validateBOMComponents(productId, components);
+    if (!validation.isValid) {
+      return res.status(validation.statusCode).json({ success: false, error: validation.error });
     }
 
-    const bom = await BOM.create({ productId, components });
+    const bom = await BOM.create({ productId, components, status: 'Active' });
     const populated = await BOM.findById(bom._id)
       .populate('productId', 'name code unit type')
       .populate('components.materialId', 'name code unit type');
@@ -93,7 +136,7 @@ exports.updateBOM = async (req, res, next) => {
     const { components } = req.body;
     let bom = await BOM.findById(req.params.id);
 
-    if (!bom) {
+    if (!bom || bom.status === 'Deleted') {
       return res.status(404).json({ success: false, error: 'Bill of Materials not found' });
     }
 
@@ -102,14 +145,9 @@ exports.updateBOM = async (req, res, next) => {
     }
 
     // Validate component integrity
-    for (let comp of components) {
-      if (comp.materialId.toString() === bom.productId.toString()) {
-        return res.status(400).json({ success: false, error: 'A product cannot be specified as a raw component of its own assembly BOM' });
-      }
-      const compMaterial = await Material.findById(comp.materialId);
-      if (!compMaterial) {
-        return res.status(404).json({ success: false, error: `Component material with ID ${comp.materialId} not found` });
-      }
+    const validation = await validateBOMComponents(bom.productId, components, bom._id);
+    if (!validation.isValid) {
+      return res.status(validation.statusCode).json({ success: false, error: validation.error });
     }
 
     bom = await BOM.findByIdAndUpdate(
@@ -126,12 +164,17 @@ exports.updateBOM = async (req, res, next) => {
   }
 };
 
-// @desc    Delete BOM
+// @desc    Delete BOM (Soft Delete)
 // @route   DELETE /api/boms/:id
 // @access  Private
 exports.deleteBOM = async (req, res, next) => {
   try {
     const bomId = req.params.id;
+
+    const bom = await BOM.findById(bomId);
+    if (!bom || bom.status === 'Deleted') {
+      return res.status(404).json({ success: false, error: 'BOM not found' });
+    }
 
     // Check if referenced in any ProductionOrder
     const linkedPO = await ProductionOrder.findOne({ bomId });
@@ -142,10 +185,8 @@ exports.deleteBOM = async (req, res, next) => {
       });
     }
 
-    const bom = await BOM.findByIdAndDelete(bomId);
-    if (!bom) {
-      return res.status(404).json({ success: false, error: 'BOM not found' });
-    }
+    bom.status = 'Deleted';
+    await bom.save();
 
     res.status(200).json({ success: true, message: 'BOM deleted successfully', data: {} });
   } catch (err) {
