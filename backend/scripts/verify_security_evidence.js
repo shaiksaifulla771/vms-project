@@ -1,6 +1,7 @@
 const http = require('http');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
+const getJwtSecret = require('../config/jwt');
 
 async function makeRequest(options, postData = null) {
   return new Promise((resolve, reject) => {
@@ -27,7 +28,7 @@ async function runEvidenceCollection() {
   await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms');
   const User = mongoose.model('User', new mongoose.Schema({ username: String, email: String, role: String }));
   const admin = await User.findOne({ role: 'Admin' });
-  const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET || 'vms_secret_key_123456', { expiresIn: '30d' });
+  const token = jwt.sign({ id: admin._id }, getJwtSecret(), { expiresIn: '30d' });
   const authHeaders = {
     'Authorization': `Bearer ${token}`
   };

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const getJwtSecret = require('../config/jwt');
 
 // Protect routes
 exports.protect = async (req, res, next) => {
@@ -23,7 +24,7 @@ exports.protect = async (req, res, next) => {
 
   try {
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'vms_secret_key_123456');
+    const decoded = jwt.verify(token, getJwtSecret());
 
     // Attach user to req
     req.user = await User.findById(decoded.id);
