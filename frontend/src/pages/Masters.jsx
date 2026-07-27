@@ -414,6 +414,11 @@ const MaterialsTab = () => {
   const [draftMessage, setDraftMessage] = useState('');
   const autoSaveIntervalRef = useRef(null);
   const fileInputRef = useRef(null);
+  const activeDraftIdRef = useRef(null);
+
+  useEffect(() => {
+    activeDraftIdRef.current = currentDraftId;
+  }, [currentDraftId]);
 
   const [autoPrefix, setAutoPrefix] = useState(() => localStorage.getItem('erp_auto_prefix') || 'DCODE');
   const [toasts, setToasts] = useState([]);
@@ -571,21 +576,22 @@ const MaterialsTab = () => {
       const timer = setInterval(() => {
         setFormData((currData) => {
           // Prevent saving empty forms on open
-          if (!currData.name.trim() && currData.code === '0001') {
+          if (!currData.name.trim() && !currData.description.trim()) {
             return currData;
           }
 
+          const now = new Date().toLocaleTimeString();
+          let targetId = activeDraftIdRef.current;
+
+          if (!targetId) {
+            targetId = `draft_mat_${Date.now()}`;
+            activeDraftIdRef.current = targetId;
+            setCurrentDraftId(targetId);
+          }
+
           setDrafts((prevDrafts) => {
-            const now = new Date().toLocaleTimeString();
-            let targetId = currentDraftId;
+            const existingIndex = prevDrafts.findIndex((d) => d.id === targetId);
             let updated = [...prevDrafts];
-
-            if (!targetId) {
-              targetId = `draft_${Date.now()}`;
-              setCurrentDraftId(targetId);
-            }
-
-            const existingIndex = updated.findIndex((d) => d.id === targetId);
             const draftEntry = {
               id: targetId,
               timestamp: now,
@@ -598,7 +604,6 @@ const MaterialsTab = () => {
               updated.unshift(draftEntry); // Newest draft first
             }
 
-            // FIFO: Queue size restricted to 10
             if (updated.length > 10) {
               updated = updated.slice(0, 10);
             }
@@ -616,10 +621,35 @@ const MaterialsTab = () => {
     } else {
       setDraftMessage('');
     }
-  }, [isModalOpen, editingId, currentDraftId]);
+  }, [isModalOpen, editingId]);
+
+  const handleSaveAsDraft = () => {
+    if (!formData.name.trim() && !formData.description.trim()) {
+      showToast("Please enter material details before saving draft.", "error");
+      return;
+    }
+    const now = new Date().toLocaleTimeString();
+    const targetId = activeDraftIdRef.current || currentDraftId || `draft_mat_${Date.now()}`;
+    const draftEntry = {
+      id: targetId,
+      timestamp: now,
+      data: formData
+    };
+    setDrafts((prev) => {
+      const filtered = prev.filter((d) => d.id !== targetId);
+      const updated = [draftEntry, ...filtered].slice(0, 10);
+      localStorage.setItem('erp_material_drafts', JSON.stringify(updated));
+      return updated;
+    });
+    activeDraftIdRef.current = null;
+    setCurrentDraftId(null);
+    setIsModalOpen(false);
+    showToast("Material configuration saved as draft.", "success");
+  };
 
   const handleLoadDraft = (draft) => {
     setEditingId(null);
+    activeDraftIdRef.current = draft.id;
     setCurrentDraftId(draft.id);
     setFormData(draft.data);
     setFormErrors({});
@@ -629,13 +659,18 @@ const MaterialsTab = () => {
   };
 
   const handleDiscardDraft = (draftId, e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (!window.confirm('Discard this draft?')) return;
+    if (currentDraftId === draftId || activeDraftIdRef.current === draftId) {
+      activeDraftIdRef.current = null;
+      setCurrentDraftId(null);
+    }
     setDrafts((prev) => {
       const filtered = prev.filter((d) => d.id !== draftId);
       localStorage.setItem('erp_material_drafts', JSON.stringify(filtered));
       return filtered;
     });
+    showToast("Draft discarded.", "info");
   };
 
   const handleViewDetails = (mat) => {
@@ -1750,12 +1785,15 @@ const MaterialsTab = () => {
         showToast("Successfully added 1 new material record.");
         
         // Evict draft from FIFO queue on successful register
-        if (currentDraftId) {
+        const targetId = activeDraftIdRef.current || currentDraftId;
+        if (targetId) {
           setDrafts((prev) => {
-            const filtered = prev.filter((d) => d.id !== currentDraftId);
+            const filtered = prev.filter((d) => d.id !== targetId);
             localStorage.setItem('erp_material_drafts', JSON.stringify(filtered));
             return filtered;
           });
+          activeDraftIdRef.current = null;
+          setCurrentDraftId(null);
         }
       }
       fetchMaterials();
@@ -2781,6 +2819,18 @@ const MaterialsTab = () => {
             <Button variant="outline" size="sm" onClick={handleCloseModal} className="!px-4 !py-2 text-xs font-bold">
               Cancel
             </Button>
+            {!editingId && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSaveAsDraft}
+                className="border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100 !px-4 !py-2 text-xs font-bold flex items-center space-x-1"
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span>Save as Draft</span>
+              </Button>
+            )}
             <Button type="submit" size="sm" isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold !px-6 !py-2 text-xs shadow-md">
               {editingId ? 'Save Material Changes' : '✓ Register Material'}
             </Button>
@@ -4168,6 +4218,11 @@ const VendorsTab = () => {
   const [currentDraftId, setCurrentDraftId] = useState(null);
   const [showDraftsList, setShowDraftsList] = useState(false);
   const [draftMessage, setDraftMessage] = useState('');
+  const vendorDraftIdRef = useRef(null);
+
+  useEffect(() => {
+    vendorDraftIdRef.current = currentDraftId;
+  }, [currentDraftId]);
   const [vendorToasts, setVendorToasts] = useState([]);
 
   const categoryOptions = [
@@ -5121,13 +5176,15 @@ const VendorsTab = () => {
     if (isModalOpen && !editingId) {
       const timer = setInterval(() => {
         setFormData((currData) => {
-          if (!currData.name && !currData.company && !currData.email && !currData.phone && !currData.address) {
+          if (!currData.name.trim() && !currData.company.trim() && !currData.email.trim() && !currData.phone.trim() && !currData.address.trim()) {
             return currData;
           }
 
           const now = new Date().toLocaleTimeString();
-          const draftId = currentDraftId || `draft_vendor_${Date.now()}`;
-          if (!currentDraftId) {
+          let draftId = vendorDraftIdRef.current;
+          if (!draftId) {
+            draftId = `draft_vendor_${Date.now()}`;
+            vendorDraftIdRef.current = draftId;
             setCurrentDraftId(draftId);
           }
 
@@ -5163,10 +5220,31 @@ const VendorsTab = () => {
     } else {
       setDraftMessage('');
     }
-  }, [isModalOpen, editingId, currentDraftId]);
+  }, [isModalOpen, editingId]);
+
+  const handleSaveVendorAsDraft = () => {
+    if (!formData.name.trim() && !formData.company.trim() && !formData.email.trim() && !formData.phone.trim()) {
+      showToast("Please enter vendor details before saving draft.", "error");
+      return;
+    }
+    const now = new Date().toLocaleTimeString();
+    const draftId = vendorDraftIdRef.current || currentDraftId || `draft_vendor_${Date.now()}`;
+    const newDraft = { id: draftId, timestamp: now, data: formData };
+    setDrafts((prev) => {
+      const filtered = prev.filter((d) => d.id !== draftId);
+      const updated = [newDraft, ...filtered].slice(0, 10);
+      localStorage.setItem('erp_vendor_drafts', JSON.stringify(updated));
+      return updated;
+    });
+    vendorDraftIdRef.current = null;
+    setCurrentDraftId(null);
+    setIsModalOpen(false);
+    showToast("Vendor configuration saved as draft.", "success");
+  };
 
   const handleLoadDraft = (draft) => {
     setEditingId(null);
+    vendorDraftIdRef.current = draft.id;
     setCurrentDraftId(draft.id);
     setFormData(draft.data);
     setFormErrors({});
@@ -5176,13 +5254,18 @@ const VendorsTab = () => {
   };
 
   const handleDiscardDraft = (draftId, e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (!window.confirm('Discard this draft?')) return;
+    if (currentDraftId === draftId || vendorDraftIdRef.current === draftId) {
+      vendorDraftIdRef.current = null;
+      setCurrentDraftId(null);
+    }
     setDrafts((prev) => {
       const filtered = prev.filter((d) => d.id !== draftId);
       localStorage.setItem('erp_vendor_drafts', JSON.stringify(filtered));
       return filtered;
     });
+    showToast("Draft discarded.", "info");
   };
 
   const getNextVendorAutoCode = () => {
@@ -5208,6 +5291,8 @@ const VendorsTab = () => {
 
   const handleOpenAddModal = async () => {
     setEditingId(null);
+    vendorDraftIdRef.current = null;
+    setCurrentDraftId(null);
     setCurrentDraftId(null); // Clear active draft pointer
     setFormErrors({});
     
@@ -5428,12 +5513,15 @@ const VendorsTab = () => {
         }
         showToast("Successfully added 1 new vendor record.");
 
-        if (currentDraftId) {
+        const targetId = vendorDraftIdRef.current || currentDraftId;
+        if (targetId) {
           setDrafts((prev) => {
-            const filtered = prev.filter((d) => d.id !== currentDraftId);
+            const filtered = prev.filter((d) => d.id !== targetId);
             localStorage.setItem('erp_vendor_drafts', JSON.stringify(filtered));
             return filtered;
           });
+          vendorDraftIdRef.current = null;
+          setCurrentDraftId(null);
         }
       }
       await fetchVendors();
@@ -7396,6 +7484,18 @@ const VendorsTab = () => {
 
           <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-200 mt-4">
             <Button variant="outline" type="button" onClick={handleCloseModal}>Cancel</Button>
+            {!editingId && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSaveVendorAsDraft}
+                className="border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100 !px-4 !py-2 text-xs font-bold flex items-center space-x-1"
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span>Save as Draft</span>
+              </Button>
+            )}
             <Button type="submit" onClick={handleFormSubmit} isLoading={submitLoading} className="bg-blue-600 hover:bg-blue-700 shadow-sm px-6">
               {editingId ? 'Save Changes' : 'Register Vendor'}
             </Button>
