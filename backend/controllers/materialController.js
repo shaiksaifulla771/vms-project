@@ -300,13 +300,26 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
     const { importSource, isAutoEntry } = req.body;
     const isAutoEntryVal = isAutoEntry === 'true' || isAutoEntry === true;
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(worksheet);
+    let rows;
+    try {
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+        return res.status(400).json({ success: false, error: 'Uploaded file contains no readable sheets.' });
+      }
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      rows = XLSX.utils.sheet_to_json(worksheet);
+    } catch (parseErr) {
+      return res.status(400).json({ success: false, error: 'Failed to parse uploaded spreadsheet file. File may be corrupted or invalid format.' });
+    }
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, error: 'Uploaded sheet file is empty' });
+    }
+
+    const MAX_ROWS = process.env.MAX_UPLOAD_ROWS ? parseInt(process.env.MAX_UPLOAD_ROWS, 10) : 5000;
+    if (rows.length > MAX_ROWS) {
+      return res.status(400).json({ success: false, error: `Uploaded sheet contains ${rows.length} rows, which exceeds the maximum allowed limit of ${MAX_ROWS} rows per upload.` });
     }
 
     const getRowValueIgnoreCase = (row, keys) => {

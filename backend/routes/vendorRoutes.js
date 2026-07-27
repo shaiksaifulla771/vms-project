@@ -12,6 +12,7 @@ const {
   batchDeleteVendors
 } = require('../controllers/vendorController');
 const { protect } = require('../middleware/authMiddleware');
+const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
@@ -31,7 +32,7 @@ router.route('/batch')
   .post(protect, createVendorsBatch);
 
 router.route('/batch-upload')
-  .post(protect, createVendorsBatchUpload);
+  .post(protect, upload.single('file'), createVendorsBatchUpload);
 
 router.route('/batch-delete-source')
   .post(protect, deleteVendorsBySource);
