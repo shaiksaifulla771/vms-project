@@ -3505,26 +3505,7 @@ const MaterialsTab = () => {
                                             };
                                             const updatedList = [...editableAcceptedItems];
                                             updatedList[idx] = updatedItemRaw;
-                                            // Duplication check against active and deleted items
-        const activeCodes = new Set(materials.map(m => (m.code || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedMaterialsHistory.map(d => (d.code || '').toUpperCase().trim()));
-        let foundConflict = false;
-        for (const row of rawRowsMapped) {
-          const rowCode = (row.code || '').toUpperCase().trim();
-          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
-            foundConflict = true;
-            break;
-          }
-        }
-        if (foundConflict) {
-          setMaterialBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
-          setImportSummary(null);
-          setEditableAcceptedItems([]);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          return;
-        }
-
-        const systemExistingCodes = materials.map(m => m.code.toUpperCase().trim());
+                                            const systemExistingCodes = materials.map(m => (m.code || '').toUpperCase().trim());
                                             const { processedItems: nextProcessed, summary: nextSummary } = recalculateImportSummary(updatedList, systemExistingCodes, isAutoEntry);
                                             setEditableAcceptedItems(nextProcessed);
                                             setImportSummary(nextSummary);
@@ -4728,26 +4709,7 @@ const VendorsTab = () => {
 
       if (errors.length === 0) {
         if (!item.vendorId) {
-          // Duplication check against active and deleted items
-        const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
-        let foundConflict = false;
-        for (const row of rawRowsMapped) {
-          const rowCode = (row.vendorId || '').toUpperCase().trim();
-          if (rowCode && (activeCodes.has(rowCode) || deletedCodes.has(rowCode))) {
-            foundConflict = true;
-            break;
-          }
-        }
-        if (foundConflict) {
-          setVendorBlockingPopupMessage("This file data already is in database which is presented in deleted rows & sheets status.");
-          setVendorImportSummary(null);
-          setEditableVendorItems([]);
-          if (vendorFileInputRef.current) vendorFileInputRef.current.value = '';
-          return;
-        }
-
-        const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
+          const systemExistingCodes = vendors.map(v => (v.vendorId || '').toUpperCase().trim());
           const usedCodes = new Set([
             ...systemExistingCodes,
             ...list.map(i => (i.vendorId || '').toUpperCase().trim()).filter(Boolean)
