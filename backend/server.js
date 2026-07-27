@@ -18,6 +18,10 @@ const QualityRecord = require('./models/QualityRecord');
 // Load environment variables
 dotenv.config();
 
+// Validate JWT secret & production guards at server boot time
+const getJwtSecret = require('./config/jwt');
+getJwtSecret();
+
 function determineSubcategory(name, type, vendor) {
   const lowerName = (name || '').toLowerCase();
   const lowerVendor = (vendor || '').toLowerCase();
