@@ -416,10 +416,6 @@ const MaterialsTab = () => {
   const fileInputRef = useRef(null);
   const activeDraftIdRef = useRef(null);
 
-  useEffect(() => {
-    activeDraftIdRef.current = currentDraftId;
-  }, [currentDraftId]);
-
   const [autoPrefix, setAutoPrefix] = useState(() => localStorage.getItem('erp_auto_prefix') || 'DCODE');
   const [toasts, setToasts] = useState([]);
   const [editingRowId, setEditingRowId] = useState(null);
@@ -468,6 +464,10 @@ const MaterialsTab = () => {
     }
   });
   const [currentDraftId, setCurrentDraftId] = useState(null);
+
+  useEffect(() => {
+    activeDraftIdRef.current = currentDraftId;
+  }, [currentDraftId]);
   const [showDraftsList, setShowDraftsList] = useState(false);
   const [viewingMaterial, setViewingMaterial] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
