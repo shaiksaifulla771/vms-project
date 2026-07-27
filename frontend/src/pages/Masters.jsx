@@ -10,6 +10,7 @@ import { Dialog } from '../components/ui/Dialog';
 import { Drawer } from '../components/ui/Drawer';
 import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, ArrowRight, ShieldCheck, Printer, MoreVertical, Eye, Filter, Info, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
 import BulkVendorUploadGrid from '../components/BulkVendorUploadGrid';
+import MPNMaster from './MPNMaster';
 
 const Masters = () => {
   const [activeTab, setActiveTab] = useState('materials');
@@ -38,9 +39,25 @@ const Masters = () => {
         >
           Vendor Master
         </button>
+        <button
+          onClick={() => setActiveTab('mpns')}
+          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${
+            activeTab === 'mpns'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          MPN Master
+        </button>
       </div>
 
-      {activeTab === 'materials' ? <MaterialsTab /> : <VendorsTab />}
+      {activeTab === 'materials' ? (
+        <MaterialsTab />
+      ) : activeTab === 'vendors' ? (
+        <VendorsTab />
+      ) : (
+        <MPNMaster />
+      )}
     </div>
   );
 };
