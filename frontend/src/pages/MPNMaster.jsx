@@ -451,14 +451,13 @@ export default function MPNMaster() {
             </div>
 
             {/* Status Filter */}
-            <div className="flex items-center space-x-1.5">
-              <Filter className="h-4 w-4 text-slate-400 shrink-0" />
+            <div>
               <Select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="h-9 text-xs"
               >
-                <option value="All">All Statuses (Excl. Deleted)</option>
+                <option value="All">All Statuses</option>
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
                 <option value="Draft">Draft</option>
