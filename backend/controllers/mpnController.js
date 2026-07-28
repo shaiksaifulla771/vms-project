@@ -122,7 +122,7 @@ exports.getMPN = async (req, res, next) => {
 exports.peekNextMPNCode = async (req, res, next) => {
   try {
     const allMPNs = await MPN.find(
-      { status: { $ne: 'Deleted' }, mpnCode: /^MPN\d{4}$/i },
+      { mpnCode: /^MPN\d{4}$/i },
       { mpnCode: 1 }
     );
 
@@ -239,7 +239,7 @@ exports.createMPN = async (req, res, next) => {
     // Auto-generate code if missing
     if (!req.body.mpnCode) {
       const activeMPNs = await MPN.find(
-        { status: { $ne: 'Deleted' }, mpnCode: /^MPN\d{4}$/i },
+        { mpnCode: /^MPN\d{4}$/i },
         { mpnCode: 1 }
       );
       let maxNum = 1000;
