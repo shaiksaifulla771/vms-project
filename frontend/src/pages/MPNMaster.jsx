@@ -386,6 +386,24 @@ export default function MPNMaster() {
     return manufacturers.filter((m) => m.toLowerCase().includes(term));
   }, [manufacturers, form.manufacturerName, form.isDirectFromManufacturer]);
 
+  // Select mode state
+  const [selectMode, setSelectMode] = useState(false);
+
+  const toggleSelectMode = () => {
+    if (selectMode) {
+      setSelectedIds([]);
+    }
+    setSelectMode(!selectMode);
+  };
+
+  const handleEditSelected = () => {
+    if (selectedIds.length !== 1) return;
+    const target = rows.find((r) => r._id === selectedIds[0]);
+    if (target) {
+      openEditModal(target);
+    }
+  };
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -415,100 +433,133 @@ export default function MPNMaster() {
         </div>
       )}
 
-      {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <Cpu className="h-5 w-5 text-blue-600" />
-            MPN Master (Manufacturer Part Numbers)
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Single source of truth linking Materials to Vendors with part specifications & commercial pricing
-          </p>
-        </div>
+      {/* Toolbar & 4 Search/Filter Controls Bar */}
+      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          {/* Left: Search & Filter Selects */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 flex-1">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search MPN ID, part #, material..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9 text-xs"
+              />
+            </div>
 
-        <div className="flex items-center space-x-2">
-          {selectedIds.length > 0 && statusFilter !== 'Deleted' && (
-            <Button variant="danger" size="sm" onClick={handleBatchDelete}>
-              <Trash2 className="h-3.5 w-3.5 mr-1" />
-              Delete Selected ({selectedIds.length})
+            {/* Status Filter */}
+            <div className="flex items-center space-x-1.5">
+              <Filter className="h-4 w-4 text-slate-400 shrink-0" />
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-9 text-xs"
+              >
+                <option value="All">All Statuses (Excl. Deleted)</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Draft">Draft</option>
+                <option value="Deleted">Deleted (Restore History)</option>
+              </Select>
+            </div>
+
+            {/* Material Filter */}
+            <div>
+              <Select
+                value={materialFilter}
+                onChange={(e) => setMaterialFilter(e.target.value)}
+                className="h-9 text-xs"
+              >
+                <option value="">All Materials</option>
+                {materials.map((m) => (
+                  <option key={m._id} value={m._id}>
+                    {m.name} ({m.code})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {/* Vendor Filter */}
+            <div>
+              <Select
+                value={vendorFilter}
+                onChange={(e) => setVendorFilter(e.target.value)}
+                className="h-9 text-xs"
+              >
+                <option value="">All Vendors</option>
+                {vendors.map((v) => (
+                  <option key={v._id} value={v._id}>
+                    {v.name} {v.company ? `(${v.company})` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {/* Right: Actions & Select Mode */}
+          <div className="flex items-center space-x-2 shrink-0 justify-end">
+            <Button
+              variant={selectMode ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={toggleSelectMode}
+              className="text-xs h-9"
+            >
+              {selectMode ? (
+                <>
+                  <CheckSquare className="h-3.5 w-3.5 mr-1 text-blue-600" />
+                  Cancel Selection
+                </>
+              ) : (
+                <>
+                  <Square className="h-3.5 w-3.5 mr-1" />
+                  Select
+                </>
+              )}
             </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={handleExportExcel}>
-            <Download className="h-3.5 w-3.5 mr-1" />
-            Export to Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={fetchAll}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1" />
-            Refresh
-          </Button>
-          <Button variant="primary" size="sm" onClick={openAddModal}>
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Add MPN
-          </Button>
-        </div>
-      </div>
 
-      {/* 4 Search & Filter Controls Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            type="text"
-            placeholder="Search MPN ID, part #, material..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-9 text-xs"
-          />
-        </div>
+            {selectMode && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={selectedIds.length !== 1}
+                  onClick={handleEditSelected}
+                  className="text-xs h-9"
+                  title="Edit selected record (requires exactly 1 selection)"
+                >
+                  <Edit2 className="h-3.5 w-3.5 mr-1" />
+                  Edit
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={selectedIds.length === 0}
+                  onClick={handleBatchDelete}
+                  className="text-xs h-9"
+                  title="Soft delete selected records"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete ({selectedIds.length})
+                </Button>
+              </>
+            )}
 
-        {/* Status Filter */}
-        <div className="flex items-center space-x-1.5">
-          <Filter className="h-4 w-4 text-slate-400 shrink-0" />
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 text-xs"
-          >
-            <option value="All">All Statuses (Excl. Deleted)</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-            <option value="Draft">Draft</option>
-            <option value="Deleted">Deleted (Restore History)</option>
-          </Select>
-        </div>
-
-        {/* Material Filter */}
-        <div>
-          <Select
-            value={materialFilter}
-            onChange={(e) => setMaterialFilter(e.target.value)}
-            className="h-9 text-xs"
-          >
-            <option value="">All Materials</option>
-            {materials.map((m) => (
-              <option key={m._id} value={m._id}>
-                {m.name} ({m.code})
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        {/* Vendor Filter */}
-        <div>
-          <Select
-            value={vendorFilter}
-            onChange={(e) => setVendorFilter(e.target.value)}
-            className="h-9 text-xs"
-          >
-            <option value="">All Vendors</option>
-            {vendors.map((v) => (
-              <option key={v._id} value={v._id}>
-                {v.name} {v.company ? `(${v.company})` : ''}
-              </option>
-            ))}
-          </Select>
+            <Button variant="outline" size="sm" onClick={handleExportExcel} className="text-xs h-9">
+              <Download className="h-3.5 w-3.5 mr-1" />
+              Export to Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={fetchAll} className="text-xs h-9">
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Refresh
+            </Button>
+            <Button variant="primary" size="sm" onClick={openAddModal} className="text-xs h-9">
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add MPN
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -519,14 +570,16 @@ export default function MPNMaster() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50">
-                  <TableHead className="w-10 text-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.length > 0 && selectedIds.length === filteredRows.length}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </TableHead>
+                  {selectMode && (
+                    <TableHead className="w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.length > 0 && selectedIds.length === filteredRows.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead className="font-bold text-xs">MPN ID</TableHead>
                   <TableHead className="font-bold text-xs">Material Name</TableHead>
                   <TableHead className="font-bold text-xs">Mfg Part Number</TableHead>
@@ -542,27 +595,29 @@ export default function MPNMaster() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-xs text-slate-400">
+                    <TableCell colSpan={selectMode ? 11 : 10} className="text-center py-8 text-xs text-slate-400">
                       Loading MPN master records...
                     </TableCell>
                   </TableRow>
                 ) : paginatedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-xs text-slate-400">
+                    <TableCell colSpan={selectMode ? 11 : 10} className="text-center py-8 text-xs text-slate-400">
                       No MPN records found matching your filters.
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedRows.map((row) => (
                     <TableRow key={row._id} className="hover:bg-slate-50/80 transition-colors">
-                      <TableCell className="text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(row._id)}
-                          onChange={() => toggleSelectOne(row._id)}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                      </TableCell>
+                      {selectMode && (
+                        <TableCell className="text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(row._id)}
+                            onChange={() => toggleSelectOne(row._id)}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-mono text-xs font-bold text-blue-700">
                         {row.mpnCode || '—'}
                       </TableCell>
@@ -671,11 +726,16 @@ export default function MPNMaster() {
         </div>
       </Card>
 
-      {/* Add / Edit Dialog Modal */}
-      <Dialog isOpen={modalOpen} onClose={closeModal} title={isEdit ? 'Edit MPN Specification' : 'Register New MPN Record'}>
-        <div className="space-y-4 pt-2">
-          {/* MPN Code & Status */}
-          <div className="grid grid-cols-2 gap-3">
+      {/* Full-Screen / Large Viewport Add & Edit Dialog Panel */}
+      <Dialog
+        isOpen={modalOpen}
+        onClose={closeModal}
+        title={isEdit ? 'Edit MPN Specification' : 'Register New MPN Record'}
+        className="max-w-5xl w-[95vw] max-h-[92vh]"
+      >
+        <div className="space-y-5 pt-2">
+          {/* Section 1: Basic Identifiers & Status */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/60 p-3.5 rounded-xl border border-slate-200">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 MPN ID <span className="text-slate-400 font-normal">(Auto-generated)</span>
@@ -685,9 +745,10 @@ export default function MPNMaster() {
                 value={form.mpnCode}
                 disabled
                 placeholder="e.g. MPN1001"
-                className="text-xs font-mono bg-slate-100"
+                className="text-xs font-mono bg-slate-100 font-bold text-blue-700"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Status <span className="text-blue-600 text-[10px] font-normal">(Controls Validation)</span>
@@ -704,10 +765,71 @@ export default function MPNMaster() {
                 ))}
               </Select>
             </div>
+
+            {/* Same as Vendor Checkbox & Manufacturer Combo Box */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  Manufacturer Name <span className="text-red-500">*</span>
+                </label>
+                <label className="flex items-center space-x-1.5 cursor-pointer text-xs font-bold text-blue-700 select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.isDirectFromManufacturer}
+                    onChange={(e) => handleSameAsVendorToggle(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Same as Vendor</span>
+                </label>
+              </div>
+
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={form.manufacturerName}
+                  onChange={(e) => {
+                    handleChange('manufacturerName', e.target.value);
+                    setMfrSuggestionsOpen(true);
+                  }}
+                  onFocus={() => setMfrSuggestionsOpen(true)}
+                  disabled={form.isDirectFromManufacturer}
+                  placeholder={
+                    form.isDirectFromManufacturer
+                      ? form.vendorId
+                        ? 'Auto-filled from selected Vendor'
+                        : 'Select a Vendor to auto-fill'
+                      : 'Type manufacturer name...'
+                  }
+                  className={`text-xs ${form.isDirectFromManufacturer ? 'bg-slate-100 text-slate-600 font-bold' : ''}`}
+                />
+
+                {/* Combo box autocomplete suggestions */}
+                {!form.isDirectFromManufacturer && mfrSuggestionsOpen && filteredMfrSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {filteredMfrSuggestions.map((mfr, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          handleChange('manufacturerName', mfr);
+                          setMfrSuggestionsOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                      >
+                        {mfr}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {formErrors.manufacturerName && (
+                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.manufacturerName}</p>
+              )}
+            </div>
           </div>
 
-          {/* Linked Material & Linked Vendor */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Section 2: Links & Part Numbers */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Linked Material <span className="text-red-500">*</span>
@@ -749,86 +871,6 @@ export default function MPNMaster() {
                 <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.vendorId}</p>
               )}
             </div>
-          </div>
-
-          {/* Same as Vendor Checkbox & Manufacturer Combo Box */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-slate-700">
-                Manufacturer Name <span className="text-red-500">*</span>
-              </label>
-              <label className="flex items-center space-x-1.5 cursor-pointer text-xs font-bold text-blue-700 select-none">
-                <input
-                  type="checkbox"
-                  checked={form.isDirectFromManufacturer}
-                  onChange={(e) => handleSameAsVendorToggle(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>Same as Vendor</span>
-              </label>
-            </div>
-
-            <div className="relative">
-              <Input
-                type="text"
-                value={form.manufacturerName}
-                onChange={(e) => {
-                  handleChange('manufacturerName', e.target.value);
-                  setMfrSuggestionsOpen(true);
-                }}
-                onFocus={() => setMfrSuggestionsOpen(true)}
-                disabled={form.isDirectFromManufacturer}
-                placeholder={
-                  form.isDirectFromManufacturer
-                    ? form.vendorId
-                      ? 'Auto-filled from selected Vendor'
-                      : 'Select a Vendor to auto-fill Manufacturer'
-                    : 'Type manufacturer name or select suggestion...'
-                }
-                className={`text-xs ${form.isDirectFromManufacturer ? 'bg-slate-100 text-slate-600 font-bold' : ''}`}
-              />
-
-              {/* Combo box autocomplete suggestions */}
-              {!form.isDirectFromManufacturer && mfrSuggestionsOpen && filteredMfrSuggestions.length > 0 && (
-                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">
-                  {filteredMfrSuggestions.map((mfr, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        handleChange('manufacturerName', mfr);
-                        setMfrSuggestionsOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                    >
-                      {mfr}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {formErrors.manufacturerName && (
-              <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.manufacturerName}</p>
-            )}
-          </div>
-
-          {/* MPN Name & Manufacturer Part Number */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                MPN Name <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="text"
-                value={form.mpnName}
-                onChange={(e) => handleChange('mpnName', e.target.value)}
-                placeholder="e.g. High-Temp Ceramic Resistor 10k"
-                className="text-xs"
-              />
-              {formErrors.mpnName && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.mpnName}</p>
-              )}
-            </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -847,8 +889,24 @@ export default function MPNMaster() {
             </div>
           </div>
 
-          {/* Unit Price, MOQ, UOM, GST */}
-          <div className="grid grid-cols-4 gap-3">
+          {/* Section 3: Pricing & Commercial Terms */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                MPN Name <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="text"
+                value={form.mpnName}
+                onChange={(e) => handleChange('mpnName', e.target.value)}
+                placeholder="e.g. High-Temp Ceramic Resistor"
+                className="text-xs"
+              />
+              {formErrors.mpnName && (
+                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.mpnName}</p>
+              )}
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Unit Price (₹) <span className="text-red-500">*</span>
@@ -860,7 +918,7 @@ export default function MPNMaster() {
                 value={form.unitPrice}
                 onChange={(e) => handleChange('unitPrice', e.target.value)}
                 placeholder="0.00"
-                className="text-xs font-mono"
+                className="text-xs font-mono font-bold text-slate-900"
               />
               {formErrors.unitPrice && (
                 <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.unitPrice}</p>
@@ -869,44 +927,7 @@ export default function MPNMaster() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                MOQ <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="number"
-                min="1"
-                value={form.moq}
-                onChange={(e) => handleChange('moq', e.target.value)}
-                placeholder="1"
-                className="text-xs font-mono"
-              />
-              {formErrors.moq && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.moq}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                UOM <span className="text-red-500">*</span>
-              </label>
-              <Select
-                value={form.uom}
-                onChange={(e) => handleChange('uom', e.target.value)}
-                className="text-xs"
-              >
-                {COMMON_UOMS.map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-              </Select>
-              {formErrors.uom && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.uom}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                GST % <span className="text-red-500">*</span>
+                GST Slab (%) <span className="text-red-500">*</span>
               </label>
               <Select
                 value={form.gst}
@@ -923,26 +944,66 @@ export default function MPNMaster() {
                 <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.gst}</p>
               )}
             </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  MOQ <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={form.moq}
+                  onChange={(e) => handleChange('moq', e.target.value)}
+                  placeholder="1"
+                  className="text-xs font-mono"
+                />
+                {formErrors.moq && (
+                  <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.moq}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  UOM <span className="text-red-500">*</span>
+                </label>
+                <Select
+                  value={form.uom}
+                  onChange={(e) => handleChange('uom', e.target.value)}
+                  className="text-xs"
+                >
+                  {COMMON_UOMS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </Select>
+                {formErrors.uom && (
+                  <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.uom}</p>
+                )}
+              </div>
+            </div>
           </div>
 
+          {/* Section 4: Specifications & Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Part Specifications / Notes</label>
             <TextArea
-              rows={2}
+              rows={3}
               value={form.partDescription}
               onChange={(e) => handleChange('partDescription', e.target.value)}
-              placeholder="Technical specs, tolerances, storage guidelines..."
+              placeholder="Technical specs, tolerances, datasheet links, storage guidelines..."
               className="text-xs"
             />
           </div>
 
           {/* Single Save button action bar */}
-          <div className="flex items-center justify-end space-x-2 pt-4 border-t border-slate-100">
-            <Button variant="outline" size="sm" onClick={closeModal}>
+          <div className="flex items-center justify-end space-x-2 pt-4 border-t border-slate-200">
+            <Button variant="outline" size="sm" onClick={closeModal} className="px-4">
               Cancel
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSave}>
-              <Save className="h-3.5 w-3.5 mr-1" />
+            <Button variant="primary" size="sm" onClick={handleSave} className="px-5 font-bold">
+              <Save className="h-3.5 w-3.5 mr-1.5" />
               {isEdit ? 'Update MPN Record' : 'Save MPN Record'}
             </Button>
           </div>
