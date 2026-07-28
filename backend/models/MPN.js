@@ -49,9 +49,11 @@ const MPNSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
-  gst: {
-    type: Number,
-    enum: [0, 5, 12, 18, 28],
+  gstin: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    default: '',
   },
   partDescription: {
     type: String,

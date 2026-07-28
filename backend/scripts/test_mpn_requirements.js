@@ -111,7 +111,6 @@ async function runTests() {
       unitPrice: 450.50,
       moq: 10,
       uom: "pcs",
-      gst: 18,
       status: "Active"
     };
     const validRes = await request({ hostname: 'localhost', port: 5000, path: '/api/mpns', method: 'POST', headers }, JSON.stringify(validActivePayload));

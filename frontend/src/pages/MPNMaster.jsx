@@ -9,7 +9,6 @@ import { Dialog } from '../components/ui/Dialog';
 import { Search, Plus, Edit2, Trash2, Save, Filter, RefreshCw, Cpu, Download, Eye, RotateCcw, Printer, CheckSquare, Square } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Active', 'Inactive', 'Draft'];
-const GST_SLABS = [0, 5, 12, 18, 28];
 const COMMON_UOMS = ['pcs', 'kg', 'ltr', 'box', 'meter', 'pack', 'roll', 'set', 'gm', 'ml'];
 
 const EMPTY_FORM = {
@@ -24,7 +23,7 @@ const EMPTY_FORM = {
   unitPrice: '',
   moq: 1,
   uom: 'pcs',
-  gst: 18,
+  gstin: '',
   partDescription: '',
   status: 'Active',
 };
@@ -60,6 +59,12 @@ export default function MPNMaster() {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 4000);
   };
+
+  const selectedVendorObj = useMemo(() => {
+    return vendors.find((v) => v._id === form.vendorId);
+  }, [vendors, form.vendorId]);
+
+  const isVendorGstinPresent = Boolean(selectedVendorObj?.gstin && selectedVendorObj.gstin.trim());
 
   // Helper to fetch all paginated records by looping pages until complete
   const fetchAllPages = async (url) => {
@@ -146,7 +151,7 @@ export default function MPNMaster() {
       unitPrice: row.unitPrice !== undefined ? row.unitPrice : '',
       moq: row.moq !== undefined ? row.moq : 1,
       uom: row.uom || 'pcs',
-      gst: row.gst !== undefined ? row.gst : 18,
+      gstin: row.gstin || '',
       partDescription: row.partDescription || '',
       status: row.status || 'Active',
     });
@@ -167,11 +172,17 @@ export default function MPNMaster() {
   const handleVendorChange = (vendorIdVal) => {
     setForm((prev) => {
       let newMfr = prev.manufacturerName;
+      const foundVen = vendors.find((v) => v._id === vendorIdVal);
       if (prev.isDirectFromManufacturer) {
-        const foundVen = vendors.find((v) => v._id === vendorIdVal);
         newMfr = foundVen ? foundVen.name : '';
       }
-      return { ...prev, vendorId: vendorIdVal, manufacturerName: newMfr };
+      const vGstin = foundVen?.gstin || '';
+      return {
+        ...prev,
+        vendorId: vendorIdVal,
+        manufacturerName: newMfr,
+        gstin: vGstin ? '' : prev.gstin,
+      };
     });
   };
 
@@ -207,12 +218,16 @@ export default function MPNMaster() {
     }
     if (!form.moq || Number(form.moq) < 1) errors.moq = 'MOQ must be >= 1';
     if (!form.uom.trim()) errors.uom = 'UOM is required';
-    if (form.gst === undefined || form.gst === null || ![0, 5, 12, 18, 28].includes(Number(form.gst))) {
-      errors.gst = 'Please select a valid GST slab';
+
+    if (!isVendorGstinPresent && form.gstin && form.gstin.trim()) {
+      const gstinRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}\d[A-Z]\d[A-Z\d]$/i;
+      if (!gstinRegex.test(form.gstin.trim())) {
+        errors.gstin = 'Invalid GSTIN format (15 characters: e.g. 27AAAAA0000A1Z5)';
+      }
     }
 
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return !errors.mpnName && !errors.manufacturerPartNumber && !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.unitPrice && !errors.moq && !errors.uom;
   };
 
   // Single Save button: validation is driven strictly by Status
@@ -229,7 +244,7 @@ export default function MPNMaster() {
         ...payload,
         unitPrice: payload.unitPrice === '' ? 0 : Number(payload.unitPrice),
         moq: payload.moq === '' ? 1 : Number(payload.moq),
-        gst: Number(payload.gst),
+        gstin: isVendorGstinPresent ? '' : (payload.gstin ? payload.gstin.trim().toUpperCase() : ''),
       };
       delete body._id;
 
@@ -587,7 +602,7 @@ export default function MPNMaster() {
                   <TableHead className="font-bold text-xs text-center">MOQ</TableHead>
                   <TableHead className="font-bold text-xs text-center">UOM</TableHead>
                   <TableHead className="font-bold text-xs">Status</TableHead>
-                  <TableHead className="font-bold text-xs text-center">GST %</TableHead>
+                  <TableHead className="font-bold text-xs text-center">GSTIN</TableHead>
                   <TableHead className="font-bold text-xs text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -645,8 +660,8 @@ export default function MPNMaster() {
                         {row.uom || '—'}
                       </TableCell>
                       <TableCell>{getStatusBadge(row.status)}</TableCell>
-                      <TableCell className="text-xs text-center font-bold text-slate-700">
-                        {row.gst !== undefined ? `${row.gst}%` : '—'}
+                      <TableCell className="text-xs text-center font-mono font-bold text-slate-700">
+                        {row.vendorId?.gstin || row.gstin || '—'}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-1">
@@ -926,21 +941,19 @@ export default function MPNMaster() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                GST Slab (%) <span className="text-red-500">*</span>
+                GSTIN <span className="text-slate-400 font-normal">{isVendorGstinPresent ? '(From Vendor)' : '(Manual Fallback)'}</span>
               </label>
-              <Select
-                value={form.gst}
-                onChange={(e) => handleChange('gst', Number(e.target.value))}
-                className="text-xs font-bold"
-              >
-                {GST_SLABS.map((g) => (
-                  <option key={g} value={g}>
-                    {g}%
-                  </option>
-                ))}
-              </Select>
-              {formErrors.gst && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.gst}</p>
+              <Input
+                type="text"
+                maxLength={15}
+                value={isVendorGstinPresent ? (selectedVendorObj?.gstin || '') : form.gstin}
+                onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
+                disabled={isVendorGstinPresent}
+                placeholder={isVendorGstinPresent ? 'Auto-filled from Vendor' : 'e.g. 27AAAAA0000A1Z5'}
+                className={`text-xs font-mono font-bold ${isVendorGstinPresent ? 'bg-slate-100 text-slate-600' : ''}`}
+              />
+              {formErrors.gstin && (
+                <p className="text-[11px] text-amber-600 font-medium mt-1">{formErrors.gstin}</p>
               )}
             </div>
 
@@ -1060,7 +1073,7 @@ export default function MPNMaster() {
               <div>
                 <span className="text-slate-500 font-semibold block">Commercial Terms</span>
                 <span className="font-mono font-bold text-slate-900">
-                  ₹{viewRecord.unitPrice} / {viewRecord.uom} (MOQ: {viewRecord.moq}, GST: {viewRecord.gst}%)
+                  ₹{viewRecord.unitPrice} / {viewRecord.uom} (MOQ: {viewRecord.moq}, GSTIN: {viewRecord.vendorId?.gstin || viewRecord.gstin || '—'})
                 </span>
               </div>
             </div>

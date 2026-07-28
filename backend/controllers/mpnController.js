@@ -52,7 +52,7 @@ exports.getMPNs = async (req, res, next) => {
 
     let mpns = await MPN.find(filter)
       .populate('materialId', 'name code unit')
-      .populate('vendorId', 'name company vendorId')
+      .populate('vendorId', 'name company vendorId gstin')
       .sort({ createdAt: -1 });
 
     if (search && search.trim()) {
@@ -92,7 +92,7 @@ exports.getDeletedMPNs = async (req, res, next) => {
   try {
     const mpns = await MPN.find({ status: 'Deleted' })
       .populate('materialId', 'name code unit')
-      .populate('vendorId', 'name company vendorId')
+      .populate('vendorId', 'name company vendorId gstin')
       .sort({ createdAt: -1 });
     res.status(200).json({ success: true, count: mpns.length, data: mpns });
   } catch (err) {
@@ -106,7 +106,7 @@ exports.getMPN = async (req, res, next) => {
   try {
     const mpn = await MPN.findById(req.params.id)
       .populate('materialId', 'name code unit')
-      .populate('vendorId', 'name company vendorId');
+      .populate('vendorId', 'name company vendorId gstin');
 
     if (!mpn) {
       return res.status(404).json({ success: false, error: 'MPN record not found' });
@@ -162,6 +162,7 @@ exports.getManufacturers = async (req, res, next) => {
 };
 
 // @desc    Create MPN (single save path, status drives validation strictness)
+// @desc    Create MPN (single save path, status drives validation strictness)
 // @route   POST /api/mpns
 exports.createMPN = async (req, res, next) => {
   try {
@@ -173,6 +174,7 @@ exports.createMPN = async (req, res, next) => {
       { name: 'uom', label: 'Unit of Measure (UOM)' },
       { name: 'partDescription', label: 'Part Description' },
       { name: 'mpnCode', label: 'MPN Code' },
+      { name: 'gstin', label: 'GSTIN' },
     ]);
 
     if (stringTypeError) {
@@ -189,6 +191,15 @@ exports.createMPN = async (req, res, next) => {
 
     req.body.manufacturerName = manufacturerName;
     req.body.manufacturerPartNumber = manufacturerPartNumber;
+
+    // Check linked Vendor's GSTIN: if vendor already has GSTIN, do not duplicate on MPN
+    if (vendorId) {
+      const Vendor = require('../models/Vendor');
+      const vendorDoc = await Vendor.findById(vendorId);
+      if (vendorDoc && vendorDoc.gstin && vendorDoc.gstin.trim()) {
+        req.body.gstin = '';
+      }
+    }
 
     // Status drives validation strictness: Draft bypasses required checks
     if (status !== 'Draft') {
@@ -215,9 +226,6 @@ exports.createMPN = async (req, res, next) => {
       }
       if (!req.body.uom || !req.body.uom.trim()) {
         return res.status(400).json({ success: false, error: 'Unit of Measure (UOM) is required' });
-      }
-      if (req.body.gst === undefined || req.body.gst === null || ![0, 5, 12, 18, 28].includes(Number(req.body.gst))) {
-        return res.status(400).json({ success: false, error: 'GST must be one of [0, 5, 12, 18, 28]%' });
       }
 
       // Duplicate check for SAME vendor
@@ -269,7 +277,7 @@ exports.createMPN = async (req, res, next) => {
 
     const populated = await mpn.populate([
       { path: 'materialId', select: 'name code unit' },
-      { path: 'vendorId', select: 'name company vendorId' },
+      { path: 'vendorId', select: 'name company vendorId gstin' },
     ]);
 
     res.status(201).json({ success: true, data: populated });
@@ -289,6 +297,7 @@ exports.updateMPN = async (req, res, next) => {
       { name: 'uom', label: 'Unit of Measure (UOM)' },
       { name: 'partDescription', label: 'Part Description' },
       { name: 'mpnCode', label: 'MPN Code' },
+      { name: 'gstin', label: 'GSTIN' },
     ]);
 
     if (stringTypeError) {
@@ -311,9 +320,18 @@ exports.updateMPN = async (req, res, next) => {
     req.body.manufacturerName = manufacturerName;
     req.body.manufacturerPartNumber = manufacturerPartNumber;
 
-    if (status !== 'Draft') {
-      const vendorId = req.body.vendorId || mpn.vendorId;
+    const vendorId = req.body.vendorId || mpn.vendorId;
 
+    // Check linked Vendor's GSTIN: if vendor already has GSTIN, do not duplicate on MPN
+    if (vendorId) {
+      const Vendor = require('../models/Vendor');
+      const vendorDoc = await Vendor.findById(vendorId);
+      if (vendorDoc && vendorDoc.gstin && vendorDoc.gstin.trim()) {
+        req.body.gstin = '';
+      }
+    }
+
+    if (status !== 'Draft') {
       const existing = await MPN.findOne({
         _id: { $ne: req.params.id },
         status: { $ne: 'Deleted' },
@@ -335,7 +353,7 @@ exports.updateMPN = async (req, res, next) => {
       runValidators: true,
     })
       .populate('materialId', 'name code unit')
-      .populate('vendorId', 'name company vendorId');
+      .populate('vendorId', 'name company vendorId gstin');
 
     res.status(200).json({ success: true, data: mpn });
   } catch (err) {
@@ -454,7 +472,7 @@ exports.exportMPNsExcel = async (req, res, next) => {
       'Unit Price': m.unitPrice !== undefined ? m.unitPrice : '—',
       'MOQ': m.moq !== undefined ? m.moq : '—',
       'UOM': m.uom || '—',
-      'GST %': m.gst !== undefined ? `${m.gst}%` : '—',
+      'GSTIN': m.vendorId?.gstin || m.gstin || '—',
       'Direct Sourcing': m.isDirectFromManufacturer ? 'Same as Vendor' : 'Independent',
       'Status': m.status || 'Active',
       'Description': m.partDescription || '',

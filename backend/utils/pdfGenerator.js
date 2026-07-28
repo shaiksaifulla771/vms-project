@@ -174,7 +174,7 @@ const generateSingleMpnPDF = (res, mpn) => {
     { label: 'Unit Price', value: mpn.unitPrice !== undefined && mpn.unitPrice !== null ? `₹${mpn.unitPrice}` : '—' },
     { label: 'Minimum Order Qty (MOQ)', value: mpn.moq !== undefined && mpn.moq !== null ? `${mpn.moq} ${mpn.uom || ''}` : '—' },
     { label: 'Unit of Measure (UOM)', value: mpn.uom || '—' },
-    { label: 'Applicable GST Rate', value: mpn.gst !== undefined && mpn.gst !== null ? `${mpn.gst}%` : '—' },
+    { label: 'Vendor GSTIN', value: mpn.vendorId?.gstin || mpn.gstin || '—' },
     { label: 'Record Status', value: mpn.status || 'Active' },
     { label: 'Part Specification Notes', value: mpn.partDescription || 'None' },
   ];
