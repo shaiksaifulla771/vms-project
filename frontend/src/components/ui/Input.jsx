@@ -62,7 +62,8 @@ export const Select = ({
   id,
   options = [],
   className = '',
-  placeholder = 'Select an option',
+  placeholder,
+  children,
   ...props
 }) => {
   return (
@@ -79,12 +80,18 @@ export const Select = ({
         } ${className}`}
         {...props}
       >
-        {placeholder && <option value="" disabled>{placeholder}</option>}
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
+        {children ? (
+          children
+        ) : (
+          <>
+            {placeholder && <option value="" disabled>{placeholder}</option>}
+            {options.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </>
+        )}
       </select>
       {error && <span className="text-xs text-red-500 font-medium">{error}</span>}
     </div>
