@@ -386,6 +386,21 @@ export default function MPNMaster() {
     return manufacturers.filter((m) => m.toLowerCase().includes(term));
   }, [manufacturers, form.manufacturerName, form.isDirectFromManufacturer]);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const totalPages = Math.ceil(filteredRows.length / pageSize) || 1;
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, materialFilter, vendorFilter]);
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, currentPage, pageSize]);
+
   return (
     <div className="space-y-4">
       {/* Toast alert */}
@@ -519,8 +534,8 @@ export default function MPNMaster() {
                   <TableHead className="font-bold text-xs text-right">Unit Price</TableHead>
                   <TableHead className="font-bold text-xs text-center">MOQ</TableHead>
                   <TableHead className="font-bold text-xs text-center">UOM</TableHead>
-                  <TableHead className="font-bold text-xs text-center">GST %</TableHead>
                   <TableHead className="font-bold text-xs">Status</TableHead>
+                  <TableHead className="font-bold text-xs text-center">GST %</TableHead>
                   <TableHead className="font-bold text-xs text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -531,14 +546,14 @@ export default function MPNMaster() {
                       Loading MPN master records...
                     </TableCell>
                   </TableRow>
-                ) : filteredRows.length === 0 ? (
+                ) : paginatedRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={11} className="text-center py-8 text-xs text-slate-400">
                       No MPN records found matching your filters.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredRows.map((row) => (
+                  paginatedRows.map((row) => (
                     <TableRow key={row._id} className="hover:bg-slate-50/80 transition-colors">
                       <TableCell className="text-center">
                         <input
@@ -575,10 +590,10 @@ export default function MPNMaster() {
                       <TableCell className="text-xs text-center text-slate-600">
                         {row.uom || '—'}
                       </TableCell>
+                      <TableCell>{getStatusBadge(row.status)}</TableCell>
                       <TableCell className="text-xs text-center font-bold text-slate-700">
                         {row.gst !== undefined ? `${row.gst}%` : '—'}
                       </TableCell>
-                      <TableCell>{getStatusBadge(row.status)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-1">
                           <button
@@ -624,6 +639,36 @@ export default function MPNMaster() {
             </Table>
           </div>
         </CardContent>
+
+        {/* Pagination Footer */}
+        <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50 gap-2">
+          <div className="text-xs text-slate-500 font-medium">
+            Showing <span className="font-bold text-slate-800">{filteredRows.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</span> to <span className="font-bold text-slate-800">{Math.min(currentPage * pageSize, filteredRows.length)}</span> of <span className="font-bold text-slate-800">{filteredRows.length}</span> records
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="text-xs h-8 px-2.5"
+            >
+              Previous
+            </Button>
+            <span className="text-xs font-semibold text-slate-600">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="text-xs h-8 px-2.5"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* Add / Edit Dialog Modal */}
