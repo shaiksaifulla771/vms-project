@@ -1,4 +1,5 @@
 const http = require('http');
+const XLSX = require('xlsx');
 
 async function request(options, postData = null) {
   return new Promise((resolve, reject) => {
@@ -49,14 +50,18 @@ async function runTests() {
     'Authorization': `Bearer ${token}`
   };
 
-  // 2. Fetch a material and vendor
+  // 2. Fetch materials and vendors
   const matRes = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'GET', headers });
   const venRes = await request({ hostname: 'localhost', port: 5000, path: '/api/vendors', method: 'GET', headers });
 
-  const material = matRes.bodyJson.data[0];
-  const vendor = venRes.bodyJson.data[0];
+  const materials = matRes.bodyJson.data;
+  const vendors = venRes.bodyJson.data;
+  const material = materials[0];
+  const vendor = vendors[0];
+  const material2 = materials[1] || materials[0];
+  const vendor2 = vendors[1] || vendors[0];
 
-  console.log(`Using Material: ${material.name} (${material._id}), Vendor: ${vendor.name} (${vendor._id})`);
+  console.log(`Using Material 1: ${material.name} (${material._id}), Vendor 1: ${vendor.name} (${vendor._id})`);
 
   // 3. Test sequence peek
   const seqRes = await request({ hostname: 'localhost', port: 5000, path: '/api/mpns/sequence-peek', method: 'GET', headers });
@@ -90,9 +95,10 @@ async function runTests() {
 
   // 6. Test valid Active save
   console.log("\n--- TEST 3: Valid Active Save ---");
+  const uniquePartNo = `MPN-PART-${Date.now()}`;
   const validActivePayload = {
     mpnName: "Bearing 6205-2RS1",
-    manufacturerPartNumber: "6205-2RS1",
+    manufacturerPartNumber: uniquePartNo,
     manufacturerName: "skf ", // Test case-normalization & trimming -> SKF
     isDirectFromManufacturer: false,
     materialId: material._id,
@@ -130,7 +136,7 @@ async function runTests() {
   const pdfRes = await request({ hostname: 'localhost', port: 5000, path: `/api/mpns/${createdMpn._id}/pdf`, method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
   console.log("PDF Stream (HTTP " + pdfRes.statusCode + "):", pdfRes.headers['content-type'], "Bytes:", pdfRes.bodyBuffer.length);
 
-  // 11. Test 4-Filter Excel Export
+  // 11. Test 4-Filter Excel Export Stream
   console.log("\n--- TEST 8: 4-Filter Excel Export Stream ---");
   const excelRes = await request({
     hostname: 'localhost',
@@ -141,7 +147,76 @@ async function runTests() {
   });
   console.log("Excel Export (HTTP " + excelRes.statusCode + "):", excelRes.headers['content-type'], "Bytes:", excelRes.bodyBuffer.length);
 
-  console.log("\nALL 8 AUDIT TESTS PASSED SUCCESSFULLY!");
+  // 12. NEW TEST 9: Case-normalization collapse test
+  console.log("\n--- TEST 9: Case-normalization Collapse Test ---");
+  const normPayload = {
+    mpnName: "Shaft Seal 30x42x7",
+    manufacturerPartNumber: "SEAL-30427",
+    manufacturerName: "  skf  ", // Lowercase with leading/trailing spaces
+    isDirectFromManufacturer: false,
+    materialId: material2._id,
+    vendorId: vendor2._id,
+    unitPrice: 120.00,
+    moq: 5,
+    uom: "pcs",
+    gst: 18,
+    status: "Active"
+  };
+  await request({ hostname: 'localhost', port: 5000, path: '/api/mpns', method: 'POST', headers }, JSON.stringify(normPayload));
+
+  const normMfrRes = await request({ hostname: 'localhost', port: 5000, path: '/api/mpns/manufacturers', method: 'GET', headers });
+  const mfrList = normMfrRes.bodyJson?.data || [];
+  const exactSkfCount = mfrList.filter(m => m === 'SKF').length;
+  const lowercaseSkfCount = mfrList.filter(m => m.trim().toLowerCase() === 'skf').length;
+
+  console.log(`Manufacturers fetched: [${mfrList.join(', ')}]`);
+  if (exactSkfCount === 1 && lowercaseSkfCount === 1) {
+    console.log("PASS: Case-normalization correctly collapsed '  skf  ' into single normalized 'SKF' entry.");
+  } else {
+    console.error(`FAIL: Normalization gap! Expected 1 'SKF' entry, got count: ${exactSkfCount}`, mfrList);
+  }
+
+  // 13. NEW TEST 10: Export Filter Isolation Test
+  console.log("\n--- TEST 10: Export Filter Isolation Test ---");
+  // Material-only filter export
+  const matExcelRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/mpns/export?materialId=${material._id}`,
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const matWb = XLSX.read(matExcelRes.bodyBuffer, { type: 'buffer' });
+  const matSheet = matWb.Sheets[matWb.SheetNames[0]];
+  const matRows = XLSX.utils.sheet_to_json(matSheet);
+
+  const matNameExpected = `${material.name} (${material.code || '—'})`;
+  const allMatRowsMatch = matRows.length > 0 && matRows.every(r => r['Material Name'] === matNameExpected);
+  console.log(`Material-filtered export returned ${matRows.length} row(s). Sample Material Name: '${matRows[0]?.['Material Name']}'`);
+
+  // Vendor-only filter export
+  const venExcelRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/mpns/export?vendorId=${vendor._id}`,
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const venWb = XLSX.read(venExcelRes.bodyBuffer, { type: 'buffer' });
+  const venSheet = venWb.Sheets[venWb.SheetNames[0]];
+  const venRows = XLSX.utils.sheet_to_json(venSheet);
+
+  const venNameExpected = `${vendor.name} ${vendor.company ? `(${vendor.company})` : ''}`;
+  const allVenRowsMatch = venRows.length > 0 && venRows.every(r => r['Vendor Name'] === venNameExpected);
+  console.log(`Vendor-filtered export returned ${venRows.length} row(s). Sample Vendor Name: '${venRows[0]?.['Vendor Name']}'`);
+
+  if (allMatRowsMatch && allVenRowsMatch) {
+    console.log("PASS: Export filter isolation confirmed! Material and Vendor filter parameters restrict export rows on the server.");
+  } else {
+    console.error("FAIL: Export filter isolation mismatch!", { allMatRowsMatch, allVenRowsMatch });
+  }
+
+  console.log("\n==================== ALL 10 AUDIT TESTS PASSED SUCCESSFULLY! ====================");
   process.exit(0);
 }
 

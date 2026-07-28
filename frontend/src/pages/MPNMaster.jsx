@@ -75,15 +75,23 @@ export default function MPNMaster() {
           },
         }),
         api.get('/api/materials'),
-        api.get('/api/vendors'),
+        api.get('/api/vendors', { params: { limit: 1000 } }),
         api.get('/api/mpns/manufacturers'),
       ]);
 
-      setRows(mpnRes.data.data || []);
-      setMaterials(matRes.data.data || []);
-      setVendors(venRes.data.data || []);
-      setManufacturers(mfrRes.data.data || []);
+      const mpnList = Array.isArray(mpnRes.data?.data) ? mpnRes.data.data : Array.isArray(mpnRes.data) ? mpnRes.data : [];
+      const matList = Array.isArray(matRes.data?.data) ? matRes.data.data : Array.isArray(matRes.data) ? matRes.data : [];
+      const venList = Array.isArray(venRes.data?.data) ? venRes.data.data : Array.isArray(venRes.data) ? venRes.data : [];
+      const mfrList = Array.isArray(mfrRes.data?.data) ? mfrRes.data.data : Array.isArray(mfrRes.data) ? mfrRes.data : [];
+
+      console.log(`[MPNMaster] Fetched Data -> MPNs: ${mpnList.length}, Materials: ${matList.length}, Vendors: ${venList.length}, Manufacturers: ${mfrList.length}`);
+
+      setRows(mpnList);
+      setMaterials(matList);
+      setVendors(venList);
+      setManufacturers(mfrList);
     } catch (err) {
+      console.error('[MPNMaster] fetchAll error:', err);
       showToast(err.response?.data?.error || 'Failed to load MPN data', 'error');
     } finally {
       setLoading(false);
@@ -359,7 +367,8 @@ export default function MPNMaster() {
 
   // Manufacturer autocomplete suggestions filtered by user input
   const filteredMfrSuggestions = useMemo(() => {
-    if (!form.manufacturerName || form.isDirectFromManufacturer) return [];
+    if (form.isDirectFromManufacturer) return [];
+    if (!form.manufacturerName || !form.manufacturerName.trim()) return manufacturers;
     const term = form.manufacturerName.trim().toLowerCase();
     return manufacturers.filter((m) => m.toLowerCase().includes(term));
   }, [manufacturers, form.manufacturerName, form.isDirectFromManufacturer]);
