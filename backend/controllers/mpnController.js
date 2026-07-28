@@ -5,8 +5,20 @@ const { generateSingleMpnPDF } = require('../utils/pdfGenerator');
 
 // Helper to normalize manufacturer name (trim and case-normalize to uppercase)
 const normalizeManufacturer = (name) => {
-  if (!name) return '';
+  if (!name || typeof name !== 'string') return '';
   return name.trim().replace(/\s+/g, ' ').toUpperCase();
+};
+
+// Helper to validate string fields against object/array injection payloads
+const validateStringFields = (body, fields) => {
+  for (const { name, label } of fields) {
+    if (body[name] !== undefined && body[name] !== null) {
+      if (typeof body[name] !== 'string') {
+        return `${label} must be a valid string.`;
+      }
+    }
+  }
+  return null;
 };
 
 // Helper to build filter query matching all 4 grid filters
@@ -153,11 +165,25 @@ exports.getManufacturers = async (req, res, next) => {
 // @route   POST /api/mpns
 exports.createMPN = async (req, res, next) => {
   try {
+    // Validate type for string fields against object/array injection payloads
+    const stringTypeError = validateStringFields(req.body, [
+      { name: 'manufacturerName', label: 'Manufacturer Name' },
+      { name: 'mpnName', label: 'MPN Name' },
+      { name: 'manufacturerPartNumber', label: 'Manufacturer Part Number' },
+      { name: 'uom', label: 'Unit of Measure (UOM)' },
+      { name: 'partDescription', label: 'Part Description' },
+      { name: 'mpnCode', label: 'MPN Code' },
+    ]);
+
+    if (stringTypeError) {
+      return res.status(400).json({ success: false, error: stringTypeError });
+    }
+
     const { status = 'Active', isDirectFromManufacturer, vendorId } = req.body;
     let { manufacturerName, manufacturerPartNumber } = req.body;
 
     manufacturerName = normalizeManufacturer(manufacturerName);
-    if (manufacturerPartNumber) {
+    if (typeof manufacturerPartNumber === 'string') {
       manufacturerPartNumber = manufacturerPartNumber.trim();
     }
 
@@ -256,6 +282,19 @@ exports.createMPN = async (req, res, next) => {
 // @route   PUT /api/mpns/:id
 exports.updateMPN = async (req, res, next) => {
   try {
+    const stringTypeError = validateStringFields(req.body, [
+      { name: 'manufacturerName', label: 'Manufacturer Name' },
+      { name: 'mpnName', label: 'MPN Name' },
+      { name: 'manufacturerPartNumber', label: 'Manufacturer Part Number' },
+      { name: 'uom', label: 'Unit of Measure (UOM)' },
+      { name: 'partDescription', label: 'Part Description' },
+      { name: 'mpnCode', label: 'MPN Code' },
+    ]);
+
+    if (stringTypeError) {
+      return res.status(400).json({ success: false, error: stringTypeError });
+    }
+
     let mpn = await MPN.findById(req.params.id);
     if (!mpn || mpn.status === 'Deleted') {
       return res.status(404).json({ success: false, error: 'MPN record not found' });
