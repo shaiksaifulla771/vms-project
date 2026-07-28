@@ -208,7 +208,6 @@ export default function MPNMaster() {
 
   const validate = () => {
     const errors = {};
-    if (!form.mpnName.trim()) errors.mpnName = 'MPN Name is required';
     if (!form.manufacturerPartNumber.trim()) errors.manufacturerPartNumber = 'Manufacturer Part Number is required';
     if (!form.manufacturerName.trim()) errors.manufacturerName = 'Manufacturer Name is required';
     if (!form.materialId) errors.materialId = 'Please link a Material';
@@ -227,7 +226,7 @@ export default function MPNMaster() {
     }
 
     setFormErrors(errors);
-    return !errors.mpnName && !errors.manufacturerPartNumber && !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.unitPrice && !errors.moq && !errors.uom;
+    return !errors.manufacturerPartNumber && !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.unitPrice && !errors.moq && !errors.uom;
   };
 
   // Single Save button: validation is driven strictly by Status
@@ -907,13 +906,13 @@ export default function MPNMaster() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                MPN Name <span className="text-red-500">*</span>
+                MPN Name <span className="text-slate-400 font-normal">(Optional)</span>
               </label>
               <Input
                 type="text"
                 value={form.mpnName}
                 onChange={(e) => handleChange('mpnName', e.target.value)}
-                placeholder="e.g. High-Temp Ceramic Resistor"
+                placeholder="e.g. High-Temp Ceramic Resistor (Optional)"
                 className="text-xs"
               />
               {formErrors.mpnName && (
@@ -1044,7 +1043,7 @@ export default function MPNMaster() {
               </div>
               <div>
                 <span className="text-slate-500 font-semibold block">MPN Name</span>
-                <span className="font-bold text-slate-800">{viewRecord.mpnName}</span>
+                <span className="font-bold text-slate-800">{viewRecord.mpnName || '—'}</span>
               </div>
             </div>
 

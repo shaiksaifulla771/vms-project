@@ -16,7 +16,7 @@ const MPNSchema = new mongoose.Schema({
   mpnName: {
     type: String,
     trim: true,
-    required: [true, 'Please provide MPN name'],
+    default: '',
   },
   manufacturerName: {
     type: String,

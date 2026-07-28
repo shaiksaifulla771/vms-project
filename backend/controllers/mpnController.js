@@ -203,9 +203,6 @@ exports.createMPN = async (req, res, next) => {
 
     // Status drives validation strictness: Draft bypasses required checks
     if (status !== 'Draft') {
-      if (!req.body.mpnName || !req.body.mpnName.trim()) {
-        return res.status(400).json({ success: false, error: 'MPN Name is required' });
-      }
       if (!manufacturerPartNumber) {
         return res.status(400).json({ success: false, error: 'Manufacturer Part Number is required' });
       }

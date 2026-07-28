@@ -250,7 +250,30 @@ async function runTests() {
       process.exit(1);
     }
 
-    console.log("\n==================== ALL 10 AUDIT TESTS PASSED SUCCESSFULLY! ====================");
+    // 12. Test Active save WITHOUT mpnName (confirm optional field behavior)
+    console.log("\n--- TEST 11: Active Save Without MPN Name (Optional Field Verification) ---");
+    const noNamePayload = {
+      manufacturerPartNumber: `NONAME-${Date.now()}`,
+      manufacturerName: "SKF",
+      isDirectFromManufacturer: false,
+      materialId: material._id,
+      vendorId: vendor._id,
+      unitPrice: 299.99,
+      moq: 5,
+      uom: "pcs",
+      status: "Active" // mpnName intentionally omitted
+    };
+    const noNameRes = await request({ hostname: 'localhost', port: 5000, path: '/api/mpns', method: 'POST', headers }, JSON.stringify(noNamePayload));
+    if (noNameRes.statusCode === 201) {
+      const createdNoName = noNameRes.bodyJson?.data;
+      if (createdNoName?._id) createdIdsToClean.push(createdNoName._id);
+      console.log("PASS: Created Active MPN record cleanly without mpnName (HTTP 201):", createdNoName?.mpnCode, `mpnName: '${createdNoName?.mpnName}'`);
+    } else {
+      console.error("FAIL: Active save without mpnName failed:", noNameRes.bodyText);
+      process.exit(1);
+    }
+
+    console.log("\n==================== ALL 11 AUDIT TESTS PASSED SUCCESSFULLY! ====================");
   } finally {
     if (createdIdsToClean.length > 0) {
       console.log(`\n--- AUTOMATED CLEANUP: Removing ${createdIdsToClean.length} test record(s) from database ---`);
