@@ -8,15 +8,24 @@ const MPNSchema = new mongoose.Schema({
     trim: true,
     uppercase: true,
   },
+  manufacturerPartNumber: {
+    type: String,
+    trim: true,
+    required: [true, 'Please provide Manufacturer Part Number (MPN string)'],
+  },
   mpnName: {
     type: String,
-    required: [true, 'Please provide MPN name'],
     trim: true,
+    required: [true, 'Please provide MPN name'],
   },
   manufacturerName: {
     type: String,
-    required: [true, 'Please provide manufacturer name'],
     trim: true,
+    required: [true, 'Please provide Manufacturer name'],
+  },
+  isDirectFromManufacturer: {
+    type: Boolean,
+    default: false,
   },
   materialId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -28,6 +37,22 @@ const MPNSchema = new mongoose.Schema({
     ref: 'Vendor',
     required: [true, 'Please link this MPN to a Vendor'],
   },
+  unitPrice: {
+    type: Number,
+    min: [0, 'Unit price cannot be negative'],
+  },
+  moq: {
+    type: Number,
+    min: [1, 'MOQ must be at least 1'],
+  },
+  uom: {
+    type: String,
+    trim: true,
+  },
+  gst: {
+    type: Number,
+    enum: [0, 5, 12, 18, 28],
+  },
   partDescription: {
     type: String,
     trim: true,
@@ -38,12 +63,16 @@ const MPNSchema = new mongoose.Schema({
     enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
     default: 'Active',
   },
+  previousStatus: {
+    type: String,
+    default: 'Active',
+  },
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
 
-MPNSchema.index({ materialId: 1, vendorId: 1, manufacturerName: 1 }, { unique: false });
+MPNSchema.index({ vendorId: 1, manufacturerName: 1, manufacturerPartNumber: 1 }, { unique: false });
 
 module.exports = mongoose.model('MPN', MPNSchema);

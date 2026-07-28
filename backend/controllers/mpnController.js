@@ -1,11 +1,84 @@
 const MPN = require('../models/MPN');
 const Sequence = require('../models/Sequence');
+const XLSX = require('xlsx');
+const { generateSingleMpnPDF } = require('../utils/pdfGenerator');
 
-// @desc    Get non-deleted MPNs (with Material + Vendor populated)
+// Helper to normalize manufacturer name (trim and case-normalize to uppercase)
+const normalizeManufacturer = (name) => {
+  if (!name) return '';
+  return name.trim().replace(/\s+/g, ' ').toUpperCase();
+};
+
+// Helper to build filter query matching all 4 grid filters
+const buildMpnQuery = (queryParams) => {
+  const { search, status, materialId, vendorId } = queryParams;
+  const filter = {};
+
+  if (status && status !== 'All') {
+    filter.status = status;
+  } else {
+    filter.status = { $ne: 'Deleted' };
+  }
+
+  if (materialId) {
+    filter.materialId = materialId;
+  }
+
+  if (vendorId) {
+    filter.vendorId = vendorId;
+  }
+
+  return filter;
+};
+
+// @desc    Get non-deleted MPNs (accepts 4 filters: search, status, materialId, vendorId)
 // @route   GET /api/mpns
 exports.getMPNs = async (req, res, next) => {
   try {
-    const mpns = await MPN.find({ status: { $ne: 'Deleted' } })
+    const { search } = req.query;
+    const filter = buildMpnQuery(req.query);
+
+    let mpns = await MPN.find(filter)
+      .populate('materialId', 'name code unit')
+      .populate('vendorId', 'name company vendorId')
+      .sort({ createdAt: -1 });
+
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      mpns = mpns.filter((r) => {
+        const matName = r.materialId?.name || '';
+        const matCode = r.materialId?.code || '';
+        const venName = r.vendorId?.name || '';
+        const venComp = r.vendorId?.company || '';
+        const haystack = [
+          r.mpnCode,
+          r.manufacturerPartNumber,
+          r.mpnName,
+          r.manufacturerName,
+          matName,
+          matCode,
+          venName,
+          venComp,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return haystack.includes(term);
+      });
+    }
+
+    res.status(200).json({ success: true, count: mpns.length, data: mpns });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get soft-deleted MPNs
+// @route   GET /api/mpns/deleted
+exports.getDeletedMPNs = async (req, res, next) => {
+  try {
+    const mpns = await MPN.find({ status: 'Deleted' })
       .populate('materialId', 'name code unit')
       .populate('vendorId', 'name company vendorId')
       .sort({ createdAt: -1 });
@@ -23,8 +96,8 @@ exports.getMPN = async (req, res, next) => {
       .populate('materialId', 'name code unit')
       .populate('vendorId', 'name company vendorId');
 
-    if (!mpn || mpn.status === 'Deleted') {
-      return res.status(404).json({ success: false, error: 'MPN not found' });
+    if (!mpn) {
+      return res.status(404).json({ success: false, error: 'MPN record not found' });
     }
     res.status(200).json({ success: true, data: mpn });
   } catch (err) {
@@ -36,13 +109,13 @@ exports.getMPN = async (req, res, next) => {
 // @route   GET /api/mpns/sequence-peek
 exports.peekNextMPNCode = async (req, res, next) => {
   try {
-    const activeMPNs = await MPN.find(
+    const allMPNs = await MPN.find(
       { status: { $ne: 'Deleted' }, mpnCode: /^MPN\d{4}$/i },
       { mpnCode: 1 }
     );
 
     let maxNum = 1000;
-    activeMPNs.forEach((m) => {
+    allMPNs.forEach((m) => {
       if (m.mpnCode) {
         const num = parseInt(m.mpnCode.substring(3), 10);
         if (!isNaN(num) && num < 10000 && num > maxNum) {
@@ -61,11 +134,83 @@ exports.peekNextMPNCode = async (req, res, next) => {
   }
 };
 
-// @desc    Create MPN & sync sequence if a manual code was typed
+// @desc    Get distinct manufacturer names for autocomplete
+// @route   GET /api/mpns/manufacturers
+exports.getManufacturers = async (req, res, next) => {
+  try {
+    const names = await MPN.distinct('manufacturerName', { status: { $ne: 'Deleted' } });
+    const normalized = Array.from(
+      new Set(names.map((n) => normalizeManufacturer(n)).filter(Boolean))
+    ).sort();
+
+    res.status(200).json({ success: true, count: normalized.length, data: normalized });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Create MPN (single save path, status drives validation strictness)
 // @route   POST /api/mpns
 exports.createMPN = async (req, res, next) => {
   try {
-    // Auto-generate a code if the caller didn't supply one (mirrors peek logic)
+    const { status = 'Active', isDirectFromManufacturer, vendorId } = req.body;
+    let { manufacturerName, manufacturerPartNumber } = req.body;
+
+    manufacturerName = normalizeManufacturer(manufacturerName);
+    if (manufacturerPartNumber) {
+      manufacturerPartNumber = manufacturerPartNumber.trim();
+    }
+
+    req.body.manufacturerName = manufacturerName;
+    req.body.manufacturerPartNumber = manufacturerPartNumber;
+
+    // Status drives validation strictness: Draft bypasses required checks
+    if (status !== 'Draft') {
+      if (!req.body.mpnName || !req.body.mpnName.trim()) {
+        return res.status(400).json({ success: false, error: 'MPN Name is required' });
+      }
+      if (!manufacturerPartNumber) {
+        return res.status(400).json({ success: false, error: 'Manufacturer Part Number is required' });
+      }
+      if (!manufacturerName) {
+        return res.status(400).json({ success: false, error: 'Manufacturer Name is required' });
+      }
+      if (!req.body.materialId) {
+        return res.status(400).json({ success: false, error: 'Please link a Material' });
+      }
+      if (!vendorId) {
+        return res.status(400).json({ success: false, error: 'Please link a Vendor' });
+      }
+      if (req.body.unitPrice === undefined || req.body.unitPrice === null || req.body.unitPrice < 0) {
+        return res.status(400).json({ success: false, error: 'Unit Price must be a valid number >= 0' });
+      }
+      if (!req.body.moq || req.body.moq < 1) {
+        return res.status(400).json({ success: false, error: 'MOQ must be at least 1' });
+      }
+      if (!req.body.uom || !req.body.uom.trim()) {
+        return res.status(400).json({ success: false, error: 'Unit of Measure (UOM) is required' });
+      }
+      if (req.body.gst === undefined || req.body.gst === null || ![0, 5, 12, 18, 28].includes(Number(req.body.gst))) {
+        return res.status(400).json({ success: false, error: 'GST must be one of [0, 5, 12, 18, 28]%' });
+      }
+
+      // Duplicate check for SAME vendor
+      const existing = await MPN.findOne({
+        status: { $ne: 'Deleted' },
+        vendorId,
+        manufacturerName: { $regex: new RegExp(`^${manufacturerName}$`, 'i') },
+        manufacturerPartNumber: { $regex: new RegExp(`^${manufacturerPartNumber}$`, 'i') },
+      });
+
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          error: `A part with Manufacturer '${manufacturerName}' and Part Number '${manufacturerPartNumber}' is already registered for this Vendor.`,
+        });
+      }
+    }
+
+    // Auto-generate code if missing
     if (!req.body.mpnCode) {
       const activeMPNs = await MPN.find(
         { status: { $ne: 'Deleted' }, mpnCode: /^MPN\d{4}$/i },
@@ -73,8 +218,10 @@ exports.createMPN = async (req, res, next) => {
       );
       let maxNum = 1000;
       activeMPNs.forEach((m) => {
-        const num = parseInt(m.mpnCode.substring(3), 10);
-        if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+        if (m.mpnCode) {
+          const num = parseInt(m.mpnCode.substring(3), 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+        }
       });
       const seqDoc = await Sequence.findOne({ $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] });
       const seqNum = seqDoc && seqDoc.seq < 10000 ? seqDoc.seq : 1000;
@@ -111,7 +258,37 @@ exports.updateMPN = async (req, res, next) => {
   try {
     let mpn = await MPN.findById(req.params.id);
     if (!mpn || mpn.status === 'Deleted') {
-      return res.status(404).json({ success: false, error: 'MPN not found' });
+      return res.status(404).json({ success: false, error: 'MPN record not found' });
+    }
+
+    const status = req.body.status || mpn.status;
+    let manufacturerName = req.body.manufacturerName
+      ? normalizeManufacturer(req.body.manufacturerName)
+      : mpn.manufacturerName;
+    let manufacturerPartNumber = req.body.manufacturerPartNumber
+      ? req.body.manufacturerPartNumber.trim()
+      : mpn.manufacturerPartNumber;
+
+    req.body.manufacturerName = manufacturerName;
+    req.body.manufacturerPartNumber = manufacturerPartNumber;
+
+    if (status !== 'Draft') {
+      const vendorId = req.body.vendorId || mpn.vendorId;
+
+      const existing = await MPN.findOne({
+        _id: { $ne: req.params.id },
+        status: { $ne: 'Deleted' },
+        vendorId,
+        manufacturerName: { $regex: new RegExp(`^${manufacturerName}$`, 'i') },
+        manufacturerPartNumber: { $regex: new RegExp(`^${manufacturerPartNumber}$`, 'i') },
+      });
+
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          error: `A part with Manufacturer '${manufacturerName}' and Part Number '${manufacturerPartNumber}' is already registered for this Vendor.`,
+        });
+      }
     }
 
     mpn = await MPN.findByIdAndUpdate(req.params.id, req.body, {
@@ -127,17 +304,43 @@ exports.updateMPN = async (req, res, next) => {
   }
 };
 
-// @desc    Soft Delete MPN
+// @desc    Soft Delete MPN (saves previousStatus)
 // @route   DELETE /api/mpns/:id
 exports.deleteMPN = async (req, res, next) => {
   try {
     const mpn = await MPN.findById(req.params.id);
     if (!mpn) {
-      return res.status(404).json({ success: false, error: 'MPN not found' });
+      return res.status(404).json({ success: false, error: 'MPN record not found' });
     }
+
+    mpn.previousStatus = mpn.status !== 'Deleted' ? mpn.status : 'Active';
     mpn.status = 'Deleted';
     await mpn.save();
-    res.status(200).json({ success: true, data: {} });
+
+    res.status(200).json({ success: true, message: 'MPN record moved to deleted history' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Restore soft-deleted MPN to prior status
+// @route   PUT /api/mpns/:id/restore
+exports.restoreMPN = async (req, res, next) => {
+  try {
+    const mpn = await MPN.findById(req.params.id);
+    if (!mpn) {
+      return res.status(404).json({ success: false, error: 'MPN record not found' });
+    }
+
+    mpn.status = mpn.previousStatus || 'Active';
+    await mpn.save();
+
+    const populated = await mpn.populate([
+      { path: 'materialId', select: 'name code unit' },
+      { path: 'vendorId', select: 'name company vendorId' },
+    ]);
+
+    res.status(200).json({ success: true, message: 'MPN record restored successfully', data: populated });
   } catch (err) {
     next(err);
   }
@@ -149,12 +352,102 @@ exports.batchDeleteMPNs = async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, error: 'Please provide an array of ids' });
+      return res.status(400).json({ success: false, error: 'Please provide an array of MPN IDs' });
     }
 
-    await MPN.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
+    const items = await MPN.find({ _id: { $in: ids } });
+    for (let item of items) {
+      item.previousStatus = item.status !== 'Deleted' ? item.status : 'Active';
+      item.status = 'Deleted';
+      await item.save();
+    }
 
-    res.status(200).json({ success: true, data: {} });
+    res.status(200).json({ success: true, message: `Soft-deleted ${items.length} MPN record(s)` });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Export MPNs to Excel (applies all 4 active grid filters: search, status, materialId, vendorId)
+// @route   GET /api/mpns/export
+exports.exportMPNsExcel = async (req, res, next) => {
+  try {
+    const { search } = req.query;
+    const filter = buildMpnQuery(req.query);
+
+    let mpns = await MPN.find(filter)
+      .populate('materialId', 'name code unit')
+      .populate('vendorId', 'name company vendorId')
+      .sort({ createdAt: -1 });
+
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      mpns = mpns.filter((r) => {
+        const matName = r.materialId?.name || '';
+        const matCode = r.materialId?.code || '';
+        const venName = r.vendorId?.name || '';
+        const venComp = r.vendorId?.company || '';
+        const haystack = [
+          r.mpnCode,
+          r.manufacturerPartNumber,
+          r.mpnName,
+          r.manufacturerName,
+          matName,
+          matCode,
+          venName,
+          venComp,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return haystack.includes(term);
+      });
+    }
+
+    const exportRows = mpns.map((m) => ({
+      'MPN ID': m.mpnCode || '—',
+      'MPN Name': m.mpnName || '—',
+      'Manufacturer': m.manufacturerName || '—',
+      'Manufacturer Part Number': m.manufacturerPartNumber || '—',
+      'Material Name': m.materialId ? `${m.materialId.name} (${m.materialId.code || '—'})` : '—',
+      'Vendor Name': m.vendorId ? `${m.vendorId.name} ${m.vendorId.company ? `(${m.vendorId.company})` : ''}` : '—',
+      'Unit Price': m.unitPrice !== undefined ? m.unitPrice : '—',
+      'MOQ': m.moq !== undefined ? m.moq : '—',
+      'UOM': m.uom || '—',
+      'GST %': m.gst !== undefined ? `${m.gst}%` : '—',
+      'Direct Sourcing': m.isDirectFromManufacturer ? 'Same as Vendor' : 'Independent',
+      'Status': m.status || 'Active',
+      'Description': m.partDescription || '',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'MPN Master Grid');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=MPN_Master_Export_${Date.now()}.xlsx`);
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Generate & stream PDF specification sheet for single MPN
+// @route   GET /api/mpns/:id/pdf
+exports.generateMPNPdf = async (req, res, next) => {
+  try {
+    const mpn = await MPN.findById(req.params.id)
+      .populate('materialId', 'name code unit')
+      .populate('vendorId', 'name company vendorId');
+
+    if (!mpn) {
+      return res.status(404).json({ success: false, error: 'MPN record not found' });
+    }
+
+    generateSingleMpnPDF(res, mpn);
   } catch (err) {
     next(err);
   }
