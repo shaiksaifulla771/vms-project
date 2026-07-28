@@ -78,7 +78,8 @@ async function runTests() {
     status: "Draft"
   };
   const draftRes = await request({ hostname: 'localhost', port: 5000, path: '/api/mpns', method: 'POST', headers }, JSON.stringify(draftPayload));
-  console.log("Draft Create Result (HTTP " + draftRes.statusCode + "):", draftRes.bodyJson?.data?.mpnCode, draftRes.bodyJson?.data?.status);
+  const draftMpn = draftRes.bodyJson?.data;
+  console.log("Draft Create Result (HTTP " + draftRes.statusCode + "):", draftMpn?.mpnCode, draftMpn?.status);
 
   // 5. Test Active save without required fields (should fail with HTTP 400)
   console.log("\n--- TEST 2: Active Save (Missing Required Fields) ---");
@@ -123,13 +124,21 @@ async function runTests() {
   const mfrRes = await request({ hostname: 'localhost', port: 5000, path: '/api/mpns/manufacturers', method: 'GET', headers });
   console.log("Manufacturers List:", mfrRes.bodyJson?.data);
 
-  // 9. Test Soft Delete & Restore
-  console.log("\n--- TEST 6: Soft Delete & Restore ---");
-  const delRes = await request({ hostname: 'localhost', port: 5000, path: `/api/mpns/${createdMpn._id}`, method: 'DELETE', headers });
-  console.log("Soft Delete Result:", delRes.bodyJson?.message);
+  // 9. Test Soft Delete & Restore (Explicitly targeting Draft record from Test 1 to verify previousStatus)
+  console.log("\n--- TEST 6: Soft Delete & Restore Correctness (Draft Record) ---");
+  const delRes = await request({ hostname: 'localhost', port: 5000, path: `/api/mpns/${draftMpn._id}`, method: 'DELETE', headers });
+  console.log("Soft Delete Draft Result:", delRes.bodyJson?.message);
 
-  const restoredRes = await request({ hostname: 'localhost', port: 5000, path: `/api/mpns/${createdMpn._id}/restore`, method: 'PUT', headers });
-  console.log("Restore Result:", restoredRes.bodyJson?.data?.status);
+  const restoredRes = await request({ hostname: 'localhost', port: 5000, path: `/api/mpns/${draftMpn._id}/restore`, method: 'PUT', headers });
+  const restoredStatus = restoredRes.bodyJson?.data?.status;
+  console.log("Restored Record Status:", restoredStatus);
+
+  if (restoredStatus === 'Draft') {
+    console.log("PASS: Restored record status is exactly 'Draft' (matching previousStatus prior to deletion).");
+  } else {
+    console.error(`FAIL: Restore ambiguity! Expected restored status 'Draft', got '${restoredStatus}'`);
+    process.exit(1);
+  }
 
   // 10. Test Single-Record PDF Stream
   console.log("\n--- TEST 7: Single-Record PDF Stream ---");
@@ -151,7 +160,7 @@ async function runTests() {
   console.log("\n--- TEST 9: Case-normalization Collapse Test ---");
   const normPayload = {
     mpnName: "Shaft Seal 30x42x7",
-    manufacturerPartNumber: "SEAL-30427",
+    manufacturerPartNumber: `SEAL-${Date.now()}`,
     manufacturerName: "  skf  ", // Lowercase with leading/trailing spaces
     isDirectFromManufacturer: false,
     materialId: material2._id,
@@ -174,10 +183,11 @@ async function runTests() {
     console.log("PASS: Case-normalization correctly collapsed '  skf  ' into single normalized 'SKF' entry.");
   } else {
     console.error(`FAIL: Normalization gap! Expected 1 'SKF' entry, got count: ${exactSkfCount}`, mfrList);
+    process.exit(1);
   }
 
-  // 13. NEW TEST 10: Export Filter Isolation Test
-  console.log("\n--- TEST 10: Export Filter Isolation Test ---");
+  // 13. EXHAUSTIVE TEST 10: Export Filter Isolation Test (Exhaustive Row Checking)
+  console.log("\n--- TEST 10: Exhaustive Export Filter Isolation Test ---");
   // Material-only filter export
   const matExcelRes = await request({
     hostname: 'localhost',
@@ -191,8 +201,17 @@ async function runTests() {
   const matRows = XLSX.utils.sheet_to_json(matSheet);
 
   const matNameExpected = `${material.name} (${material.code || '—'})`;
-  const allMatRowsMatch = matRows.length > 0 && matRows.every(r => r['Material Name'] === matNameExpected);
-  console.log(`Material-filtered export returned ${matRows.length} row(s). Sample Material Name: '${matRows[0]?.['Material Name']}'`);
+  let matMatchCount = 0;
+  matRows.forEach((r, idx) => {
+    if (r['Material Name'] === matNameExpected) {
+      matMatchCount++;
+    } else {
+      console.error(`Row ${idx} Material mismatch: Expected '${matNameExpected}', got '${r['Material Name']}'`);
+    }
+  });
+
+  const allMatMatch = matRows.length > 0 && matMatchCount === matRows.length;
+  console.log(`Checked all ${matMatchCount}/${matRows.length} rows for Material filter ('${matNameExpected}') — ${allMatMatch ? '100% matched' : 'MISMATCH DETECTED'}`);
 
   // Vendor-only filter export
   const venExcelRes = await request({
@@ -207,13 +226,23 @@ async function runTests() {
   const venRows = XLSX.utils.sheet_to_json(venSheet);
 
   const venNameExpected = `${vendor.name} ${vendor.company ? `(${vendor.company})` : ''}`;
-  const allVenRowsMatch = venRows.length > 0 && venRows.every(r => r['Vendor Name'] === venNameExpected);
-  console.log(`Vendor-filtered export returned ${venRows.length} row(s). Sample Vendor Name: '${venRows[0]?.['Vendor Name']}'`);
+  let venMatchCount = 0;
+  venRows.forEach((r, idx) => {
+    if (r['Vendor Name'] === venNameExpected) {
+      venMatchCount++;
+    } else {
+      console.error(`Row ${idx} Vendor mismatch: Expected '${venNameExpected}', got '${r['Vendor Name']}'`);
+    }
+  });
 
-  if (allMatRowsMatch && allVenRowsMatch) {
-    console.log("PASS: Export filter isolation confirmed! Material and Vendor filter parameters restrict export rows on the server.");
+  const allVenMatch = venRows.length > 0 && venMatchCount === venRows.length;
+  console.log(`Checked all ${venMatchCount}/${venRows.length} rows for Vendor filter ('${venNameExpected}') — ${allVenMatch ? '100% matched' : 'MISMATCH DETECTED'}`);
+
+  if (allMatMatch && allVenMatch) {
+    console.log("PASS: Exhaustive export filter isolation confirmed! Every single exported row strictly matched applied filters.");
   } else {
-    console.error("FAIL: Export filter isolation mismatch!", { allMatRowsMatch, allVenRowsMatch });
+    console.error("FAIL: Export filter isolation mismatch!", { allMatMatch, allVenMatch });
+    process.exit(1);
   }
 
   console.log("\n==================== ALL 10 AUDIT TESTS PASSED SUCCESSFULLY! ====================");

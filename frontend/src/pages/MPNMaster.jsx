@@ -61,12 +61,27 @@ export default function MPNMaster() {
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 4000);
   };
 
+  // Helper to fetch all paginated records by looping pages until complete
+  const fetchAllPages = async (url) => {
+    let allRecords = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const res = await api.get(url, { params: { page, limit: 100 } });
+      const items = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+      allRecords = [...allRecords, ...items];
+      totalPages = res.data?.pagination?.pages || 1;
+      page++;
+    } while (page <= totalPages && page <= 50);
+    return allRecords;
+  };
+
   // ---------- Data fetching ----------
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       const endpoint = statusFilter === 'Deleted' ? '/api/mpns/deleted' : '/api/mpns';
-      const [mpnRes, matRes, venRes, mfrRes] = await Promise.all([
+      const [mpnRes, matList, venList, mfrRes] = await Promise.all([
         api.get(endpoint, {
           params: {
             status: statusFilter,
@@ -74,14 +89,12 @@ export default function MPNMaster() {
             vendorId: vendorFilter,
           },
         }),
-        api.get('/api/materials'),
-        api.get('/api/vendors', { params: { limit: 1000 } }),
+        fetchAllPages('/api/materials'),
+        fetchAllPages('/api/vendors'),
         api.get('/api/mpns/manufacturers'),
       ]);
 
       const mpnList = Array.isArray(mpnRes.data?.data) ? mpnRes.data.data : Array.isArray(mpnRes.data) ? mpnRes.data : [];
-      const matList = Array.isArray(matRes.data?.data) ? matRes.data.data : Array.isArray(matRes.data) ? matRes.data : [];
-      const venList = Array.isArray(venRes.data?.data) ? venRes.data.data : Array.isArray(venRes.data) ? venRes.data : [];
       const mfrList = Array.isArray(mfrRes.data?.data) ? mfrRes.data.data : Array.isArray(mfrRes.data) ? mfrRes.data : [];
 
       console.log(`[MPNMaster] Fetched Data -> MPNs: ${mpnList.length}, Materials: ${matList.length}, Vendors: ${venList.length}, Manufacturers: ${mfrList.length}`);
