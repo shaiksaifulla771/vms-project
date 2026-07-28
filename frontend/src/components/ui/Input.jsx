@@ -8,6 +8,19 @@ export const Input = ({
   className = '',
   ...props
 }) => {
+  const inputEl = (
+    <input
+      type={type}
+      id={id}
+      className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+      } ${className}`}
+      {...props}
+    />
+  );
+
+  if (!label && !error) return inputEl;
+
   return (
     <div className="w-full flex flex-col space-y-1.5">
       {label && (
@@ -15,14 +28,7 @@ export const Input = ({
           {label}
         </label>
       )}
-      <input
-        type={type}
-        id={id}
-        className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
-          error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
-        } ${className}`}
-        {...props}
-      />
+      {inputEl}
       {error && <span className="text-xs text-red-500 font-medium">{error}</span>}
     </div>
   );
@@ -36,6 +42,19 @@ export const TextArea = ({
   rows = 3,
   ...props
 }) => {
+  const areaEl = (
+    <textarea
+      id={id}
+      rows={rows}
+      className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+      } ${className}`}
+      {...props}
+    />
+  );
+
+  if (!label && !error) return areaEl;
+
   return (
     <div className="w-full flex flex-col space-y-1.5">
       {label && (
@@ -43,14 +62,7 @@ export const TextArea = ({
           {label}
         </label>
       )}
-      <textarea
-        id={id}
-        rows={rows}
-        className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
-          error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
-        } ${className}`}
-        {...props}
-      />
+      {areaEl}
       {error && <span className="text-xs text-red-500 font-medium">{error}</span>}
     </div>
   );
@@ -66,6 +78,31 @@ export const Select = ({
   children,
   ...props
 }) => {
+  const selectEl = (
+    <select
+      id={id}
+      className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+      } ${className}`}
+      {...props}
+    >
+      {children ? (
+        children
+      ) : (
+        <>
+          {placeholder && <option value="" disabled>{placeholder}</option>}
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </>
+      )}
+    </select>
+  );
+
+  if (!label && !error) return selectEl;
+
   return (
     <div className="w-full flex flex-col space-y-1.5">
       {label && (
@@ -73,26 +110,7 @@ export const Select = ({
           {label}
         </label>
       )}
-      <select
-        id={id}
-        className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer ${
-          error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
-        } ${className}`}
-        {...props}
-      >
-        {children ? (
-          children
-        ) : (
-          <>
-            {placeholder && <option value="" disabled>{placeholder}</option>}
-            {options.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </>
-        )}
-      </select>
+      {selectEl}
       {error && <span className="text-xs text-red-500 font-medium">{error}</span>}
     </div>
   );
