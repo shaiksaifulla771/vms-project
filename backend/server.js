@@ -85,6 +85,11 @@ function determineSubcategory(name, type, vendor) {
 // Connect to database and seed data
 connectDB().then(async () => {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      console.log('Production mode active — skipping automatic database seeding.');
+      return;
+    }
+
     const userCount = await User.countDocuments();
     if (userCount > 0) {
       console.log('Database already seeded, skipping seed step.');
@@ -120,19 +125,6 @@ connectDB().then(async () => {
       isVerified: true
     });
     console.log('Seeded Production Manager: production@vms.com / manager123');
-
-    // Wipe existing data to force clean seeding of the Excel dataset
-    // console.log('Clearing existing ERP collections for fresh Excel seeding...');
-    // await Promise.all([
-    //   Vendor.deleteMany({}),
-    //   Material.deleteMany({}),
-    //   BOM.deleteMany({}),
-    //   InventoryItem.deleteMany({}),
-    //   InventoryTransaction.deleteMany({}),
-    //   PurchaseOrder.deleteMany({}),
-    //   ProductionOrder.deleteMany({}),
-    //   QualityRecord.deleteMany({})
-    // ]);
 
     // Read the all_recipes.json file
     const fs = require('fs');
@@ -256,6 +248,17 @@ const app = express();
 // Security headers: Content Security Policy (CSP) disabled explicitly because the frontend SPA relies on dynamic asset loading and Tailwind inline utility classes.
 app.use(helmet({ contentSecurityPolicy: false }));
 
+// Dedicated rate limiter for sensitive authentication endpoint (login)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Max 10 failed login attempts per 15 minutes per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many authentication attempts from this IP. Please try again after 15 minutes.' }
+});
+
+app.use('/api/auth/login', loginLimiter);
+
 // Rate limiting scoped to write/mutating routes
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -279,10 +282,18 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 // Sanitize data against NoSQL query operator injection ($ and .)
 app.use(mongoSanitize());
 
-// Enable CORS
+// Enable CORS with strict production domain filtering
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map(url => url.trim())
+  : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://127.0.0.1:3000'];
+
 app.use(cors({
   origin: (origin, callback) => {
-    callback(null, true); // Dynamically reflect request origin in headers to allow network connections
+    if (!origin || process.env.NODE_ENV !== 'production' || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS Access Denied: Origin '${origin}' is not permitted.`));
+    }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
