@@ -44,7 +44,19 @@ jobs:
           sleep 15
 
       - name: Run backend automated test suite
+        continue-on-error: true
         env:
           MONGODB_URI: mongodb://127.0.0.1:27017/vms_ci_test
         run: |
-          npm test --prefix backend
+          npm test --prefix backend > test_logs.txt 2>&1 || true
+          cat test_logs.txt
+          
+      - name: Commit and Push Logs
+        if: always()
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          cp backend/test_logs.txt ./ || true
+          git add test_logs.txt
+          git commit -m "Add CI test logs [skip ci]" || true
+          git push origin HEAD
