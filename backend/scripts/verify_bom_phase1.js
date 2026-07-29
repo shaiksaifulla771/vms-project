@@ -32,6 +32,10 @@ async function runPhase1Verification() {
   const BOM = mongoose.model('BOM', new mongoose.Schema({ productId: mongoose.Schema.Types.ObjectId, components: Array, status: String }));
 
   const admin = await User.findOne({ role: 'Admin' });
+  if (!admin) {
+    console.error("FAIL: Admin user not found in verify_bom_phase1.js. Ensure seeding is complete.");
+    process.exit(1);
+  }
   const token = jwt.sign({ id: admin._id }, getJwtSecret(), { expiresIn: '30d' });
   const authHeaders = {
     'Authorization': `Bearer ${token}`,

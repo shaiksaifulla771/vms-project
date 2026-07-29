@@ -41,7 +41,7 @@ jobs:
         run: |
           cd backend
           node server.js &
-          sleep 5
+          sleep 15
 
       - name: Run backend automated test suite
         env:
