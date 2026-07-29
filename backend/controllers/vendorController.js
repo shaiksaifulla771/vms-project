@@ -65,7 +65,7 @@ exports.createVendor = async (req, res, next) => {
     if (existing) return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
 
     if (!vendorId) {
-      const allVendors = await Vendor.find({}, { vendorId: 1 });
+      const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
       let maxNum = 1000;
       allVendors.forEach(v => {
         const match = (v.vendorId || '').match(/\d+/);
@@ -79,7 +79,7 @@ exports.createVendor = async (req, res, next) => {
     } else {
       const existingVendorCode = await Vendor.findOne({ vendorId });
       if (existingVendorCode) {
-        const allVendors = await Vendor.find({}, { vendorId: 1 });
+        const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
         let maxNum = 1000;
         allVendors.forEach(v => {
           const match = (v.vendorId || '').match(/\d+/);
@@ -144,7 +144,7 @@ exports.deleteVendor = async (req, res, next) => {
 
 exports.peekNextVendorCode = async (req, res, next) => {
   try {
-    const allVendors = await Vendor.find({}, { vendorId: 1 });
+    const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
     let maxNum = 1000;
     allVendors.forEach(v => {
       const match = (v.vendorId || '').match(/\d+/);

@@ -575,7 +575,7 @@ exports.peekNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
-      { code: /^M\d+$/i },
+      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
     );
 
@@ -609,7 +609,7 @@ exports.getNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
-      { code: /^M\d+$/i },
+      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
     );
 

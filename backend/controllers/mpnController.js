@@ -122,7 +122,7 @@ exports.getMPN = async (req, res, next) => {
 exports.peekNextMPNCode = async (req, res, next) => {
   try {
     const activeMPNs = await MPN.find(
-      { mpnCode: /^MPN\d{4}$/i },
+      { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
       { mpnCode: 1 }
     );
 
@@ -136,7 +136,12 @@ exports.peekNextMPNCode = async (req, res, next) => {
       }
     });
 
-    res.status(200).json({ success: true, nextCode: `MPN${maxNum + 1}` });
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] });
+    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+    const finalMax = Math.max(maxNum, seqNum);
+
+    res.status(200).json({ success: true, nextCode: `MPN${finalMax + 1}` });
   } catch (err) {
     next(err);
   }
@@ -239,7 +244,7 @@ exports.createMPN = async (req, res, next) => {
     // Auto-generate code if missing
     if (!req.body.mpnCode) {
       const activeMPNs = await MPN.find(
-        { mpnCode: /^MPN\d{4}$/i },
+        { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
         { mpnCode: 1 }
       );
       let maxNum = 1000;
@@ -249,7 +254,11 @@ exports.createMPN = async (req, res, next) => {
           if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
         }
       });
-      req.body.mpnCode = `MPN${maxNum + 1}`;
+      const Sequence = require('../models/Sequence');
+      const seqDoc = await Sequence.findOne({ $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] });
+      const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+      const finalMax = Math.max(maxNum, seqNum);
+      req.body.mpnCode = `MPN${finalMax + 1}`;
     }
 
     // Check for duplicates (no reuse)
