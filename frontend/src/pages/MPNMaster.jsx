@@ -208,7 +208,6 @@ export default function MPNMaster() {
 
   const validate = () => {
     const errors = {};
-    if (!form.manufacturerPartNumber.trim()) errors.manufacturerPartNumber = 'Manufacturer Part Number is required';
     if (!form.manufacturerName.trim()) errors.manufacturerName = 'Manufacturer Name is required';
     if (!form.materialId) errors.materialId = 'Please link a Material';
     if (!form.vendorId) errors.vendorId = 'Please link a Vendor';
@@ -226,7 +225,7 @@ export default function MPNMaster() {
     }
 
     setFormErrors(errors);
-    return !errors.manufacturerPartNumber && !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.unitPrice && !errors.moq && !errors.uom;
+    return !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.unitPrice && !errors.moq && !errors.uom;
   };
 
   // Single Save button: validation is driven strictly by Status
@@ -595,26 +594,24 @@ export default function MPNMaster() {
                   )}
                   <TableHead className="font-bold text-xs">MPN ID</TableHead>
                   <TableHead className="font-bold text-xs">Material Name</TableHead>
-                  <TableHead className="font-bold text-xs">Mfg Part Number</TableHead>
                   <TableHead className="font-bold text-xs">Vendor Name</TableHead>
                   <TableHead className="font-bold text-xs text-right">Unit Price</TableHead>
                   <TableHead className="font-bold text-xs text-center">MOQ</TableHead>
                   <TableHead className="font-bold text-xs text-center">UOM</TableHead>
                   <TableHead className="font-bold text-xs">Status</TableHead>
-                  <TableHead className="font-bold text-xs text-center">GSTIN</TableHead>
                   <TableHead className="font-bold text-xs text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={selectMode ? 11 : 10} className="text-center py-8 text-xs text-slate-400">
+                    <TableCell colSpan={selectMode ? 9 : 8} className="text-center py-8 text-xs text-slate-400">
                       Loading MPN master records...
                     </TableCell>
                   </TableRow>
                 ) : paginatedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={selectMode ? 11 : 10} className="text-center py-8 text-xs text-slate-400">
+                    <TableCell colSpan={selectMode ? 9 : 8} className="text-center py-8 text-xs text-slate-400">
                       No MPN records found matching your filters.
                     </TableCell>
                   </TableRow>
@@ -637,9 +634,6 @@ export default function MPNMaster() {
                       <TableCell className="text-xs text-slate-800 font-semibold max-w-[200px] truncate" title={row.materialId ? `${row.materialId.name} (${row.materialId.code || '—'})` : ''}>
                         {row.materialId ? `${row.materialId.name} (${row.materialId.code || '—'})` : '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-900 font-bold max-w-[160px] truncate" title={row.manufacturerPartNumber || ''}>
-                        {row.manufacturerPartNumber || '—'}
-                      </TableCell>
                       <TableCell className="text-xs text-slate-700 max-w-[200px] truncate" title={row.vendorId ? `${row.vendorId.name} ${row.vendorId.company ? `(${row.vendorId.company})` : ''}` : ''}>
                         {row.vendorId ? (
                           <span>
@@ -658,10 +652,7 @@ export default function MPNMaster() {
                       <TableCell className="text-xs text-center text-slate-600">
                         {row.uom || '—'}
                       </TableCell>
-                      <TableCell>{getStatusBadge(row.status)}</TableCell>
-                      <TableCell className="text-xs text-center font-mono font-bold text-slate-700">
-                        {row.vendorId?.gstin || row.gstin || '—'}
-                      </TableCell>
+                      <TableCell className="text-xs font-semibold text-slate-700">{row.status}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-1">
                           <button
@@ -841,8 +832,8 @@ export default function MPNMaster() {
             </div>
           </div>
 
-          {/* Section 2: Links & Part Numbers */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Section 2: Links */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Linked Material <span className="text-red-500">*</span>
@@ -882,22 +873,6 @@ export default function MPNMaster() {
               </Select>
               {formErrors.vendorId && (
                 <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.vendorId}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Manufacturer Part Number (MPN) <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="text"
-                value={form.manufacturerPartNumber}
-                onChange={(e) => handleChange('manufacturerPartNumber', e.target.value)}
-                placeholder="e.g. 6205-2RS1"
-                className="text-xs font-mono font-bold"
-              />
-              {formErrors.manufacturerPartNumber && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.manufacturerPartNumber}</p>
               )}
             </div>
           </div>

@@ -185,8 +185,10 @@ exports.createMPN = async (req, res, next) => {
     let { manufacturerName, manufacturerPartNumber } = req.body;
 
     manufacturerName = normalizeManufacturer(manufacturerName);
-    if (typeof manufacturerPartNumber === 'string') {
+    if (typeof manufacturerPartNumber === 'string' && manufacturerPartNumber.trim()) {
       manufacturerPartNumber = manufacturerPartNumber.trim();
+    } else {
+      manufacturerPartNumber = req.body.mpnCode || 'MPN-AUTO';
     }
 
     req.body.manufacturerName = manufacturerName;
@@ -203,9 +205,6 @@ exports.createMPN = async (req, res, next) => {
 
     // Status drives validation strictness: Draft bypasses required checks
     if (status !== 'Draft') {
-      if (!manufacturerPartNumber) {
-        return res.status(400).json({ success: false, error: 'Manufacturer Part Number is required' });
-      }
       if (!manufacturerName) {
         return res.status(400).json({ success: false, error: 'Manufacturer Name is required' });
       }
@@ -310,9 +309,9 @@ exports.updateMPN = async (req, res, next) => {
     let manufacturerName = req.body.manufacturerName
       ? normalizeManufacturer(req.body.manufacturerName)
       : mpn.manufacturerName;
-    let manufacturerPartNumber = req.body.manufacturerPartNumber
+    let manufacturerPartNumber = (req.body.manufacturerPartNumber && req.body.manufacturerPartNumber.trim())
       ? req.body.manufacturerPartNumber.trim()
-      : mpn.manufacturerPartNumber;
+      : (mpn.manufacturerPartNumber || req.body.mpnCode || mpn.mpnCode || 'MPN-AUTO');
 
     req.body.manufacturerName = manufacturerName;
     req.body.manufacturerPartNumber = manufacturerPartNumber;
