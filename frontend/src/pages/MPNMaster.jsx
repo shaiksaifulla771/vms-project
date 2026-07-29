@@ -540,10 +540,16 @@ export default function MPNMaster() {
                   disabled={selectedIds.length !== 1}
                   onClick={handleEditSelected}
                   className="text-xs h-9"
-                  title="Edit selected record (requires exactly 1 selection)"
+                  title={
+                    selectedIds.length === 0
+                      ? 'Select 1 record to edit'
+                      : selectedIds.length === 1
+                      ? 'Edit selected MPN record'
+                      : `Select only 1 record to edit (${selectedIds.length} currently selected)`
+                  }
                 >
                   <Edit2 className="h-3.5 w-3.5 mr-1" />
-                  Edit
+                  Edit {selectedIds.length === 1 ? '(1)' : ''}
                 </Button>
                 <Button
                   variant="danger"
@@ -551,7 +557,11 @@ export default function MPNMaster() {
                   disabled={selectedIds.length === 0}
                   onClick={handleBatchDelete}
                   className="text-xs h-9"
-                  title="Soft delete selected records"
+                  title={
+                    selectedIds.length === 0
+                      ? 'Select 1 or more records to delete'
+                      : `Soft delete ${selectedIds.length} selected record(s)`
+                  }
                 >
                   <Trash2 className="h-3.5 w-3.5 mr-1" />
                   Delete ({selectedIds.length})
