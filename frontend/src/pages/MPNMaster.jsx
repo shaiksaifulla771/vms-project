@@ -164,6 +164,12 @@ export default function MPNMaster() {
   };
 
   const closeModal = () => {
+    if (seqEditIndex >= 0 && seqEditList.length > 1) {
+      setSeqEditList([]);
+      setSeqEditIndex(-1);
+      setSelectedIds([]);
+      fetchAll();
+    }
     setModalOpen(false);
     setMfrSuggestionsOpen(false);
   };
@@ -248,11 +254,22 @@ export default function MPNMaster() {
 
       if (isEdit) {
         await api.put(`/api/mpns/${form._id}`, body);
-        showToast('MPN updated successfully');
+        showToast(
+          seqEditIndex >= 0 && seqEditList.length > 1
+            ? `Saved ${form.mpnCode || 'record'} (${seqEditIndex + 1} of ${seqEditList.length})`
+            : 'MPN updated successfully'
+        );
       } else {
         await api.post('/api/mpns', body);
         showToast(payload.status === 'Draft' ? 'Saved as draft' : 'MPN created successfully');
       }
+
+      if (seqEditIndex >= 0 && seqEditList.length > 1) {
+        fetchAll();
+        advanceSeqEdit(seqEditIndex + 1);
+        return;
+      }
+
       setModalOpen(false);
       fetchAll();
     } catch (err) {
@@ -409,11 +426,45 @@ export default function MPNMaster() {
     setSelectMode(!selectMode);
   };
 
+  // ---------- Sequential Edit State & Handlers ----------
+  const [seqEditList, setSeqEditList] = useState([]);
+  const [seqEditIndex, setSeqEditIndex] = useState(-1);
+
   const handleEditSelected = () => {
-    if (selectedIds.length !== 1) return;
-    const target = rows.find((r) => r._id === selectedIds[0]);
-    if (target) {
-      openEditModal(target);
+    if (selectedIds.length === 0) return;
+    const targets = selectedIds
+      .map((id) => rows.find((r) => r._id === id))
+      .filter(Boolean);
+    if (targets.length === 0) return;
+
+    if (targets.length === 1) {
+      setSeqEditList([]);
+      setSeqEditIndex(-1);
+      openEditModal(targets[0]);
+    } else {
+      setSeqEditList(targets);
+      setSeqEditIndex(0);
+      openEditModal(targets[0]);
+    }
+  };
+
+  const advanceSeqEdit = (nextIdx) => {
+    if (nextIdx < seqEditList.length) {
+      setSeqEditIndex(nextIdx);
+      openEditModal(seqEditList[nextIdx]);
+    } else {
+      setSeqEditList([]);
+      setSeqEditIndex(-1);
+      setModalOpen(false);
+      setSelectedIds([]);
+      fetchAll();
+      showToast('Sequential edit complete for all selected records', 'success');
+    }
+  };
+
+  const handleSkipSeq = () => {
+    if (seqEditIndex >= 0 && seqEditList.length > 1) {
+      advanceSeqEdit(seqEditIndex + 1);
     }
   };
 
@@ -537,19 +588,19 @@ export default function MPNMaster() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={selectedIds.length !== 1}
+                  disabled={selectedIds.length === 0}
                   onClick={handleEditSelected}
                   className="text-xs h-9"
                   title={
                     selectedIds.length === 0
-                      ? 'Select 1 record to edit'
+                      ? 'Select 1 or more records to edit'
                       : selectedIds.length === 1
                       ? 'Edit selected MPN record'
-                      : `Select only 1 record to edit (${selectedIds.length} currently selected)`
+                      : `Sequentially edit ${selectedIds.length} selected MPN records`
                   }
                 >
                   <Edit2 className="h-3.5 w-3.5 mr-1" />
-                  Edit {selectedIds.length === 1 ? '(1)' : ''}
+                  Edit {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
                 </Button>
                 <Button
                   variant="danger"
@@ -744,7 +795,13 @@ export default function MPNMaster() {
       <Dialog
         isOpen={modalOpen}
         onClose={closeModal}
-        title={isEdit ? 'Edit MPN Specification' : 'Register New MPN Record'}
+        title={
+          isEdit
+            ? seqEditIndex >= 0 && seqEditList.length > 1
+              ? `Edit MPN Record (Editing ${seqEditIndex + 1} of ${seqEditList.length})`
+              : 'Edit MPN Specification'
+            : 'Register New MPN Record'
+        }
         className="max-w-5xl w-[95vw] max-h-[92vh]"
       >
         <div className="space-y-5 pt-2">
@@ -993,15 +1050,38 @@ export default function MPNMaster() {
             />
           </div>
 
-          {/* Single Save button action bar */}
-          <div className="flex items-center justify-end space-x-2 pt-4 border-t border-slate-200">
-            <Button variant="outline" size="sm" onClick={closeModal} className="px-4">
-              Cancel
-            </Button>
-            <Button variant="primary" size="sm" onClick={handleSave} className="px-5 font-bold">
-              <Save className="h-3.5 w-3.5 mr-1.5" />
-              {isEdit ? 'Update MPN Record' : 'Save MPN Record'}
-            </Button>
+          {/* Action Bar with Sequential Edit Controls */}
+          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+            {seqEditIndex >= 0 && seqEditList.length > 1 ? (
+              <div className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center space-x-1.5">
+                <span>Editing {seqEditIndex + 1} of {seqEditList.length}</span>
+                <span className="text-slate-400">|</span>
+                <span className="font-mono">{form.mpnCode || 'Record'}</span>
+              </div>
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center space-x-2">
+              {seqEditIndex >= 0 && seqEditList.length > 1 && (
+                <Button variant="outline" size="sm" onClick={handleSkipSeq} className="px-3 text-slate-600">
+                  Skip →
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={closeModal} className="px-4">
+                {seqEditIndex >= 0 && seqEditList.length > 1 ? 'Exit Sequence' : 'Cancel'}
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleSave} className="px-5 font-bold">
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+                {seqEditIndex >= 0 && seqEditList.length > 1
+                  ? seqEditIndex === seqEditList.length - 1
+                    ? 'Save & Finish'
+                    : 'Save & Next →'
+                  : isEdit
+                  ? 'Update MPN Record'
+                  : 'Save MPN Record'}
+              </Button>
+            </div>
           </div>
         </div>
       </Dialog>
