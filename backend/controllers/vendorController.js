@@ -65,27 +65,27 @@ exports.createVendor = async (req, res, next) => {
     if (existing) return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
 
     if (!vendorId) {
-      const allVendors = await Vendor.find({}, { vendorId: 1 });
+      const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
       let maxNum = 1000;
       allVendors.forEach(v => {
         const match = (v.vendorId || '').match(/\d+/);
         if (match) {
           const num = parseInt(match[0], 10);
-          if (!isNaN(num) && num > maxNum) maxNum = num;
+          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
         }
       });
       vendorId = `V${maxNum + 1}`;
       await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
     } else {
-      const existingVendorCode = await Vendor.findOne({ vendorId });
+      const existingVendorCode = await Vendor.findOne({ vendorId, status: { $ne: 'Deleted' } });
       if (existingVendorCode) {
-        const allVendors = await Vendor.find({}, { vendorId: 1 });
+        const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
         let maxNum = 1000;
         allVendors.forEach(v => {
           const match = (v.vendorId || '').match(/\d+/);
           if (match) {
             const num = parseInt(match[0], 10);
-            if (!isNaN(num) && num > maxNum) maxNum = num;
+            if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
           }
         });
         vendorId = `V${maxNum + 1}`;
@@ -432,10 +432,22 @@ exports.batchDeleteVendors = async (req, res, next) => {
 // @access  Private
 exports.peekNextVendorCode = async (req, res, next) => {
   try {
-    const Sequence = require('../models/Sequence');
-    const seqDoc = await Sequence.findOne({ $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] });
-    const seqNum = seqDoc ? seqDoc.seq : 1000;
-    const nextCode = `V${seqNum + 1}`;
+    const activeVendors = await Vendor.find(
+      { status: { $ne: 'Deleted' }, vendorId: /^V\d+$/i },
+      { vendorId: 1 }
+    );
+    let maxNum = 1000;
+    activeVendors.forEach((v) => {
+      if (v.vendorId) {
+        const match = v.vendorId.match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+        }
+      }
+    });
+
+    const nextCode = `V${maxNum + 1}`;
     res.status(200).json({ success: true, nextCode });
   } catch (err) {
     next(err);
@@ -447,10 +459,26 @@ exports.peekNextVendorCode = async (req, res, next) => {
 // @access  Private
 exports.getNextVendorCode = async (req, res, next) => {
   try {
+    const activeVendors = await Vendor.find(
+      { status: { $ne: 'Deleted' }, vendorId: /^V\d+$/i },
+      { vendorId: 1 }
+    );
+    let maxNum = 1000;
+    activeVendors.forEach((v) => {
+      if (v.vendorId) {
+        const match = v.vendorId.match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+        }
+      }
+    });
+
     const Sequence = require('../models/Sequence');
     const seqDoc = await Sequence.findOne({ $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] });
     const seqNum = seqDoc ? seqDoc.seq : 1000;
-    const nextNum = seqNum + 1;
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+
     await Sequence.updateMany(
       { $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] },
       { $set: { seq: nextNum } }

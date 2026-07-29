@@ -60,8 +60,8 @@ exports.createMaterial = async (req, res, next) => {
   try {
     const { name, code, unit, type, subcategory, status, description } = req.body;
 
-    if (!name || !code || !unit) {
-      return res.status(400).json({ success: false, error: 'Please provide name, code, and unit of measurement' });
+    if (!name || !code || !unit || typeof name !== 'string' || typeof code !== 'string' || typeof unit !== 'string') {
+      return res.status(400).json({ success: false, error: 'Please provide valid text strings for name, code, and unit of measurement' });
     }
 
     // Check code uniqueness
@@ -86,17 +86,22 @@ exports.createMaterial = async (req, res, next) => {
       balance: 0
     });
 
-    // Update sequence to reflect manually-typed code if it falls within the auto-generation range (1000-9999)
-    const match = material.code.match(/^M(\d{4})$/i);
+    // Update sequence to reflect manually-typed code if it falls within numeric M-code range and is higher than current sequence
+    const match = material.code.match(/^M(\d+)$/i);
     if (match) {
       const num = parseInt(match[1], 10);
-      if (!isNaN(num) && num >= 1000 && num < 10000) {
+      if (!isNaN(num) && num >= 1000) {
         const Sequence = require('../models/Sequence');
-        console.log(`[SEQUENCE SYNC] Manual code created: M${num}. Updating sequence table...`);
-        await Sequence.updateMany(
-          { $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] },
-          { $set: { seq: num } }
-        );
+        const seqDoc = await Sequence.findById('materialCode');
+        const currentSeq = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+        if (num > currentSeq) {
+          console.log(`[SEQUENCE SYNC] Manual code created: M${num}. Updating sequence table from ${currentSeq} -> ${num}...`);
+          await Sequence.findByIdAndUpdate(
+            'materialCode',
+            { $set: { seq: num } },
+            { upsert: true, new: true }
+          );
+        }
       }
     }
 
@@ -116,6 +121,13 @@ exports.updateMaterial = async (req, res, next) => {
 
     if (!material) {
       return res.status(404).json({ success: false, error: 'Material not found' });
+    }
+
+    if (code !== undefined && typeof code !== 'string') {
+      return res.status(400).json({ success: false, error: 'Material code must be a valid text string' });
+    }
+    if (name !== undefined && typeof name !== 'string') {
+      return res.status(400).json({ success: false, error: 'Material name must be a valid text string' });
     }
 
     // Check code uniqueness if changed
@@ -561,27 +573,25 @@ exports.batchDeleteMaterials = async (req, res, next) => {
 // @access  Private
 exports.peekNextMaterialCode = async (req, res, next) => {
   try {
-    const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
-      { code: /^M\d{4}$/i },
+      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
     );
-    
+
     let maxNum = 1000;
     activeMaterials.forEach(m => {
       if (m.code) {
-        const num = parseInt(m.code.substring(1), 10);
-        if (!isNaN(num) && num < 10000 && num > maxNum) {
-          maxNum = num;
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) {
+            maxNum = num;
+          }
         }
       }
     });
 
-    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
-    const seqNum = (seqDoc && seqDoc.seq < 10000) ? seqDoc.seq : 1000;
-    const nextNum = Math.max(maxNum, seqNum) + 1;
-
-    res.status(200).json({ success: true, nextCode: `M${nextNum}` });
+    res.status(200).json({ success: true, nextCode: `M${maxNum + 1}` });
   } catch (err) {
     next(err);
   }
@@ -594,27 +604,31 @@ exports.getNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
-      { code: /^M\d{4}$/i },
+      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
     );
 
     let maxNum = 1000;
     activeMaterials.forEach(m => {
       if (m.code) {
-        const num = parseInt(m.code.substring(1), 10);
-        if (!isNaN(num) && num < 10000 && num > maxNum) {
-          maxNum = num;
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
         }
       }
     });
 
-    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
-    const seqNum = (seqDoc && seqDoc.seq < 10000) ? seqDoc.seq : 1000;
+    const seqDoc = await Sequence.findById('materialCode');
+    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
     const nextNum = Math.max(maxNum, seqNum) + 1;
 
-    await Sequence.updateMany(
-      { $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] },
-      { $set: { seq: nextNum } }
+    await Sequence.findByIdAndUpdate(
+      'materialCode',
+      { $set: { seq: nextNum } },
+      { upsert: true, new: true }
     );
 
     res.status(200).json({ success: true, nextCode: `M${nextNum}` });

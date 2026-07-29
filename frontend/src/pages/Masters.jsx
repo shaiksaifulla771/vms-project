@@ -940,10 +940,10 @@ const MaterialsTab = () => {
     let maxCounter = 1000;
     materials.forEach(m => {
       if (m.code && m.status !== 'Deleted') {
-        const match = m.code.match(/^M(\d{4})$/i);
+        const match = m.code.toString().match(/\d+/);
         if (match) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num < 5000 && num > maxCounter) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
             maxCounter = num;
           }
         }
@@ -962,10 +962,10 @@ const MaterialsTab = () => {
     let maxCounter = 1000;
     materials.forEach(m => {
       if (m.code && m.status !== 'Deleted') {
-        const match = m.code.match(/^M(\d{4})$/i);
+        const match = m.code.toString().match(/\d+/);
         if (match) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num < 5000 && num > maxCounter) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxCounter) {
             maxCounter = num;
           }
         }
@@ -4884,17 +4884,12 @@ const VendorsTab = () => {
           }
         });
 
-        // Duplication check against active and deleted items
+        // Duplication check against active items only
         const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
         let foundConflict = false;
         for (const row of rawRowsMapped) {
           const rowCode = (row.vendorId || '').toUpperCase().trim();
           if (rowCode) {
-            if (deletedCodes.has(rowCode)) {
-              foundConflict = true;
-              break;
-            }
             if (isVendorAutoEntry && activeCodes.has(rowCode)) {
               foundConflict = true;
               break;
@@ -4956,19 +4951,16 @@ const VendorsTab = () => {
       }
     }
 
-    // Duplication Check against Active and Deleted Tables
+    // Duplication Check against Active Table
     const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
-    const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
     const duplicates = validToImport.filter(item => {
       const code = (item.vendorId || '').toUpperCase().trim();
       if (!code) return false;
-      if (deletedCodes.has(code)) return true;
       if (!item.isExistingMatch && activeCodes.has(code)) return true;
       return false;
     });
     if (duplicates.length > 0) {
-      alert("This file data already is in database which is presented in deleted rows & sheets status.");
-      showToast("Ingestion aborted: Duplicate data detected.", "error");
+      showToast("Ingestion aborted: Duplicate active vendor code detected.", "error");
       return;
     }
 
@@ -5294,15 +5286,7 @@ const VendorsTab = () => {
       const match = codeStr.match(/\d+/);
       if (match) {
         const num = parseInt(match[0], 10);
-        if (!isNaN(num) && num > maxCounter) maxCounter = num;
-      }
-    });
-    deletedVendorsHistory.forEach(v => {
-      const codeStr = v.vendorId || '';
-      const match = codeStr.match(/\d+/);
-      if (match) {
-        const num = parseInt(match[0], 10);
-        if (!isNaN(num) && num > maxCounter) maxCounter = num;
+        if (!isNaN(num) && num < 10000 && num > maxCounter) maxCounter = num;
       }
     });
     return `V${maxCounter + 1}`;
@@ -5321,8 +5305,7 @@ const VendorsTab = () => {
       if (res.data && res.data.nextCode) {
         const serverCode = res.data.nextCode.startsWith('V') ? res.data.nextCode : `V${res.data.nextCode}`;
         const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
-        const deletedCodes = new Set(deletedVendorsHistory.map(d => (d.vendorId || '').toUpperCase().trim()));
-        if (!activeCodes.has(serverCode.toUpperCase()) && !deletedCodes.has(serverCode.toUpperCase())) {
+        if (!activeCodes.has(serverCode.toUpperCase())) {
           nextCodeStr = serverCode;
         }
       }
@@ -5461,10 +5444,8 @@ const VendorsTab = () => {
     const finalCode = (formData.vendorId || '').toUpperCase().trim();
     if (finalCode) {
       const existsInActive = vendors.some(v => v._id !== activeId && (v.vendorId || '').toUpperCase().trim() === finalCode);
-      const existsInDeleted = deletedVendorsHistory.some(d => d._id !== activeId && (d.vendorId || '').toUpperCase().trim() === finalCode);
-      if (existsInActive || existsInDeleted) {
-        alert("This file data already is in database which is presented in deleted rows & sheets status.");
-        errors.vendorId = `Vendor Code '${finalCode}' is already in use (active or deleted).`;
+      if (existsInActive) {
+        errors.vendorId = `Vendor Code '${finalCode}' is already in use by an active vendor.`;
       }
     }
 

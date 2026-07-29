@@ -277,7 +277,7 @@ async function runTests() {
   } finally {
     if (createdIdsToClean.length > 0) {
       console.log(`\n--- AUTOMATED CLEANUP: Removing ${createdIdsToClean.length} test record(s) from database ---`);
-      const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
+      const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms';
       await mongoose.connect(MONGO_URI);
       const db = mongoose.connection.db;
       const mpnColl = db.collection('mpns');

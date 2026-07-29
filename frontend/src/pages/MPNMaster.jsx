@@ -102,8 +102,6 @@ export default function MPNMaster() {
       const mpnList = Array.isArray(mpnRes.data?.data) ? mpnRes.data.data : Array.isArray(mpnRes.data) ? mpnRes.data : [];
       const mfrList = Array.isArray(mfrRes.data?.data) ? mfrRes.data.data : Array.isArray(mfrRes.data) ? mfrRes.data : [];
 
-      console.log(`[MPNMaster] Fetched Data -> MPNs: ${mpnList.length}, Materials: ${matList.length}, Vendors: ${venList.length}, Manufacturers: ${mfrList.length}`);
-
       setRows(mpnList);
       setMaterials(matList);
       setVendors(venList);
