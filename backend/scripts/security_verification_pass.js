@@ -30,15 +30,34 @@ async function runSecurityVerification() {
   console.log("==================== SECURITY VERIFICATION PASS ====================");
 
   // 1. Authenticate to get valid token
-  const loginRes = await request({
-    hostname: 'localhost',
-    port: 5000,
-    path: '/api/auth/login',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  }, JSON.stringify({ email: 'admin@vms.com', password: 'admin123' }));
+  let token;
+  let attempts = 0;
+  while (attempts < 15) {
+    try {
+      const loginRes = await request({
+        hostname: 'localhost',
+        port: 5000,
+        path: '/api/auth/login',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, JSON.stringify({ email: 'admin@vms.com', password: 'admin123' }));
+      
+      if (loginRes.bodyJson && loginRes.bodyJson.token) {
+        token = loginRes.bodyJson.token;
+        break;
+      }
+    } catch (e) {
+      // server might not be listening yet
+    }
+    console.log(`Waiting for server to start and seed (attempt ${attempts + 1}/15)...`);
+    await new Promise(r => setTimeout(r, 2000));
+    attempts++;
+  }
 
-  const token = loginRes.bodyJson.token;
+  if (!token) {
+    console.error("FAIL: Could not authenticate after 30 seconds. Server failed to start or seed.");
+    process.exit(1);
+  }
   const authHeaders = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`

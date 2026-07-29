@@ -62,7 +62,12 @@ async function testBomRollupOutputQty() {
   // 2. Add MPN prices for components
   const mongooseConn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms');
   const db = mongooseConn.connection.db;
-  const vendorDoc = await db.collection('vendors').findOne({ status: { $ne: 'Deleted' } });
+  let vendorDoc = await db.collection('vendors').findOne({ status: { $ne: 'Deleted' } });
+  
+  if (!vendorDoc) {
+    const v = await apiCall('POST', '/api/vendors', { name: 'Rollup Test Vendor', email: 'rollup@test.com' });
+    vendorDoc = { _id: v.data.data._id };
+  }
 
   await apiCall('POST', '/api/mpns', {
     materialId: comp1.data.data._id,

@@ -31,7 +31,15 @@ async function runPhase1Verification() {
   const Material = mongoose.model('Material', new mongoose.Schema({ name: String, code: String, type: String, unit: String, status: String }));
   const BOM = mongoose.model('BOM', new mongoose.Schema({ productId: mongoose.Schema.Types.ObjectId, components: Array, status: String }));
 
-  const admin = await User.findOne({ role: 'Admin' });
+  let admin;
+  let attempts = 0;
+  while (attempts < 10) {
+    admin = await User.findOne({ role: 'Admin' });
+    if (admin) break;
+    await new Promise(r => setTimeout(r, 1000));
+    attempts++;
+  }
+
   if (!admin) {
     console.error("FAIL: Admin user not found in verify_bom_phase1.js. Ensure seeding is complete.");
     process.exit(1);
