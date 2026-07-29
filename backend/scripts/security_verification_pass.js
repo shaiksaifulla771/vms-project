@@ -44,11 +44,24 @@ async function runSecurityVerification() {
     'Authorization': `Bearer ${token}`
   };
 
-  // Fetch a valid material & vendor
-  const matRes = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'GET', headers: authHeaders });
-  const venRes = await request({ hostname: 'localhost', port: 5000, path: '/api/vendors', method: 'GET', headers: authHeaders });
-  const materialId = matRes.bodyJson.data[0]._id;
-  const vendorId = venRes.bodyJson.data[0]._id;
+  let matRes = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'GET', headers: authHeaders });
+  let materialId;
+  if (!matRes.bodyJson || !matRes.bodyJson.data || matRes.bodyJson.data.length === 0) {
+    const createMat = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'POST', headers: authHeaders }, JSON.stringify({ name: 'Security Test Mat', code: 'M9000', unit: 'pcs', type: 'Raw' }));
+    console.log("createMat result:", createMat.bodyJson || createMat.bodyText);
+    materialId = createMat.bodyJson.data._id;
+  } else {
+    materialId = matRes.bodyJson.data[0]._id;
+  }
+
+  let venRes = await request({ hostname: 'localhost', port: 5000, path: '/api/vendors', method: 'GET', headers: authHeaders });
+  let vendorId;
+  if (!venRes.bodyJson.data || venRes.bodyJson.data.length === 0) {
+    const createVen = await request({ hostname: 'localhost', port: 5000, path: '/api/vendors', method: 'POST', headers: authHeaders }, JSON.stringify({ name: 'Security Test Vendor', email: 'sec@test.com' }));
+    vendorId = createVen.bodyJson.data._id;
+  } else {
+    vendorId = venRes.bodyJson.data[0]._id;
+  }
 
   // ITEM 3: Test CORS origin rejection logic in production mode simulation
   console.log("\n--- ITEM 3: CORS Production Origin Rejection Test ---");
