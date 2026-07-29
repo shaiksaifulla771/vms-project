@@ -273,9 +273,11 @@ exports.createMPN = async (req, res, next) => {
     if (match) {
       const num = parseInt(match[1], 10);
       if (!isNaN(num) && num >= 1000 && num < 10000) {
-        await Sequence.updateMany(
-          { $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] },
-          { $set: { seq: num } }
+        const Sequence = require('../models/Sequence');
+        await Sequence.findByIdAndUpdate(
+          'mpnCode',
+          { $set: { seq: num } },
+          { upsert: true, new: true }
         );
       }
     }
