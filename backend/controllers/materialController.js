@@ -64,9 +64,19 @@ exports.createMaterial = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please provide valid text strings for name, code, and unit of measurement' });
     }
 
-    // Check code uniqueness
+    // Check code uniqueness (allow reusing soft-deleted code)
     const existing = await Material.findOne({ code: code.toUpperCase() });
     if (existing) {
+      if (existing.status === 'Deleted') {
+        existing.name = name;
+        existing.unit = unit;
+        existing.type = type || 'Raw';
+        existing.subcategory = subcategory;
+        existing.status = status || 'Active';
+        existing.description = description;
+        await existing.save();
+        return res.status(201).json({ success: true, data: existing });
+      }
       return res.status(400).json({ success: false, error: `Material with code '${code}' already exists` });
     }
 
@@ -573,6 +583,7 @@ exports.batchDeleteMaterials = async (req, res, next) => {
 // @access  Private
 exports.peekNextMaterialCode = async (req, res, next) => {
   try {
+    const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
       { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
@@ -591,7 +602,11 @@ exports.peekNextMaterialCode = async (req, res, next) => {
       }
     });
 
-    res.status(200).json({ success: true, nextCode: `M${maxNum + 1}` });
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
+    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+    const finalMax = Math.max(maxNum, seqNum);
+
+    res.status(200).json({ success: true, nextCode: `M${finalMax + 1}` });
   } catch (err) {
     next(err);
   }

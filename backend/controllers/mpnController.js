@@ -121,13 +121,13 @@ exports.getMPN = async (req, res, next) => {
 // @route   GET /api/mpns/sequence-peek
 exports.peekNextMPNCode = async (req, res, next) => {
   try {
-    const allMPNs = await MPN.find(
-      { mpnCode: /^MPN\d{4}$/i },
+    const activeMPNs = await MPN.find(
+      { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
       { mpnCode: 1 }
     );
 
     let maxNum = 1000;
-    allMPNs.forEach((m) => {
+    activeMPNs.forEach((m) => {
       if (m.mpnCode) {
         const num = parseInt(m.mpnCode.substring(3), 10);
         if (!isNaN(num) && num < 10000 && num > maxNum) {
@@ -136,11 +136,7 @@ exports.peekNextMPNCode = async (req, res, next) => {
       }
     });
 
-    const seqDoc = await Sequence.findOne({ $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] });
-    const seqNum = seqDoc && seqDoc.seq < 10000 ? seqDoc.seq : 1000;
-    const nextNum = Math.max(maxNum, seqNum) + 1;
-
-    res.status(200).json({ success: true, nextCode: `MPN${nextNum}` });
+    res.status(200).json({ success: true, nextCode: `MPN${maxNum + 1}` });
   } catch (err) {
     next(err);
   }
@@ -243,7 +239,7 @@ exports.createMPN = async (req, res, next) => {
     // Auto-generate code if missing
     if (!req.body.mpnCode) {
       const activeMPNs = await MPN.find(
-        { mpnCode: /^MPN\d{4}$/i },
+        { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
         { mpnCode: 1 }
       );
       let maxNum = 1000;
@@ -253,12 +249,23 @@ exports.createMPN = async (req, res, next) => {
           if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
         }
       });
-      const seqDoc = await Sequence.findOne({ $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] });
-      const seqNum = seqDoc && seqDoc.seq < 10000 ? seqDoc.seq : 1000;
-      req.body.mpnCode = `MPN${Math.max(maxNum, seqNum) + 1}`;
+      req.body.mpnCode = `MPN${maxNum + 1}`;
     }
 
-    const mpn = await MPN.create(req.body);
+    // Reuse soft-deleted MPN document if mpnCode matches soft-deleted record
+    let mpn;
+    if (req.body.mpnCode) {
+      const existingMpn = await MPN.findOne({ mpnCode: req.body.mpnCode });
+      if (existingMpn && existingMpn.status === 'Deleted') {
+        Object.assign(existingMpn, req.body);
+        existingMpn.status = req.body.status || 'Active';
+        await existingMpn.save();
+        mpn = existingMpn;
+      }
+    }
+    if (!mpn) {
+      mpn = await MPN.create(req.body);
+    }
 
     const match = mpn.mpnCode.match(/^MPN(\d{4})$/i);
     if (match) {
