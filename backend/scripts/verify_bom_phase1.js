@@ -25,23 +25,27 @@ async function makeRequest(options, postData = null) {
 }
 
 async function runPhase1Verification() {
-  console.log("Connecting to DB & generating auth token...");
-  await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms');
-  const User = mongoose.model('User', new mongoose.Schema({ username: String, email: String, role: String }));
+  const dbUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
+  console.log(`Connecting to DB via: ${dbUri}`);
+  await mongoose.connect(dbUri);
+  const db = mongoose.connection.db;
+  console.log(`Connected to database: ${db.databaseName}`);
+  
   const Material = mongoose.model('Material', new mongoose.Schema({ name: String, code: String, type: String, unit: String, status: String }));
   const BOM = mongoose.model('BOM', new mongoose.Schema({ productId: mongoose.Schema.Types.ObjectId, components: Array, status: String }));
 
   let admin;
   let attempts = 0;
   while (attempts < 10) {
-    admin = await User.findOne({ role: 'Admin' });
+    admin = await db.collection('users').findOne({ role: 'Admin' });
     if (admin) break;
     await new Promise(r => setTimeout(r, 1000));
     attempts++;
   }
 
   if (!admin) {
-    console.error("FAIL: Admin user not found in verify_bom_phase1.js. Ensure seeding is complete.");
+    const allUsers = await db.collection('users').find({}).toArray();
+    console.error(`FAIL: Admin user not found. Found users: ${JSON.stringify(allUsers)}`);
     process.exit(1);
   }
   const token = jwt.sign({ id: admin._id }, getJwtSecret(), { expiresIn: '30d' });
