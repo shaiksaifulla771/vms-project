@@ -634,13 +634,13 @@ export default function MPNMaster() {
                       <TableCell className="font-mono text-xs font-bold text-blue-700">
                         {row.mpnCode || '—'}
                       </TableCell>
-                      <TableCell className="text-xs text-slate-800 font-semibold">
+                      <TableCell className="text-xs text-slate-800 font-semibold max-w-[200px] truncate" title={row.materialId ? `${row.materialId.name} (${row.materialId.code || '—'})` : ''}>
                         {row.materialId ? `${row.materialId.name} (${row.materialId.code || '—'})` : '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-900 font-bold">
+                      <TableCell className="font-mono text-xs text-slate-900 font-bold max-w-[160px] truncate" title={row.manufacturerPartNumber || ''}>
                         {row.manufacturerPartNumber || '—'}
                       </TableCell>
-                      <TableCell className="text-xs text-slate-700">
+                      <TableCell className="text-xs text-slate-700 max-w-[200px] truncate" title={row.vendorId ? `${row.vendorId.name} ${row.vendorId.company ? `(${row.vendorId.company})` : ''}` : ''}>
                         {row.vendorId ? (
                           <span>
                             {row.vendorId.name} {row.vendorId.company ? `(${row.vendorId.company})` : ''}
