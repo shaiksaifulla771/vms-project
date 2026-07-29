@@ -78,13 +78,17 @@ async function verifyVendorSequenceFix() {
   const mongooseConn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms');
   const db = mongooseConn.connection.db;
   await db.collection('vendors').deleteOne({ _id: new mongoose.Types.ObjectId(vendorId) });
-  await db.collection('sequences').updateOne({ _id: 'vendorCode' }, { $set: { seq: 1047 } });
   await mongoose.disconnect();
 
-  if (peek1.data.nextCode === 'V1048' && peek2.data.nextCode === 'V1048') {
-    console.log('\n==================== VENDOR SEQUENCE FIX VERIFIED 100% PASS! ====================');
+  const initialNum = parseInt(peek1.data.nextCode.substring(1), 10);
+  const postNum = parseInt(peek2.data.nextCode.substring(1), 10);
+
+  if (postNum === initialNum + 1) {
+    console.log('\n==================== VENDOR SEQUENCE FIX VERIFIED 100% PASS (NO REUSE)! ====================');
   } else {
-    console.log('\n==================== VENDOR SEQUENCE FIX FAILED ====================');
+    console.error(`\nFAIL: Vendor sequence collision/mismatch! Expected 'V${initialNum + 1}', got '${peek2.data.nextCode}'`);
+    console.log('==================== VENDOR SEQUENCE FIX FAILED ====================');
+    process.exit(1);
   }
 }
 

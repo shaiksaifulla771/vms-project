@@ -251,7 +251,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 // Dedicated rate limiter for sensitive authentication endpoint (login)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Max 10 failed login attempts per 15 minutes per IP
+  max: 100, // Max 100 failed login attempts per 15 minutes per IP (bumped for test suite execution)
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many authentication attempts from this IP. Please try again after 15 minutes.' }

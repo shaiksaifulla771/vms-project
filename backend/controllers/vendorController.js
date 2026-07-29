@@ -65,7 +65,7 @@ exports.createVendor = async (req, res, next) => {
     if (existing) return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
 
     if (!vendorId) {
-      const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
+      const allVendors = await Vendor.find({}, { vendorId: 1 });
       let maxNum = 1000;
       allVendors.forEach(v => {
         const match = (v.vendorId || '').match(/\d+/);
@@ -77,9 +77,9 @@ exports.createVendor = async (req, res, next) => {
       vendorId = `V${maxNum + 1}`;
       await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
     } else {
-      const existingVendorCode = await Vendor.findOne({ vendorId, status: { $ne: 'Deleted' } });
+      const existingVendorCode = await Vendor.findOne({ vendorId });
       if (existingVendorCode) {
-        const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
+        const allVendors = await Vendor.find({}, { vendorId: 1 });
         let maxNum = 1000;
         allVendors.forEach(v => {
           const match = (v.vendorId || '').match(/\d+/);
@@ -433,7 +433,7 @@ exports.batchDeleteVendors = async (req, res, next) => {
 exports.peekNextVendorCode = async (req, res, next) => {
   try {
     const activeVendors = await Vendor.find(
-      { status: { $ne: 'Deleted' }, vendorId: /^V\d+$/i },
+      { vendorId: /^V\d+$/i },
       { vendorId: 1 }
     );
     let maxNum = 1000;
@@ -460,7 +460,7 @@ exports.peekNextVendorCode = async (req, res, next) => {
 exports.getNextVendorCode = async (req, res, next) => {
   try {
     const activeVendors = await Vendor.find(
-      { status: { $ne: 'Deleted' }, vendorId: /^V\d+$/i },
+      { vendorId: /^V\d+$/i },
       { vendorId: 1 }
     );
     let maxNum = 1000;

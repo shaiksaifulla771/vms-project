@@ -64,19 +64,9 @@ exports.createMaterial = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please provide valid text strings for name, code, and unit of measurement' });
     }
 
-    // Check code uniqueness (allow reusing soft-deleted code)
+    // Check code uniqueness (no reuse even if soft-deleted - Option A)
     const existing = await Material.findOne({ code: code.toUpperCase() });
     if (existing) {
-      if (existing.status === 'Deleted') {
-        existing.name = name;
-        existing.unit = unit;
-        existing.type = type || 'Raw';
-        existing.subcategory = subcategory;
-        existing.status = status || 'Active';
-        existing.description = description;
-        await existing.save();
-        return res.status(201).json({ success: true, data: existing });
-      }
       return res.status(400).json({ success: false, error: `Material with code '${code}' already exists` });
     }
 
@@ -585,7 +575,7 @@ exports.peekNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
-      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
+      { code: /^M\d+$/i },
       { code: 1 }
     );
 
@@ -619,7 +609,7 @@ exports.getNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
     const activeMaterials = await Material.find(
-      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
+      { code: /^M\d+$/i },
       { code: 1 }
     );
 

@@ -122,7 +122,7 @@ exports.getMPN = async (req, res, next) => {
 exports.peekNextMPNCode = async (req, res, next) => {
   try {
     const activeMPNs = await MPN.find(
-      { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
+      { mpnCode: /^MPN\d{4}$/i },
       { mpnCode: 1 }
     );
 
@@ -239,7 +239,7 @@ exports.createMPN = async (req, res, next) => {
     // Auto-generate code if missing
     if (!req.body.mpnCode) {
       const activeMPNs = await MPN.find(
-        { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
+        { mpnCode: /^MPN\d{4}$/i },
         { mpnCode: 1 }
       );
       let maxNum = 1000;
@@ -252,21 +252,14 @@ exports.createMPN = async (req, res, next) => {
       req.body.mpnCode = `MPN${maxNum + 1}`;
     }
 
-    // Reuse soft-deleted MPN document if mpnCode matches soft-deleted record
-    let mpn;
+    // Check for duplicates (no reuse)
     if (req.body.mpnCode) {
       const existingMpn = await MPN.findOne({ mpnCode: req.body.mpnCode });
-      if (existingMpn && existingMpn.status === 'Deleted') {
-        Object.assign(existingMpn, req.body);
-        existingMpn.status = req.body.status || 'Active';
-        await existingMpn.save();
-        mpn = existingMpn;
+      if (existingMpn) {
+        return res.status(400).json({ success: false, error: `MPN with code '${req.body.mpnCode}' already exists.` });
       }
     }
-    if (!mpn) {
-      mpn = await MPN.create(req.body);
-    }
-
+    const mpn = await MPN.create(req.body);
     const match = mpn.mpnCode.match(/^MPN(\d{4})$/i);
     if (match) {
       const num = parseInt(match[1], 10);

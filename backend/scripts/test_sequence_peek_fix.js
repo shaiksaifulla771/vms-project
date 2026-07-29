@@ -90,10 +90,10 @@ async function runSequenceFixTest() {
     const matInitialNum = parseInt(initialMatCode.substring(1), 10);
     const matPostNum = parseInt(postMatCode.substring(1), 10);
 
-    if (matPostNum === matInitialNum) {
-      console.log(`PASS: Material sequence-peek correctly ignored soft-deleted '${initialMatCode}' and returned clean active code '${postMatCode}'!`);
+    if (matPostNum === matInitialNum + 1) {
+      console.log(`PASS: Material sequence-peek correctly moved to next code (no reuse) '${postMatCode}'!`);
     } else {
-      console.error(`FAIL: Material sequence collision! Expected '${initialMatCode}', got '${postMatCode}'`);
+      console.error(`FAIL: Material sequence collision/mismatch! Expected '${initialMatCode.charAt(0)}${matInitialNum + 1}', got '${postMatCode}'`);
       process.exit(1);
     }
 
@@ -174,10 +174,10 @@ async function runSequenceFixTest() {
     const mpnInitialNum = parseInt(initialMpnCode.substring(3), 10);
     const mpnPostNum = parseInt(postMpnCode.substring(3), 10);
 
-    if (mpnPostNum === mpnInitialNum) {
-      console.log(`PASS: MPN sequence-peek correctly ignored soft-deleted '${initialMpnCode}' and returned clean active code '${postMpnCode}'!`);
+    if (mpnPostNum === mpnInitialNum + 1) {
+      console.log(`PASS: MPN sequence-peek correctly moved to next code (no reuse) '${postMpnCode}'!`);
     } else {
-      console.error(`FAIL: MPN sequence collision! Expected '${initialMpnCode}', got '${postMpnCode}'`);
+      console.error(`FAIL: MPN sequence collision/mismatch! Expected 'MPN${mpnInitialNum + 1}', got '${postMpnCode}'`);
       process.exit(1);
     }
 
