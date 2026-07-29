@@ -212,7 +212,7 @@ async function runSequenceFixTest() {
     console.log("\n==================== SEQUENCE PEEK AUDIT PASSED 100%! ====================");
   } finally {
     console.log("\n--- AUTOMATED TEARDOWN: Hard-deleting test records ---");
-    const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms';
+    const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
     await mongoose.connect(MONGO_URI);
     const db = mongoose.connection.db;
 

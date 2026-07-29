@@ -26,7 +26,7 @@ async function makeRequest(options, postData = null) {
 
 async function runPhase1Verification() {
   console.log("Connecting to DB & generating auth token...");
-  await mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms');
+  await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms');
   const User = mongoose.model('User', new mongoose.Schema({ username: String, email: String, role: String }));
   const Material = mongoose.model('Material', new mongoose.Schema({ name: String, code: String, type: String, unit: String, status: String }));
   const BOM = mongoose.model('BOM', new mongoose.Schema({ productId: mongoose.Schema.Types.ObjectId, components: Array, status: String }));
