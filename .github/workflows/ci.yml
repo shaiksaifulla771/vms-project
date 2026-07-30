@@ -47,4 +47,5 @@ jobs:
         env:
           MONGODB_URI: mongodb://127.0.0.1:27017/vms_ci_test
         run: |
+          node backend/scripts/seed_admin.js
           npm test --prefix backend
