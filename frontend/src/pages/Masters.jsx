@@ -490,41 +490,22 @@ const MaterialsTab = () => {
   const [viewingMaterial, setViewingMaterial] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
 
-  // Sub-category dictionary maps main categories to options
   const subcategoryMap = {
     'Raw Material': [
       { value: 'Fresh', label: 'Fresh' },
       { value: 'Standardized', label: 'Standardized' },
       { value: 'Retail', label: 'Retail' }
     ],
-    'Raw': [
-      { value: 'Fresh', label: 'Fresh' },
-      { value: 'Standardized', label: 'Standardized' },
-      { value: 'Retail', label: 'Retail' }
-    ],
-    'Finished': [
-      { value: 'Puree', label: 'Puree' },
-      { value: 'Porridge', label: 'Porridge' },
-      { value: 'Yogurt Melts', label: 'Yogurt Melts' }
-    ],
-    'Finished': [
-      { value: 'Puree', label: 'Puree' },
-      { value: 'Porridge', label: 'Porridge' },
-      { value: 'Yogurt Melts', label: 'Yogurt Melts' }
+    'Packaged Material': [
+      { value: 'Primary', label: 'Primary' },
+      { value: 'Secondary', label: 'Secondary' },
+      { value: 'Tertiary', label: 'Tertiary' }
     ],
     'Semi-Finished': [
       { value: 'Puree', label: 'Puree' },
       { value: 'Porridge', label: 'Porridge' },
       { value: 'Yogurt Melts', label: 'Yogurt Melts' }
     ],
-    'Packing Material': [
-      { value: 'Primary', label: 'Primary' },
-      { value: 'Secondary', label: 'Secondary' },
-      { value: 'Tertiary', label: 'Tertiary' }
-    ],
-    'Packing': [
-      { value: 'Primary', label: 'Primary' },
-      { value: 'Secondary', label: 'Secondary' },
       { value: 'Tertiary', label: 'Tertiary' }
     ]
   };
