@@ -20,8 +20,8 @@ const MaterialSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['Raw', 'Semi-Finished', 'Finished', 'Raw Material', 'Finished Goods', 'Packing Material'],
-    default: 'Raw',
+    enum: ['Raw Material', 'Packaged Material', 'Semi-Finished', 'Finished'],
+    default: 'Raw Material',
   },
   subcategory: {
     type: String,

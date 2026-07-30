@@ -126,10 +126,11 @@ const validateRowData = (item, isAutoEntryVal, systemExistingCodes, importedCode
   }
 
   const normalizedType = type === 'Raw' || type === 'Raw Material' ? 'Raw Material' 
-                       : type === 'Finished' || type === 'Finished Goods' ? 'Finished Goods'
-                       : type === 'Packing' || type === 'Packing Material' ? 'Packing Material' : null;
+                       : type === 'Finished' || type === 'Finished Goods' ? 'Finished'
+                       : type === 'Packing' || type === 'Packing Material' || type === 'Packaged Material' ? 'Packaged Material'
+                       : type === 'Semi-Finished' ? 'Semi-Finished' : null;
   if (!normalizedType) {
-    errors.push(`Invalid Category '${type || ''}'. Must be Raw Material, Finished Goods, or Packing Material.`);
+    errors.push(`Invalid Category '${type || ''}'. Must be Raw Material, Finished, Packaged Material, or Semi-Finished.`);
   }
 
   let matchedSubcat = null;
@@ -501,7 +502,7 @@ const MaterialsTab = () => {
       { value: 'Standardized', label: 'Standardized' },
       { value: 'Retail', label: 'Retail' }
     ],
-    'Finished Goods': [
+    'Finished': [
       { value: 'Puree', label: 'Puree' },
       { value: 'Porridge', label: 'Porridge' },
       { value: 'Yogurt Melts', label: 'Yogurt Melts' }
@@ -771,7 +772,7 @@ const MaterialsTab = () => {
     if (col === 'status') {
       rawOptions = ["Active", "Inactive", "Draft", "Deleted"];
     } else if (col === 'type') {
-      const predefined = ["Raw Material", "Packaging", "Finished Goods", "Services"];
+      const predefined = ["Raw Material", "Packaging", "Finished", "Services"];
       const dynamic = getUniqueValues('type');
       rawOptions = Array.from(new Set([...predefined, ...dynamic])).filter(Boolean).sort();
     } else {
@@ -1070,7 +1071,7 @@ const MaterialsTab = () => {
   const handleDownloadTemplate = () => {
     const headers = [
       { name: "Raw Cumin Powder", code: "00001", unit: "kg", type: "Raw Material", subcategory: "Fresh", status: "Active", description: "Fresh premium raw cumin seeds grinded" },
-      { name: "Premium Mango Puree", code: "02000", unit: "L", type: "Finished Goods", subcategory: "Puree", status: "Active", description: "Processed mango puree ready for packaging" }
+      { name: "Premium Mango Puree", code: "02000", unit: "L", type: "Finished", subcategory: "Puree", status: "Active", description: "Processed mango puree ready for packaging" }
     ];
     const ws = XLSX.utils.json_to_sheet(headers);
     const wb = XLSX.utils.book_new();
@@ -1114,10 +1115,11 @@ const MaterialsTab = () => {
     }
 
     const normalizedType = type === 'Raw' || type === 'Raw Material' ? 'Raw Material' 
-                         : type === 'Finished' || type === 'Finished Goods' ? 'Finished Goods'
-                         : type === 'Packing' || type === 'Packing Material' ? 'Packing Material' : null;
+                       : type === 'Finished' || type === 'Finished Goods' ? 'Finished'
+                       : type === 'Packing' || type === 'Packing Material' || type === 'Packaged Material' ? 'Packaged Material'
+                       : type === 'Semi-Finished' ? 'Semi-Finished' : null;
     if (!normalizedType) {
-      errors.push(`Invalid Category '${type || ''}'. Must be Raw Material, Finished Goods, or Packing Material.`);
+      errors.push(`Invalid Category '${type || ''}'. Must be Raw Material, Finished, Packaged Material, or Semi-Finished.`);
     }
 
     let matchedSubcat = null;
@@ -1568,8 +1570,8 @@ const MaterialsTab = () => {
     setIsEditingDeletedRecord(!!mat.isDeletedHistoryItem);
     setEditingId(mat._id);
     const normalizedType = mat.type === 'Raw' || mat.type === 'Raw Material' ? 'Raw Material' 
-                         : mat.type === 'Finished' || mat.type === 'Finished Goods' ? 'Finished Goods'
-                         : mat.type === 'Packing' || mat.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
+                         : mat.type === 'Finished' || mat.type === 'Finished Goods' ? 'Finished'
+                         : mat.type === 'Packing' || mat.type === 'Packing Material' || mat.type === 'Packaged Material' ? 'Packaged Material' : 'Raw Material';
     
     const subcats = subcategoryMap[normalizedType] || [];
     const matched = subcats.find(s => s.value.toLowerCase() === (mat.subcategory || '').toLowerCase());
@@ -1601,8 +1603,8 @@ const MaterialsTab = () => {
       setBatchEditIdx(0);
       const firstItem = itemsToEdit[0];
       const normalizedType = firstItem.type === 'Raw' || firstItem.type === 'Raw Material' ? 'Raw Material' 
-                           : firstItem.type === 'Finished' || firstItem.type === 'Finished Goods' ? 'Finished Goods'
-                           : firstItem.type === 'Packing' || firstItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
+                           : firstItem.type === 'Finished' || firstItem.type === 'Finished Goods' ? 'Finished'
+                           : firstItem.type === 'Packing' || firstItem.type === 'Packing Material' || firstItem.type === 'Packaged Material' ? 'Packaged Material' : 'Raw Material';
       const subcats = subcategoryMap[normalizedType] || [];
       const matched = subcats.find(s => s.value.toLowerCase() === (firstItem.subcategory || '').toLowerCase());
       const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
@@ -1667,8 +1669,8 @@ const MaterialsTab = () => {
         setBatchEditIdx(nextIdx);
         const nextItem = latestItems[nextIdx];
         const normalizedType = nextItem.type === 'Raw' || nextItem.type === 'Raw Material' ? 'Raw Material' 
-                             : nextItem.type === 'Finished' || nextItem.type === 'Finished Goods' ? 'Finished Goods'
-                             : nextItem.type === 'Packing' || nextItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
+                             : nextItem.type === 'Finished' || nextItem.type === 'Finished Goods' ? 'Finished'
+                             : nextItem.type === 'Packing' || nextItem.type === 'Packing Material' || nextItem.type === 'Packaged Material' ? 'Packaged Material' : 'Raw Material';
         const subcats = subcategoryMap[normalizedType] || [];
         const matched = subcats.find(s => s.value.toLowerCase() === (nextItem.subcategory || '').toLowerCase());
         const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
@@ -1707,8 +1709,8 @@ const MaterialsTab = () => {
       setBatchEditIdx(prevIdx);
       const prevItem = latestItems[prevIdx];
       const normalizedType = prevItem.type === 'Raw' || prevItem.type === 'Raw Material' ? 'Raw Material' 
-                           : prevItem.type === 'Finished' || prevItem.type === 'Finished Goods' ? 'Finished Goods'
-                           : prevItem.type === 'Packing' || prevItem.type === 'Packing Material' ? 'Packing Material' : 'Raw Material';
+                           : prevItem.type === 'Finished' || prevItem.type === 'Finished Goods' ? 'Finished'
+                           : prevItem.type === 'Packing' || prevItem.type === 'Packing Material' || prevItem.type === 'Packaged Material' ? 'Packaged Material' : 'Raw Material';
       const subcats = subcategoryMap[normalizedType] || [];
       const matched = subcats.find(s => s.value.toLowerCase() === (prevItem.subcategory || '').toLowerCase());
       const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
@@ -2125,8 +2127,9 @@ const MaterialsTab = () => {
             >
               <option value="">All Categories</option>
               <option value="Raw Material">Raw Material</option>
-              <option value="Packaging">Packaging</option>
-              <option value="Finished Goods">Finished Goods</option>
+              <option value="Packaged Material">Packaged Material</option>
+              <option value="Finished">Finished</option>
+              <option value="Semi-Finished">Semi-Finished</option>
               <option value="Services">Services</option>
             </select>
 
@@ -2764,8 +2767,9 @@ const MaterialsTab = () => {
               id="type"
               options={[
                 { value: 'Raw Material', label: 'Raw Material' },
-                { value: 'Finished Goods', label: 'Finished Goods' },
-                { value: 'Packing Material', label: 'Packing Material' }
+                { value: 'Finished', label: 'Finished' },
+                { value: 'Semi-Finished', label: 'Semi-Finished' },
+                { value: 'Packaged Material', label: 'Packaged Material' }
               ]}
               value={formData.type}
               onChange={(e) => {
@@ -2981,8 +2985,9 @@ const MaterialsTab = () => {
             id="type"
             options={[
               { value: 'Raw Material', label: 'Raw Material' },
-              { value: 'Finished Goods', label: 'Finished Goods' },
-              { value: 'Packing Material', label: 'Packing Material' }
+              { value: 'Finished', label: 'Finished' },
+                { value: 'Semi-Finished', label: 'Semi-Finished' },
+              { value: 'Packaged Material', label: 'Packaged Material' }
             ]}
             value={formData.type}
             onChange={(e) => {
@@ -3548,8 +3553,9 @@ const MaterialsTab = () => {
                                         className="px-2 py-1 border border-blue-200 rounded text-xs font-semibold bg-white"
                                       >
                                         <option value="Raw Material">Raw Material</option>
-                                        <option value="Finished Goods">Finished Goods</option>
-                                        <option value="Packing Material">Packing Material</option>
+                                        <option value="Finished">Finished</option>
+              <option value="Semi-Finished">Semi-Finished</option>
+                                        <option value="Packaged Material">Packaged Material</option>
                                       </select>
                                       <select
                                         value={previewRowData.subcategory || ''}
@@ -6946,7 +6952,7 @@ const VendorsTab = () => {
               <Input
                 label="Sub-Category"
                 id="vsubcategory"
-                placeholder="e.g. Packaging, Raw Material"
+                placeholder="e.g. Packaged Material, Raw Material"
                 value={formData.subCategory}
                 onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
                 className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
@@ -7728,7 +7734,7 @@ const VendorsTab = () => {
                   </div>
                   <Input
                     label="Sub-Category"
-                    placeholder="e.g. Packaging, Raw Material"
+                    placeholder="e.g. Packaged Material, Raw Material"
                     value={formData.subCategory || ''}
                     onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
                     className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
@@ -8440,7 +8446,7 @@ const VendorsTab = () => {
                               <label className="text-[10px] font-bold text-slate-500 uppercase">Sub-Category</label>
                               <input
                                 type="text"
-                                placeholder="e.g. Packaging, Raw Material"
+                                placeholder="e.g. Packaged Material, Raw Material"
                                 value={currentItem.subCategory || ''}
                                 onChange={(e) => currentItem.isExistingMatch && handleQueueFieldChange('subCategory', e.target.value)}
                                 readOnly={!currentItem.isExistingMatch}
