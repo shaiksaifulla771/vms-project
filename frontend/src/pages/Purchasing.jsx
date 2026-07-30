@@ -41,7 +41,7 @@ const Purchasing = () => {
       const [resPos, resVendors, resMaterials] = await Promise.all([
         api.get('/api/purchases', { params }),
         api.get('/api/vendors?limit=100'),
-        api.get('/api/materials?type=Raw') // Only purchase raw components
+        api.get('/api/materials?type=Raw Material') // Only purchase raw components
       ]);
 
       if (resPos.data.success) setPurchaseOrders(resPos.data.data);

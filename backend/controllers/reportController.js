@@ -9,7 +9,7 @@ const { generatePDFReport } = require('../utils/pdfGenerator');
 // Helper to compile ERP counts and build exactly 6 Manufacturing insights
 const compileERPMetrics = async () => {
   const totalMaterials = await Material.countDocuments();
-  const rawMaterials = await Material.countDocuments({ type: 'Raw' });
+  const rawMaterials = await Material.countDocuments({ type: 'Raw Material' });
   const finishedGoods = await Material.countDocuments({ type: 'Finished' });
 
   const totalBOMs = await BOM.countDocuments();

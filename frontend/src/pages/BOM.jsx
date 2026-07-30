@@ -494,8 +494,8 @@ const BOM = () => {
                         className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
                       >
                         <option value="">All Component Types</option>
-                        <option value="Raw">Raw Material</option>
-                        <option value="Packaged">Packaged Material</option>
+                        <option value="Raw Material">Raw Material</option>
+                        <option value="Packaged Material">Packaged Material</option>
                         <option value="Semi-Finished">Semi-Finished</option>
                       </select>
                     </div>

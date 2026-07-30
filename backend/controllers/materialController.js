@@ -74,7 +74,7 @@ exports.createMaterial = async (req, res, next) => {
       name,
       code: code.toUpperCase(),
       unit,
-      type: type || 'Raw',
+      type: type || 'Raw Material',
       subcategory,
       status: status || 'Active',
       description
