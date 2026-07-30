@@ -506,7 +506,10 @@ const MaterialsTab = () => {
       { value: 'Porridge', label: 'Porridge' },
       { value: 'Yogurt Melts', label: 'Yogurt Melts' }
     ],
-      { value: 'Tertiary', label: 'Tertiary' }
+    'Finished': [
+      { value: 'Puree', label: 'Puree' },
+      { value: 'Porridge', label: 'Porridge' },
+      { value: 'Yogurt Melts', label: 'Yogurt Melts' }
     ]
   };
 
