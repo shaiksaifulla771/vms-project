@@ -25,8 +25,10 @@ const BOM = () => {
 
   // Form Fields State
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [outputQuantity, setOutputQuantity] = useState(1);
+  const [outputUnit, setOutputUnit] = useState('kg');
   const [componentsList, setComponentsList] = useState([
-    { materialId: '', quantity: 1 }
+    { materialId: '', quantity: 1, typeFilter: '' }
   ]);
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -35,6 +37,25 @@ const BOM = () => {
   const [isCalcOpen, setIsCalcOpen] = useState(false);
   const [calcBom, setCalcBom] = useState(null);
   const [calcBatchSize, setCalcBatchSize] = useState('1000');
+
+  const fetchMaterialsForDropdowns = async () => {
+    try {
+      const resMaterials = await api.get('/api/materials');
+      if (resMaterials.data.success) {
+        const mats = resMaterials.data.data;
+        // Assemblies can be Finished Goods or Semi-Finished intermediates
+        setFinishedProducts(mats.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished'));
+        // Component ingredients can be Raw Material, Packaged Material, or Semi-Finished
+        setRawMaterials(mats.filter(m => 
+          m.type === 'Raw Material' || 
+          m.type === 'Packaged Material' || 
+          m.type === 'Semi-Finished'
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to fetch latest materials for dropdowns:', err);
+    }
+  };
 
   const fetchBOMs = async () => {
     setLoading(true);
@@ -48,10 +69,12 @@ const BOM = () => {
       if (resBoms.data.success) setBoms(resBoms.data.data);
       if (resMaterials.data.success) {
         const mats = resMaterials.data.data;
-        // Assemblies can be Finished Goods or Semi-Finished intermediates
         setFinishedProducts(mats.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished'));
-        // Component ingredients can be Raw Materials or Semi-Finished intermediates
-        setRawMaterials(mats.filter(m => m.type === 'Raw' || m.type === 'Semi-Finished'));
+        setRawMaterials(mats.filter(m => 
+          m.type === 'Raw Material' || 
+          m.type === 'Packaged Material' || 
+          m.type === 'Semi-Finished'
+        ));
       }
     } catch (err) {
       console.error(err);
@@ -66,20 +89,27 @@ const BOM = () => {
   }, []);
 
   const handleOpenAddModal = () => {
+    fetchMaterialsForDropdowns(); // Ensure fresh data on open
     setEditingId(null);
     setSelectedProductId('');
-    setComponentsList([{ materialId: '', quantity: 1 }]);
+    setOutputQuantity(1);
+    setOutputUnit('kg');
+    setComponentsList([{ materialId: '', quantity: 1, typeFilter: '' }]);
     setFormErrors({});
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (bomItem) => {
+    fetchMaterialsForDropdowns(); // Ensure fresh data on open
     setEditingId(bomItem._id);
     setSelectedProductId(bomItem.productId?._id || bomItem.productId || '');
+    setOutputQuantity(bomItem.outputQuantity || 1);
+    setOutputUnit(bomItem.outputUnit || 'kg');
     
     const fmtComps = bomItem.components.map(comp => ({
       materialId: comp.materialId?._id || comp.materialId || '',
-      quantity: comp.quantity
+      quantity: comp.quantity,
+      typeFilter: comp.materialId?.type || ''
     }));
     setComponentsList(fmtComps);
     setFormErrors({});
@@ -88,11 +118,15 @@ const BOM = () => {
 
   // Clone recipe components to a new target assembly
   const handleCloneRecipe = (bomItem) => {
+    fetchMaterialsForDropdowns(); // Ensure fresh data on open
     setEditingId(null); // Force as new creation
     setSelectedProductId(''); // Let user choose a new target finished good
+    setOutputQuantity(bomItem.outputQuantity || 1);
+    setOutputUnit(bomItem.outputUnit || 'kg');
     const clonedComps = bomItem.components.map(comp => ({
       materialId: comp.materialId?._id || comp.materialId || '',
-      quantity: comp.quantity
+      quantity: comp.quantity,
+      typeFilter: comp.materialId?.type || ''
     }));
     setComponentsList(clonedComps);
     setFormErrors({});
@@ -106,7 +140,7 @@ const BOM = () => {
 
   // Add Component Form Row
   const handleAddComponentRow = () => {
-    setComponentsList([...componentsList, { materialId: '', quantity: 0.01 }]);
+    setComponentsList([...componentsList, { materialId: '', quantity: 0.01, typeFilter: '' }]);
   };
 
   // Remove Component Form Row
@@ -125,6 +159,8 @@ const BOM = () => {
   const validateForm = () => {
     const errors = {};
     if (!selectedProductId) errors.productId = 'Please select a finished or semi-finished product';
+    if (!outputQuantity || Number(outputQuantity) <= 0) errors.outputQuantity = 'Output batch quantity must be greater than 0';
+    if (!outputUnit) errors.outputUnit = 'Output unit is required';
     
     if (componentsList.length === 0) {
       errors.components = 'BOM must contain at least one component material';
@@ -156,6 +192,8 @@ const BOM = () => {
     try {
       const payload = {
         productId: selectedProductId,
+        outputQuantity: Number(outputQuantity),
+        outputUnit,
         components: componentsList.map(c => ({
           materialId: c.materialId,
           quantity: Number(c.quantity)
@@ -268,6 +306,8 @@ const BOM = () => {
                   <TableHead>Assembly Product</TableHead>
                   <TableHead>Product Code</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead>Batch Yield (Output)</TableHead>
+                  <TableHead>Cost Rollup (Recipe)</TableHead>
                   <TableHead>Recipe Ingredients (Components)</TableHead>
                   <TableHead className="text-right">Actions / Functions</TableHead>
                 </TableRow>
@@ -285,6 +325,17 @@ const BOM = () => {
                       <Badge variant={bom.productId?.type === 'Semi-Finished' ? 'warning' : 'info'}>
                         {bom.productId?.type || 'Finished'}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-bold text-slate-700">
+                        {bom.outputQuantity} {bom.outputUnit || 'kg'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-800">${bom.totalRecipeCost || 0}</span>
+                        <span className="text-[10px] font-bold text-emerald-600">${bom.calculatedUnitCost || 0} / {bom.outputUnit || 'kg'}</span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1.5 py-1">
@@ -349,6 +400,7 @@ const BOM = () => {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         title={editingId ? 'Edit BOM Recipe Configuration' : 'Define Bill of Materials (BOM)'}
+        className="max-w-5xl w-full"
       >
         <form onSubmit={handleFormSubmit} className="space-y-4">
           {formErrors.form && (
@@ -375,6 +427,36 @@ const BOM = () => {
             {formErrors.productId && <span className="text-xs text-red-500 font-medium">{formErrors.productId}</span>}
           </div>
 
+          <div className="flex space-x-3">
+            <div className="flex-1 flex flex-col space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600">Batch Yield (Output Quantity)</label>
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                value={outputQuantity}
+                onChange={(e) => setOutputQuantity(e.target.value)}
+                placeholder="e.g. 100"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                required
+              />
+              {formErrors.outputQuantity && <span className="text-xs text-red-500 font-medium">{formErrors.outputQuantity}</span>}
+            </div>
+
+            <div className="w-1/3 flex flex-col space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600">Output Unit</label>
+              <input
+                type="text"
+                value={outputUnit}
+                onChange={(e) => setOutputUnit(e.target.value)}
+                placeholder="kg, liters, pcs..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                required
+              />
+              {formErrors.outputUnit && <span className="text-xs text-red-500 font-medium">{formErrors.outputUnit}</span>}
+            </div>
+          </div>
+
           {/* Components Grid rows */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
@@ -396,30 +478,52 @@ const BOM = () => {
             )}
 
             <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-              {componentsList.map((comp, index) => (
-                <div key={index} className="flex items-center space-x-3 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                  {/* Raw Material selector */}
-                  <div className="flex-1">
-                    <select
-                      value={comp.materialId}
-                      onChange={(e) => handleRowChange(index, 'materialId', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
-                      required
-                    >
-                      <option value="" disabled>Select Raw / Semi-Finished</option>
-                      {rawMaterials.map(m => (
-                        <option key={m._id} value={m._id}>{m.name} ({m.code}) [{m.type}]</option>
-                      ))}
-                    </select>
-                  </div>
+              {componentsList.map((comp, index) => {
+                const filteredMaterials = comp.typeFilter
+                  ? rawMaterials.filter(m => m.type === comp.typeFilter)
+                  : rawMaterials;
+
+                return (
+                  <div key={index} className="flex flex-wrap md:flex-nowrap items-end gap-3 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+                    {/* Material Type Filter */}
+                    <div className="w-full md:w-40 flex flex-col">
+                      <label className="text-[10px] font-bold text-slate-500 mb-1 ml-0.5 uppercase tracking-wider">Type Filter</label>
+                      <select
+                        value={comp.typeFilter || ''}
+                        onChange={(e) => handleRowChange(index, 'typeFilter', e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
+                      >
+                        <option value="">All Component Types</option>
+                        <option value="Raw">Raw Material</option>
+                        <option value="Packaged">Packaged Material</option>
+                        <option value="Semi-Finished">Semi-Finished</option>
+                      </select>
+                    </div>
+
+                    {/* Raw Material selector */}
+                    <div className="w-full md:flex-1 flex flex-col">
+                      <label className="text-[10px] font-bold text-slate-500 mb-1 ml-0.5 uppercase tracking-wider">Component</label>
+                      <select
+                        value={comp.materialId}
+                        onChange={(e) => handleRowChange(index, 'materialId', e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
+                        required
+                      >
+                        <option value="" disabled>Select Raw / Semi-Finished</option>
+                        {filteredMaterials.map(m => (
+                          <option key={m._id} value={m._id}>{m.name} ({m.code}) [{m.type}]</option>
+                        ))}
+                      </select>
+                    </div>
 
                   {/* Quantity input */}
-                  <div className="w-32">
+                  <div className="w-full md:w-32 flex flex-col">
+                    <label className="text-[10px] font-bold text-slate-500 mb-1 ml-0.5 uppercase tracking-wider">Input Qty</label>
                     <input
                       type="number"
                       step="any"
                       min="0.000001"
-                      placeholder="Qty"
+                      placeholder="Input Quantity"
                       value={comp.quantity}
                       onChange={(e) => handleRowChange(index, 'quantity', e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
@@ -427,16 +531,17 @@ const BOM = () => {
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveComponentRow(index)}
-                    disabled={componentsList.length === 1}
-                    className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-30 transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveComponentRow(index)}
+                      disabled={componentsList.length === 1}
+                      className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-30 transition-colors mb-1.5"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

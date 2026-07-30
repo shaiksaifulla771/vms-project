@@ -70,6 +70,8 @@ async function runPhase1Verification() {
     headers: authHeaders
   }, JSON.stringify({
     productId: matA._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
     components: [{ materialId: matB._id, quantity: 1 }]
   }));
   console.log("Create BOM A->B:", bomA.statusCode);
@@ -83,6 +85,8 @@ async function runPhase1Verification() {
     headers: authHeaders
   }, JSON.stringify({
     productId: matB._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
     components: [{ materialId: matC._id, quantity: 1 }]
   }));
   console.log("Create BOM B->C:", bomB.statusCode);
@@ -96,6 +100,8 @@ async function runPhase1Verification() {
     headers: authHeaders
   }, JSON.stringify({
     productId: matC._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
     components: [{ materialId: matA._id, quantity: 1 }]
   }));
   console.log("\n--- 1c. Cycle Rejection Response (C -> A) ---");
@@ -111,6 +117,8 @@ async function runPhase1Verification() {
     headers: authHeaders
   }, JSON.stringify({
     productId: matC._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
     components: [{ materialId: matD._id, quantity: 1 }]
   }));
   console.log("\n--- 1d. Control Test (Valid BOM C -> D) ---");
@@ -169,6 +177,8 @@ async function runPhase1Verification() {
     headers: authHeaders
   }, JSON.stringify({
     productId: matDup._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
     components: [
       { materialId: matD._id, quantity: 5 },
       { materialId: matD._id, quantity: 10 }
@@ -189,6 +199,8 @@ async function runPhase1Verification() {
     headers: authHeaders
   }, JSON.stringify({
     productId: matBatch._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
     components: [
       { materialId: matD._id, quantity: 5 },
       { materialId: fakeId, quantity: 2 }

@@ -1,7 +1,23 @@
 const BOM = require('../models/BOM');
 const Material = require('../models/Material');
 const ProductionOrder = require('../models/ProductionOrder');
+const MPN = require('../models/MPN');
 const { detectCycle } = require('../utils/bomGraph');
+
+// Helper to calculate BOM costs based on current MPN prices
+const calculateBomCosts = async (components, outputQuantity) => {
+  let totalRecipeCost = 0;
+  for (const comp of components) {
+    const mpns = await MPN.find({ materialId: comp.materialId, status: 'Active' });
+    if (mpns.length > 0) {
+      let lowestPrice = Math.min(...mpns.map(m => (typeof m.unitPrice === 'number' ? m.unitPrice : Infinity)));
+      if (lowestPrice === Infinity || isNaN(lowestPrice)) lowestPrice = 0;
+      totalRecipeCost += (comp.quantity * lowestPrice);
+    }
+  }
+  const calculatedUnitCost = outputQuantity > 0 ? (totalRecipeCost / outputQuantity) : 0;
+  return { totalRecipeCost, calculatedUnitCost };
+};
 
 // @desc    Get all BOMs
 // @route   GET /api/boms
@@ -32,7 +48,14 @@ exports.getBOM = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Bill of Materials not found' });
     }
 
-    res.status(200).json({ success: true, data: bom });
+    // Recalculate live costs on the detail view for real-time accuracy
+    const liveCosts = await calculateBomCosts(bom.components, bom.outputQuantity);
+    const bomData = bom.toObject();
+    bomData.totalCost = liveCosts.totalRecipeCost; // Fallback for existing UI if any
+    bomData.totalRecipeCost = liveCosts.totalRecipeCost;
+    bomData.calculatedUnitCost = liveCosts.calculatedUnitCost;
+
+    res.status(200).json({ success: true, data: bomData });
   } catch (err) {
     next(err);
   }
@@ -71,6 +94,17 @@ const validateBOMComponents = async (productId, components, currentBomId = null)
     };
   }
 
+  // 2.5 Validate component material types (cannot be Finished Goods)
+  const invalidTypeMaterials = foundMaterials.filter(m => m.type === 'Finished' || m.type === 'Finished Goods');
+  if (invalidTypeMaterials.length > 0) {
+    const invalidNames = invalidTypeMaterials.map(m => m.name).join(', ');
+    return {
+      isValid: false,
+      statusCode: 400,
+      error: `Invalid component material type: Finished goods (${invalidNames}) cannot be used as components in a BOM.`
+    };
+  }
+
   // 3. Multi-level cycle detection
   const cycleResult = await detectCycle(productId, components, currentBomId);
   if (cycleResult.hasCycle) {
@@ -90,10 +124,17 @@ const validateBOMComponents = async (productId, components, currentBomId = null)
 // @access  Private
 exports.createBOM = async (req, res, next) => {
   try {
-    const { productId, components } = req.body;
+    const { productId, components, outputQuantity, outputUnit } = req.body;
 
     if (!productId || !components || !Array.isArray(components) || components.length === 0) {
       return res.status(400).json({ success: false, error: 'Please provide productId and a list of component materials' });
+    }
+
+    if (!outputQuantity || outputQuantity <= 0) {
+      return res.status(400).json({ success: false, error: 'Please provide a valid outputQuantity greater than 0' });
+    }
+    if (!outputUnit) {
+      return res.status(400).json({ success: false, error: 'Please provide an outputUnit' });
     }
 
     // Verify product exists and is of Finished Good or Semi-Finished type
@@ -117,7 +158,18 @@ exports.createBOM = async (req, res, next) => {
       return res.status(validation.statusCode).json({ success: false, error: validation.error });
     }
 
-    const bom = await BOM.create({ productId, components, status: 'Active' });
+    // Calculate costs
+    const { totalRecipeCost, calculatedUnitCost } = await calculateBomCosts(components, outputQuantity);
+
+    const bom = await BOM.create({ 
+      productId, 
+      components, 
+      outputQuantity,
+      outputUnit,
+      totalRecipeCost,
+      calculatedUnitCost,
+      status: 'Active' 
+    });
     const populated = await BOM.findById(bom._id)
       .populate('productId', 'name code unit type')
       .populate('components.materialId', 'name code unit type');
@@ -133,7 +185,7 @@ exports.createBOM = async (req, res, next) => {
 // @access  Private
 exports.updateBOM = async (req, res, next) => {
   try {
-    const { components } = req.body;
+    const { components, outputQuantity, outputUnit } = req.body;
     let bom = await BOM.findById(req.params.id);
 
     if (!bom || bom.status === 'Deleted') {
@@ -144,15 +196,27 @@ exports.updateBOM = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please provide components' });
     }
 
+    if (outputQuantity !== undefined && outputQuantity <= 0) {
+      return res.status(400).json({ success: false, error: 'outputQuantity must be greater than 0' });
+    }
+
     // Validate component integrity
     const validation = await validateBOMComponents(bom.productId, components, bom._id);
     if (!validation.isValid) {
       return res.status(validation.statusCode).json({ success: false, error: validation.error });
     }
 
+    // Calculate costs
+    const finalOutputQty = outputQuantity !== undefined ? outputQuantity : bom.outputQuantity;
+    const { totalRecipeCost, calculatedUnitCost } = await calculateBomCosts(components, finalOutputQty);
+
+    const updateData = { components, totalRecipeCost, calculatedUnitCost };
+    if (outputQuantity !== undefined) updateData.outputQuantity = outputQuantity;
+    if (outputUnit !== undefined) updateData.outputUnit = outputUnit;
+
     bom = await BOM.findByIdAndUpdate(
       req.params.id,
-      { components },
+      { $set: updateData },
       { new: true, runValidators: true }
     )
       .populate('productId', 'name code unit type')

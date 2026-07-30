@@ -65,13 +65,18 @@ async function testBomRollupOutputQty() {
   let vendorDoc = await db.collection('vendors').findOne({ status: { $ne: 'Deleted' } });
   
   if (!vendorDoc) {
-    const v = await apiCall('POST', '/api/vendors', { name: 'Rollup Test Vendor', email: 'rollup@test.com' });
+    const v = await apiCall('POST', '/api/vendors', { vendorId: `V-TEST-${Date.now()}`, name: `Rollup Test Vendor ${Date.now()}`, email: `rollup-${Date.now()}@test.com` });
+    if (!v.data.data) {
+      console.error('Failed to create test vendor:', v.data);
+      process.exit(1);
+    }
     vendorDoc = { _id: v.data.data._id };
   }
 
-  await apiCall('POST', '/api/mpns', {
+  const mpn1Res = await apiCall('POST', '/api/mpns', {
     materialId: comp1.data.data._id,
     vendorId: vendorDoc._id,
+    mpnCode: `MPN-TEST-ALPHA-${Date.now()}`,
     manufacturerPartNumber: `MPN-ALPHA-${Date.now()}`,
     manufacturerName: 'Alpha Mfg',
     mpnName: 'Alpha Powder',
@@ -79,10 +84,12 @@ async function testBomRollupOutputQty() {
     moq: 10,
     uom: 'kg',
   });
+  if (mpn1Res.status !== 201) console.error('MPN1 Creation failed:', mpn1Res.data);
 
-  await apiCall('POST', '/api/mpns', {
+  const mpn2Res = await apiCall('POST', '/api/mpns', {
     materialId: comp2.data.data._id,
     vendorId: vendorDoc._id,
+    mpnCode: `MPN-TEST-BETA-${Date.now()}`,
     manufacturerPartNumber: `MPN-BETA-${Date.now()}`,
     manufacturerName: 'Beta Mfg',
     mpnName: 'Beta Powder',
@@ -90,6 +97,7 @@ async function testBomRollupOutputQty() {
     moq: 10,
     uom: 'kg',
   });
+  if (mpn2Res.status !== 201) console.error('MPN2 Creation failed:', mpn2Res.data);
 
   // 3. Create BOM with outputQuantity = 10 kg
   // Uses 5 kg Component 1 ($20/kg = $100) + 10 kg Component 2 ($15/kg = $150)
@@ -124,8 +132,47 @@ async function testBomRollupOutputQty() {
   console.log(`Per-Unit Cost Formula   = Total Recipe Cost ÷ Output Quantity`);
   console.log(`                        = $250.00 ÷ 10 kg = $25.00 / kg`);
   console.log('----------------------------------------------------');
-  console.log(`API Calculated Recipe Total Cost : $${bomData.totalCost || 250.0}`);
-  console.log(`API Calculated Per-Unit Cost     : $${bomData.calculatedUnitCost || 25.0} / kg`);
+  console.log(`API Calculated Recipe Total Cost : $${bomData.totalRecipeCost}`);
+  console.log(`API Calculated Per-Unit Cost     : $${bomData.calculatedUnitCost} / kg`);
+
+  if (bomData.totalRecipeCost !== 250) {
+    console.error(`FAIL: Expected Total Cost 250, got ${bomData.totalRecipeCost}`);
+    process.exit(1);
+  }
+  if (bomData.calculatedUnitCost !== 25) {
+    console.error(`FAIL: Expected Unit Cost 25, got ${bomData.calculatedUnitCost}`);
+    process.exit(1);
+  }
+  console.log('\n--- MATERIAL TYPE VALIDATION TESTS ---');
+  
+  // Test 1: Raw Material as Product (Should Fail)
+  const invalidProdRes = await apiCall('POST', '/api/boms', {
+    productId: comp1.data.data._id, // Raw Material
+    outputQuantity: 10,
+    outputUnit: 'kg',
+    components: [{ materialId: comp2.data.data._id, quantity: 10, unit: 'kg' }]
+  });
+  console.log(`Raw Material as Product Status: ${invalidProdRes.status}`);
+  if (invalidProdRes.status !== 400 || !invalidProdRes.data.error.includes('Finished or Semi-Finished')) {
+    console.error(`FAIL: Failed to reject Raw Material as Product. Got:`, invalidProdRes.data);
+    process.exit(1);
+  }
+
+  // Test 2: Finished Goods as Component (Should Fail)
+  const assy2 = await apiCall('POST', '/api/materials', { name: 'Batch Output Assembly Product 2', code: `AUDIT-ROLL-ASSY2-${Date.now()}`, unit: 'kg', type: 'Finished' });
+  const invalidCompRes = await apiCall('POST', '/api/boms', {
+    productId: assy2.data.data._id,
+    outputQuantity: 10,
+    outputUnit: 'kg',
+    components: [{ materialId: assy.data.data._id, quantity: 10, unit: 'kg' }] // Finished Good
+  });
+  console.log(`Finished Good as Component Status: ${invalidCompRes.status}`);
+  if (invalidCompRes.status !== 400 || !invalidCompRes.data.error.includes('Finished goods')) {
+    console.error(`FAIL: Failed to reject Finished Good as Component. Got:`, invalidCompRes.data);
+    process.exit(1);
+  }
+  
+  console.log('PASS: Material Type validation constraints successfully enforced.');
 
   // Cleanup temporary test items
   await db.collection('boms').deleteOne({ _id: new mongoose.Types.ObjectId(bomCreateRes.data.data._id) });
