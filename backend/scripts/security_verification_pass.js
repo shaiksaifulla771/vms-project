@@ -68,16 +68,17 @@ async function runSecurityVerification() {
   if (!matRes.bodyJson || !matRes.bodyJson.data || matRes.bodyJson.data.length === 0) {
     const createMat = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'POST', headers: authHeaders }, JSON.stringify({ name: 'Security Test Mat', code: 'M9000', unit: 'pcs', type: 'Raw' }));
     console.log("createMat result:", createMat.bodyJson || createMat.bodyText);
-    materialId = createMat.bodyJson.data._id;
+    materialId = createMat.bodyJson?.data?._id || createMat.bodyJson?._id;
   } else {
     materialId = matRes.bodyJson.data[0]._id;
   }
 
   let venRes = await request({ hostname: 'localhost', port: 5000, path: '/api/vendors', method: 'GET', headers: authHeaders });
   let vendorId;
-  if (!venRes.bodyJson.data || venRes.bodyJson.data.length === 0) {
+  if (!venRes.bodyJson?.data || venRes.bodyJson.data.length === 0) {
     const createVen = await request({ hostname: 'localhost', port: 5000, path: '/api/vendors', method: 'POST', headers: authHeaders }, JSON.stringify({ name: 'Security Test Vendor', email: 'sec@test.com' }));
-    vendorId = createVen.bodyJson.data._id;
+    console.log("createVen result:", createVen.bodyJson || createVen.bodyText);
+    vendorId = createVen.bodyJson?.data?._id || createVen.bodyJson?._id;
   } else {
     vendorId = venRes.bodyJson.data[0]._id;
   }
