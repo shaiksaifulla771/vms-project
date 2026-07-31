@@ -55,3 +55,5 @@ exports.authorize = (...roles) => {
     next();
   };
 };
+
+exports.checkRole = exports.authorize;

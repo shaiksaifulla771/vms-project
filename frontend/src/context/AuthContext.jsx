@@ -124,8 +124,13 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const hasAnyRole = (roles) => {
+    if (!user || !user.role) return false;
+    return roles.includes(user.role);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, error, login, register, verifyOtp, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, error, login, register, verifyOtp, logout, hasAnyRole }}>
       {children}
     </AuthContext.Provider>
   );

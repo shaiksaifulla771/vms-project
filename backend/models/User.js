@@ -24,8 +24,8 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Admin', 'Inventory Manager', 'Production Manager'],
-    default: 'Inventory Manager',
+    enum: ['Admin', 'ProcurementManager', 'Vendor'],
+    default: 'Vendor',
   },
   isVerified: {
     type: Boolean,
