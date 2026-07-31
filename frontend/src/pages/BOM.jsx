@@ -470,12 +470,12 @@ const BOM = () => {
                       />
                     </TableHead>
                   )}
-                  <TableHead>Assembly Product</TableHead>
-                  <TableHead>Product Code</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Batch Yield (Output)</TableHead>
-                  <TableHead>Cost Rollup (Recipe)</TableHead>
-                  <TableHead className="text-right">Actions / Functions</TableHead>
+                  <TableHead className="w-[1%] whitespace-nowrap">Assembly Product</TableHead>
+                  <TableHead className="w-[1%] whitespace-nowrap">Product Code</TableHead>
+                  <TableHead className="w-[1%] whitespace-nowrap">Type</TableHead>
+                  <TableHead className="w-[1%] text-right whitespace-nowrap">Batch Yield (Output)</TableHead>
+                  <TableHead className="w-[1%] text-right whitespace-nowrap">Cost Rollup</TableHead>
+                  <TableHead className="w-full text-right whitespace-nowrap">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -491,7 +491,7 @@ const BOM = () => {
                         />
                       </TableCell>
                     )}
-                      <TableCell className="max-w-[150px] sm:max-w-[200px] md:max-w-[250px]">
+                      <TableCell className="whitespace-nowrap font-medium text-slate-900">
                         <TruncatedTooltipText text={bom.productId?.name || 'Unknown Product'} />
                       </TableCell>
                     <TableCell className="font-mono text-xs text-blue-600 font-bold">
@@ -502,13 +502,13 @@ const BOM = () => {
                         {bom.productId?.type || 'Finished'}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
                       <span className="font-bold text-slate-700">
                         {bom.outputQuantity} {bom.outputUnit || 'kg'}
                       </span>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
+                    <TableCell className="text-right whitespace-nowrap">
+                      <div className="flex flex-col items-end">
                         <span className="text-sm font-bold text-slate-800">
                           ₹{(bom.totalRecipeCost || 0).toLocaleString('en-IN')}
                         </span>
@@ -517,7 +517,7 @@ const BOM = () => {
                         </span>
                         {bom.hasMissingPrices && (
                           <div className="text-[10px] text-amber-600 font-bold mt-1 flex items-center bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 w-fit">
-                            <span className="mr-1">⚠</span> Incomplete (Missing Price)
+                            <span className="mr-1">⚠</span> Incomplete
                           </div>
                         )}
                       </div>
