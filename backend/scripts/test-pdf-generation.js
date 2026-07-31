@@ -38,7 +38,7 @@ class MockResponse {
 
 const compileERPMetrics = async () => {
   const totalMaterials = await Material.countDocuments();
-  const rawMaterials = await Material.countDocuments({ type: 'Raw' });
+  const rawMaterials = await Material.countDocuments({ type: 'Raw Material' });
   const finishedGoods = await Material.countDocuments({ type: 'Finished' });
   const totalBOMs = await BOM.countDocuments();
   const stockItems = await InventoryItem.find();

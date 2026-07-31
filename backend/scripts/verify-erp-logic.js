@@ -47,7 +47,7 @@ async function runTest() {
       name: 'Iron Sheets',
       code: 'RM-IRON',
       unit: 'kg',
-      type: 'Raw',
+      type: 'Raw Material',
       description: 'Iron Sheets'
     });
 

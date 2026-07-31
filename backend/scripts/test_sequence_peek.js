@@ -68,7 +68,7 @@ async function runSequenceVerification() {
     name: 'Sequential Organic Ingredient Test',
     code: parsedCode,
     unit: 'kg',
-    type: 'Raw'
+    type: 'Raw Material'
   }));
   console.log(`HTTP/1.1 ${createRes.statusCode}`);
   console.log("Created Material Body:", createRes.body);

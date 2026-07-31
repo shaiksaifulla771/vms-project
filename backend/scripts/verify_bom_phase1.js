@@ -59,7 +59,7 @@ async function runPhase1Verification() {
   const matA = await Material.create({ name: 'Cycle Test Semi-Finished A', code: `MAT-CYC-A-${ts}`, type: 'Semi-Finished', unit: 'kg', status: 'Active' });
   const matB = await Material.create({ name: 'Cycle Test Semi-Finished B', code: `MAT-CYC-B-${ts}`, type: 'Semi-Finished', unit: 'kg', status: 'Active' });
   const matC = await Material.create({ name: 'Cycle Test Semi-Finished C', code: `MAT-CYC-C-${ts}`, type: 'Semi-Finished', unit: 'kg', status: 'Active' });
-  const matD = await Material.create({ name: 'Cycle Test Raw D', code: `MAT-CYC-D-${ts}`, type: 'Raw', unit: 'kg', status: 'Active' });
+  const matD = await Material.create({ name: 'Cycle Test Raw D', code: `MAT-CYC-D-${ts}`, type: 'Raw Material', unit: 'kg', status: 'Active' });
 
   // 1a. Create BOM: A -> B
   const bomA = await makeRequest({

@@ -83,7 +83,7 @@ async function runComprehensiveAudit() {
       name: `Audit Material Active ${ts}`,
       code: matCodeActive,
       unit: 'kg',
-      type: 'Raw',
+      type: 'Raw Material',
       subcategory: 'Fresh',
       status: 'Active',
       description: 'Audit test item'

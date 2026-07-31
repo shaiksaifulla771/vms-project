@@ -66,7 +66,7 @@ async function runSecurityVerification() {
   let matRes = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'GET', headers: authHeaders });
   let materialId;
   if (!matRes.bodyJson || !matRes.bodyJson.data || matRes.bodyJson.data.length === 0) {
-    const createMat = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'POST', headers: authHeaders }, JSON.stringify({ name: 'Security Test Mat', code: 'M9000', unit: 'pcs', type: 'Raw' }));
+    const createMat = await request({ hostname: 'localhost', port: 5000, path: '/api/materials', method: 'POST', headers: authHeaders }, JSON.stringify({ name: 'Security Test Mat', code: 'M9000', unit: 'pcs', type: 'Raw Material' }));
     console.log("createMat result:", createMat.bodyJson || createMat.bodyText);
     materialId = createMat.bodyJson?.data?._id || createMat.bodyJson?._id;
   } else {

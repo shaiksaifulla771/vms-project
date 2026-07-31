@@ -11,7 +11,7 @@ mongoose.connect('mongodb://127.0.0.1:27017/vms').then(async () => {
     console.log('Starting Procurement & GRN workflow test...');
     
     const vendor = await Vendor.findOne({ status: 'Active' });
-    const material = await Material.findOne({ type: 'Raw' });
+    const material = await Material.findOne({ type: 'Raw Material' });
     const user = await User.findOne();
 
     if (!vendor || !material || !user) {
