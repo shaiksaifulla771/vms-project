@@ -457,91 +457,87 @@ const BOM = () => {
           ) : filteredBoms.length === 0 ? (
             <div className="p-20 text-center text-slate-400 font-medium">No matching Bill of Materials (BOM) configurations found.</div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {isSelectMode && (
-                    <TableHead className="w-12 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={filteredBoms.length > 0 && selectedBoms.length === filteredBoms.length}
-                        onChange={handleSelectAll}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
-                      />
-                    </TableHead>
-                  )}
-                  <TableHead className="w-[1%] whitespace-nowrap">Assembly Product</TableHead>
-                  <TableHead className="w-[1%] whitespace-nowrap">Product Code</TableHead>
-                  <TableHead className="w-[1%] whitespace-nowrap">Type</TableHead>
-                  <TableHead className="w-[1%] text-right whitespace-nowrap">Batch Yield (Output)</TableHead>
-                  <TableHead className="w-[1%] text-right whitespace-nowrap">Cost Rollup</TableHead>
-                  <TableHead className="w-full text-right whitespace-nowrap">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredBoms.map((bom) => (
-                  <TableRow key={bom._id} className={selectedBoms.includes(bom._id) ? 'bg-blue-50/50' : ''}>
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-left border-collapse table-auto text-sm">
+                <thead>
+                  <tr className="bg-[#2a2a2a] text-white">
                     {isSelectMode && (
-                      <TableCell className="text-center">
+                      <th className="px-2 py-1.5 border border-[#3a3a3a] w-8 text-center font-semibold">
+                        <input 
+                          type="checkbox" 
+                          checked={filteredBoms.length > 0 && selectedBoms.length === filteredBoms.length}
+                          onChange={handleSelectAll}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                        />
+                      </th>
+                    )}
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%]">Product Name</th>
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%]">Code</th>
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%]">Type</th>
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%] text-center">Yield</th>
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%] text-center">Cost</th>
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-full text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white text-slate-800">
+                {filteredBoms.map((bom) => (
+                  <tr key={bom._id} className={`border-b border-slate-200 hover:bg-slate-50 ${selectedBoms.includes(bom._id) ? 'bg-blue-50/50' : ''}`}>
+                    {isSelectMode && (
+                      <td className="px-2 py-1.5 border-x border-slate-200 text-center align-middle">
                         <input 
                           type="checkbox"
                           checked={selectedBoms.includes(bom._id)}
                           onChange={() => handleSelectOne(bom._id)}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                         />
-                      </TableCell>
+                      </td>
                     )}
-                      <TableCell className="whitespace-nowrap font-medium text-slate-900">
-                        <TruncatedTooltipText text={bom.productId?.name || 'Unknown Product'} />
-                      </TableCell>
-                    <TableCell className="font-mono text-xs text-blue-600 font-bold">
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle whitespace-nowrap font-medium text-slate-900">
+                      {bom.productId?.name || 'Unknown Product'}
+                    </td>
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle font-mono text-[11px] text-blue-600 font-bold whitespace-nowrap">
                       {bom.productId?.code || '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={bom.productId?.type === 'Semi-Finished' ? 'warning' : 'info'}>
+                    </td>
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle whitespace-nowrap">
+                      <span className="text-[11px] px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
                         {bom.productId?.type || 'Finished'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      <span className="font-bold text-slate-700">
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle text-center whitespace-nowrap">
+                      <span className="text-xs font-semibold text-slate-800">
                         {bom.outputQuantity} {bom.outputUnit || 'kg'}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      <div className="flex flex-col items-end">
-                        <span className="text-sm font-bold text-slate-800">
-                          ₹{(bom.totalRecipeCost || 0).toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-[10px] font-bold text-emerald-600">
-                          ₹{(bom.calculatedUnitCost || 0).toLocaleString('en-IN')} / {bom.outputUnit || 'kg'}
+                    </td>
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle text-center whitespace-nowrap">
+                      <div className="flex flex-col items-center">
+                        <span className="text-xs font-bold text-slate-800">
+                          ₹{(bom.totalRecipeCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                         {bom.hasMissingPrices && (
-                          <div className="text-[10px] text-amber-600 font-bold mt-1 flex items-center bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 w-fit">
-                            <span className="mr-1">⚠</span> Incomplete
+                          <div className="text-[9px] text-amber-600 font-bold mt-0.5">
+                            ⚠ Incomplete
                           </div>
                         )}
                       </div>
-                    </TableCell>
+                    </td>
 
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        {/* Function: Scaling batch sheet calculator */}
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center space-x-1.5">
                         <button
                           onClick={() => handleOpenCalculator(bom)}
                           title="Scale recipe batch sizes & estimate material costs"
-                          className="p-1.5 rounded-md hover:bg-slate-100 text-emerald-600 hover:text-emerald-700 flex items-center space-x-1 text-xs font-bold transition-all border border-transparent hover:border-slate-200"
+                          className="p-1 rounded hover:bg-slate-200 text-emerald-600 hover:text-emerald-700 flex items-center space-x-1 text-[11px] font-bold transition-all border border-transparent hover:border-slate-300"
                         >
-                          <Calculator className="h-4 w-4" />
+                          <Calculator className="h-3 w-3" />
                           <span className="hidden sm:inline">Scale</span>
                         </button>
 
-                        {/* Function: Duplicate/Clone BOM Recipe */}
                         <button
                           onClick={() => handleCloneRecipe(bom)}
                           title="Clone this components list to a new assembly product"
-                          className="p-1.5 rounded-md hover:bg-slate-100 text-blue-600 hover:text-blue-700 transition-all"
+                          className="p-1 rounded hover:bg-slate-200 text-blue-600 hover:text-blue-700 transition-all border border-transparent hover:border-slate-300"
                         >
-                          <Copy className="h-4 w-4" />
+                          <Copy className="h-3.5 w-3.5" />
                         </button>
                         
                         {statusFilter === 'Active' && (
@@ -549,27 +545,27 @@ const BOM = () => {
                             <button
                               onClick={() => handleOpenEditModal(bom)}
                               title="Edit components"
-                              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700"
+                              className="p-1 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-700 border border-transparent hover:border-slate-300"
                             >
-                              <Edit2 className="h-4 w-4" />
+                              <Edit2 className="h-3.5 w-3.5" />
                             </button>
                             
                             <button
                               onClick={() => handleDeleteBOM(bom._id)}
                               title="Delete recipe"
-                              className="p-1.5 rounded-md hover:bg-red-50 text-red-500 hover:text-red-700"
+                              className="p-1 rounded hover:bg-red-50 text-red-500 hover:text-red-700 border border-transparent hover:border-red-200"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </>
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
-          )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
