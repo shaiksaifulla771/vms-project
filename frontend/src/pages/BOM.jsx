@@ -476,7 +476,8 @@ const BOM = () => {
                     <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%]">Type</th>
                     <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%] text-center">Yield</th>
                     <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%] text-center">Cost</th>
-                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-full text-center">Actions</th>
+                    <th className="px-3 py-1.5 border border-[#3a3a3a] font-semibold whitespace-nowrap w-[1%] text-center">Actions</th>
+                    <th className="border-y border-r border-[#3a3a3a] w-full"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white text-slate-800">
@@ -561,6 +562,7 @@ const BOM = () => {
                         )}
                       </div>
                     </td>
+                    <td className="border-y border-r border-slate-200"></td>
                   </tr>
                 ))}
               </tbody>
