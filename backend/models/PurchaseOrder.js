@@ -19,6 +19,14 @@ const POMaterialSchema = new mongoose.Schema({
 });
 
 const PurchaseOrderSchema = new mongoose.Schema({
+  poNumber: {
+    type: String,
+    unique: true,
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false,
+  },
   vendorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vendor',

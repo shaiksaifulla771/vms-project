@@ -2,6 +2,9 @@ import axios from 'axios';
 
 // Determine the base API URL to bypass proxy issues on localhost
 const getBaseURL = () => {
+  if (import.meta.env && import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     return `http://${hostname}:5000`; // Dynamically map port 5000 using active browser hostname

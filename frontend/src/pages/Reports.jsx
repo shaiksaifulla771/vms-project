@@ -116,7 +116,7 @@ const Reports = () => {
         <Card>
           <CardContent className="p-5 space-y-2">
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Procurement Invested</div>
-            <div className="text-2xl font-black text-slate-800">${summary.totalProcurementSpend.toLocaleString()}</div>
+            <div className="text-2xl font-black text-slate-800">₹{(summary.totalProcurementSpend || 0).toLocaleString('en-IN')}</div>
             <div className="flex items-center space-x-1.5 text-xs text-slate-500 font-medium">
               <span className="font-bold text-slate-700">{summary.receivedPOs} POs received</span>
             </div>

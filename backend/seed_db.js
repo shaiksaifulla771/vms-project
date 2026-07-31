@@ -21,7 +21,7 @@ function determineSubcategory(name, type, vendor) {
   const lowerName = (name || '').toLowerCase();
   const lowerVendor = (vendor || '').toLowerCase();
   
-  if (type === 'Raw') {
+  if (type === 'Raw Material') {
     if (
       lowerName.includes('pumpkin') || 
       lowerName.includes('banana') || 
@@ -157,8 +157,8 @@ connectDB().then(async () => {
         name: rmData.name,
         code: code,
         unit: rmData.unit,
-        type: 'Raw',
-        subcategory: determineSubcategory(rmData.name, 'Raw', rmData.vendor),
+        type: 'Raw Material',
+        subcategory: determineSubcategory(rmData.name, 'Raw Material', rmData.vendor),
         description: `Raw component item sourced from ${rmData.vendor}`
       });
       seededRawMaterials[code] = dbRm._id;

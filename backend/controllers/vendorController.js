@@ -1,29 +1,33 @@
 const Vendor = require('../models/Vendor');
 const Sequence = require('../models/Sequence');
-
 const { syncExcelToMongoDB } = require('../utils/dbSync');
+const { escapeRegex } = require('../utils/security');
 const XLSX = require('xlsx');
-
 
 exports.getVendors = async (req, res, next) => {
   try {
     const { category, search, status, page = 1, limit = 50 } = req.query;
     const query = {};
     if (category) query.category = category;
-    if (status) query.status = status;
+    if (status) {
+      query.status = status;
+    } else {
+      query.status = { $ne: 'Deleted' };
+    }
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
-        { vendorId: { $regex: search, $options: 'i' } }
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { email: { $regex: safeSearch, $options: 'i' } },
+        { company: { $regex: safeSearch, $options: 'i' } },
+        { vendorId: { $regex: safeSearch, $options: 'i' } }
       ];
     }
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const startIndex = (pageNum - 1) * limitNum;
     const total = await Vendor.countDocuments(query);
-    const vendors = await Vendor.find(query).sort({ createdAt: -1 }).skip(startIndex).limit(limitNum);
+    const vendors = await Vendor.find(query).select('-bankAccountNumber -ifscCode').sort({ createdAt: -1 }).skip(startIndex).limit(limitNum);
     res.status(200).json({ success: true, count: vendors.length, pagination: { total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum }, data: vendors });
   } catch (err) {
     next(err);
@@ -60,23 +64,33 @@ exports.createVendor = async (req, res, next) => {
     const existing = await Vendor.findOne({ email });
     if (existing) return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
 
-    if (!vendorId) {
-      const seqDoc = await Sequence.findById('vendorCode');
-      let nextCode = 1001;
-      if (seqDoc) nextCode = seqDoc.seq + 1;
-      await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: nextCode } }, { upsert: true });
-      vendorId = `V${nextCode}`;
-    } else {
-      const match = vendorId.match(/\d+/);
-      if (match) {
-        const num = parseInt(match[0], 10);
-        if (!isNaN(num)) {
-          const seqDoc = await Sequence.findById('vendorCode');
-          if (!seqDoc || num > seqDoc.seq) {
-            await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: num } }, { upsert: true });
-          }
+    // Ensure vendorId uniqueness and auto-increment if the provided one is taken
+    if (vendorId) {
+      const existingVendorId = await Vendor.findOne({ vendorId: vendorId.toUpperCase() });
+      if (existingVendorId) {
+        if (/^V\d+$/i.test(vendorId.toUpperCase())) {
+          const allVendors = await Vendor.find({ vendorId: /^V\d+$/i }, { vendorId: 1 });
+          let maxNum = 1000;
+          allVendors.forEach(v => {
+            const num = parseInt((v.vendorId || '').substring(1), 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          });
+          vendorId = `V${maxNum + 1}`;
+        } else {
+          return res.status(400).json({ success: false, error: `Vendor with code '${vendorId}' already exists` });
         }
       }
+    }
+
+    if (!vendorId) {
+      const allVendors = await Vendor.find({ vendorId: /^V\d+$/i }, { vendorId: 1 });
+      let maxNum = 1000;
+      allVendors.forEach(v => {
+        const num = parseInt((v.vendorId || '').substring(1), 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      });
+      vendorId = `V${maxNum + 1}`;
+      await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
     }
 
     const vendor = await Vendor.create({
@@ -90,6 +104,7 @@ exports.createVendor = async (req, res, next) => {
       fssai, fssaiExpiry, fssaiQty,
       bankAccountHolder, bankAccountNumber, bankName, ifscCode,
       status: status || 'Active',
+      secondaryAddresses: req.body.secondaryAddresses || [],
     });
     res.status(201).json({ success: true, data: vendor });
   } catch (err) {
@@ -119,8 +134,9 @@ exports.deleteVendor = async (req, res, next) => {
   try {
     const vendor = await Vendor.findById(req.params.id);
     if (!vendor) return res.status(404).json({ success: false, error: 'Vendor not found' });
-    await vendor.deleteOne();
-    res.status(200).json({ success: true, data: {} });
+    vendor.status = 'Deleted';
+    await vendor.save();
+    res.status(200).json({ success: true, message: 'Vendor moved to deleted history successfully', data: {} });
   } catch (err) {
     next(err);
   }
@@ -128,9 +144,23 @@ exports.deleteVendor = async (req, res, next) => {
 
 exports.peekNextVendorCode = async (req, res, next) => {
   try {
+    const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
+    let maxNum = 1000;
+    allVendors.forEach(v => {
+      const match = (v.vendorId || '').match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+
     const seqDoc = await Sequence.findById('vendorCode');
-    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
-    res.status(200).json({ success: true, nextCode: `V${nextCode}` });
+    const seqNum = seqDoc ? seqDoc.seq : 1000;
+    
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+    await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: nextNum - 1 } }, { upsert: true });
+
+    res.status(200).json({ success: true, nextCode: `V${nextNum}` });
   } catch (err) {
     next(err);
   }
@@ -220,13 +250,26 @@ exports.createVendorsBatchUpload = async (req, res, next) => {
     const { importSource, isAutoEntry } = req.body;
     const isAutoEntryVal = isAutoEntry === 'true' || isAutoEntry === true;
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(worksheet);
+    let rows;
+    try {
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+        return res.status(400).json({ success: false, error: 'Uploaded file contains no readable sheets.' });
+      }
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      rows = XLSX.utils.sheet_to_json(worksheet);
+    } catch (parseErr) {
+      return res.status(400).json({ success: false, error: 'Failed to parse uploaded spreadsheet file. File may be corrupted or invalid format.' });
+    }
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, error: 'Uploaded sheet file is empty' });
+    }
+
+    const MAX_ROWS = process.env.MAX_UPLOAD_ROWS ? parseInt(process.env.MAX_UPLOAD_ROWS, 10) : 5000;
+    if (rows.length > MAX_ROWS) {
+      return res.status(400).json({ success: false, error: `Uploaded sheet contains ${rows.length} rows, which exceeds the maximum allowed limit of ${MAX_ROWS} rows per upload.` });
     }
 
     const getRowValueIgnoreCase = (row, keys) => {
@@ -354,11 +397,11 @@ exports.deleteVendorsBySource = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'No vendors found for this source' });
     }
 
-    const result = await Vendor.deleteMany({ importSource: source });
+    const result = await Vendor.updateMany({ importSource: source }, { $set: { status: 'Deleted' } });
 
     res.status(200).json({
       success: true,
-      message: `Successfully deleted ${result.deletedCount} vendors imported from ${source}.`
+      message: `Successfully moved ${result.modifiedCount} vendors imported from ${source} to deleted history.`
     });
   } catch (err) {
     next(err);
@@ -372,12 +415,75 @@ exports.batchDeleteVendors = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'No vendor IDs provided' });
     }
 
-    const result = await Vendor.deleteMany({ _id: { $in: ids } });
+    const result = await Vendor.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
 
     res.status(200).json({
       success: true,
-      message: `Successfully deleted ${result.deletedCount} vendor(s).`
+      message: `Successfully moved ${result.modifiedCount} vendor(s) to deleted history.`,
+      count: result.modifiedCount
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Peek next available vendor code without incrementing
+// @route   GET /api/vendors/sequence-peek
+// @access  Private
+exports.peekNextVendorCode = async (req, res, next) => {
+  try {
+    const activeVendors = await Vendor.find(
+      { vendorId: /^V\d+$/i },
+      { vendorId: 1 }
+    );
+    let maxNum = 1000;
+    activeVendors.forEach((v) => {
+      if (v.vendorId) {
+        const match = v.vendorId.match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+        }
+      }
+    });
+
+    const nextCode = `V${maxNum + 1}`;
+    res.status(200).json({ success: true, nextCode });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get next available vendor code and increment sequence
+// @route   GET /api/vendors/next-code
+// @access  Private
+exports.getNextVendorCode = async (req, res, next) => {
+  try {
+    const activeVendors = await Vendor.find(
+      { vendorId: /^V\d+$/i },
+      { vendorId: 1 }
+    );
+    let maxNum = 1000;
+    activeVendors.forEach((v) => {
+      if (v.vendorId) {
+        const match = v.vendorId.match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
+        }
+      }
+    });
+
+    const Sequence = require('../models/Sequence');
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] });
+    const seqNum = seqDoc ? seqDoc.seq : 1000;
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+
+    await Sequence.updateMany(
+      { $or: [{ name: /vendorCode/i }, { _id: 'vendorCode' }] },
+      { $set: { seq: nextNum } }
+    );
+    res.status(200).json({ success: true, nextCode: `V${nextNum}` });
   } catch (err) {
     next(err);
   }

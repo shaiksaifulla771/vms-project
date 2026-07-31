@@ -3,7 +3,9 @@ const InventoryItem = require('../models/InventoryItem');
 const BOM = require('../models/BOM');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const ProductionOrder = require('../models/ProductionOrder');
+const MPN = require('../models/MPN');
 const { syncExcelToMongoDB } = require('../utils/dbSync');
+const { escapeRegex } = require('../utils/security');
 
 // @desc    Get all materials
 // @route   GET /api/materials
@@ -13,19 +15,42 @@ exports.getMaterials = async (req, res, next) => {
     const { type, search } = req.query;
     const query = {};
 
-    if (type) {
-      query.type = type;
+    if (type === 'Deleted') {
+      query.status = 'Deleted';
+    } else {
+      query.status = { $ne: 'Deleted' };
+      if (type) {
+        query.type = type;
+      }
     }
 
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { code: { $regex: search, $options: 'i' } }
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { code: { $regex: safeSearch, $options: 'i' } }
       ];
     }
 
     const materials = await Material.find(query).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, count: materials.length, data: materials });
+
+    // Augment with hasValidPrice flag for frontend BOM warnings
+    const mpns = await MPN.find({ status: 'Active' }).select('materialId unitPrice');
+    const mpnMap = {};
+    mpns.forEach(m => {
+      if (m.materialId && typeof m.unitPrice === 'number' && m.unitPrice > 0) {
+        mpnMap[m.materialId.toString()] = true;
+      }
+    });
+
+    const augmentedMaterials = materials.map(mat => {
+      const doc = mat.toObject();
+      const hasBasePrice = typeof doc.basePrice === 'number' && doc.basePrice > 0;
+      doc.hasValidPrice = hasBasePrice || !!mpnMap[mat._id.toString()];
+      return doc;
+    });
+
+    res.status(200).json({ success: true, count: augmentedMaterials.length, data: augmentedMaterials });
   } catch (err) {
     next(err);
   }
@@ -53,21 +78,33 @@ exports.createMaterial = async (req, res, next) => {
   try {
     const { name, code, unit, type, subcategory, status, description } = req.body;
 
-    if (!name || !code || !unit) {
-      return res.status(400).json({ success: false, error: 'Please provide name, code, and unit of measurement' });
+    if (!name || !code || !unit || typeof name !== 'string' || typeof code !== 'string' || typeof unit !== 'string') {
+      return res.status(400).json({ success: false, error: 'Please provide valid text strings for name, code, and unit of measurement' });
     }
 
-    // Check code uniqueness
-    const existing = await Material.findOne({ code: code.toUpperCase() });
+    let finalCode = code.toUpperCase();
+    const existing = await Material.findOne({ code: finalCode });
+    
     if (existing) {
-      return res.status(400).json({ success: false, error: `Material with code '${code}' already exists` });
+      if (/^M\d+$/.test(finalCode)) {
+        // If the auto-assigned code was taken while the form was open, fetch the true next sequence
+        const allM = await Material.find({ code: /^M\d+$/ }, 'code');
+        let maxNum = 1000;
+        for (const m of allM) {
+          const num = parseInt(m.code.substring(1), 10);
+          if (num > maxNum) maxNum = num;
+        }
+        finalCode = `M${maxNum + 1}`;
+      } else {
+        return res.status(400).json({ success: false, error: `Material with code '${finalCode}' already exists` });
+      }
     }
 
     const material = await Material.create({
       name,
-      code: code.toUpperCase(),
+      code: finalCode,
       unit,
-      type: type || 'Raw',
+      type: type || 'Raw Material',
       subcategory,
       status: status || 'Active',
       description
@@ -79,18 +116,20 @@ exports.createMaterial = async (req, res, next) => {
       balance: 0
     });
 
-    // Update sequence to reflect this new manual code if it's the highest
-    const match = material.code.match(/\d+/);
+    // Update sequence to reflect manually-typed code if it falls within numeric M-code range and is higher than current sequence
+    const match = material.code.match(/^M(\d+)$/i);
     if (match) {
-      const num = parseInt(match[0], 10);
-      if (!isNaN(num)) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num >= 1000) {
         const Sequence = require('../models/Sequence');
         const seqDoc = await Sequence.findById('materialCode');
-        if (!seqDoc || num > seqDoc.seq) {
+        const currentSeq = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+        if (num > currentSeq) {
+          console.log(`[SEQUENCE SYNC] Manual code created: M${num}. Updating sequence table from ${currentSeq} -> ${num}...`);
           await Sequence.findByIdAndUpdate(
             'materialCode',
             { $set: { seq: num } },
-            { upsert: true }
+            { upsert: true, new: true }
           );
         }
       }
@@ -112,6 +151,13 @@ exports.updateMaterial = async (req, res, next) => {
 
     if (!material) {
       return res.status(404).json({ success: false, error: 'Material not found' });
+    }
+
+    if (code !== undefined && typeof code !== 'string') {
+      return res.status(400).json({ success: false, error: 'Material code must be a valid text string' });
+    }
+    if (name !== undefined && typeof name !== 'string') {
+      return res.status(400).json({ success: false, error: 'Material name must be a valid text string' });
     }
 
     // Check code uniqueness if changed
@@ -174,15 +220,15 @@ exports.deleteMaterial = async (req, res, next) => {
       });
     }
 
-    const material = await Material.findByIdAndDelete(materialId);
+    const material = await Material.findById(materialId);
     if (!material) {
       return res.status(404).json({ success: false, error: 'Material not found' });
     }
 
-    // Delete associated inventory item
-    await InventoryItem.findOneAndDelete({ materialId });
+    material.status = 'Deleted';
+    await material.save();
 
-    res.status(200).json({ success: true, message: 'Material deleted successfully', data: {} });
+    res.status(200).json({ success: true, message: 'Material moved to deleted history successfully', data: {} });
   } catch (err) {
     next(err);
   }
@@ -293,13 +339,26 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
     const { importSource, isAutoEntry } = req.body;
     const isAutoEntryVal = isAutoEntry === 'true' || isAutoEntry === true;
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(worksheet);
+    let rows;
+    try {
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+        return res.status(400).json({ success: false, error: 'Uploaded file contains no readable sheets.' });
+      }
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      rows = XLSX.utils.sheet_to_json(worksheet);
+    } catch (parseErr) {
+      return res.status(400).json({ success: false, error: 'Failed to parse uploaded spreadsheet file. File may be corrupted or invalid format.' });
+    }
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, error: 'Uploaded sheet file is empty' });
+    }
+
+    const MAX_ROWS = process.env.MAX_UPLOAD_ROWS ? parseInt(process.env.MAX_UPLOAD_ROWS, 10) : 5000;
+    if (rows.length > MAX_ROWS) {
+      return res.status(400).json({ success: false, error: `Uploaded sheet contains ${rows.length} rows, which exceeds the maximum allowed limit of ${MAX_ROWS} rows per upload.` });
     }
 
     const getRowValueIgnoreCase = (row, keys) => {
@@ -321,9 +380,12 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
 
     let nextAutoCounter = (() => {
       const numericCodes = materialsList
-        .map(m => parseInt(m.code, 10))
-        .filter(num => !isNaN(num) && num >= 2001 && num <= 9999);
-      return numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 2001;
+        .map(m => {
+          const match = String(m.code || '').match(/\d+/);
+          return match ? parseInt(match[0], 10) : null;
+        })
+        .filter(num => num !== null && !isNaN(num) && num >= 1001 && num <= 9999);
+      return numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 1001;
     })();
 
     const errors = [];
@@ -336,7 +398,7 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
       const unit = (getRowValueIgnoreCase(row, ["unit", "uom", "unitofmeasurement", "unit of measurement"]) || '').toString().trim();
       const type = (getRowValueIgnoreCase(row, ["type", "category", "materialtype", "material type"]) || '').toString().trim();
       const subcategory = (getRowValueIgnoreCase(row, ["subcategory", "sub-category", "sub category", "sub_category"]) || '').toString().trim();
-      const description = (getRowValueIgnoreCase(row, ["description", "desc", "notes", "materialdescription", "material description"]) || '').toString().trim();
+      const description = (getRowValueIgnoreCase(row, ["description", "notes", "materialdescription", "material description"]) || '').toString().trim();
       const status = (getRowValueIgnoreCase(row, ["status", "state"]) || 'Active').toString().trim();
 
       if (!name || !unit) {
@@ -353,10 +415,10 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
         if (existingByName) {
           code = existingByName.code;
         } else {
-          let generatedCode = nextAutoCounter.toString();
+          let generatedCode = `M${nextAutoCounter}`;
           nextAutoCounter++;
-          while (systemExistingCodes.includes(generatedCode) || importedCodesInBatch.has(generatedCode)) {
-            generatedCode = nextAutoCounter.toString();
+          while (systemExistingCodes.includes(generatedCode.toUpperCase()) || importedCodesInBatch.has(generatedCode.toUpperCase())) {
+            generatedCode = `M${nextAutoCounter}`;
             nextAutoCounter++;
           }
           code = generatedCode;
@@ -468,13 +530,67 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
       });
     }
 
-    // Perform deletion
-    await Material.deleteMany({ _id: { $in: materialIds } });
-    await InventoryItem.deleteMany({ materialId: { $in: materialIds } });
+    // Perform soft deletion
+    await Material.updateMany({ _id: { $in: materialIds } }, { $set: { status: 'Deleted' } });
 
     res.status(200).json({
       success: true,
-      message: `Successfully deleted all ${materialIds.length} materials imported from ${source}`
+      message: `Successfully moved all ${materialIds.length} materials imported from ${source} to deleted history`
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Batch delete materials by IDs
+// @route   POST /api/materials/batch-delete
+// @access  Private
+exports.batchDeleteMaterials = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Invalid or empty ids array' });
+    }
+
+    // Check BOM references
+    const linkedBOM = await BOM.findOne({
+      $or: [
+        { productId: { $in: ids } },
+        { 'components.materialId': { $in: ids } }
+      ]
+    });
+    if (linkedBOM) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete materials: one or more items are currently referenced in Bill of Materials (BOM) configurations.'
+      });
+    }
+
+    // Check Purchase Order references
+    const linkedPO = await PurchaseOrder.findOne({ 'materials.materialId': { $in: ids } });
+    if (linkedPO) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete materials: one or more items are linked to historical or active Purchase Orders.'
+      });
+    }
+
+    // Check inventory stock balance
+    const inventory = await InventoryItem.findOne({ materialId: { $in: ids }, balance: { $gt: 0 } });
+    if (inventory) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete materials: material ${inventory.materialId} has an active stock balance in inventory.`
+      });
+    }
+
+    // Perform soft deletion
+    const result = await Material.updateMany({ _id: { $in: ids } }, { $set: { status: 'Deleted' } });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully moved ${result.modifiedCount} materials to deleted history`,
+      count: result.modifiedCount
     });
   } catch (err) {
     next(err);
@@ -488,65 +604,70 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
 exports.peekNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
-    const seqDoc = await Sequence.findById('materialCode');
-    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
-    res.status(200).json({ success: true, nextCode });
+    const activeMaterials = await Material.find(
+      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
+      { code: 1 }
+    );
+
+    let maxNum = 1000;
+    activeMaterials.forEach(m => {
+      if (m.code) {
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num < 10000 && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    });
+
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
+    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+    const finalMax = Math.max(maxNum, seqNum);
+
+    res.status(200).json({ success: true, nextCode: `M${finalMax + 1}` });
   } catch (err) {
     next(err);
   }
 };
 
-// @desc    Get next available material code (Legacy)
+// @desc    Get next available material code and increment sequence
 // @route   GET /api/materials/next-code
 // @access  Private
 exports.getNextMaterialCode = async (req, res, next) => {
   try {
     const Sequence = require('../models/Sequence');
+    const activeMaterials = await Material.find(
+      { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
+      { code: 1 }
+    );
+
+    let maxNum = 1000;
+    activeMaterials.forEach(m => {
+      if (m.code) {
+        const match = m.code.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    });
+
     const seqDoc = await Sequence.findById('materialCode');
-    const nextCode = seqDoc ? seqDoc.seq + 1 : 1001;
+    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+
     await Sequence.findByIdAndUpdate(
       'materialCode',
-      { $set: { seq: nextCode } },
-      { upsert: true }
+      { $set: { seq: nextNum } },
+      { upsert: true, new: true }
     );
-    res.status(200).json({ success: true, nextCode });
+
+    res.status(200).json({ success: true, nextCode: `M${nextNum}` });
   } catch (err) {
-    next(err);
-  }
-};
-
-
-exports.deleteMaterialsBySource = async (req, res, next) => {
-  try {
-    const { source } = req.body;
-    if (!source) return res.status(400).json({success: false, error: 'Source required'});
-    const result = await Material.deleteMany({ importSource: source });
-    res.status(200).json({success: true, count: result.deletedCount});
-  } catch(err) {
-    next(err);
-  }
-};
-
-exports.batchDeleteMaterials = async (req, res, next) => {
-  try {
-    const { ids } = req.body;
-    if (!ids || !Array.isArray(ids)) return res.status(400).json({success: false, error: 'Invalid ids array'});
-    const result = await Material.deleteMany({ _id: { $in: ids } });
-    res.status(200).json({success: true, count: result.deletedCount});
-  } catch(err) {
-    next(err);
-  }
-};
-
-exports.getNextMaterialCode = async (req, res, next) => {
-  try {
-    const Sequence = require('../models/Sequence');
-    const seqDoc = await Sequence.findById('materialCode');
-    let nextCode = 1001;
-    if (seqDoc) nextCode = seqDoc.seq + 1;
-    await Sequence.findByIdAndUpdate('materialCode', { $set: { seq: nextCode } }, { upsert: true });
-    res.status(200).json({ success: true, nextCode });
-  } catch(err) {
     next(err);
   }
 };

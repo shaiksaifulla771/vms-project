@@ -41,7 +41,7 @@ const Purchasing = () => {
       const [resPos, resVendors, resMaterials] = await Promise.all([
         api.get('/api/purchases', { params }),
         api.get('/api/vendors?limit=100'),
-        api.get('/api/materials?type=Raw') // Only purchase raw components
+        api.get('/api/materials?type=Raw Material') // Only purchase raw components
       ]);
 
       if (resPos.data.success) setPurchaseOrders(resPos.data.data);
@@ -234,7 +234,7 @@ const Purchasing = () => {
                 {purchaseOrders.map((po) => (
                   <TableRow key={po._id}>
                     <TableCell>
-                      <div className="font-bold text-slate-800">PO #{po._id.slice(-6).toUpperCase()}</div>
+                      <div className="font-bold text-slate-800">{po.poNumber || `PO-${po._id.slice(-6).toUpperCase()}`}</div>
                       <div className="text-[10px] text-slate-400 mt-0.5">Created: {new Date(po.createdAt).toLocaleDateString()}</div>
                     </TableCell>
                     <TableCell>
@@ -244,13 +244,13 @@ const Purchasing = () => {
                     <TableCell>
                       <div className="flex flex-col space-y-0.5">
                         {po.materials.map((m, i) => (
-                          <div key={i} className="text-xs text-slate-600">
-                            • {m.materialId?.name}: <span className="font-bold text-slate-700">{m.quantity} {m.materialId?.unit}</span> @ ${m.unitPrice}
+                          <div key={i} className="text-xs text-slate-500 mt-1">
+                            {m.materialId?.name}: <span className="font-bold text-slate-700">{m.quantity} {m.materialId?.unit}</span> @ ₹{(m.unitPrice || 0).toLocaleString('en-IN')}
                           </div>
                         ))}
                       </div>
                     </TableCell>
-                    <TableCell className="font-bold text-slate-800 text-xs">${po.totalAmount.toLocaleString()}</TableCell>
+                    <TableCell className="font-bold text-slate-800 text-xs">₹{(po.totalAmount || 0).toLocaleString('en-IN')}</TableCell>
                     <TableCell>
                       <div className="space-y-1">
                         <Badge>{po.status}</Badge>
@@ -391,7 +391,7 @@ const Purchasing = () => {
                       type="number"
                       min="0"
                       step="0.01"
-                      placeholder="Price ($)"
+                      placeholder="Price (₹)"
                       value={item.unitPrice}
                       onChange={(e) => handleRowChange(index, 'unitPrice', e.target.value)}
                       className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"

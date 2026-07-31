@@ -1,0 +1,51 @@
+name: VMS ERP CI Pipeline
+
+on:
+  push:
+    branches: [ main, master, bom-hardening, security-hardening ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (frontend & backend)
+        run: |
+          npm run install-all
+
+      - name: Build frontend production bundle
+        run: |
+          npm run build --prefix frontend
+
+      - name: Start backend server in background
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017/vms_ci_test
+          PORT: 5000
+          NODE_ENV: test
+        run: |
+          cd backend
+          node server.js &
+          sleep 15
+
+      - name: Run backend automated test suite
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017/vms_ci_test
+        run: |
+          node backend/scripts/seed_admin.js
+          npm test --prefix backend

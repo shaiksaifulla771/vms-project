@@ -10,7 +10,7 @@ const InventoryTransaction = require('../models/InventoryTransaction');
 exports.getPurchaseOrders = async (req, res, next) => {
   try {
     const { status } = req.query;
-    const query = {};
+    const query = { isDeleted: { $ne: true } };
 
     if (status) {
       query.status = status;
@@ -95,7 +95,40 @@ exports.createPurchaseOrder = async (req, res, next) => {
       });
     }
 
+    // Sequence Generator logic for PO Number
+    const Sequence = require('../models/Sequence');
+    const activePOs = await PurchaseOrder.find(
+      { poNumber: /^PO-\d+$/i, isDeleted: { $ne: true } },
+      { poNumber: 1 }
+    );
+
+    let maxNum = 1000;
+    activePOs.forEach(p => {
+      if (p.poNumber) {
+        const match = p.poNumber.toString().match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    });
+
+    const seqDoc = await Sequence.findById('purchaseOrder');
+    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
+    const nextNum = Math.max(maxNum, seqNum) + 1;
+
+    await Sequence.findByIdAndUpdate(
+      'purchaseOrder',
+      { $set: { seq: nextNum } },
+      { upsert: true, new: true }
+    );
+
+    const poNumber = `PO-${nextNum}`;
+
     const po = await PurchaseOrder.create({
+      poNumber,
       vendorId,
       materials: validatedMaterials,
       totalAmount,

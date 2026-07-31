@@ -130,4 +130,81 @@ const generatePDFReport = (res, data) => {
   doc.end();
 };
 
-module.exports = { generatePDFReport };
+/**
+ * Generates a clean, corporate single-record MPN specification sheet PDF.
+ * @param {Object} res Express response object
+ * @param {Object} mpn MPN document populated with materialId & vendorId
+ */
+const generateSingleMpnPDF = (res, mpn) => {
+  const doc = new PDFDocument({ margin: 35, size: 'A4', autoPageBreak: false });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename=MPN_${mpn.mpnCode || 'Record'}.pdf`);
+  doc.pipe(res);
+
+  const primaryColor = '#0f172a';
+  const accentColor = '#2563eb';
+  const textDark = '#334155';
+  const textLight = '#64748b';
+
+  doc.rect(0, 0, 595.28, 10).fill(accentColor);
+  doc.y = 30;
+
+  doc.fillColor(primaryColor)
+     .fontSize(18)
+     .font('Helvetica-Bold')
+     .text(`MPN Master Specification Sheet — ${mpn.mpnCode || 'MPN'}`, 40, doc.y);
+
+  doc.fontSize(9)
+     .font('Helvetica')
+     .fillColor(textLight)
+     .text(`Manufacturer Part Number Specification | Generated: ${new Date().toLocaleString()}`, 40, doc.y + 20);
+
+  doc.moveDown(1);
+  doc.strokeColor('#e2e8f0').lineWidth(0.75).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+  doc.moveDown(1.5);
+
+  const fields = [
+    { label: 'System MPN ID', value: mpn.mpnCode || '—' },
+    { label: 'Manufacturer Part Number', value: mpn.manufacturerPartNumber || '—' },
+    { label: 'MPN Name', value: mpn.mpnName || '—' },
+    { label: 'Manufacturer Name', value: mpn.isDirectFromManufacturer ? `${mpn.manufacturerName} (Same as Vendor)` : mpn.manufacturerName || '—' },
+    { label: 'Linked Material', value: mpn.materialId ? `${mpn.materialId.name} (${mpn.materialId.code || '—'})` : '—' },
+    { label: 'Linked Vendor', value: mpn.vendorId ? `${mpn.vendorId.name} ${mpn.vendorId.company ? `(${mpn.vendorId.company})` : ''}` : '—' },
+    { label: 'Unit Price', value: mpn.unitPrice !== undefined && mpn.unitPrice !== null ? `₹${mpn.unitPrice}` : '—' },
+    { label: 'Minimum Order Qty (MOQ)', value: mpn.moq !== undefined && mpn.moq !== null ? `${mpn.moq} ${mpn.uom || ''}` : '—' },
+    { label: 'Unit of Measure (UOM)', value: mpn.uom || '—' },
+    { label: 'Vendor GSTIN', value: mpn.vendorId?.gstin || mpn.gstin || '—' },
+    { label: 'Record Status', value: mpn.status || 'Active' },
+    { label: 'Part Specification Notes', value: mpn.partDescription || 'None' },
+  ];
+
+  let startY = doc.y;
+  fields.forEach((f, idx) => {
+    const rowY = startY + (idx * 28);
+    doc.rect(40, rowY, 515, 24).fillColor(idx % 2 === 0 ? '#f8fafc' : '#ffffff').fill();
+
+    doc.fillColor(textLight)
+       .fontSize(9)
+       .font('Helvetica-Bold')
+       .text(f.label, 50, rowY + 6, { width: 180 });
+
+    doc.fillColor(primaryColor)
+       .fontSize(9.5)
+       .font('Helvetica')
+       .text(String(f.value), 230, rowY + 6, { width: 310, ellipsis: true });
+  });
+
+  doc.options.autoPageBreak = false;
+  doc.y = doc.page.height - 50;
+  doc.strokeColor('#cbd5e1').lineWidth(0.5).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+  doc.y += 5;
+  doc.fillColor(textLight)
+     .fontSize(7.5)
+     .font('Helvetica')
+     .text('VMS Manufacturing ERP — Official Manufacturer Part Number Master Document', { align: 'center', width: 515 });
+
+  doc.end();
+};
+
+module.exports = { generatePDFReport, generateSingleMpnPDF };

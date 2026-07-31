@@ -20,7 +20,6 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
   const { user, logout } = useAuth();
 
   const allMenuItems = [
-    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
     { id: 'masters', name: 'ERP Masters', icon: Database, roles: ['Admin', 'Inventory Manager'] },
     { id: 'boms', name: 'Bill of Materials', icon: ClipboardList, roles: ['Admin', 'Production Manager'] },
     { id: 'planning', name: 'MRP Planning', icon: Cpu, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },

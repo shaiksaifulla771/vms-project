@@ -1,0 +1,32 @@
+[
+  {
+    "_id": "6a5a145669dd61022db91345",
+    "username": "System Admin",
+    "email": "admin@vms.com",
+    "password": "$2a$10$bf8UhFyl3Iuil1hA8vqC2OibEZAfWDM5sE4TTCaJV0YjTib58btPa",
+    "role": "Admin",
+    "isVerified": true,
+    "createdAt": "2026-07-17T11:39:02.111Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a5a145669dd61022db91348",
+    "username": "Inventory Manager",
+    "email": "inventory@vms.com",
+    "password": "$2a$10$GAKJ8kOZASlfy6UOXNaAP.QfPBUxnh/7k0HVu6K5g1afPleqTPxfm",
+    "role": "Inventory Manager",
+    "isVerified": true,
+    "createdAt": "2026-07-17T11:39:02.210Z",
+    "__v": 0
+  },
+  {
+    "_id": "6a5a145669dd61022db9134a",
+    "username": "Production Manager",
+    "email": "production@vms.com",
+    "password": "$2a$10$ImA6Kj5rWJMq5/1b9jTMnOcLcSH797.1rUebIl0/SlNxlUAzwhRt2",
+    "role": "Production Manager",
+    "isVerified": true,
+    "createdAt": "2026-07-17T11:39:02.292Z",
+    "__v": 0
+  }
+]

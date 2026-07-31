@@ -18,10 +18,14 @@ const MaterialSchema = new mongoose.Schema({
     required: [true, 'Please provide unit of measurement (e.g. kg, pcs, liters)'],
     trim: true,
   },
+  basePrice: {
+    type: Number,
+    default: 0,
+  },
   type: {
     type: String,
-    enum: ['Raw', 'Semi-Finished', 'Finished', 'Raw Material', 'Finished Goods', 'Packing Material'],
-    default: 'Raw',
+    enum: ['Raw Material', 'Packaged Material', 'Semi-Finished', 'Finished'],
+    default: 'Raw Material',
   },
   subcategory: {
     type: String,
@@ -29,7 +33,7 @@ const MaterialSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Active', 'Inactive', 'Draft'],
+    enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
     default: 'Active',
   },
   description: {

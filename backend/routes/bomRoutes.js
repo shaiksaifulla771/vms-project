@@ -4,11 +4,16 @@ const {
   getBOM,
   createBOM,
   updateBOM,
-  deleteBOM
+  deleteBOM,
+  bulkDeleteBOMs,
+  restoreBOMs
 } = require('../controllers/bomController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
+
+router.post('/bulk-delete', protect, bulkDeleteBOMs);
+router.post('/bulk-restore', protect, restoreBOMs);
 
 router.route('/')
   .get(protect, getBOMs)

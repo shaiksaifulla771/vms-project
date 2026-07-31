@@ -26,7 +26,7 @@ export const Dialog = ({ isOpen, onClose, title, children, className = '' }) => 
       <div className="absolute inset-0" onClick={onClose} />
       
       {/* Dialog container */}
-      <div className={`relative bg-white w-full max-w-lg rounded-xl shadow-xl border border-slate-100 overflow-hidden transform transition-all duration-300 scale-100 ${className}`}>
+      <div className={`relative bg-white w-full ${className.includes('max-w-') ? '' : 'max-w-lg'} rounded-xl shadow-xl border border-slate-100 overflow-hidden transform transition-all duration-300 scale-100 ${className}`}>
         
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -40,7 +40,7 @@ export const Dialog = ({ isOpen, onClose, title, children, className = '' }) => 
         </div>
 
         {/* Content */}
-        <div className="p-5 max-h-[75vh] overflow-y-auto">
+        <div className="p-5 max-h-[82vh] overflow-y-auto">
           {children}
         </div>
       </div>

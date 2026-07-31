@@ -14,7 +14,7 @@ const VendorSchema = new mongoose.Schema({
   },
   company: {
     type: String,
-    required: [true, 'Please provide company name'],
+    default: '',
     trim: true,
   },
   email: {
@@ -28,11 +28,13 @@ const VendorSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: [true, 'Please provide vendor phone number'],
+    default: '',
+    trim: true,
   },
   address: {
     type: String,
-    required: [true, 'Please provide vendor address'],
+    default: '',
+    trim: true,
   },
   address2: {
     type: String,
@@ -56,13 +58,20 @@ const VendorSchema = new mongoose.Schema({
   },
   country: {
     type: String,
-    default: '',
+    default: 'India',
     trim: true,
   },
   gstin: {
     type: String,
     default: '',
     trim: true,
+    validate: {
+      validator: function (v) {
+        if (!v || v === '') return true;
+        return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(v);
+      },
+      message: props => `${props.value} is not a valid 15-character GSTIN!`
+    }
   },
   gstList: [
     {
@@ -74,16 +83,18 @@ const VendorSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
-  
-  
   contacts: [
     {
       name: { type: String, trim: true, default: '' },
       phone: { type: String, trim: true, default: '' },
-      role: { type: String, trim: true, default: 'Other' }
+      role: { type: String, trim: true, default: 'Other' },
+      department: { type: String, trim: true, default: 'Sourcing' },
+      email: { type: String, trim: true, default: '' }
     }
   ],
+  primaryContactName: { type: String, default: '', trim: true },
+  primaryContactPhone: { type: String, default: '', trim: true },
+  primaryContactDesignation: { type: String, default: '', trim: true },
   notes: {
     type: String,
     default: '',
@@ -91,8 +102,8 @@ const VendorSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    required: [true, 'Please provide vendor category'],
-    enum: ['Food Processor', 'Contract Manufacturer', 'Retail Brand', 'Fresh Fruits Supplier', 'Other'],
+    default: 'Other',
+    trim: true,
   },
   subCategory: {
     type: String,
@@ -102,6 +113,31 @@ const VendorSchema = new mongoose.Schema({
   ffsc2200: { type: Boolean, default: false },
   ffsc2200Expiry: { type: Date, default: null },
   ffsc2200Qty: { type: Number, default: 0 },
+  ffsc2200LicenseNo: { type: String, default: '', trim: true },
+  fssaiLicenseNo: { type: String, default: '', trim: true },
+  hasSecondaryAddress: { type: Boolean, default: false },
+  secondaryAddress: { type: String, default: '', trim: true },
+  secondaryAddress2: { type: String, default: '', trim: true },
+  secondaryZipCode: { type: String, default: '', trim: true },
+  secondaryCity: { type: String, default: '', trim: true },
+  secondaryState: { type: String, default: '', trim: true },
+  secondaryCountry: { type: String, default: 'India', trim: true },
+  secondaryGstOption: { type: String, default: 'same' },
+  secondaryGstState: { type: String, default: '', trim: true },
+  secondaryGstin: { type: String, default: '', trim: true },
+  secondaryAddresses: [
+    {
+      address: { type: String, default: '', trim: true },
+      address2: { type: String, default: '', trim: true },
+      zipCode: { type: String, default: '', trim: true },
+      city: { type: String, default: '', trim: true },
+      state: { type: String, default: '', trim: true },
+      country: { type: String, default: 'India', trim: true },
+      gstOption: { type: String, default: 'same' },
+      gstState: { type: String, default: '', trim: true },
+      gstin: { type: String, default: '', trim: true }
+    }
+  ],
   fssai: { type: Boolean, default: false },
   fssaiExpiry: { type: Date, default: null },
   fssaiQty: { type: Number, default: 0 },
@@ -111,7 +147,7 @@ const VendorSchema = new mongoose.Schema({
   ifscCode: { type: String, default: '', trim: true },
   status: {
     type: String,
-    enum: ['Active', 'Inactive', 'Draft'],
+    enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
     default: 'Active',
   },
   createdAt: {

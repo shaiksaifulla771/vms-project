@@ -8,12 +8,53 @@ import { Dialog } from '../components/ui/Dialog';
 import { Badge } from '../components/ui/Badge';
 import { Plus, Trash2, Edit2, Copy, Calculator, Search, Filter, Printer, Coins } from 'lucide-react';
 
+const TruncatedTooltipText = ({ text }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
+  const [isTruncated, setIsTruncated] = React.useState(false);
+  const textRef = React.useRef(null);
+
+  const handleMouseEnter = () => {
+    setIsHovered(true);
+    if (textRef.current) {
+      setIsTruncated(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+  };
+
+  return (
+    <div 
+      className="relative flex-1 min-w-0"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <span 
+        ref={textRef} 
+        className="font-bold block truncate text-slate-800"
+      >
+        {text}
+      </span>
+      {isHovered && isTruncated && (
+        <div className="absolute left-0 bottom-full mb-1 z-50 bg-slate-900 text-white text-xs font-semibold px-2 py-1 rounded shadow-xl whitespace-normal break-words w-max max-w-[300px]">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BOM = () => {
   const [boms, setBoms] = useState([]);
   const [finishedProducts, setFinishedProducts] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const [statusFilter, setStatusFilter] = useState('Active');
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedBoms, setSelectedBoms] = useState([]);
 
   // Search & Filter state
   const [productSearch, setProductSearch] = useState('');
@@ -25,8 +66,10 @@ const BOM = () => {
 
   // Form Fields State
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [outputQuantity, setOutputQuantity] = useState(1);
+  const [outputUnit, setOutputUnit] = useState('kg');
   const [componentsList, setComponentsList] = useState([
-    { materialId: '', quantity: 1 }
+    { materialId: '', quantity: 1, typeFilter: '' }
   ]);
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -36,22 +79,43 @@ const BOM = () => {
   const [calcBom, setCalcBom] = useState(null);
   const [calcBatchSize, setCalcBatchSize] = useState('1000');
 
-  const fetchBOMs = async () => {
+  const fetchMaterialsForDropdowns = async () => {
+    try {
+      const resMaterials = await api.get('/api/materials');
+      if (resMaterials.data.success) {
+        const mats = resMaterials.data.data;
+        // Assemblies can be Finished Goods or Semi-Finished intermediates
+        setFinishedProducts(mats.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished'));
+        // Component ingredients can be Raw Material, Packaged Material, or Semi-Finished
+        setRawMaterials(mats.filter(m => 
+          m.type === 'Raw Material' || 
+          m.type === 'Packaged Material' || 
+          m.type === 'Semi-Finished'
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to fetch latest materials for dropdowns:', err);
+    }
+  };
+
+  const fetchBOMs = async (currentStatus = statusFilter) => {
     setLoading(true);
     setError(null);
     try {
       const [resBoms, resMaterials] = await Promise.all([
-        api.get('/api/boms'),
+        api.get(`/api/boms?status=${currentStatus}`),
         api.get('/api/materials')
       ]);
 
       if (resBoms.data.success) setBoms(resBoms.data.data);
       if (resMaterials.data.success) {
         const mats = resMaterials.data.data;
-        // Assemblies can be Finished Goods or Semi-Finished intermediates
         setFinishedProducts(mats.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished'));
-        // Component ingredients can be Raw Materials or Semi-Finished intermediates
-        setRawMaterials(mats.filter(m => m.type === 'Raw' || m.type === 'Semi-Finished'));
+        setRawMaterials(mats.filter(m => 
+          m.type === 'Raw Material' || 
+          m.type === 'Packaged Material' || 
+          m.type === 'Semi-Finished'
+        ));
       }
     } catch (err) {
       console.error(err);
@@ -62,24 +126,36 @@ const BOM = () => {
   };
 
   useEffect(() => {
-    fetchBOMs();
+    fetchBOMs(statusFilter);
+    setSelectedBoms([]);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    fetchBOMs('Active');
   }, []);
 
   const handleOpenAddModal = () => {
+    fetchMaterialsForDropdowns(); // Ensure fresh data on open
     setEditingId(null);
     setSelectedProductId('');
-    setComponentsList([{ materialId: '', quantity: 1 }]);
+    setOutputQuantity(1);
+    setOutputUnit('kg');
+    setComponentsList([{ materialId: '', quantity: 1, typeFilter: '' }]);
     setFormErrors({});
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (bomItem) => {
+    fetchMaterialsForDropdowns(); // Ensure fresh data on open
     setEditingId(bomItem._id);
     setSelectedProductId(bomItem.productId?._id || bomItem.productId || '');
+    setOutputQuantity(bomItem.outputQuantity || 1);
+    setOutputUnit(bomItem.outputUnit || 'kg');
     
     const fmtComps = bomItem.components.map(comp => ({
       materialId: comp.materialId?._id || comp.materialId || '',
-      quantity: comp.quantity
+      quantity: comp.quantity,
+      typeFilter: comp.materialId?.type || ''
     }));
     setComponentsList(fmtComps);
     setFormErrors({});
@@ -88,11 +164,15 @@ const BOM = () => {
 
   // Clone recipe components to a new target assembly
   const handleCloneRecipe = (bomItem) => {
+    fetchMaterialsForDropdowns(); // Ensure fresh data on open
     setEditingId(null); // Force as new creation
     setSelectedProductId(''); // Let user choose a new target finished good
+    setOutputQuantity(bomItem.outputQuantity || 1);
+    setOutputUnit(bomItem.outputUnit || 'kg');
     const clonedComps = bomItem.components.map(comp => ({
       materialId: comp.materialId?._id || comp.materialId || '',
-      quantity: comp.quantity
+      quantity: comp.quantity,
+      typeFilter: comp.materialId?.type || ''
     }));
     setComponentsList(clonedComps);
     setFormErrors({});
@@ -105,8 +185,10 @@ const BOM = () => {
   };
 
   // Add Component Form Row
-  const handleAddComponentRow = () => {
-    setComponentsList([...componentsList, { materialId: '', quantity: 0.01 }]);
+  const handleAddComponentRow = (index) => {
+    const newList = [...componentsList];
+    newList.splice(index + 1, 0, { materialId: '', quantity: 0.01, typeFilter: '' });
+    setComponentsList(newList);
   };
 
   // Remove Component Form Row
@@ -119,12 +201,23 @@ const BOM = () => {
   const handleRowChange = (index, field, value) => {
     const updated = [...componentsList];
     updated[index][field] = value;
+    
+    // Automatically set typeFilter if a material is selected directly
+    if (field === 'materialId') {
+      const mat = rawMaterials.find(rm => rm._id === value);
+      if (mat) {
+        updated[index].typeFilter = mat.type;
+      }
+    }
+    
     setComponentsList(updated);
   };
 
   const validateForm = () => {
     const errors = {};
     if (!selectedProductId) errors.productId = 'Please select a finished or semi-finished product';
+    if (!outputQuantity || Number(outputQuantity) <= 0) errors.outputQuantity = 'Output batch quantity must be greater than 0';
+    if (!outputUnit) errors.outputUnit = 'Output unit is required';
     
     if (componentsList.length === 0) {
       errors.components = 'BOM must contain at least one component material';
@@ -156,6 +249,8 @@ const BOM = () => {
     try {
       const payload = {
         productId: selectedProductId,
+        outputQuantity: Number(outputQuantity),
+        outputUnit,
         components: componentsList.map(c => ({
           materialId: c.materialId,
           quantity: Number(c.quantity)
@@ -178,8 +273,42 @@ const BOM = () => {
     }
   };
 
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedBoms(filteredBoms.map(b => b._id));
+    } else {
+      setSelectedBoms([]);
+    }
+  };
+
+  const handleSelectOne = (id) => {
+    setSelectedBoms(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Soft delete ${selectedBoms.length} BOM(s)?`)) return;
+    try {
+      await api.post('/api/boms/bulk-delete', { ids: selectedBoms });
+      setSelectedBoms([]);
+      fetchBOMs();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to bulk delete' );
+    }
+  };
+
+  const handleBulkRestore = async () => {
+    if (!window.confirm(`Restore ${selectedBoms.length} BOM(s)?`)) return;
+    try {
+      await api.post('/api/boms/bulk-restore', { ids: selectedBoms });
+      setSelectedBoms([]);
+      fetchBOMs();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to bulk restore' );
+    }
+  };
+
   const handleDeleteBOM = async (id) => {
-    if (!window.confirm('Delete this Bill of Materials (BOM) recipe? This checks active Production Orders.')) return;
+    if (!window.confirm('Delete this Bill of Materials (BOM) recipe?')) return;
     try {
       await api.delete(`/api/boms/${id}`);
       fetchBOMs();
@@ -240,17 +369,83 @@ const BOM = () => {
                 ))}
               </select>
             </div>
+            
+            {(productSearch || componentFilter) && (
+              <Button 
+                variant="ghost" 
+                onClick={() => { setProductSearch(''); setComponentFilter(''); }} 
+                className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 h-9 px-3 shrink-0"
+              >
+                Clear Filters
+              </Button>
+            )}
           </div>
 
-          <Button onClick={handleOpenAddModal} className="flex items-center space-x-1 w-full md:w-auto shrink-0 justify-center">
-            <Plus className="h-4 w-4" />
-            <span>Define BOM</span>
-          </Button>
+          <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full md:w-auto shrink-0">
+            <div className="flex bg-slate-100 p-1 rounded-lg w-full sm:w-auto">
+              <button
+                onClick={() => setStatusFilter('Active')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${statusFilter === 'Active' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setStatusFilter('Deleted')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${statusFilter === 'Deleted' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Deleted
+              </button>
+            </div>
+            {statusFilter === 'Active' && (
+              <Button onClick={handleOpenAddModal} className="flex items-center space-x-1 w-full sm:w-auto justify-center">
+                <Plus className="h-4 w-4" />
+                <span>Define BOM</span>
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       {/* Main Grid table */}
       <Card>
+        {isSelectMode && (
+          <div className="bg-blue-50 border-b border-blue-100 px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-bold text-blue-800">{selectedBoms.length} BOM(s) selected</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              {statusFilter === 'Active' && selectedBoms.length === 1 && (
+                <Button size="sm" onClick={() => handleOpenEditModal(boms.find(b => b._id === selectedBoms[0]))} className="bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 mr-2 shadow-sm">
+                  <Edit2 className="h-4 w-4 mr-1" /> Edit Selected
+                </Button>
+              )}
+              {statusFilter === 'Active' && (
+                <Button variant="danger" size="sm" onClick={handleBulkDelete} disabled={selectedBoms.length === 0} className="bg-red-600 hover:bg-red-700 text-white border-transparent">
+                  <Trash2 className="h-4 w-4 mr-1" /> Soft Delete Selected
+                </Button>
+              )}
+              {statusFilter === 'Deleted' && (
+                <Button size="sm" onClick={handleBulkRestore} disabled={selectedBoms.length === 0} className="bg-emerald-600 hover:bg-emerald-700 text-white border-transparent">
+                  Restore Selected
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="px-4 py-2 border-b border-slate-100 flex justify-end bg-slate-50">
+          <label className="flex items-center space-x-2 text-sm font-semibold text-slate-700 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={isSelectMode} 
+              onChange={(e) => {
+                setIsSelectMode(e.target.checked);
+                if (!e.target.checked) setSelectedBoms([]);
+              }}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+            />
+            <span>Select Mode</span>
+          </label>
+        </div>
         <CardContent className="p-0">
           {error && <div className="p-5 text-center text-sm font-semibold text-red-500 bg-red-50">{error}</div>}
 
@@ -265,19 +460,40 @@ const BOM = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isSelectMode && (
+                    <TableHead className="w-12 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={filteredBoms.length > 0 && selectedBoms.length === filteredBoms.length}
+                        onChange={handleSelectAll}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Assembly Product</TableHead>
                   <TableHead>Product Code</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Recipe Ingredients (Components)</TableHead>
+                  <TableHead>Batch Yield (Output)</TableHead>
+                  <TableHead>Cost Rollup (Recipe)</TableHead>
                   <TableHead className="text-right">Actions / Functions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredBoms.map((bom) => (
-                  <TableRow key={bom._id}>
-                    <TableCell className="font-bold text-slate-800">
-                      {bom.productId?.name || 'Unknown Product'}
-                    </TableCell>
+                  <TableRow key={bom._id} className={selectedBoms.includes(bom._id) ? 'bg-blue-50/50' : ''}>
+                    {isSelectMode && (
+                      <TableCell className="text-center">
+                        <input 
+                          type="checkbox"
+                          checked={selectedBoms.includes(bom._id)}
+                          onChange={() => handleSelectOne(bom._id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                        />
+                      </TableCell>
+                    )}
+                      <TableCell className="max-w-[150px] sm:max-w-[200px] md:max-w-[250px]">
+                        <TruncatedTooltipText text={bom.productId?.name || 'Unknown Product'} />
+                      </TableCell>
                     <TableCell className="font-mono text-xs text-blue-600 font-bold">
                       {bom.productId?.code || '-'}
                     </TableCell>
@@ -287,17 +503,26 @@ const BOM = () => {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1.5 py-1">
-                        {bom.components.map((comp, idx) => (
-                          <div key={idx} className="bg-slate-100/80 border border-slate-200/50 rounded-lg px-2 py-0.5 text-[11px] text-slate-600 flex items-center">
-                            <span className="font-bold text-slate-700">{comp.materialId?.name || 'Material'}</span>
-                            <span className="text-blue-600 font-bold ml-1.5">
-                              {comp.quantity} {comp.materialId?.unit || ''}
-                            </span>
+                      <span className="font-bold text-slate-700">
+                        {bom.outputQuantity} {bom.outputUnit || 'kg'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-800">
+                          ₹{(bom.totalRecipeCost || 0).toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-600">
+                          ₹{(bom.calculatedUnitCost || 0).toLocaleString('en-IN')} / {bom.outputUnit || 'kg'}
+                        </span>
+                        {bom.hasMissingPrices && (
+                          <div className="text-[10px] text-amber-600 font-bold mt-1 flex items-center bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 w-fit">
+                            <span className="mr-1">⚠</span> Incomplete (Missing Price)
                           </div>
-                        ))}
+                        )}
                       </div>
                     </TableCell>
+
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end space-x-2">
                         {/* Function: Scaling batch sheet calculator */}
@@ -318,22 +543,26 @@ const BOM = () => {
                         >
                           <Copy className="h-4 w-4" />
                         </button>
-
-                        <button
-                          onClick={() => handleOpenEditModal(bom)}
-                          title="Edit components"
-                          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
                         
-                        <button
-                          onClick={() => handleDeleteBOM(bom._id)}
-                          title="Delete recipe"
-                          className="p-1.5 rounded-md hover:bg-red-50 text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {statusFilter === 'Active' && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEditModal(bom)}
+                              title="Edit components"
+                              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            
+                            <button
+                              onClick={() => handleDeleteBOM(bom._id)}
+                              title="Delete recipe"
+                              className="p-1.5 rounded-md hover:bg-red-50 text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -349,6 +578,7 @@ const BOM = () => {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         title={editingId ? 'Edit BOM Recipe Configuration' : 'Define Bill of Materials (BOM)'}
+        className="max-w-5xl w-full"
       >
         <form onSubmit={handleFormSubmit} className="space-y-4">
           {formErrors.form && (
@@ -357,36 +587,58 @@ const BOM = () => {
             </div>
           )}
 
-          {/* Finished Good selector */}
-          <div className="flex flex-col space-y-1.5">
-            <label className="text-xs font-semibold text-slate-600">Assembly Product (Finished or Semi-Finished)</label>
-            <select
-              value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-              disabled={!!editingId}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
-              required
-            >
-              <option value="" disabled>Select Finished / Semi-Finished Good</option>
-              {finishedProducts.map(p => (
-                <option key={p._id} value={p._id}>{p.name} ({p.code}) [{p.type}]</option>
-              ))}
-            </select>
-            {formErrors.productId && <span className="text-xs text-red-500 font-medium">{formErrors.productId}</span>}
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr] gap-3">
+            {/* Finished Good selector */}
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600">Assembly Product (Finished or Semi-Finished)</label>
+              <select
+                value={selectedProductId}
+                onChange={(e) => setSelectedProductId(e.target.value)}
+                disabled={!!editingId}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
+                required
+              >
+                <option value="" disabled>Select Finished / Semi-Finished Good</option>
+                {finishedProducts.map(p => (
+                  <option key={p._id} value={p._id}>{p.name} ({p.code}) [{p.type}]</option>
+                ))}
+              </select>
+              {formErrors.productId && <span className="text-xs text-red-500 font-medium">{formErrors.productId}</span>}
+            </div>
+
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600">Batch Yield (Output Quantity)</label>
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                value={outputQuantity}
+                onChange={(e) => setOutputQuantity(e.target.value)}
+                placeholder="e.g. 100"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                required
+              />
+              {formErrors.outputQuantity && <span className="text-xs text-red-500 font-medium">{formErrors.outputQuantity}</span>}
+            </div>
+
+            <div className="flex flex-col space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600">Output Unit</label>
+              <input
+                type="text"
+                value={outputUnit}
+                onChange={(e) => setOutputUnit(e.target.value)}
+                placeholder="kg, liters, pcs..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                required
+              />
+              {formErrors.outputUnit && <span className="text-xs text-red-500 font-medium">{formErrors.outputUnit}</span>}
+            </div>
           </div>
 
           {/* Components Grid rows */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
               <span className="text-xs font-bold text-slate-600">Recipe Materials (Ingredients)</span>
-              <button
-                type="button"
-                onClick={handleAddComponentRow}
-                className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Component</span>
-              </button>
             </div>
 
             {formErrors.components && (
@@ -395,48 +647,85 @@ const BOM = () => {
               </div>
             )}
 
-            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-              {componentsList.map((comp, index) => (
-                <div key={index} className="flex items-center space-x-3 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                  {/* Raw Material selector */}
-                  <div className="flex-1">
-                    <select
-                      value={comp.materialId}
-                      onChange={(e) => handleRowChange(index, 'materialId', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
-                      required
-                    >
-                      <option value="" disabled>Select Raw / Semi-Finished</option>
-                      {rawMaterials.map(m => (
-                        <option key={m._id} value={m._id}>{m.name} ({m.code}) [{m.type}]</option>
-                      ))}
-                    </select>
-                  </div>
+            <div className="max-h-[250px] overflow-y-auto border border-slate-200 rounded-md">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2 px-3 font-semibold text-slate-600 w-1/4">Type Filter</th>
+                    <th className="py-2 px-3 font-semibold text-slate-600 w-1/2">Component</th>
+                    <th className="py-2 px-3 font-semibold text-slate-600 w-1/4">Input Qty</th>
+                    <th className="py-2 px-3 font-semibold text-slate-600 text-center w-10">Act</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {componentsList.map((comp, index) => {
+                    const filteredMaterials = comp.typeFilter
+                      ? rawMaterials.filter(m => m.type === comp.typeFilter)
+                      : rawMaterials;
 
-                  {/* Quantity input */}
-                  <div className="w-32">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.000001"
-                      placeholder="Qty"
-                      value={comp.quantity}
-                      onChange={(e) => handleRowChange(index, 'quantity', e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveComponentRow(index)}
-                    disabled={componentsList.length === 1}
-                    className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-30 transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
+                    return (
+                      <tr key={index} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-2 align-top">
+                          <select
+                            value={comp.typeFilter || ''}
+                            onChange={(e) => handleRowChange(index, 'typeFilter', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs focus:outline-none"
+                          >
+                            <option value="">All Types</option>
+                            <option value="Raw Material">Raw Material</option>
+                            <option value="Packaged Material">Packaged Material</option>
+                            <option value="Semi-Finished">Semi-Finished</option>
+                          </select>
+                        </td>
+                        <td className="p-2 align-top">
+                          <select
+                            value={comp.materialId}
+                            onChange={(e) => handleRowChange(index, 'materialId', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs focus:outline-none"
+                            required
+                          >
+                            <option value="" disabled>Select Component</option>
+                            {filteredMaterials.map(m => (
+                              <option key={m._id} value={m._id}>{m.name} ({m.code}) [{m.type}]</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 align-top">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0.000001"
+                            placeholder="Qty"
+                            value={comp.quantity}
+                            onChange={(e) => handleRowChange(index, 'quantity', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs focus:outline-none"
+                            required
+                          />
+                        </td>
+                        <td className="p-2 align-top text-center pt-3 flex items-center justify-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => handleAddComponentRow(index)}
+                            className="p-1 rounded text-blue-500 hover:bg-blue-50 transition-colors"
+                            title="Add Component Below"
+                          >
+                            <Plus className="h-4 w-4 mx-auto" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveComponentRow(index)}
+                            disabled={componentsList.length === 1}
+                            className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-30 transition-colors"
+                            title="Remove Component"
+                          >
+                            <Trash2 className="h-4 w-4 mx-auto" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -503,7 +792,7 @@ const BOM = () => {
                   {calcBom.components.map((comp, idx) => {
                     const singleQty = comp.quantity;
                     const scaledQty = singleQty * Number(calcBatchSize || 0);
-                    // Mock prices: $1.20 per kg/pcs, spices are more expensive e.g. $4.50
+                    // Mock prices: ₹1.20 per kg/pcs, spices are more expensive e.g. ₹4.50
                     const isSpice = comp.materialId?.name.toLowerCase().includes('spice') || comp.materialId?.name.toLowerCase().includes('cumin') || comp.materialId?.name.toLowerCase().includes('pepper');
                     const isBox = comp.materialId?.name.toLowerCase().includes('box') || comp.materialId?.name.toLowerCase().includes('corrugated');
                     const mockUnitPrice = isSpice ? 15.00 : isBox ? 0.35 : 1.25;
@@ -517,7 +806,7 @@ const BOM = () => {
                           {scaledQty.toFixed(4)} {comp.materialId?.unit}
                         </TableCell>
                         <TableCell className="text-right font-semibold text-emerald-600 font-mono text-xs">
-                          ${estCost.toFixed(2)}
+                          ₹{estCost.toFixed(2)}
                         </TableCell>
                       </TableRow>
                     );
@@ -527,21 +816,28 @@ const BOM = () => {
             </div>
 
             {/* Cost Summary Info Box */}
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-800">
+            <div className={`border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2 ${calcBom.hasMissingPrices ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-100 text-emerald-800'}`}>
               <div className="flex items-center space-x-1.5 font-bold">
                 <Coins className="h-4 w-4" />
                 <span>Estimated Material Cost for batch</span>
               </div>
-              <strong className="text-sm font-black font-mono">
-                ${calcBom.components.reduce((acc, comp) => {
-                  const singleQty = comp.quantity;
-                  const scaledQty = singleQty * Number(calcBatchSize || 0);
-                  const isSpice = comp.materialId?.name.toLowerCase().includes('spice') || comp.materialId?.name.toLowerCase().includes('cumin') || comp.materialId?.name.toLowerCase().includes('pepper');
-                  const isBox = comp.materialId?.name.toLowerCase().includes('box') || comp.materialId?.name.toLowerCase().includes('corrugated');
-                  const mockUnitPrice = isSpice ? 15.00 : isBox ? 0.35 : 1.25;
-                  return acc + (scaledQty * mockUnitPrice);
-                }, 0).toFixed(2)}
-              </strong>
+              <div className="flex items-center flex-wrap gap-2 text-right">
+                {calcBom.hasMissingPrices && (
+                  <span className="font-bold text-[10px] bg-amber-100 px-1.5 py-0.5 rounded text-amber-700">
+                    ⚠ Incomplete (Missing Prices)
+                  </span>
+                )}
+                <strong className="text-sm font-black font-mono">
+                  ₹{calcBom.components.reduce((acc, comp) => {
+                    const singleQty = comp.quantity;
+                    const scaledQty = singleQty * Number(calcBatchSize || 0);
+                    const isSpice = comp.materialId?.name.toLowerCase().includes('spice') || comp.materialId?.name.toLowerCase().includes('cumin') || comp.materialId?.name.toLowerCase().includes('pepper');
+                    const isBox = comp.materialId?.name.toLowerCase().includes('box') || comp.materialId?.name.toLowerCase().includes('corrugated');
+                    const mockUnitPrice = isSpice ? 15.00 : isBox ? 0.35 : 1.25;
+                    return acc + (scaledQty * mockUnitPrice);
+                  }, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </strong>
+              </div>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-slate-100">
