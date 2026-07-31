@@ -7,7 +7,7 @@ const Vendor = require('../models/Vendor');
 exports.getRequests = async (req, res, next) => {
   try {
     const { status } = req.query;
-    const query = {};
+    const query = { isDeleted: { $ne: true } };
 
     if (status) {
       query.status = status;
@@ -220,11 +220,13 @@ exports.deleteRequest = async (req, res, next) => {
       });
     }
 
-    await PurchaseRequest.findByIdAndDelete(req.params.id);
+    request.isDeleted = true;
+    request.status = 'Deleted';
+    await request.save();
 
     res.status(200).json({
       success: true,
-      message: 'Purchase request deleted successfully',
+      message: 'Purchase request soft-deleted successfully',
       data: {},
     });
   } catch (err) {

@@ -10,6 +10,7 @@
     "test": "node scripts/security_verification_pass.js && node scripts/test_nosql_typecheck_fix.js && node scripts/test_sequence_peek_fix.js && node scripts/test_mpn_requirements.js && node scripts/verify_bom_phase1.js && node scripts/test_bom_output_quantity_rollup.js && node scripts/verify_vendor_sequence_fix.js"
   },
   "dependencies": {
+    "axios": "^1.19.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

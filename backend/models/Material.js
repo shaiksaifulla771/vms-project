@@ -18,6 +18,10 @@ const MaterialSchema = new mongoose.Schema({
     required: [true, 'Please provide unit of measurement (e.g. kg, pcs, liters)'],
     trim: true,
   },
+  basePrice: {
+    type: Number,
+    default: 0,
+  },
   type: {
     type: String,
     enum: ['Raw Material', 'Packaged Material', 'Semi-Finished', 'Finished'],

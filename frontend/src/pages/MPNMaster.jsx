@@ -703,7 +703,7 @@ export default function MPNMaster() {
                         )}
                       </TableCell>
                       <TableCell className="text-xs font-mono font-bold text-slate-900 text-right">
-                        {row.unitPrice !== undefined && row.unitPrice !== null ? `₹${row.unitPrice}` : '—'}
+                        {row.unitPrice !== undefined && row.unitPrice !== null ? `₹${Number(row.unitPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                       </TableCell>
                       <TableCell className="text-xs text-center font-medium text-slate-700">
                         {row.moq !== undefined ? row.moq : '—'}
@@ -1135,7 +1135,7 @@ export default function MPNMaster() {
               <div>
                 <span className="text-slate-500 font-semibold block">Commercial Terms</span>
                 <span className="font-mono font-bold text-slate-900">
-                  ₹{viewRecord.unitPrice} / {viewRecord.uom} (MOQ: {viewRecord.moq}, GSTIN: {viewRecord.vendorId?.gstin || viewRecord.gstin || '—'})
+                  ₹{Number(viewRecord.unitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {viewRecord.uom} (MOQ: {viewRecord.moq}, GSTIN: {viewRecord.vendorId?.gstin || viewRecord.gstin || '—'})
                 </span>
               </div>
             </div>

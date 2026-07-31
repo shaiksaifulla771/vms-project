@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 
 const PurchaseRequestSchema = new mongoose.Schema({
+  isDeleted: {
+    type: Boolean,
+    default: false,
+  },
   title: {
     type: String,
     required: [true, 'Please provide purchase request title'],
@@ -18,7 +22,7 @@ const PurchaseRequestSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Deleted'],
     default: 'Pending',
   },
   description: {

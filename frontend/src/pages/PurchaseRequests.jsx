@@ -233,7 +233,7 @@ const PurchaseRequests = () => {
                       <div className="text-[10px] text-slate-400 italic">role: {req.requestedBy?.role || 'Staff'}</div>
                     </TableCell>
                     <TableCell className="font-bold text-slate-800 text-xs">
-                      ${req.amount.toLocaleString()}
+                      ₹{(req.amount || 0).toLocaleString('en-IN')}
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1">
@@ -332,7 +332,7 @@ const PurchaseRequests = () => {
             </div>
 
             <Input
-              label="Monetary Spend Amount ($)"
+              label="Monetary Spend Amount (₹)"
               id="amount"
               type="number"
               placeholder="e.g. 5200"

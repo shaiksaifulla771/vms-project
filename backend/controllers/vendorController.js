@@ -64,33 +64,33 @@ exports.createVendor = async (req, res, next) => {
     const existing = await Vendor.findOne({ email });
     if (existing) return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
 
+    // Ensure vendorId uniqueness and auto-increment if the provided one is taken
+    if (vendorId) {
+      const existingVendorId = await Vendor.findOne({ vendorId: vendorId.toUpperCase() });
+      if (existingVendorId) {
+        if (/^V\d+$/i.test(vendorId.toUpperCase())) {
+          const allVendors = await Vendor.find({ vendorId: /^V\d+$/i }, { vendorId: 1 });
+          let maxNum = 1000;
+          allVendors.forEach(v => {
+            const num = parseInt((v.vendorId || '').substring(1), 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          });
+          vendorId = `V${maxNum + 1}`;
+        } else {
+          return res.status(400).json({ success: false, error: `Vendor with code '${vendorId}' already exists` });
+        }
+      }
+    }
+
     if (!vendorId) {
-      const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
+      const allVendors = await Vendor.find({ vendorId: /^V\d+$/i }, { vendorId: 1 });
       let maxNum = 1000;
       allVendors.forEach(v => {
-        const match = (v.vendorId || '').match(/\d+/);
-        if (match) {
-          const num = parseInt(match[0], 10);
-          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
-        }
+        const num = parseInt((v.vendorId || '').substring(1), 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
       });
       vendorId = `V${maxNum + 1}`;
       await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
-    } else {
-      const existingVendorCode = await Vendor.findOne({ vendorId });
-      if (existingVendorCode) {
-        const allVendors = await Vendor.find({ status: { $ne: 'Deleted' } }, { vendorId: 1 });
-        let maxNum = 1000;
-        allVendors.forEach(v => {
-          const match = (v.vendorId || '').match(/\d+/);
-          if (match) {
-            const num = parseInt(match[0], 10);
-            if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
-          }
-        });
-        vendorId = `V${maxNum + 1}`;
-        await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true });
-      }
     }
 
     const vendor = await Vendor.create({

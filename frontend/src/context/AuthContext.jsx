@@ -61,15 +61,16 @@ export const AuthProvider = ({ children }) => {
     checkUserLoggedIn();
   }, []);
 
-  const login = async (email, password) => {
-    setLoading(true);
+  const login = async (email, password, options = {}) => {
     setError(null);
     try {
       const res = await api.post('/api/auth/login', { email, password });
       if (res.data && res.data.success) {
         setSafeToken(res.data.token);
-        setUser(res.data.user);
-        return { success: true };
+        if (!options.delaySession) {
+          setUser(res.data.user);
+        }
+        return { success: true, user: res.data.user };
       }
     } catch (err) {
       if (err.response?.status === 403 && err.response?.data?.requireVerification) {
@@ -83,13 +84,10 @@ export const AuthProvider = ({ children }) => {
       const msg = err.response?.data?.error || 'Authentication failed. Invalid email or password.';
       setError(msg);
       return { success: false, error: msg };
-    } finally {
-      setLoading(false);
     }
   };
 
   const register = async (username, email, password, role) => {
-    setLoading(true);
     setError(null);
     try {
       const res = await api.post('/api/auth/register', { username, email, password, role });
@@ -102,13 +100,10 @@ export const AuthProvider = ({ children }) => {
       const msg = err.response?.data?.error || 'Registration failed.';
       setError(msg);
       return { success: false, error: msg };
-    } finally {
-      setLoading(false);
     }
   };
 
   const verifyOtp = async (email, otp) => {
-    setLoading(true);
     setError(null);
     try {
       const res = await api.post('/api/auth/verify-otp', { email, otp });
@@ -121,8 +116,6 @@ export const AuthProvider = ({ children }) => {
       const msg = err.response?.data?.error || 'OTP verification failed.';
       setError(msg);
       return { success: false, error: msg };
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -132,7 +125,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, register, verifyOtp, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, error, login, register, verifyOtp, logout }}>
       {children}
     </AuthContext.Provider>
   );

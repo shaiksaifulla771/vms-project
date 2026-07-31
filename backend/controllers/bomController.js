@@ -7,16 +7,59 @@ const { detectCycle } = require('../utils/bomGraph');
 // Helper to calculate BOM costs based on current MPN prices
 const calculateBomCosts = async (components, outputQuantity) => {
   let totalRecipeCost = 0;
+  let hasMissingPrices = false;
+  const detailedComponents = [];
+
   for (const comp of components) {
-    const mpns = await MPN.find({ materialId: comp.materialId, status: 'Active' });
+    const mpns = await MPN.find({ materialId: comp.materialId, status: 'Active' }).populate('vendorId', 'company name');
+    let lowestPrice = 0;
+    let foundPrice = false;
+    let mpnUsed = null;
+
     if (mpns.length > 0) {
-      let lowestPrice = Math.min(...mpns.map(m => (typeof m.unitPrice === 'number' ? m.unitPrice : Infinity)));
-      if (lowestPrice === Infinity || isNaN(lowestPrice)) lowestPrice = 0;
-      totalRecipeCost += (comp.quantity * lowestPrice);
+      let minMpn = null;
+      let minVal = Infinity;
+      for (const m of mpns) {
+        if (typeof m.unitPrice === 'number' && m.unitPrice < minVal && m.unitPrice > 0) {
+          minVal = m.unitPrice;
+          minMpn = m;
+        }
+      }
+      if (minMpn) {
+        lowestPrice = minVal;
+        foundPrice = true;
+        mpnUsed = {
+          partNumber: minMpn.partNumber,
+          vendorName: minMpn.vendorId ? (minMpn.vendorId.company || minMpn.vendorId.name) : 'Unknown Vendor',
+          unitPrice: minVal
+        };
+      }
     }
+    
+    // Fallback to Material Master basePrice
+    if (!foundPrice) {
+      const mat = await Material.findById(comp.materialId);
+      if (mat && mat.basePrice && mat.basePrice > 0) {
+        lowestPrice = mat.basePrice;
+        foundPrice = true;
+      }
+    }
+
+    if (!foundPrice) {
+      hasMissingPrices = true;
+    }
+    
+    totalRecipeCost += (comp.quantity * lowestPrice);
+
+    detailedComponents.push({
+      materialId: comp.materialId,
+      quantity: comp.quantity,
+      mpnUsed,
+      lowestPrice
+    });
   }
   const calculatedUnitCost = outputQuantity > 0 ? (totalRecipeCost / outputQuantity) : 0;
-  return { totalRecipeCost, calculatedUnitCost };
+  return { totalRecipeCost, calculatedUnitCost, hasMissingPrices, detailedComponents };
 };
 
 // @desc    Get all BOMs
@@ -24,12 +67,34 @@ const calculateBomCosts = async (components, outputQuantity) => {
 // @access  Private
 exports.getBOMs = async (req, res, next) => {
   try {
-    const boms = await BOM.find({ status: { $ne: 'Deleted' } })
+    const { status } = req.query;
+    const queryStatus = status === 'Deleted' ? 'Deleted' : { $ne: 'Deleted' };
+    
+    const boms = await BOM.find({ status: queryStatus })
       .populate('productId', 'name code unit type')
       .populate('components.materialId', 'name code unit type')
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ success: true, count: boms.length, data: boms });
+    const augmentedBoms = await Promise.all(boms.map(async (bom) => {
+      const liveCosts = await calculateBomCosts(bom.components, bom.outputQuantity);
+      const bomData = bom.toObject();
+      
+      bomData.components = bomData.components.map((comp) => {
+        const detailed = liveCosts.detailedComponents.find(dc => dc.materialId.toString() === (comp.materialId?._id || comp.materialId).toString());
+        return {
+          ...comp,
+          mpnUsed: detailed ? detailed.mpnUsed : null
+        };
+      });
+      
+      bomData.totalCost = liveCosts.totalRecipeCost; 
+      bomData.totalRecipeCost = liveCosts.totalRecipeCost;
+      bomData.calculatedUnitCost = liveCosts.calculatedUnitCost;
+      bomData.hasMissingPrices = liveCosts.hasMissingPrices;
+      return bomData;
+    }));
+
+    res.status(200).json({ success: true, count: augmentedBoms.length, data: augmentedBoms });
   } catch (err) {
     next(err);
   }
@@ -44,16 +109,25 @@ exports.getBOM = async (req, res, next) => {
       .populate('productId', 'name code unit type')
       .populate('components.materialId', 'name code unit type');
 
-    if (!bom || bom.status === 'Deleted') {
+    if (!bom) {
       return res.status(404).json({ success: false, error: 'Bill of Materials not found' });
     }
 
-    // Recalculate live costs on the detail view for real-time accuracy
     const liveCosts = await calculateBomCosts(bom.components, bom.outputQuantity);
     const bomData = bom.toObject();
-    bomData.totalCost = liveCosts.totalRecipeCost; // Fallback for existing UI if any
+    
+    bomData.components = bomData.components.map((comp) => {
+      const detailed = liveCosts.detailedComponents.find(dc => dc.materialId.toString() === (comp.materialId?._id || comp.materialId).toString());
+      return {
+        ...comp,
+        mpnUsed: detailed ? detailed.mpnUsed : null
+      };
+    });
+
+    bomData.totalCost = liveCosts.totalRecipeCost; 
     bomData.totalRecipeCost = liveCosts.totalRecipeCost;
     bomData.calculatedUnitCost = liveCosts.calculatedUnitCost;
+    bomData.hasMissingPrices = liveCosts.hasMissingPrices;
 
     res.status(200).json({ success: true, data: bomData });
   } catch (err) {
@@ -159,7 +233,7 @@ exports.createBOM = async (req, res, next) => {
     }
 
     // Calculate costs
-    const { totalRecipeCost, calculatedUnitCost } = await calculateBomCosts(components, outputQuantity);
+    const { totalRecipeCost, calculatedUnitCost, hasMissingPrices } = await calculateBomCosts(components, outputQuantity);
 
     const bom = await BOM.create({ 
       productId, 
@@ -168,6 +242,7 @@ exports.createBOM = async (req, res, next) => {
       outputUnit,
       totalRecipeCost,
       calculatedUnitCost,
+      hasMissingPrices,
       status: 'Active' 
     });
     const populated = await BOM.findById(bom._id)
@@ -208,9 +283,9 @@ exports.updateBOM = async (req, res, next) => {
 
     // Calculate costs
     const finalOutputQty = outputQuantity !== undefined ? outputQuantity : bom.outputQuantity;
-    const { totalRecipeCost, calculatedUnitCost } = await calculateBomCosts(components, finalOutputQty);
+    const { totalRecipeCost, calculatedUnitCost, hasMissingPrices } = await calculateBomCosts(components, finalOutputQty);
 
-    const updateData = { components, totalRecipeCost, calculatedUnitCost };
+    const updateData = { components, totalRecipeCost, calculatedUnitCost, hasMissingPrices };
     if (outputQuantity !== undefined) updateData.outputQuantity = outputQuantity;
     if (outputUnit !== undefined) updateData.outputUnit = outputUnit;
 
@@ -228,32 +303,80 @@ exports.updateBOM = async (req, res, next) => {
   }
 };
 
-// @desc    Delete BOM (Soft Delete)
-// @route   DELETE /api/boms/:id
-// @access  Private
-exports.deleteBOM = async (req, res, next) => {
-  try {
-    const bomId = req.params.id;
-
-    const bom = await BOM.findById(bomId);
-    if (!bom || bom.status === 'Deleted') {
-      return res.status(404).json({ success: false, error: 'BOM not found' });
+  // @desc    Delete BOM (Soft Delete)
+  // @route   DELETE /api/boms/:id
+  // @access  Private
+  exports.deleteBOM = async (req, res, next) => {
+    try {
+      const bomId = req.params.id;
+  
+      const bom = await BOM.findById(bomId);
+      if (!bom || bom.status === 'Deleted') {
+        return res.status(404).json({ success: false, error: 'BOM not found' });
+      }
+  
+      bom.status = 'Deleted';
+      await bom.save();
+  
+      res.status(200).json({ success: true, message: 'BOM deleted successfully', data: {} });
+    } catch (err) {
+      next(err);
     }
+  };
 
-    // Check if referenced in any ProductionOrder
-    const linkedPO = await ProductionOrder.findOne({ bomId });
-    if (linkedPO) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cannot delete BOM: it is linked to active or historical Production Orders.'
-      });
+  // @desc    Bulk delete BOMs (Soft Delete)
+  // @route   POST /api/boms/bulk-delete
+  // @access  Private
+  exports.bulkDeleteBOMs = async (req, res, next) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'Please provide an array of BOM IDs' });
+      }
+  
+      await BOM.updateMany(
+        { _id: { $in: ids } },
+        { $set: { status: 'Deleted' } }
+      );
+  
+      res.status(200).json({ success: true, message: `${ids.length} BOM(s) soft deleted successfully` });
+    } catch (err) {
+      next(err);
     }
-
-    bom.status = 'Deleted';
-    await bom.save();
-
-    res.status(200).json({ success: true, message: 'BOM deleted successfully', data: {} });
-  } catch (err) {
-    next(err);
-  }
-};
+  };
+  
+  // @desc    Bulk restore BOMs
+  // @route   POST /api/boms/bulk-restore
+  // @access  Private
+  exports.restoreBOMs = async (req, res, next) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'Please provide an array of BOM IDs' });
+      }
+  
+      // Check for conflicts: cannot restore if an Active BOM already exists for the same productId
+      const bomsToRestore = await BOM.find({ _id: { $in: ids } });
+      
+      const errors = [];
+      for (const bom of bomsToRestore) {
+        const existingActive = await BOM.findOne({ productId: bom.productId, status: 'Active' });
+        if (existingActive && !ids.includes(existingActive._id.toString())) {
+          errors.push(`Cannot restore BOM ${bom._id}: An active BOM already exists for this product.`);
+        }
+      }
+  
+      if (errors.length > 0) {
+        return res.status(400).json({ success: false, error: errors.join('\n') });
+      }
+  
+      await BOM.updateMany(
+        { _id: { $in: ids } },
+        { $set: { status: 'Active' } }
+      );
+  
+      res.status(200).json({ success: true, message: `${ids.length} BOM(s) restored successfully` });
+    } catch (err) {
+      next(err);
+    }
+  };

@@ -3,6 +3,7 @@ const InventoryItem = require('../models/InventoryItem');
 const BOM = require('../models/BOM');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const ProductionOrder = require('../models/ProductionOrder');
+const MPN = require('../models/MPN');
 const { syncExcelToMongoDB } = require('../utils/dbSync');
 const { escapeRegex } = require('../utils/security');
 
@@ -32,7 +33,24 @@ exports.getMaterials = async (req, res, next) => {
     }
 
     const materials = await Material.find(query).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, count: materials.length, data: materials });
+
+    // Augment with hasValidPrice flag for frontend BOM warnings
+    const mpns = await MPN.find({ status: 'Active' }).select('materialId unitPrice');
+    const mpnMap = {};
+    mpns.forEach(m => {
+      if (m.materialId && typeof m.unitPrice === 'number' && m.unitPrice > 0) {
+        mpnMap[m.materialId.toString()] = true;
+      }
+    });
+
+    const augmentedMaterials = materials.map(mat => {
+      const doc = mat.toObject();
+      const hasBasePrice = typeof doc.basePrice === 'number' && doc.basePrice > 0;
+      doc.hasValidPrice = hasBasePrice || !!mpnMap[mat._id.toString()];
+      return doc;
+    });
+
+    res.status(200).json({ success: true, count: augmentedMaterials.length, data: augmentedMaterials });
   } catch (err) {
     next(err);
   }
@@ -64,15 +82,27 @@ exports.createMaterial = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please provide valid text strings for name, code, and unit of measurement' });
     }
 
-    // Check code uniqueness (no reuse even if soft-deleted - Option A)
-    const existing = await Material.findOne({ code: code.toUpperCase() });
+    let finalCode = code.toUpperCase();
+    const existing = await Material.findOne({ code: finalCode });
+    
     if (existing) {
-      return res.status(400).json({ success: false, error: `Material with code '${code}' already exists` });
+      if (/^M\d+$/.test(finalCode)) {
+        // If the auto-assigned code was taken while the form was open, fetch the true next sequence
+        const allM = await Material.find({ code: /^M\d+$/ }, 'code');
+        let maxNum = 1000;
+        for (const m of allM) {
+          const num = parseInt(m.code.substring(1), 10);
+          if (num > maxNum) maxNum = num;
+        }
+        finalCode = `M${maxNum + 1}`;
+      } else {
+        return res.status(400).json({ success: false, error: `Material with code '${finalCode}' already exists` });
+      }
     }
 
     const material = await Material.create({
       name,
-      code: code.toUpperCase(),
+      code: finalCode,
       unit,
       type: type || 'Raw Material',
       subcategory,

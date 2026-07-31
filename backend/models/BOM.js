@@ -18,7 +18,6 @@ const BOMSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Material',
     required: [true, 'Finished product reference is required'],
-    unique: true,
   },
   components: [BOMComponentSchema],
   outputQuantity: {
@@ -37,6 +36,10 @@ const BOMSchema = new mongoose.Schema({
   calculatedUnitCost: {
     type: Number,
     default: 0,
+  },
+  hasMissingPrices: {
+    type: Boolean,
+    default: false,
   },
   status: {
     type: String,
