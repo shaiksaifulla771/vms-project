@@ -492,8 +492,8 @@ const BOM = () => {
                         />
                       </td>
                     )}
-                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle whitespace-nowrap font-medium text-slate-900">
-                      {bom.productId?.name || 'Unknown Product'}
+                    <td className="px-3 py-1.5 border-x border-slate-200 align-middle max-w-[200px]">
+                      <TruncatedTooltipText text={bom.productId?.name || 'Unknown Product'} />
                     </td>
                     <td className="px-3 py-1.5 border-x border-slate-200 align-middle font-mono text-[11px] text-blue-600 font-bold whitespace-nowrap">
                       {bom.productId?.code || '-'}
