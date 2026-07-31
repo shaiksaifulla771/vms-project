@@ -566,6 +566,7 @@ const BOM = () => {
               </tbody>
             </table>
           </div>
+          )}
         </CardContent>
       </Card>
 
