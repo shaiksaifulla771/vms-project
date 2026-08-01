@@ -1,3 +1,4 @@
+require('dotenv').config();
 const http = require('http');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
@@ -107,6 +108,23 @@ async function runPhase1Verification() {
   console.log("\n--- 1c. Cycle Rejection Response (C -> A) ---");
   console.log(`HTTP/1.1 ${bomCycle.statusCode}`);
   console.log("Body:", bomCycle.body);
+
+  // 1c2. Attempt Self-Reference BOM: C -> C (direct self-reference)
+  const bomSelfRef = await makeRequest({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/boms',
+    method: 'POST',
+    headers: authHeaders
+  }, JSON.stringify({
+    productId: matC._id,
+    outputQuantity: 1,
+    outputUnit: 'kg',
+    components: [{ materialId: matC._id, quantity: 1 }]
+  }));
+  console.log("\n--- 1c2. Self-Reference Rejection Response (C -> C) ---");
+  console.log(`HTTP/1.1 ${bomSelfRef.statusCode}`);
+  console.log("Body:", bomSelfRef.body);
 
   // 1d. Control Test: Create valid BOM: C -> D
   const bomControl = await makeRequest({

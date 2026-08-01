@@ -139,6 +139,17 @@ exports.getBOM = async (req, res, next) => {
 const validateBOMComponents = async (productId, components, currentBomId = null) => {
   // 1. Check duplicate components within submission
   const seenMaterialIds = new Set();
+  
+  // 1.5 Prevent Assembly Product from being its own ingredient
+  for (const comp of components) {
+    if (comp.materialId && comp.materialId.toString() === productId.toString()) {
+      return {
+        isValid: false,
+        statusCode: 400,
+        error: 'Assembly Product cannot be an ingredient in its own recipe.'
+      };
+    }
+  }
   for (const comp of components) {
     if (!comp.materialId) continue;
     const matIdStr = comp.materialId.toString();

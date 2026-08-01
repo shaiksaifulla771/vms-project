@@ -658,9 +658,10 @@ const BOM = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {componentsList.map((comp, index) => {
+                    const availableMaterials = rawMaterials.filter(m => m._id !== selectedProductId);
                     const filteredMaterials = comp.typeFilter
-                      ? rawMaterials.filter(m => m.type === comp.typeFilter)
-                      : rawMaterials;
+                      ? availableMaterials.filter(m => m.type === comp.typeFilter)
+                      : availableMaterials;
 
                     return (
                       <tr key={index} className="hover:bg-slate-50/50 transition-colors">
