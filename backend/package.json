@@ -7,21 +7,32 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node scripts/security_verification_pass.js && node scripts/test_nosql_typecheck_fix.js && node scripts/test_sequence_peek_fix.js && node scripts/test_mpn_requirements.js && node scripts/verify_bom_phase1.js && node scripts/test_bom_output_quantity_rollup.js && node scripts/verify_vendor_sequence_fix.js"
+    "dev:api": "node server.js",
+    "dev:worker": "node worker.js",
+    "test": "node scripts/security_verification_pass.js && node scripts/test_nosql_typecheck_fix.js && node scripts/test_sequence_peek_fix.js && node scripts/test_mpn_requirements.js && node scripts/verify_bom_phase1.js && node scripts/test_bom_output_quantity_rollup.js && node scripts/verify_vendor_sequence_fix.js && jest"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "aws-sdk": "^2.1693.0",
     "axios": "^1.19.0",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^6.0.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-async-handler": "^1.2.0",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.6.1",
     "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.1",
     "multer": "^2.2.0",
     "pdfkit": "^0.15.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }

@@ -9,7 +9,6 @@ import { Dialog } from '../components/ui/Dialog';
 import { Search, Plus, Edit2, Trash2, Save, Filter, RefreshCw, Cpu, Download, Eye, RotateCcw, Printer, CheckSquare, Square } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Active', 'Inactive', 'Draft'];
-const COMMON_UOMS = ['pcs', 'kg', 'ltr', 'box', 'meter', 'pack', 'roll', 'set', 'gm', 'ml'];
 
 const EMPTY_FORM = {
   _id: null,
@@ -20,9 +19,8 @@ const EMPTY_FORM = {
   isDirectFromManufacturer: false,
   materialId: '',
   vendorId: '',
-  unitPrice: '',
+  price: '',
   moq: 1,
-  uom: 'pcs',
   gstin: '',
   partDescription: '',
   status: 'Active',
@@ -146,9 +144,8 @@ export default function MPNMaster() {
       isDirectFromManufacturer: Boolean(row.isDirectFromManufacturer),
       materialId: row.materialId?._id || row.materialId || '',
       vendorId: row.vendorId?._id || row.vendorId || '',
-      unitPrice: row.unitPrice !== undefined ? row.unitPrice : '',
+      price: row.price || '',
       moq: row.moq !== undefined ? row.moq : 1,
-      uom: row.uom || 'pcs',
       gstin: row.gstin || '',
       partDescription: row.partDescription || '',
       status: row.status || 'Active',
@@ -162,12 +159,6 @@ export default function MPNMaster() {
   };
 
   const closeModal = () => {
-    if (seqEditIndex >= 0 && seqEditList.length > 1) {
-      setSeqEditList([]);
-      setSeqEditIndex(-1);
-      setSelectedIds([]);
-      fetchAll();
-    }
     setModalOpen(false);
     setMfrSuggestionsOpen(false);
   };
@@ -215,11 +206,9 @@ export default function MPNMaster() {
     if (!form.manufacturerName.trim()) errors.manufacturerName = 'Manufacturer Name is required';
     if (!form.materialId) errors.materialId = 'Please link a Material';
     if (!form.vendorId) errors.vendorId = 'Please link a Vendor';
-    if (form.unitPrice === '' || form.unitPrice === null || Number(form.unitPrice) < 0) {
-      errors.unitPrice = 'Unit price must be >= 0';
-    }
     if (!form.moq || Number(form.moq) < 1) errors.moq = 'MOQ must be >= 1';
-    if (!form.uom.trim()) errors.uom = 'UOM is required';
+    if (!form.price || Number(form.price) <= 0) errors.price = 'Price must be > 0';
+
 
     if (!isVendorGstinPresent && form.gstin && form.gstin.trim()) {
       const gstinRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}\d[A-Z]\d[A-Z\d]$/i;
@@ -229,7 +218,7 @@ export default function MPNMaster() {
     }
 
     setFormErrors(errors);
-    return !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.unitPrice && !errors.moq && !errors.uom;
+    return !errors.manufacturerName && !errors.materialId && !errors.vendorId && !errors.moq && !errors.price;
   };
 
   // Single Save button: validation is driven strictly by Status
@@ -244,7 +233,6 @@ export default function MPNMaster() {
     try {
       const body = {
         ...payload,
-        unitPrice: payload.unitPrice === '' ? 0 : Number(payload.unitPrice),
         moq: payload.moq === '' ? 1 : Number(payload.moq),
         gstin: isVendorGstinPresent ? '' : (payload.gstin ? payload.gstin.trim().toUpperCase() : ''),
       };
@@ -252,26 +240,30 @@ export default function MPNMaster() {
 
       if (isEdit) {
         await api.put(`/api/mpns/${form._id}`, body);
-        showToast(
-          seqEditIndex >= 0 && seqEditList.length > 1
-            ? `Saved ${form.mpnCode || 'record'} (${seqEditIndex + 1} of ${seqEditList.length})`
-            : 'MPN updated successfully'
-        );
+        showToast('MPN updated successfully');
       } else {
         await api.post('/api/mpns', body);
         showToast(payload.status === 'Draft' ? 'Saved as draft' : 'MPN created successfully');
-      }
-
-      if (seqEditIndex >= 0 && seqEditList.length > 1) {
-        fetchAll();
-        advanceSeqEdit(seqEditIndex + 1);
-        return;
       }
 
       setModalOpen(false);
       fetchAll();
     } catch (err) {
       showToast(err.response?.data?.error || 'Save failed', 'error');
+    }
+  };
+
+  const handleInlinePriceUpdate = async (id, newPrice) => {
+    try {
+      if (!newPrice || Number(newPrice) <= 0) {
+        showToast('Price must be greater than 0', 'error');
+        return;
+      }
+      await api.put(`/api/mpns/${id}`, { price: Number(newPrice) });
+      setRows((prev) => prev.map((r) => r._id === id ? { ...r, price: Number(newPrice) } : r));
+      showToast('Price updated successfully');
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to update price', 'error');
     }
   };
 
@@ -424,48 +416,6 @@ export default function MPNMaster() {
     setSelectMode(!selectMode);
   };
 
-  // ---------- Sequential Edit State & Handlers ----------
-  const [seqEditList, setSeqEditList] = useState([]);
-  const [seqEditIndex, setSeqEditIndex] = useState(-1);
-
-  const handleEditSelected = () => {
-    if (selectedIds.length === 0) return;
-    const targets = selectedIds
-      .map((id) => rows.find((r) => r._id === id))
-      .filter(Boolean);
-    if (targets.length === 0) return;
-
-    if (targets.length === 1) {
-      setSeqEditList([]);
-      setSeqEditIndex(-1);
-      openEditModal(targets[0]);
-    } else {
-      setSeqEditList(targets);
-      setSeqEditIndex(0);
-      openEditModal(targets[0]);
-    }
-  };
-
-  const advanceSeqEdit = (nextIdx) => {
-    if (nextIdx < seqEditList.length) {
-      setSeqEditIndex(nextIdx);
-      openEditModal(seqEditList[nextIdx]);
-    } else {
-      setSeqEditList([]);
-      setSeqEditIndex(-1);
-      setModalOpen(false);
-      setSelectedIds([]);
-      fetchAll();
-      showToast('Sequential edit complete for all selected records', 'success');
-    }
-  };
-
-  const handleSkipSeq = () => {
-    if (seqEditIndex >= 0 && seqEditList.length > 1) {
-      advanceSeqEdit(seqEditIndex + 1);
-    }
-  };
-
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -584,23 +534,6 @@ export default function MPNMaster() {
             {selectMode && (
               <>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={selectedIds.length === 0}
-                  onClick={handleEditSelected}
-                  className="text-xs h-9"
-                  title={
-                    selectedIds.length === 0
-                      ? 'Select 1 or more records to edit'
-                      : selectedIds.length === 1
-                      ? 'Edit selected MPN record'
-                      : `Sequentially edit ${selectedIds.length} selected MPN records`
-                  }
-                >
-                  <Edit2 className="h-3.5 w-3.5 mr-1" />
-                  Edit {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
-                </Button>
-                <Button
                   variant="danger"
                   size="sm"
                   disabled={selectedIds.length === 0}
@@ -639,7 +572,7 @@ export default function MPNMaster() {
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-white shadow-sm">
                 <TableRow className="bg-slate-50">
                   {selectMode && (
                     <TableHead className="w-10 text-center">
@@ -654,9 +587,8 @@ export default function MPNMaster() {
                   <TableHead className="font-bold text-xs">MPN ID</TableHead>
                   <TableHead className="font-bold text-xs">Material Name</TableHead>
                   <TableHead className="font-bold text-xs">Vendor Name</TableHead>
-                  <TableHead className="font-bold text-xs text-right">Unit Price</TableHead>
+                  <TableHead className="font-bold text-xs text-right">Price</TableHead>
                   <TableHead className="font-bold text-xs text-center">MOQ</TableHead>
-                  <TableHead className="font-bold text-xs text-center">UOM</TableHead>
                   <TableHead className="font-bold text-xs">Status</TableHead>
                   <TableHead className="font-bold text-xs text-right">Actions</TableHead>
                 </TableRow>
@@ -664,13 +596,13 @@ export default function MPNMaster() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={selectMode ? 9 : 8} className="text-center py-8 text-xs text-slate-400">
+                    <TableCell colSpan={selectMode ? 7 : 6} className="text-center py-8 text-xs text-slate-400">
                       Loading MPN master records...
                     </TableCell>
                   </TableRow>
                 ) : paginatedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={selectMode ? 9 : 8} className="text-center py-8 text-xs text-slate-400">
+                    <TableCell colSpan={selectMode ? 7 : 6} className="text-center py-8 text-xs text-slate-400">
                       No MPN records found matching your filters.
                     </TableCell>
                   </TableRow>
@@ -702,14 +634,23 @@ export default function MPNMaster() {
                           '—'
                         )}
                       </TableCell>
-                      <TableCell className="text-xs font-mono font-bold text-slate-900 text-right">
-                        {row.unitPrice !== undefined && row.unitPrice !== null ? `₹${Number(row.unitPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                      <TableCell className="text-right">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          defaultValue={row.price || ''}
+                          onBlur={(e) => {
+                            if (e.target.value && e.target.value !== String(row.price)) {
+                              handleInlinePriceUpdate(row._id, e.target.value);
+                            }
+                          }}
+                          className="w-20 text-xs text-right border-slate-300 rounded focus:ring-blue-500 focus:border-blue-500 px-1 py-0.5"
+                          placeholder="Price"
+                        />
                       </TableCell>
                       <TableCell className="text-xs text-center font-medium text-slate-700">
                         {row.moq !== undefined ? row.moq : '—'}
-                      </TableCell>
-                      <TableCell className="text-xs text-center text-slate-600">
-                        {row.uom || '—'}
                       </TableCell>
                       <TableCell className="text-xs font-semibold text-slate-700">{row.status}</TableCell>
                       <TableCell className="text-right">
@@ -793,13 +734,7 @@ export default function MPNMaster() {
       <Dialog
         isOpen={modalOpen}
         onClose={closeModal}
-        title={
-          isEdit
-            ? seqEditIndex >= 0 && seqEditList.length > 1
-              ? `Edit MPN Record (Editing ${seqEditIndex + 1} of ${seqEditList.length})`
-              : 'Edit MPN Specification'
-            : 'Register New MPN Record'
-        }
+        title={isEdit ? 'Edit MPN Specification' : 'Register New MPN Record'}
         className="max-w-5xl w-[95vw] max-h-[92vh]"
       >
         <div className="space-y-5 pt-2">
@@ -942,8 +877,8 @@ export default function MPNMaster() {
             </div>
           </div>
 
-          {/* Section 3: Pricing & Commercial Terms */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Section 3: Commercial Terms */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 MPN Name <span className="text-slate-400 font-normal">(Optional)</span>
@@ -955,27 +890,6 @@ export default function MPNMaster() {
                 placeholder="e.g. High-Temp Ceramic Resistor (Optional)"
                 className="text-xs"
               />
-              {formErrors.mpnName && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.mpnName}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Unit Price (₹) <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.unitPrice}
-                onChange={(e) => handleChange('unitPrice', e.target.value)}
-                placeholder="0.00"
-                className="text-xs font-mono font-bold text-slate-900"
-              />
-              {formErrors.unitPrice && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.unitPrice}</p>
-              )}
             </div>
 
             <div>
@@ -995,8 +909,11 @@ export default function MPNMaster() {
                 <p className="text-[11px] text-amber-600 font-medium mt-1">{formErrors.gstin}</p>
               )}
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
+          </div>
+          
+          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 shadow-sm">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Commercial Terms</h3>
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   MOQ <span className="text-red-500">*</span>
@@ -1013,24 +930,21 @@ export default function MPNMaster() {
                   <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.moq}</p>
                 )}
               </div>
-
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  UOM <span className="text-red-500">*</span>
+                  Price (₹) <span className="text-red-500">*</span>
                 </label>
-                <Select
-                  value={form.uom}
-                  onChange={(e) => handleChange('uom', e.target.value)}
-                  className="text-xs"
-                >
-                  {COMMON_UOMS.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </Select>
-                {formErrors.uom && (
-                  <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.uom}</p>
+                <Input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(e) => handleChange('price', e.target.value)}
+                  placeholder="0.00"
+                  className="text-xs font-mono"
+                />
+                {formErrors.price && (
+                  <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.price}</p>
                 )}
               </div>
             </div>
@@ -1048,36 +962,15 @@ export default function MPNMaster() {
             />
           </div>
 
-          {/* Action Bar with Sequential Edit Controls */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-            {seqEditIndex >= 0 && seqEditList.length > 1 ? (
-              <div className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center space-x-1.5">
-                <span>Editing {seqEditIndex + 1} of {seqEditList.length}</span>
-                <span className="text-slate-400">|</span>
-                <span className="font-mono">{form.mpnCode || 'Record'}</span>
-              </div>
-            ) : (
-              <div />
-            )}
-
+          {/* Action Bar */}
+          <div className="flex items-center justify-end pt-4 border-t border-slate-200">
             <div className="flex items-center space-x-2">
-              {seqEditIndex >= 0 && seqEditList.length > 1 && (
-                <Button variant="outline" size="sm" onClick={handleSkipSeq} className="px-3 text-slate-600">
-                  Skip →
-                </Button>
-              )}
               <Button variant="outline" size="sm" onClick={closeModal} className="px-4">
-                {seqEditIndex >= 0 && seqEditList.length > 1 ? 'Exit Sequence' : 'Cancel'}
+                Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleSave} className="px-5 font-bold">
                 <Save className="h-3.5 w-3.5 mr-1.5" />
-                {seqEditIndex >= 0 && seqEditList.length > 1
-                  ? seqEditIndex === seqEditList.length - 1
-                    ? 'Save & Finish'
-                    : 'Save & Next →'
-                  : isEdit
-                  ? 'Update MPN Record'
-                  : 'Save MPN Record'}
+                {isEdit ? 'Update MPN Record' : 'Save MPN Record'}
               </Button>
             </div>
           </div>
@@ -1135,7 +1028,7 @@ export default function MPNMaster() {
               <div>
                 <span className="text-slate-500 font-semibold block">Commercial Terms</span>
                 <span className="font-mono font-bold text-slate-900">
-                  ₹{Number(viewRecord.unitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {viewRecord.uom} (MOQ: {viewRecord.moq}, GSTIN: {viewRecord.vendorId?.gstin || viewRecord.gstin || '—'})
+                  (Price: ₹{viewRecord.price || '0.00'}, MOQ: {viewRecord.moq}, GSTIN: {viewRecord.vendorId?.gstin || viewRecord.gstin || '?'})
                 </span>
               </div>
             </div>

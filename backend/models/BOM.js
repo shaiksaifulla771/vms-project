@@ -1,55 +1,113 @@
 const mongoose = require('mongoose');
 
 const BOMComponentSchema = new mongoose.Schema({
-  materialId: {
+  mpnId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Material',
-    required: [true, 'Component material reference is required'],
+    ref: 'MPN',
+    required: true,
+    index: true
   },
-  quantity: {
+  qty: {
     type: Number,
-    required: [true, 'Component quantity is required'],
-    min: [0.000001, 'Quantity must be greater than zero'],
+    required: true,
+    min: 0.0001
   },
-});
+  lossPercent: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 99
+  }
+}, { _id: false });
 
 const BOMSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Material',
-    required: [true, 'Finished product reference is required'],
+    required: [true, 'Assembly product reference is required'],
   },
-  components: [BOMComponentSchema],
-  outputQuantity: {
-    type: Number,
-    required: [true, 'Output batch quantity is required'],
-    min: [0.000001, 'Output quantity must be greater than zero'],
-  },
-  outputUnit: {
+  bomNumber: {
     type: String,
-    required: [true, 'Output unit is required'],
+    sparse: true,
+    trim: true,
   },
-  totalRecipeCost: {
+  notes: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  batchSize: {
+    type: Number,
+    required: [true, 'Batch size is required'],
+    min: [0.0001, 'Batch size must be greater than zero'],
+  },
+  batchUOM: {
+    type: String,
+    required: [true, 'Batch UOM is required'],
+  },
+  components: {
+    type: [BOMComponentSchema],
+    validate: {
+      validator: function(v) {
+        return v && v.length > 0;
+      },
+      message: 'At least one component is required'
+    }
+  },
+  packagingCost: {
     type: Number,
     default: 0,
+    min: 0
   },
-  calculatedUnitCost: {
+  processingCost: {
     type: Number,
     default: 0,
+    min: 0
   },
-  hasMissingPrices: {
-    type: Boolean,
-    default: false,
+  overheadCost: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   status: {
     type: String,
-    enum: ['Active', 'Deleted'],
-    default: 'Active',
+    enum: ['Active', 'Draft', 'Obsolete'],
+    default: 'Active'
   },
-  createdAt: {
+  version: {
+    type: Number,
+    default: 1
+  },
+  previousVersionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BOM',
+    default: null
+  },
+  duplicatedFrom: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BOM',
+    default: null
+  },
+  effectiveDate: {
     type: Date,
-    default: Date.now,
+    default: Date.now
   },
+  createdBy: {
+    type: String,
+    default: 'System'
+  },
+  updatedBy: {
+    type: String,
+    default: 'System'
+  }
+}, { 
+  timestamps: true,
+  optimisticConcurrency: true 
 });
+
+// Indexes for performance
+BOMSchema.index({ productId: 1 });
+BOMSchema.index({ status: 1 });
+BOMSchema.index({ bomNumber: 1, version: 1 }, { unique: true });
 
 module.exports = mongoose.model('BOM', BOMSchema);

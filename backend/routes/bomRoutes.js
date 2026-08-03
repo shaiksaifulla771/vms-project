@@ -5,23 +5,24 @@ const {
   createBOM,
   updateBOM,
   deleteBOM,
-  bulkDeleteBOMs,
-  restoreBOMs
+  duplicateBOM,
+  getBOMHistory
 } = require('../controllers/bomController');
 const { protect } = require('../middleware/authMiddleware');
+const { validateBomRecipe } = require('../validators/bomValidator');
 
 const router = express.Router();
 
-router.post('/bulk-delete', protect, bulkDeleteBOMs);
-router.post('/bulk-restore', protect, restoreBOMs);
-
 router.route('/')
   .get(protect, getBOMs)
-  .post(protect, createBOM);
+  .post(protect, validateBomRecipe, createBOM);
 
 router.route('/:id')
   .get(protect, getBOM)
-  .put(protect, updateBOM)
+  .put(protect, validateBomRecipe, updateBOM)
   .delete(protect, deleteBOM);
+
+router.post('/:id/duplicate', protect, duplicateBOM);
+router.get('/:id/history', protect, getBOMHistory);
 
 module.exports = router;

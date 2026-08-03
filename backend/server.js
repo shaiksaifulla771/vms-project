@@ -321,6 +321,7 @@ app.use('/api/purchases', require('./routes/purchaseRoutes'));
 app.use('/api/productions', require('./routes/productionRoutes'));
 app.use('/api/quality', require('./routes/qualityRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/imports', require('./routes/imports'));
 
 // Root route
 app.get('/', (req, res) => {

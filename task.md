@@ -1,0 +1,8 @@
+- [x] **7. Live BOM Costing & Notifications**
+  - [x] Add `priceUpdatedAt` to `MPNSchema` and update `mpnController`
+  - [x] Add `priceAtLastSave` to `BOMComponentSchema`
+  - [x] Update `bomCostService` to populate `priceAtLastSave` and `bomController` to inject `liveTotalCost`/`liveLineCost`
+  - [x] Create `PriceDriftBanner.jsx` (listing all drifted components)
+  - [x] Integrate live costs and banner into `BomDetail.jsx`
+  - [x] Integrate live costs and banner into `BomRecipeEditor.jsx`
+  - [x] Integrate live cost into `BomList.jsx`

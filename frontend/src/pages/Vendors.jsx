@@ -724,7 +724,7 @@ const Vendors = () => {
             </div>
           ) : (
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-white shadow-sm">
                 <TableRow>
                   <TableHead>Vendor ID</TableHead>
                   <TableHead>Company Name</TableHead>
@@ -781,10 +781,10 @@ const Vendors = () => {
                           </button>
                           <button
                             onClick={() => handleSoftDelete(rec._id, rec.Company_Name)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Archive / Soft-Delete"
+                            className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Soft Delete Vendor"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       ) : (

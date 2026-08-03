@@ -165,6 +165,8 @@ exports.getManufacturers = async (req, res, next) => {
 // @desc    Create MPN (single save path, status drives validation strictness)
 // @desc    Create MPN (single save path, status drives validation strictness)
 // @route   POST /api/mpns
+const MPNPriceHistory = require('../models/MPNPriceHistory');
+
 exports.createMPN = async (req, res, next) => {
   try {
     // Validate type for string fields against object/array injection payloads
@@ -172,7 +174,7 @@ exports.createMPN = async (req, res, next) => {
       { name: 'manufacturerName', label: 'Manufacturer Name' },
       { name: 'mpnName', label: 'MPN Name' },
       { name: 'manufacturerPartNumber', label: 'Manufacturer Part Number' },
-      { name: 'uom', label: 'Unit of Measure (UOM)' },
+
       { name: 'partDescription', label: 'Part Description' },
       { name: 'mpnCode', label: 'MPN Code' },
       { name: 'gstin', label: 'GSTIN' },
@@ -215,15 +217,14 @@ exports.createMPN = async (req, res, next) => {
       if (!vendorId) {
         return res.status(400).json({ success: false, error: 'Please link a Vendor' });
       }
-      if (req.body.unitPrice === undefined || req.body.unitPrice === null || req.body.unitPrice < 0) {
-        return res.status(400).json({ success: false, error: 'Unit Price must be a valid number >= 0' });
+      if (req.body.price === undefined || req.body.price === null || Number(req.body.price) <= 0) {
+        return res.status(400).json({ success: false, error: 'Price is required and must be greater than 0' });
       }
+
       if (!req.body.moq || req.body.moq < 1) {
         return res.status(400).json({ success: false, error: 'MOQ must be at least 1' });
       }
-      if (!req.body.uom || !req.body.uom.trim()) {
-        return res.status(400).json({ success: false, error: 'Unit of Measure (UOM) is required' });
-      }
+
 
       // Duplicate check for SAME vendor
       const existing = await MPN.findOne({
@@ -286,6 +287,16 @@ exports.createMPN = async (req, res, next) => {
       }
     }
 
+    if (mpn.price !== undefined && mpn.price !== null) {
+      await MPNPriceHistory.create({
+        mpnId: mpn._id,
+        previousPrice: null,
+        newPrice: mpn.price,
+        effectiveDate: new Date(),
+        modifiedBy: req.user ? req.user.name : 'System'
+      });
+    }
+
     const populated = await mpn.populate([
       { path: 'materialId', select: 'name code unit' },
       { path: 'vendorId', select: 'name company vendorId gstin' },
@@ -305,7 +316,7 @@ exports.updateMPN = async (req, res, next) => {
       { name: 'manufacturerName', label: 'Manufacturer Name' },
       { name: 'mpnName', label: 'MPN Name' },
       { name: 'manufacturerPartNumber', label: 'Manufacturer Part Number' },
-      { name: 'uom', label: 'Unit of Measure (UOM)' },
+
       { name: 'partDescription', label: 'Part Description' },
       { name: 'mpnCode', label: 'MPN Code' },
       { name: 'gstin', label: 'GSTIN' },
@@ -357,6 +368,18 @@ exports.updateMPN = async (req, res, next) => {
           error: `A part with Manufacturer '${manufacturerName}' and Part Number '${manufacturerPartNumber}' is already registered for this Vendor.`,
         });
       }
+    }
+
+    if (req.body.price !== undefined && Number(req.body.price) !== mpn.price) {
+      req.body.priceUpdatedAt = Date.now();
+      const newPrice = Number(req.body.price);
+      await MPNPriceHistory.create({
+        mpnId: mpn._id,
+        previousPrice: mpn.price,
+        newPrice: newPrice,
+        effectiveDate: new Date(),
+        modifiedBy: req.user ? req.user.name : 'System'
+      });
     }
 
     mpn = await MPN.findByIdAndUpdate(req.params.id, req.body, {
@@ -480,9 +503,7 @@ exports.exportMPNsExcel = async (req, res, next) => {
       'Manufacturer Part Number': m.manufacturerPartNumber || '—',
       'Material Name': m.materialId ? `${m.materialId.name} (${m.materialId.code || '—'})` : '—',
       'Vendor Name': m.vendorId ? `${m.vendorId.name} ${m.vendorId.company ? `(${m.vendorId.company})` : ''}` : '—',
-      'Unit Price': m.unitPrice !== undefined ? m.unitPrice : '—',
       'MOQ': m.moq !== undefined ? m.moq : '—',
-      'UOM': m.uom || '—',
       'GSTIN': m.vendorId?.gstin || m.gstin || '—',
       'Direct Sourcing': m.isDirectFromManufacturer ? 'Same as Vendor' : 'Independent',
       'Status': m.status || 'Active',

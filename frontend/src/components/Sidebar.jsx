@@ -25,7 +25,7 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
     { id: 'planning', name: 'MRP Planning', icon: Cpu, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
     { id: 'inventory', name: 'Inventory Ledger', icon: Boxes, roles: ['Admin', 'Inventory Manager'] },
     { id: 'purchasing', name: 'Procurement (POs)', icon: ShoppingBag, roles: ['Admin', 'Inventory Manager'] },
-    { id: 'manufacturing', name: 'Manufacturing', icon: Factory, roles: ['Admin', 'Production Manager'] },
+    { id: 'production', name: 'Production Orders', icon: Factory, roles: ['Admin', 'Production Manager'] },
     { id: 'quality', name: 'Quality Control', icon: ShieldCheck, roles: ['Admin', 'Production Manager'] },
     { id: 'reports', name: 'ERP Reports', icon: BarChart3, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
     { id: 'settings', name: 'Settings & Roles', icon: Settings, roles: ['Admin', 'Inventory Manager', 'Production Manager'] }

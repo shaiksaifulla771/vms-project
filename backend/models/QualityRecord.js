@@ -9,7 +9,8 @@ const QualityRecordSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Passed', 'Failed'],
+    enum: ['Pending', 'Passed', 'Failed', 'Rejected'],
+    default: 'Pending',
     required: [true, 'Quality inspection status is required'],
   },
   notes: {

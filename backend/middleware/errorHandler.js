@@ -1,42 +1,25 @@
-const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
+module.exports = (err, req, res, next) => {
+  console.error('System Architectural Error Catch:', err.stack);
 
-  // Log to console for dev
-  console.error(err);
-
-  // Mongoose bad ObjectId
-  if (err.name === 'CastError') {
-    const message = `Resource not found with id of ${err.value}`;
-    error = new Error(message);
-    error.statusCode = 404;
+  if (err.name === 'ValidationError' || err.message.startsWith('Validation Failed')) {
+    return res.status(400).json({
+      success: false,
+      errorType: 'ValidationError',
+      message: err.stack
+    });
   }
 
-  // Mongoose duplicate key
   if (err.code === 11000) {
-    const key = Object.keys(err.keyValue)[0];
-    const message = `Duplicate field value entered: '${err.keyValue[key]}' for field '${key}'. Please use another value.`;
-    error = new Error(message);
-    error.statusCode = 400;
+    return res.status(400).json({
+      success: false,
+      errorType: 'DuplicateKeyError',
+      message: 'A structured asset rule violation occurred: This active version BOM document already exists.'
+    });
   }
 
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message).join(', ');
-    error = new Error(message);
-    error.statusCode = 400;
-  }
-
-  const isProd = process.env.NODE_ENV === 'production';
-  const statusCode = error.statusCode || 500;
-  const clientMessage = isProd && statusCode === 500
-    ? 'Internal server error'
-    : (error.message || 'Server Error');
-
-  res.status(statusCode).json({
+  return res.status(500).json({
     success: false,
-    error: clientMessage,
+    errorType: 'InternalServerError',
+    message: 'An internal platform runtime anomaly has halted execution.'
   });
 };
-
-module.exports = errorHandler;

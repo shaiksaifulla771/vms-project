@@ -37,18 +37,25 @@ const MPNSchema = new mongoose.Schema({
     ref: 'Vendor',
     required: [true, 'Please link this MPN to a Vendor'],
   },
-  unitPrice: {
+  price: {
     type: Number,
-    min: [0, 'Unit price cannot be negative'],
+    required: [true, 'Please provide a price for this MPN'],
+    min: [0.0001, 'Price must be greater than 0'],
+  },
+  priceUOM: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  priceUpdatedAt: {
+    type: Date,
+    default: Date.now,
   },
   moq: {
     type: Number,
     min: [1, 'MOQ must be at least 1'],
   },
-  uom: {
-    type: String,
-    trim: true,
-  },
+
   gstin: {
     type: String,
     trim: true,

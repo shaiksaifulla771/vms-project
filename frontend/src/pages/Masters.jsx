@@ -1803,7 +1803,6 @@ const MaterialsTab = () => {
 
   const handleDeleteMaterial = async (id) => {
     const target = materials.find(m => m._id === id);
-    if (!window.confirm('Delete this material definition? This checks Bill of Materials (BOM) references.')) return;
     try {
       await api.delete(`/api/materials/${id}`);
       if (target) {
@@ -2647,13 +2646,15 @@ const MaterialsTab = () => {
                           >
                             <Edit2 className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteMaterial(mat._id); }}
-                            className="hover:text-red-600 transition-colors"
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); return handleDeleteMaterial(mat._id); }}
+                            className="p-1.5 bg-transparent border-0 shadow-none text-slate-400 hover:text-red-600 hover:bg-red-50"
                             title="Delete Material"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </TableCell>
@@ -5541,7 +5542,6 @@ const VendorsTab = () => {
   const handleDeleteVendor = async (id) => {
     const target = vendors.find(v => v._id === id);
     if (!target) return;
-    if (!window.confirm(`Are you sure you want to delete vendor "${target.name}" (${target.vendorId})?`)) return;
     try {
       await api.delete(`/api/vendors/${id}`);
       setVendors(prev => prev.filter(v => v._id !== id));
@@ -6361,13 +6361,15 @@ const VendorsTab = () => {
             )}
 
             {isVendorSelectionMode && selectedVendorRowIds.size > 0 && status !== 'Deleted' && (
-              <button
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={handleDeleteSelectedVendors}
-                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm text-xs"
+                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold shadow-sm text-xs"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>Delete Selected ({selectedVendorRowIds.size})</span>
-              </button>
+              </Button>
             )}
 
             {(isVendorSelectionMode || status === 'Deleted') && selectedVendorRowIds.size > 0 && status === 'Deleted' && (
@@ -6848,13 +6850,15 @@ const VendorsTab = () => {
                             >
                               <Edit2 className="h-3.5 w-3.5" />
                             </button>
-                            <button
+                            <Button
+                              variant="destructive"
+                              size="sm"
                               onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id); }}
                               className="hover:text-red-600 transition-colors"
                               title="Delete Vendor"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            </Button>
                           </div>
                         )}
                       </TableCell>

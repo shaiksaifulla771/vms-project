@@ -12,11 +12,37 @@ const InventoryTransactionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['purchase', 'consumption', 'production', 'adjustment'],
+    enum: [
+      'purchase', 
+      'consumption', 
+      'production', 
+      'adjustment', 
+      'Production Consumption', 
+      'Production Receipt', 
+      'Scrap', 
+      'Transfer'
+    ],
     required: [true, 'Transaction type is required'],
+  },
+  warehouseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+    required: [true, 'Warehouse reference is required'],
+  },
+  batchNumber: {
+    type: String,
+    trim: true,
+  },
+  lotNumber: {
+    type: String,
+    trim: true,
   },
   referenceId: {
     type: String, // Can store PO id, production run id, or other adjustment codes
+  },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
   },
   notes: {
     type: String,

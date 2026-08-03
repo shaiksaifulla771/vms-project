@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -6,7 +7,6 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Masters from './pages/Masters';
 import Vendors from './pages/Vendors';
-import BOM from './pages/BOM';
 import Planning from './pages/Planning';
 import Inventory from './pages/Inventory';
 import Purchasing from './pages/Purchasing';
@@ -15,10 +15,20 @@ import Quality from './pages/Quality';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
+// New Routed BOM Module
+import BOMRoutes from './pages/bom/BOMRoutes';
+import ProductionRoutes from './pages/production/ProductionRoutes';
+
+// AI Chat Integration
+import ChatPanel from './features/chat/ChatPanel';
+import { Sparkles } from 'lucide-react';
+
 const AppContent = () => {
   const { user, loading } = useAuth();
-  const [activePage, setActivePage] = useState('masters');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
 
   if (loading) {
     return (
@@ -34,19 +44,34 @@ const AppContent = () => {
     return <Login />;
   }
 
+  // Derive activePage from the first URL segment
+  let activePage = location.pathname.split('/')[1] || 'masters';
+  
+  // The sidebar currently uses 'boms' as the ID for BOMs, but our new route is '/bom'.
+  // Map 'bom' to 'boms' for the sidebar active state, but keep URL as '/bom'.
+  const sidebarActivePage = activePage === 'bom' ? 'boms' : activePage;
+
+  // Custom setActivePage for the sidebar that updates the URL
+  const setActivePage = (page) => {
+    // Map 'boms' back to '/bom' for the URL
+    if (page === 'boms') navigate('/bom');
+    else navigate(`/${page}`);
+  };
+
   const pageRoles = {
     masters: ['Admin', 'Inventory Manager'],
+    bom: ['Admin', 'Production Manager'],
     boms: ['Admin', 'Production Manager'],
     planning: ['Admin', 'Inventory Manager', 'Production Manager'],
     inventory: ['Admin', 'Inventory Manager'],
     purchasing: ['Admin', 'Inventory Manager'],
-    manufacturing: ['Admin', 'Production Manager'],
+    production: ['Admin', 'Production Manager'],
     quality: ['Admin', 'Production Manager'],
     reports: ['Admin', 'Inventory Manager', 'Production Manager'],
     settings: ['Admin', 'Inventory Manager', 'Production Manager']
   };
 
-  const renderPage = () => {
+  const renderRoutes = () => {
     const allowedRoles = pageRoles[activePage] || ['Admin'];
     if (user && !allowedRoles.includes(user.role)) {
       return (
@@ -58,71 +83,86 @@ const AppContent = () => {
           </div>
           <h3 className="text-base font-extrabold text-slate-800 tracking-tight">Clearance Access Blocked</h3>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Your operational role <strong>{user.role}</strong> does not have clearance permissions to access the <strong>{activePage.toUpperCase()}</strong> module. Contact the system administrator for clearance upgrades.
+            Your operational role <strong>{user.role}</strong> does not have clearance permissions to access this module.
           </p>
         </div>
       );
     }
 
-    switch (activePage) {
-      case 'masters':
-        return <Masters />;
-      case 'boms':
-        return <BOM />;
-      case 'planning':
-        return <Planning />;
-      case 'inventory':
-        return <Inventory />;
-      case 'purchasing':
-        return <Purchasing />;
-      case 'manufacturing':
-        return <Manufacturing />;
-      case 'quality':
-        return <Quality />;
-      case 'reports':
-        return <Reports />;
-      case 'settings':
-        return <Settings />;
-      default:
-        return <Masters />;
-    }
+    return (
+      <Routes>
+        <Route path="/" element={<Navigate to="/masters" />} />
+        <Route path="/masters/*" element={<Masters />} />
+        <Route path="/bom/*" element={<BOMRoutes />} />
+        <Route path="/planning/*" element={<Planning />} />
+        <Route path="/inventory/*" element={<Inventory />} />
+        <Route path="/purchasing/*" element={<Purchasing />} />
+        <Route path="/production/*" element={<ProductionRoutes />} />
+        <Route path="/quality/*" element={<Quality />} />
+        <Route path="/reports/*" element={<Reports />} />
+        <Route path="/settings/*" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/masters" />} />
+      </Routes>
+    );
   };
+
+  // Determine if current route should be full-screen (hide sidebar/header)
+  const isFullscreenMode = location.pathname === '/bom/new' || location.pathname.match(/^\/bom\/[a-f0-9]+\/edit$/i);
 
   return (
     <div className="min-h-screen bg-slate-50/50 flex">
       {/* Sidebar navigation */}
-      <Sidebar 
-        activePage={activePage} 
-        setActivePage={setActivePage} 
-        isCollapsed={sidebarCollapsed} 
-        setIsCollapsed={setSidebarCollapsed} 
-      />
+      {!isFullscreenMode && (
+        <Sidebar 
+          activePage={sidebarActivePage} 
+          setActivePage={setActivePage} 
+          isCollapsed={sidebarCollapsed} 
+          setIsCollapsed={setSidebarCollapsed} 
+        />
+      )}
 
       {/* Main page context */}
-      <div className={`flex-1 ${sidebarCollapsed ? 'pl-0' : 'pl-64'} flex flex-col min-h-screen transition-all duration-300`}>
+      <div className={`flex-1 ${!isFullscreenMode && !sidebarCollapsed ? 'pl-64' : 'pl-0'} flex flex-col min-h-screen transition-all duration-300`}>
         {/* Top Header navbar */}
-        <Header 
-          activePage={activePage} 
-          sidebarCollapsed={sidebarCollapsed} 
-          setSidebarCollapsed={setSidebarCollapsed} 
-        />
+        {!isFullscreenMode && (
+          <Header 
+            activePage={sidebarActivePage} 
+            sidebarCollapsed={sidebarCollapsed} 
+            setSidebarCollapsed={setSidebarCollapsed} 
+          />
+        )}
 
         {/* Central content area */}
-        <main className="flex-1 pt-16 p-8 overflow-y-auto">
-          <div className="w-full">
-            {renderPage()}
+        <main className={`flex-1 ${isFullscreenMode ? 'p-0' : 'pt-16 p-8'} overflow-y-auto`}>
+          <div className="w-full h-full">
+            {renderRoutes()}
           </div>
         </main>
       </div>
+      {/* Floating AI Chat Button */}
+      {user && !isFullscreenMode && (
+        <button
+          onClick={() => setChatOpen(true)}
+          className="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white rounded-full shadow-2xl hover:bg-indigo-700 hover:shadow-indigo-500/50 hover:-translate-y-1 transition-all z-50 flex items-center justify-center group"
+          title="Open AI Assistant"
+        >
+          <Sparkles className="w-6 h-6 group-hover:scale-110 transition-transform" />
+        </button>
+      )}
+
+      {/* AI Chat Panel */}
+      <ChatPanel isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 };
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

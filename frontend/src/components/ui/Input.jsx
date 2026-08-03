@@ -12,8 +12,8 @@ export const Input = ({
     <input
       type={type}
       id={id}
-      className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
-        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+      className={`w-full px-3 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-lg shadow-inner text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
       } ${className}`}
       {...props}
     />
@@ -46,8 +46,8 @@ export const TextArea = ({
     <textarea
       id={id}
       rows={rows}
-      className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all ${
-        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+      className={`w-full px-3 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-lg shadow-inner text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
       } ${className}`}
       {...props}
     />
@@ -81,8 +81,8 @@ export const Select = ({
   const selectEl = (
     <select
       id={id}
-      className={`w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer ${
-        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+      className={`w-full px-3 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-lg shadow-inner text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
       } ${className}`}
       {...props}
     >

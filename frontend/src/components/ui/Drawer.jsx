@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export const Drawer = ({ isOpen, onClose, title, children, className = '' }) => {
   useEffect(() => {
@@ -18,19 +19,28 @@ export const Drawer = ({ isOpen, onClose, title, children, className = '' }) => 
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300"
-        onClick={onClose}
-      />
-      
-      {/* Drawer slide panel container */}
-      <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
-        <div className={`w-screen max-w-md bg-white shadow-2xl border-l border-slate-100 flex flex-col animate-slide-in ${className}`}>
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          {/* Backdrop */}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"
+            onClick={onClose}
+          />
+          
+          {/* Drawer slide panel container */}
+          <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={`w-screen max-w-md bg-white/90 backdrop-blur-xl shadow-2xl border-l border-white/60 flex flex-col ${className}`}
+            >
           
           {/* Header */}
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
@@ -47,8 +57,10 @@ export const Drawer = ({ isOpen, onClose, title, children, className = '' }) => 
           <div className="flex-1 p-5 overflow-y-auto space-y-4">
             {children}
           </div>
+            </motion.div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 };

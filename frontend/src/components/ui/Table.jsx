@@ -1,8 +1,8 @@
 import React from 'react';
 
-export const Table = ({ children, className = '', ...props }) => {
+export const Table = ({ children, className = '', wrapperClassName = 'overflow-x-auto', ...props }) => {
   return (
-    <div className="w-full overflow-x-auto">
+    <div className={`w-full ${wrapperClassName}`}>
       <table className={`w-full text-left border-collapse ${className}`} {...props}>
         {children}
       </table>
@@ -26,11 +26,18 @@ export const TableBody = ({ children, className = '', ...props }) => {
   );
 };
 
+import { motion } from 'framer-motion';
+
 export const TableRow = ({ children, className = '', ...props }) => {
   return (
-    <tr className={`hover:bg-slate-50/40 transition-colors ${className}`} {...props}>
+    <motion.tr 
+      whileHover={{ scale: 1.002, backgroundColor: 'rgba(248, 250, 252, 0.8)', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.02), 0 2px 4px -2px rgb(0 0 0 / 0.02)' }}
+      transition={{ duration: 0.15 }}
+      className={`hover:bg-slate-50/60 transition-colors ${className}`} 
+      {...props}
+    >
       {children}
-    </tr>
+    </motion.tr>
   );
 };
 
