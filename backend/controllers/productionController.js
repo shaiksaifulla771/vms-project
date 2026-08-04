@@ -60,7 +60,7 @@ exports.getMRPPlanning = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Target quantity must be a positive number' });
   }
 
-  const bom = await BOM.findOne({ productId });
+  const bom = await BOM.findOne({ productId, status: { $ne: 'Deleted' } });
   if (!bom) {
     return res.status(404).json({
       success: false,

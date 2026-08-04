@@ -31,7 +31,16 @@ const BOMSchema = new mongoose.Schema({
     sparse: true,
     trim: true,
   },
+  batchCode: {
+    type: String,
+    default: ''
+  },
   notes: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  manufacturer: {
     type: String,
     trim: true,
     default: '',
@@ -71,8 +80,17 @@ const BOMSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Active', 'Draft', 'Obsolete'],
+    enum: ['Active', 'Draft', 'Obsolete', 'Inactive', 'Deleted'],
     default: 'Active'
+  },
+  previousStatus: {
+    type: String,
+    enum: ['Active', 'Draft', 'Inactive'],
+    default: null
+  },
+  deletedAt: {
+    type: Date,
+    default: null
   },
   version: {
     type: Number,

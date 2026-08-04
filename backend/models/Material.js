@@ -44,6 +44,11 @@ const MaterialSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  manufacturer: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

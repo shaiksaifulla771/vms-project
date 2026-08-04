@@ -13,9 +13,13 @@ exports.getBOMs = async (req, res, next) => {
     const filter = {};
 
     if (status && status !== 'All') {
-      filter.status = status;
+      if (status === 'Deleted') {
+        filter.status = { $in: ['Deleted', 'Obsolete'] };
+      } else {
+        filter.status = status;
+      }
     } else {
-      filter.status = { $ne: 'Obsolete' }; // default to active/draft
+      filter.status = { $nin: ['Obsolete', 'Deleted'] }; // default to active/draft/inactive
     }
 
     if (mainOnly === 'true') {
@@ -31,7 +35,7 @@ exports.getBOMs = async (req, res, next) => {
     }
 
     let boms = await BOM.find(filter)
-      .populate('productId', 'name code unit')
+      .populate('productId', 'name code unit manufacturer')
       .populate('components.mpnId')
       .populate({
         path: 'duplicatedFrom',
@@ -60,7 +64,26 @@ exports.getBOMs = async (req, res, next) => {
     ]);
     const cloneCountMap = {};
     cloneCounts.forEach(c => cloneCountMap[c._id.toString()] = c.count);
-    boms = boms.map(b => ({ ...b, cloneCount: cloneCountMap[b._id.toString()] || 0 }));
+
+    // Fetch MPN manufacturers for fallback display
+    const productIds = [...new Set(boms.map(b => b.productId?._id?.toString()).filter(Boolean))];
+    let mpnMap = {};
+    if (productIds.length > 0) {
+      const MPN = mongoose.model('MPN');
+      const mpns = await MPN.find({ materialId: { $in: productIds } }).select('materialId manufacturerName').lean();
+      mpns.forEach(m => {
+        // Just take the first MPN's manufacturer if multiple exist
+        if (!mpnMap[m.materialId.toString()]) {
+          mpnMap[m.materialId.toString()] = m.manufacturerName;
+        }
+      });
+    }
+
+    boms = boms.map(b => ({ 
+      ...b, 
+      cloneCount: cloneCountMap[b._id.toString()] || 0,
+      mpnManufacturer: b.productId ? mpnMap[b.productId._id?.toString()] : null
+    }));
 
     res.status(200).json({ success: true, count: boms.length, data: boms });
   } catch (err) {
@@ -73,7 +96,7 @@ exports.getBOMs = async (req, res, next) => {
 exports.getBOM = async (req, res, next) => {
   try {
     let bom = await BOM.findById(req.params.id)
-      .populate('productId', 'name code unit')
+      .populate('productId', 'name code unit manufacturer')
       .populate({
         path: 'duplicatedFrom',
         select: 'version productId',
@@ -111,7 +134,8 @@ exports.createBOM = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { productId, batchSize, batchUOM, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost } = req.body;
+    const { productId, batchSize, batchUOM, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode } = req.body;
+
 
     const eDate = effectiveDate ? new Date(effectiveDate) : new Date();
     const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
@@ -135,8 +159,10 @@ exports.createBOM = async (req, res, next) => {
       productId,
       bomNumber,
       notes: req.body.notes || '',
+      manufacturer: manufacturer || '',
       batchSize,
       batchUOM,
+      batchCode: batchCode || '',
       components: cleanComponents,
       packagingCost: Number(packagingCost) || 0,
       processingCost: Number(processingCost) || 0,
@@ -150,6 +176,14 @@ exports.createBOM = async (req, res, next) => {
     });
     
     await newBom.save({ session });
+
+    if (updateMasterManufacturer && manufacturer) {
+      await mongoose.model('MPN').findOneAndUpdate(
+        { materialId: productId },
+        { manufacturerName: manufacturer },
+        { session, sort: { createdAt: -1 } }
+      );
+    }
 
     await BOMAuditLog.create([{
       bomId: newBom._id,
@@ -177,12 +211,37 @@ exports.updateBOM = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { productId, batchSize, batchUOM, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost } = req.body;
+    const { productId, batchSize, batchUOM, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode } = req.body;
+
 
     const bom = await BOM.findById(req.params.id).session(session);
     if (!bom || bom.status === 'Obsolete') {
       await session.abortTransaction();
       return res.status(404).json({ success: false, error: 'BOM not found or obsolete' });
+    }
+
+    // Handle partial updates without creating a new version
+    if ((status || batchCode !== undefined) && !components && !productId) {
+      const updateFields = { updatedBy: req.user ? req.user.name : 'System' };
+      if (status) updateFields.status = status;
+      if (batchCode !== undefined) updateFields.batchCode = batchCode;
+
+      await BOM.updateOne(
+        { _id: bom._id }, 
+        { $set: updateFields },
+        { session }
+      );
+      
+      await BOMAuditLog.create([{
+        bomId: bom._id,
+        action: 'UPDATE',
+        performedBy: req.user ? req.user.name : 'System',
+        ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown',
+        details: updateFields
+      }], { session });
+
+      await session.commitTransaction();
+      return res.status(200).json({ success: true, message: 'BOM updated', data: { ...bom.toObject(), ...updateFields } });
     }
 
     if (version !== undefined && Number(version) !== bom.version) {
@@ -203,15 +262,19 @@ exports.updateBOM = async (req, res, next) => {
 
     const oldDoc = bom.toObject();
 
-    bom.status = 'Obsolete';
+    // Mark old version as Deleted (previously Obsolete)
+    bom.status = 'Deleted';
     bom.updatedBy = req.user ? req.user.name : 'System';
     await bom.save({ session });
 
     const newBomData = new BOM({
       productId,
       bomNumber: bom.bomNumber,
+      notes: req.body.notes !== undefined ? req.body.notes : bom.notes,
+      manufacturer: manufacturer !== undefined ? manufacturer : bom.manufacturer,
       batchSize,
       batchUOM,
+      batchCode: batchCode !== undefined ? batchCode : bom.batchCode,
       components: cleanComponents,
       packagingCost: Number(packagingCost) || 0,
       processingCost: Number(processingCost) || 0,
@@ -225,6 +288,14 @@ exports.updateBOM = async (req, res, next) => {
     });
 
     await newBomData.save({ session });
+
+    if (updateMasterManufacturer && manufacturer) {
+      await mongoose.model('MPN').findOneAndUpdate(
+        { materialId: productId },
+        { manufacturerName: manufacturer },
+        { session, sort: { createdAt: -1 } }
+      );
+    }
 
     await BOMAuditLog.create([{
       bomId: newBomData._id,
@@ -258,8 +329,17 @@ exports.deleteBOM = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'BOM not found' });
     }
 
+    if (bom.status === 'Deleted') {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, error: 'BOM is already deleted' });
+    }
+
     const oldDoc = bom.toObject();
-    bom.status = 'Obsolete';
+    
+    // Convert to soft delete
+    bom.previousStatus = bom.status;
+    bom.status = 'Deleted';
+    bom.deletedAt = new Date();
     bom.updatedBy = req.user ? req.user.name : 'System';
     await bom.save({ session });
 
@@ -267,7 +347,8 @@ exports.deleteBOM = async (req, res, next) => {
       bomId: bom._id,
       action: 'DELETE',
       performedBy: req.user ? req.user.name : 'System',
-      ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown'
+      ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown',
+      details: { previousStatus: bom.previousStatus }
     }], { session });
 
     await writeAuditLog(session, 'BOM', bom._id, 'DELETE', oldDoc, bom, req.user ? req.user.id : null);
@@ -282,40 +363,58 @@ exports.deleteBOM = async (req, res, next) => {
   }
 };
 
+// @desc    Restore Deleted BOM
+// @route   PUT /api/bom/:id/restore
+exports.restoreBOM = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const bom = await BOM.findById(req.params.id).session(session);
+    if (!bom) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, error: 'BOM not found' });
+    }
+
+    if (bom.status !== 'Deleted' && bom.status !== 'Obsolete') {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, error: 'BOM is not deleted or obsolete' });
+    }
+
+    const oldDoc = bom.toObject();
+    
+    bom.status = 'Active';
+    bom.previousStatus = null;
+    bom.deletedAt = null;
+    bom.updatedBy = req.user ? req.user.name : 'System';
+    await bom.save({ session });
+
+    await BOMAuditLog.create([{
+      bomId: bom._id,
+      action: 'UPDATE',
+      performedBy: req.user ? req.user.name : 'System',
+      ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown',
+      details: { action: 'RESTORE', newStatus: bom.status }
+    }], { session });
+
+    await writeAuditLog(session, 'BOM', bom._id, 'UPDATE', oldDoc, bom, req.user ? req.user.id : null);
+
+    await session.commitTransaction();
+    res.status(200).json({ success: true, message: 'BOM restored successfully', data: bom });
+  } catch (err) {
+    await session.abortTransaction();
+    next(err);
+  } finally {
+    session.endSession();
+  }
+};
+
 // @desc    Duplicate BOM
 // @route   POST /api/bom/:id/duplicate
 exports.duplicateBOM = async (req, res, next) => {
   try {
-    const bom = await BOM.findById(req.params.id);
+    const bom = await BOM.findById(req.params.id).lean();
     if (!bom) {
       return res.status(404).json({ success: false, error: 'BOM not found' });
-    }
-
-    // Smart Restriction & React Loop Prevention
-    const existingClones = await BOM.find({ duplicatedFrom: bom._id });
-    const hasIdenticalClone = existingClones.some(clone => {
-      if (clone.batchSize !== bom.batchSize || clone.batchUOM !== bom.batchUOM) return false;
-      if (clone.packagingCost !== bom.packagingCost) return false;
-      if (clone.processingCost !== bom.processingCost) return false;
-      if (clone.overheadCost !== bom.overheadCost) return false;
-      if (clone.components.length !== bom.components.length) return false;
-      
-      const sortedOriginal = [...bom.components].sort((a,b) => a.mpnId.toString().localeCompare(b.mpnId.toString()));
-      const sortedClone = [...clone.components].sort((a,b) => a.mpnId.toString().localeCompare(b.mpnId.toString()));
-      
-      return sortedOriginal.every((origComp, index) => {
-        const cloneComp = sortedClone[index];
-        return origComp.mpnId.toString() === cloneComp.mpnId.toString() &&
-               origComp.qty === cloneComp.qty &&
-               origComp.lossPercent === cloneComp.lossPercent;
-      });
-    });
-
-    if (hasIdenticalClone) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Duplicate Blocked: An identical clone of this BOM already exists. Please modify the recipe properties before saving again.' 
-      });
     }
 
     // Generate new sequence
@@ -327,19 +426,21 @@ exports.duplicateBOM = async (req, res, next) => {
     }
     const bomNumber = `BOM-${seqDoc.seq}`;
 
-    // Map components strictly avoiding _id duplication
+    // Map components strictly avoiding _id duplication (handle legacy materialId/quantity if present)
     const duplicatedComponents = bom.components.map(c => ({
-      mpnId: c.mpnId,
-      qty: c.qty,
-      lossPercent: c.lossPercent
+      mpnId: c.mpnId || c.materialId,
+      qty: c.qty || c.quantity,
+      lossPercent: c.lossPercent || 0
     }));
 
     const newBom = await BOM.create({
       productId: bom.productId,
       bomNumber: bomNumber,
       notes: bom.notes || '',
-      batchSize: bom.batchSize,
-      batchUOM: bom.batchUOM,
+      manufacturer: bom.manufacturer || '',
+      batchCode: bom.batchCode || '',
+      batchSize: bom.batchSize || 1,
+      batchUOM: bom.batchUOM || 'kg',
       components: duplicatedComponents,
       packagingCost: bom.packagingCost || 0,
       processingCost: bom.processingCost || 0,

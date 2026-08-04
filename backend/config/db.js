@@ -10,6 +10,25 @@ const connectDB = async () => {
     const connStr = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
     const conn = await mongoose.connect(connStr);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
+
+    // Polyfill for Standalone MongoDB Transaction Support
+    const originalStartSession = mongoose.startSession.bind(mongoose);
+    mongoose.startSession = async function (options) {
+      const session = await originalStartSession(options);
+      
+      // If the database is a standalone instance, it does not support transactions.
+      // We wrap the transaction methods to become no-ops to prevent fatal crashes
+      // during local testing or simple deployments, gracefully degrading to non-transactional saves.
+      const isStandalone = mongoose.connection.client?.topology?.s?.description?.type === 'Single';
+      if (isStandalone) {
+        session.startTransaction = function () {
+          console.warn('[MongoDB Standalone] Ignored startTransaction call (not supported). Proceeding without transaction.');
+        };
+        session.commitTransaction = async function () {};
+        session.abortTransaction = async function () {};
+      }
+      return session;
+    };
   } catch (error) {
     console.error(`Database Connection Error: ${error.message}`);
     process.exit(1);

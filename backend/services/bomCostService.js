@@ -1,5 +1,6 @@
 const MPN = require('../models/MPN');
 const MPNPriceHistory = require('../models/MPNPriceHistory');
+const Material = require('../models/Material');
 
 /**
  * Calculates the line cost and total cost for a BOM recipe based on an effective date.

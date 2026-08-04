@@ -26,18 +26,16 @@ export const TableBody = ({ children, className = '', ...props }) => {
   );
 };
 
-import { motion } from 'framer-motion';
+
 
 export const TableRow = ({ children, className = '', ...props }) => {
   return (
-    <motion.tr 
-      whileHover={{ scale: 1.002, backgroundColor: 'rgba(248, 250, 252, 0.8)', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.02), 0 2px 4px -2px rgb(0 0 0 / 0.02)' }}
-      transition={{ duration: 0.15 }}
+    <tr 
       className={`hover:bg-slate-50/60 transition-colors ${className}`} 
       {...props}
     >
       {children}
-    </motion.tr>
+    </tr>
   );
 };
 

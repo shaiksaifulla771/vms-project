@@ -118,12 +118,7 @@ exports.createMaterial = async (req, res, next) => {
     
     await material.save({ session });
 
-    // Automatically initialize inventory balance for this material
-    const invItem = new InventoryItem({
-      materialId: material._id,
-      balance: 0
-    });
-    await invItem.save({ session });
+
 
     // Update sequence to reflect manually-typed code if it falls within numeric M-code range and is higher than current sequence
     const match = material.code.match(/^M(\d+)$/i);
@@ -226,6 +221,7 @@ exports.deleteMaterial = async (req, res, next) => {
 
     // Check if referenced in any BOM
     const linkedBOM = await BOM.findOne({
+      status: { $ne: 'Deleted' },
       $or: [
         { productId: materialId },
         { 'components.materialId': materialId }
@@ -549,6 +545,7 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
 
     // Check BOM references
     const linkedBOM = await BOM.findOne({
+      status: { $ne: 'Deleted' },
       $or: [
         { productId: { $in: materialIds } },
         { 'components.materialId': { $in: materialIds } }
@@ -603,6 +600,7 @@ exports.batchDeleteMaterials = async (req, res, next) => {
 
     // Check BOM references
     const linkedBOM = await BOM.findOne({
+      status: { $ne: 'Deleted' },
       $or: [
         { productId: { $in: ids } },
         { 'components.materialId': { $in: ids } }

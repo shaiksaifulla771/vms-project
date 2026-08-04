@@ -11,11 +11,13 @@ export default function BomNew() {
 
   const draftPayload = location.state?.draftPayload;
 
+  const returnTo = location.state?.returnTo || '/bom';
+
   const handleSave = async (data) => {
     try {
       const res = await api.post('/api/boms', data);
       if (res.data.success) {
-        navigate(`/bom/${res.data.data._id}`);
+        navigate(`/bom/${res.data.data._id}`, { replace: true });
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create BOM');
@@ -39,7 +41,7 @@ export default function BomNew() {
         initialData={draftPayload}
         isNew={true} 
         onSave={handleSave} 
-        onCancel={() => navigate('/bom', { state: { direction: -1 } })} 
+        onCancel={() => navigate(returnTo)} 
       />
     </BomPageWrapper>
   );

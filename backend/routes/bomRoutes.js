@@ -5,6 +5,7 @@ const {
   createBOM,
   updateBOM,
   deleteBOM,
+  restoreBOM,
   duplicateBOM,
   getBOMHistory
 } = require('../controllers/bomController');
@@ -23,6 +24,7 @@ router.route('/:id')
   .delete(protect, deleteBOM);
 
 router.post('/:id/duplicate', protect, duplicateBOM);
+router.put('/:id/restore', protect, restoreBOM);
 router.get('/:id/history', protect, getBOMHistory);
 
 module.exports = router;

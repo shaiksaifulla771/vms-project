@@ -39,7 +39,7 @@ const computeDiff = (oldDoc, newDoc) => {
  * @param {mongoose.Types.ObjectId} userId - The user performing the action
  */
 const writeAuditLog = async (session, entityType, entityId, action, oldDoc, newDoc, userId) => {
-  const AuditLog = mongoose.model('AuditLog');
+  const AuditLog = require('../models/AuditLog');
   
   let changes = {};
   if (action === 'CREATE') {

@@ -6,7 +6,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Plus, Trash2, Edit2, Copy, Search, Eye, Scale } from 'lucide-react';
+import { Plus, Trash2, Edit2, Copy, Search, Eye, Scale, Check, X, Loader2, RotateCcw, MoreVertical } from 'lucide-react';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
 
 export default function BomList() {
@@ -15,6 +15,13 @@ export default function BomList() {
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('Active');
   const [search, setSearch] = useState('');
+  
+  // Inline edit state for Batch Code
+  const [editBatchCodeId, setEditBatchCodeId] = useState(null);
+  const [editBatchCodeValue, setEditBatchCodeValue] = useState('');
+  const [savingBatchCodeId, setSavingBatchCodeId] = useState(null);
+
+  const [openDropdownId, setOpenDropdownId] = useState(null);
 
   const fetchBoms = async () => {
     setLoading(true);
@@ -36,12 +43,45 @@ export default function BomList() {
     fetchBoms();
   }, [statusFilter, search]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (bom) => {
+    if (!window.confirm(`Are you sure you want to delete BOM for ${bom.productId?.name}?`)) return;
     try {
-      await api.delete(`/api/boms/${id}`);
+      await api.delete(`/api/boms/${bom._id}`);
       fetchBoms();
     } catch (err) {
       console.error('Delete failed:', err);
+    }
+  };
+
+  const handleRestore = async (bom) => {
+    if (!window.confirm(`Are you sure you want to restore BOM for ${bom.productId?.name}?`)) return;
+    try {
+      await api.put(`/api/boms/${bom._id}/restore`);
+      fetchBoms();
+    } catch (err) {
+      console.error('Restore failed:', err);
+    }
+  };
+
+  const handleSaveBatchCode = async (bom) => {
+    if (editBatchCodeValue === bom.batchCode) {
+      setEditBatchCodeId(null);
+      return;
+    }
+    
+    setSavingBatchCodeId(bom._id);
+    try {
+      const res = await api.put(`/api/boms/${bom._id}`, {
+        batchCode: editBatchCodeValue.trim()
+      });
+      if (res.data.success) {
+        setBoms(boms.map(b => b._id === bom._id ? { ...b, batchCode: res.data.data.batchCode } : b));
+      }
+    } catch (err) {
+      console.error('Failed to update batch code:', err);
+    } finally {
+      setSavingBatchCodeId(null);
+      setEditBatchCodeId(null);
     }
   };
 
@@ -52,7 +92,7 @@ export default function BomList() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Bill of Materials</h1>
           <p className="text-sm text-slate-500 font-medium mt-1">Manage assembly recipes, components, and costs.</p>
         </div>
-        <Button onClick={() => navigate('/bom/new')} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-10">
+        <Button onClick={() => navigate('/bom/new', { state: { returnTo: location.pathname + location.search } })} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-10">
           <Plus className="w-4 h-4 mr-2" /> Create BOM
         </Button>
       </div>
@@ -70,9 +110,6 @@ export default function BomList() {
                   className="pl-9 text-xs h-8"
                 />
               </div>
-              <Button onClick={() => navigate('/bom/clones')} variant="outline" className="h-8 text-xs font-bold text-indigo-600 border-indigo-200 hover:bg-indigo-50">
-                View All Clones
-              </Button>
             </div>
             <div className="w-[150px]">
               <Select
@@ -88,11 +125,14 @@ export default function BomList() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="overflow-x-auto pb-64 min-h-[500px]">
+            <Table className="min-w-[1000px]">
               <TableHeader className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur-md shadow-sm border-b border-slate-200">
                   <TableRow className="bg-slate-50/50 hover:bg-slate-50/50">
-                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider w-[30%]">Product</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider w-[25%]">Product</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider">Code</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider">Batch Code</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider">Manufacturer</TableHead>
                     <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider">Batch Size</TableHead>
                     <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider">Unit Cost</TableHead>
                     <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider">Status</TableHead>
@@ -102,7 +142,7 @@ export default function BomList() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       <div className="inline-flex items-center space-x-2 text-slate-400">
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-slate-600"></div>
                         <span className="text-xs font-medium">Loading recipes...</span>
@@ -111,7 +151,7 @@ export default function BomList() {
                   </TableRow>
                 ) : boms.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-40 text-center">
+                    <TableCell colSpan={8} className="h-40 text-center">
                       <div className="flex flex-col items-center justify-center space-y-3">
                         <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
                           <Search className="w-6 h-6 text-slate-400" />
@@ -122,9 +162,86 @@ export default function BomList() {
                   </TableRow>
                 ) : (
                   boms.map((bom) => (
-                    <TableRow key={bom._id} className="hover:bg-blue-50/30 transition-colors">
+                    <TableRow 
+                      key={bom._id} 
+                      className="hover:bg-blue-50/30 transition-colors"
+                    >
                       <TableCell className="text-xs font-bold text-slate-800">
-                        {bom.productId?.name} <span className="text-slate-400 font-mono font-normal block">{bom.productId?.code}</span>
+                        {bom.productId?.name}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-500 font-mono">
+                        {bom.productId?.code}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {editBatchCodeId === bom._id ? (
+                          <div className="flex items-center space-x-1">
+                            <Input
+                              autoFocus
+                              data-testid="batch-code-input"
+                              value={editBatchCodeValue}
+                              onChange={(e) => setEditBatchCodeValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleSaveBatchCode(bom);
+                                }
+                                if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setEditBatchCodeId(null);
+                                }
+                              }}
+                              className="w-24 h-7 text-xs px-2"
+                              disabled={savingBatchCodeId === bom._id}
+                            />
+                            {savingBatchCodeId === bom._id ? (
+                              <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                            ) : (
+                              <>
+                                <button 
+                                  type="button" 
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleSaveBatchCode(bom);
+                                  }} 
+                                  className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setEditBatchCodeId(null);
+                                  }} 
+                                  className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <div 
+                            className="cursor-pointer group flex items-center min-h-[20px]" 
+                            data-testid={`batch-code-${bom._id}`}
+                            onClick={() => {
+                              setEditBatchCodeId(bom._id);
+                              setEditBatchCodeValue(bom.batchCode || '');
+                            }}
+                          >
+                            <span className={`border-b border-dashed ${bom.batchCode ? 'border-transparent group-hover:border-slate-400 text-slate-700' : 'border-slate-300 text-slate-400'}`}>
+                              {bom.batchCode || '—'}
+                            </span>
+                            <Edit2 className="w-3 h-3 ml-1.5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-500">
+                        {bom.manufacturer || bom.mpnManufacturer || bom.productId?.manufacturer || '—'}
                       </TableCell>
                       <TableCell className="text-xs font-semibold text-slate-700">
                         {bom.batchSize} {bom.batchUOM}
@@ -133,31 +250,52 @@ export default function BomList() {
                         ₹{bom.liveTotalCost?.toFixed(2) || '0.00'}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={bom.status === 'Active' ? 'success' : 'danger'}>{bom.status}</Badge>
+                        {(() => {
+                          const displayStatus = bom.status === 'Obsolete' ? 'Deleted' : bom.status;
+                          return (
+                            <span className={`text-[12px] font-bold ${
+                              displayStatus === 'Active' ? 'text-emerald-600' : 
+                              displayStatus === 'Draft' ? 'text-amber-600' :
+                              'text-red-600'
+                            }`}>
+                              {displayStatus}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end space-x-1">
-                          <button onClick={() => navigate(`/bom/${bom._id}`)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="View Detail">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          
-                          {bom.status === 'Active' && (
+                        <div className={`flex items-center justify-end space-x-1`}>
+                          {bom.status !== 'Deleted' && bom.status !== 'Obsolete' ? (
                             <>
-                              <button onClick={() => navigate(`/bom/${bom._id}/scale`)} className="p-1.5 rounded text-slate-400 hover:text-green-600 hover:bg-green-50" title="Scale / Resise">
-                                <Scale className="w-4 h-4" />
+                              <button onClick={() => navigate(`/bom/${bom._id}`, { state: { returnTo: location.pathname + location.search } })} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="View Detail">
+                                <Eye className="w-4 h-4" />
                               </button>
-                              <button onClick={() => navigate(`/bom/${bom._id}/duplicate`)} className="p-1.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50" title="Duplicate">
-                                <Copy className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => navigate(`/bom/${bom._id}/edit`)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Recipe">
+                              
+                              <button onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Recipe">
                                 <Edit2 className="w-4 h-4" />
                               </button>
-                            </>
-                          )}
 
-                          <button onClick={() => handleDelete(bom._id)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                              <button onClick={() => handleDelete(bom)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="relative inline-block text-left">
+                              <button onClick={() => setOpenDropdownId(openDropdownId === bom._id ? null : bom._id)} className="p-1.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="More Actions">
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                              {openDropdownId === bom._id && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setOpenDropdownId(null)} />
+                                  <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 overflow-hidden">
+                                    <div className="py-1" role="menu" aria-orientation="vertical">
+                                      <button onClick={() => { handleRestore(bom); setOpenDropdownId(null); }} className="text-left w-full block px-4 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 transition-colors">Restore BOM</button>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

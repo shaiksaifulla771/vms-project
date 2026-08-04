@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import api from '../../services/api';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -12,8 +12,11 @@ import PriceDriftBanner from '../../features/bom/PriceDriftBanner';
 export default function BomDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = location.state?.returnTo || '/bom';
   const [bom, setBom] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchBom = async () => {
@@ -24,6 +27,7 @@ export default function BomDetail() {
         }
       } catch (err) {
         console.error('Failed to fetch BOM details:', err);
+        setError('Failed to fetch BOM details');
       } finally {
         setLoading(false);
       }
@@ -39,11 +43,16 @@ export default function BomDetail() {
     );
   }
 
-  if (!bom) {
+  if (!bom || error) {
     return (
       <BomPageWrapper className="flex flex-col items-center justify-center min-h-[400px]">
-        <h2 className="text-xl font-bold text-slate-700 mb-4">BOM Not Found</h2>
-        <Button onClick={() => navigate('/bom', { state: { direction: -1 } })}>Return to List</Button>
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm font-semibold max-w-md text-center">
+            {error}
+          </div>
+        )}
+        <h2 className="text-xl font-bold text-slate-700 mb-4">{!bom ? 'BOM Not Found' : 'Error'}</h2>
+        <Button onClick={() => navigate(returnTo)}>Return to List</Button>
       </BomPageWrapper>
     );
   }
@@ -54,28 +63,24 @@ export default function BomDetail() {
   return (
     <BomPageWrapper>
       <div className="mb-4 flex items-center justify-between">
-        <Link to="/bom" state={{ direction: -1 }} className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-blue-600 transition-colors">
-          <ChevronLeft className="w-4 h-4 mr-1" /> Back to BOM list
-        </Link>
+        <button onClick={() => navigate(returnTo)} className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-blue-600 transition-colors">
+          <ChevronLeft className="w-4 h-4 mr-1" /> Back
+        </button>
         <div className="flex space-x-2">
-          {bom.status === 'Active' && (
+          {bom.status !== 'Deleted' && (
             <>
-              <Button onClick={() => navigate(`/bom/${id}/edit`)} variant="outline" className="h-9">
-                <Edit2 className="w-4 h-4 mr-2" /> Edit Recipe
-              </Button>
-              <Button onClick={() => navigate(`/bom/${id}/scale`)} variant="outline" className="h-9">
-                <Scale className="w-4 h-4 mr-2" /> Scale
-              </Button>
+              {bom.status === 'Active' && (
+                <>
+                  <Button onClick={() => navigate(`/bom/${id}/edit`, { state: { returnTo: location.pathname } })} variant="outline" className="h-9">
+                    <Edit2 className="w-4 h-4 mr-2" /> Edit Recipe
+                  </Button>
+                  <Button onClick={() => navigate(`/bom/${id}/scale`, { state: { returnTo: location.pathname } })} variant="outline" className="h-9">
+                    <Scale className="w-4 h-4 mr-2" /> Scale
+                  </Button>
+                </>
+              )}
             </>
           )}
-          {bom.cloneCount > 0 && (
-            <Button onClick={() => navigate(`/bom/${id}/clones`)} variant="outline" className="h-9 border-indigo-200 text-indigo-700 hover:bg-indigo-50">
-              <Copy className="w-4 h-4 mr-2" /> View Clones ({bom.cloneCount})
-            </Button>
-          )}
-          <Button onClick={() => navigate(`/bom/${id}/duplicate`)} variant="outline" className="h-9">
-            <Copy className="w-4 h-4 mr-2" /> Duplicate
-          </Button>
         </div>
       </div>
 
@@ -83,10 +88,11 @@ export default function BomDetail() {
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">{bom.productId?.name}</h1>
         <div className="flex gap-4 text-sm text-slate-500 font-medium">
           <Badge variant="outline" className="bg-white">Batch: {bom.batchSize} {bom.batchUOM}</Badge>
+          <Badge variant="outline" className="bg-white">Batch Code: {bom.batchCode || '—'}</Badge>
           <Badge variant="outline" className="bg-white">Effective: {eDate}</Badge>
-          <Badge className={bom.status === 'Obsolete' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}>
-            {bom.status}
-          </Badge>
+          <span className={`font-bold uppercase tracking-wider ${(bom.status === 'Obsolete' || bom.status === 'Deleted') ? 'text-red-600' : 'text-emerald-600'}`}>
+            {bom.status === 'Obsolete' ? 'Deleted' : bom.status}
+          </span>
         </div>
       </div>
 

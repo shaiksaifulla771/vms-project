@@ -16,7 +16,11 @@ export default function BomRecipeEditor({
   onSave, 
   onCancel 
 }) {
-  const [components, setComponents] = useState(initialData?.components?.length ? initialData.components : []);
+  const [components, setComponents] = useState(
+    initialData?.components?.length 
+      ? initialData.components.map(c => ({ ...c, id: c._id || crypto.randomUUID(), qty: c.quantity || c.qty || 1 })) 
+      : []
+  );
   const [mpns, setMpns] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [errors, setErrors] = useState({});
@@ -33,6 +37,36 @@ export default function BomRecipeEditor({
   const [packagingCost, setPackagingCost] = useState(initialData?.packagingCost || 0);
   const [processingCost, setProcessingCost] = useState(initialData?.processingCost || 0);
   const [overheadCost, setOverheadCost] = useState(initialData?.overheadCost || 0);
+
+  const [batchCode, setBatchCode] = useState(initialData?.batchCode || '');
+  const [manufacturer, setManufacturer] = useState(initialData?.manufacturer || '');
+  const [originalManufacturer, setOriginalManufacturer] = useState(initialData?.manufacturer || '');
+  
+  // State for the Save Intercept Modal
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [pendingSavePayload, setPendingSavePayload] = useState(null);
+
+  // Auto-fetch manufacturer on product change
+  useEffect(() => {
+    if (!productId || mpns.length === 0) return;
+    
+    // Check if we are initializing an edit form and shouldn't overwrite existing
+    // If we are editing, we ONLY want to auto-fetch if the user explicitly changes the productId to something else.
+    const isEditingOriginalProduct = !isNew && productId === (initialData?.productId?._id || initialData?.productId);
+    
+    if (isEditingOriginalProduct) {
+      return;
+    }
+
+    const mpn = mpns.find(m => (m.materialId?._id || m.materialId) === productId);
+    if (mpn && mpn.manufacturerName) {
+      setManufacturer(mpn.manufacturerName);
+      setOriginalManufacturer(mpn.manufacturerName);
+    } else {
+      setManufacturer('');
+      setOriginalManufacturer('');
+    }
+  }, [productId, mpns, isNew, initialData]);
 
   useEffect(() => {
     // Fetch MPNs and Materials for dropdowns
@@ -212,11 +246,29 @@ export default function BomRecipeEditor({
       })),
       packagingCost: Number(packagingCost),
       processingCost: Number(processingCost),
-      overheadCost: Number(overheadCost)
+      overheadCost: Number(overheadCost),
+      batchCode: batchCode?.trim() || '',
+      manufacturer: manufacturer?.trim() || '',
+      updateMasterManufacturer: false // Default to false
     };
     
+    // Check if manufacturer was modified and is not empty initially
+    if (manufacturer?.trim() !== originalManufacturer?.trim() && originalManufacturer?.trim() !== '') {
+      setPendingSavePayload(payload);
+      setShowSaveModal(true);
+      return;
+    }
+
     console.log('Outgoing BOM Payload:', payload);
     onSave(payload);
+  };
+
+  const handleConfirmSave = (updateMaster) => {
+    const finalPayload = { ...pendingSavePayload, updateMasterManufacturer: updateMaster };
+    setShowSaveModal(false);
+    setPendingSavePayload(null);
+    console.log('Outgoing BOM Payload:', finalPayload);
+    onSave(finalPayload);
   };
 
   // Prepare options for SearchableSelect
@@ -229,56 +281,121 @@ export default function BomRecipeEditor({
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-start">
-        <div className="flex flex-col gap-4">
-          {isNew ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-2">
-              <div className="flex flex-col">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Assembly Product</label>
-                <SearchableSelect 
-                  options={materials.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished').map(m => ({
-                    value: m._id, label: `${m.name} (${m.code})`
-                  }))}
-                  value={productId} 
-                  onChange={v => setProductId(v)} 
-                  className="w-full shadow-sm rounded-lg"
-                  placeholder="Search Product..."
-                />
-                {errors.productId && <p className="text-red-500 text-[10px] mt-1.5 font-semibold">{errors.productId}</p>}
-              </div>
-              <div className="flex flex-col">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Batch Size</label>
-                <Input type="number" min="0.001" step="any" value={batchSize} onChange={e => setBatchSize(e.target.value)} className="w-full h-10 shadow-sm rounded-lg" />
-                {errors.batchSize && <p className="text-red-500 text-[10px] mt-1.5 font-semibold">{errors.batchSize}</p>}
-              </div>
-              <div className="flex flex-col">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">UOM</label>
-                <Input value={batchUOM} onChange={e => setBatchUOM(e.target.value)} className="w-full h-10 shadow-sm rounded-lg" />
-                {errors.batchUOM && <p className="text-red-500 text-[10px] mt-1.5 font-semibold">{errors.batchUOM}</p>}
-              </div>
-              <div className="flex flex-col">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Effective Date</label>
-                <Input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className="w-full h-10 shadow-sm rounded-lg" />
-              </div>
+        <div className="flex flex-col gap-4 w-full">
+          {!isNew && (
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+        Edit: {initialData?.productId?.name || 'Recipe'}
+              </h1>
             </div>
-          ) : (
-            <>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">{initialData?.productId?.name}</h1>
-              <div className="flex gap-4 text-sm text-slate-500 font-medium mt-1">
-                <Badge variant="outline" className="bg-white">Batch: {batchSize} {batchUOM}</Badge>
-                <Badge variant="outline" className="bg-white">Effective: {effectiveDate}</Badge>
-                {initialData?.version && <Badge variant="secondary">v{initialData.version}</Badge>}
-              </div>
-            </>
           )}
-        </div>
-        <div className="flex space-x-2">
-          <Button onClick={() => {
-            if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return;
-            onCancel();
-          }} variant="outline" className="h-9">Cancel</Button>
-          <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white h-9 shadow-sm">Save BOM</Button>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-1">
+            <div className="flex flex-col xl:col-span-2">
+              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Assembly Product</label>
+              <SearchableSelect 
+                options={materials.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished').map(m => ({
+                  value: m._id, label: `${m.name} (${m.code})`
+                }))}
+                value={productId} 
+                onChange={v => {
+                  setProductId(v);
+                  const selectedMat = materials.find(m => m._id === v);
+                  if (selectedMat && selectedMat.unit) {
+                    const unitLower = selectedMat.unit.toLowerCase();
+                    if (['kg', 'gm', 'pouches', 'packs', 'pieces'].includes(unitLower)) {
+                      setBatchUOM(unitLower);
+                    } else if (unitLower === 'pcs') {
+                      setBatchUOM('pieces');
+                    } else {
+                      setBatchUOM(selectedMat.unit);
+                    }
+                  }
+                }} 
+                className="w-full shadow-sm rounded-lg text-sm"
+                placeholder="Search Product..."
+              />
+              {errors.productId && <p className="text-red-500 text-[10px] mt-1 font-semibold">{errors.productId}</p>}
+            </div>
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Code</label>
+              <Input value={batchCode} onChange={e => setBatchCode(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" placeholder="Optional..." />
+            </div>
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Manufacturer</label>
+              <Input value={manufacturer} onChange={e => setManufacturer(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" placeholder="Optional..." />
+            </div>
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Size</label>
+              <div className="flex space-x-2">
+                <Input type="number" min="0.001" step="any" value={batchSize} onChange={e => setBatchSize(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm flex-1" />
+                <select 
+                  value={batchUOM} 
+                  onChange={e => setBatchUOM(e.target.value)} 
+                  className="w-24 h-9 px-2 bg-white border border-slate-300 rounded-lg shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="kg">kg</option>
+                  <option value="gm">gm</option>
+                  <option value="pouches">pouches</option>
+                  <option value="packs">packs</option>
+                  <option value="pieces">pieces</option>
+                </select>
+              </div>
+              {(errors.batchSize || errors.batchUOM) && <p className="text-red-500 text-[10px] mt-1 font-semibold">{errors.batchSize || errors.batchUOM}</p>}
+            </div>
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Effective Date</label>
+              <Input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" />
+            </div>
+          </div>
         </div>
       </div>
+
+      <div className="flex justify-end space-x-2 border-t border-slate-200 pt-4">
+        <Button onClick={() => {
+          if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return;
+          onCancel();
+        }} variant="outline" className="h-9">Cancel</Button>
+        <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white h-9 shadow-sm">Save BOM</Button>
+      </div>
+
+      {/* Save Intercept Modal for Manufacturer Change */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-slate-900 mb-2">Manufacturer Updated</h2>
+              <p className="text-sm text-slate-600 mb-4">
+                Manufacturer name has changed from <span className="font-semibold text-slate-800">"{originalManufacturer}"</span> to <span className="font-semibold text-slate-800">"{manufacturer}"</span>.
+                <br /><br />
+                Do you want to change this only in the current BOM, or update the ERP system (Master MPN) too?
+              </p>
+              <div className="flex flex-col gap-3">
+                <Button 
+                  onClick={() => handleConfirmSave(false)}
+                  variant="outline"
+                  className="w-full text-blue-700 border-blue-200 hover:bg-blue-50 font-semibold"
+                >
+                  Only BOM
+                </Button>
+                <Button 
+                  onClick={() => handleConfirmSave(true)}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                >
+                  Update ERP System
+                </Button>
+                <Button 
+                  onClick={() => { setShowSaveModal(false); setPendingSavePayload(null); }}
+                  variant="ghost"
+                  className="w-full mt-2 text-slate-500"
+                >
+                  Cancel Save
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {errors.general && (
         <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm font-semibold flex items-center shadow-sm">
@@ -295,12 +412,12 @@ export default function BomRecipeEditor({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="p-0 overflow-visible">
-          <div className="w-full overflow-visible">
-            <Table className="min-w-[1100px] w-full" wrapperClassName="overflow-visible pb-32">
+        <CardContent className="p-0">
+          <div className="w-full">
+            <Table className="min-w-[1100px] w-full" wrapperClassName="overflow-x-auto pb-32">
               <TableHeader>
                 <TableRow className="bg-slate-50/50 border-b border-slate-200">
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[220px] py-4">MPN</TableHead>
+                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[260px] py-4">MPN</TableHead>
                   <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[180px] py-4">Material</TableHead>
                   <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[180px] py-4">Vendor</TableHead>
                   <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider text-right w-[120px] py-4">Price</TableHead>
@@ -320,7 +437,7 @@ export default function BomRecipeEditor({
                 
                 return (
                   <TableRow key={idx} id={`row-${idx}`} className={`group ${errors[`row_${idx}`] ? 'bg-red-50/40' : 'hover:bg-slate-50/50'}`}>
-                    <TableCell className="align-top py-2">
+                    <TableCell className="align-top py-2 relative" style={{ zIndex: 50 - idx }}>
                       <SearchableSelect 
                         options={mpnOptions}
                         value={mpnIdStr || ''}
@@ -369,7 +486,7 @@ export default function BomRecipeEditor({
 
                     <TableCell className="align-top py-2">
                       <div className="text-[11px] font-medium text-slate-500 uppercase mt-1">
-                        {mpnObj?.materialId?.unit || '-'}
+                        {mpnObj?.priceUOM || mpnObj?.materialId?.unit || '-'}
                       </div>
                     </TableCell>
 
