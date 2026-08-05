@@ -47,7 +47,7 @@ const AppContent = () => {
 
   // Derive activePage from the first URL segment
   let activePage = location.pathname.split('/')[1] || 'masters';
-  
+
   // The sidebar currently uses 'boms' as the ID for BOMs, but our new route is '/bom'.
   // Map 'bom' to 'boms' for the sidebar active state, but keep URL as '/bom'.
   const sidebarActivePage = activePage === 'bom' ? 'boms' : activePage;
@@ -114,11 +114,11 @@ const AppContent = () => {
     <div className="min-h-screen bg-slate-50/50 flex">
       {/* Sidebar navigation */}
       {!isFullscreenMode && (
-        <Sidebar 
-          activePage={sidebarActivePage} 
-          setActivePage={setActivePage} 
-          isCollapsed={sidebarCollapsed} 
-          setIsCollapsed={setSidebarCollapsed} 
+        <Sidebar
+          activePage={sidebarActivePage}
+          setActivePage={setActivePage}
+          isCollapsed={sidebarCollapsed}
+          setIsCollapsed={setSidebarCollapsed}
         />
       )}
 
@@ -126,10 +126,10 @@ const AppContent = () => {
       <div className={`flex-1 ${!isFullscreenMode && !sidebarCollapsed ? 'pl-64' : 'pl-0'} flex flex-col min-h-screen transition-all duration-300`}>
         {/* Top Header navbar */}
         {!isFullscreenMode && (
-          <Header 
-            activePage={sidebarActivePage} 
-            sidebarCollapsed={sidebarCollapsed} 
-            setSidebarCollapsed={setSidebarCollapsed} 
+          <Header
+            activePage={sidebarActivePage}
+            sidebarCollapsed={sidebarCollapsed}
+            setSidebarCollapsed={setSidebarCollapsed}
           />
         )}
 

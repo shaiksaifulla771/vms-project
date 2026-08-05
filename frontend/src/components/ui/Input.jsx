@@ -1,18 +1,31 @@
 import React from 'react';
 
+const getSizeClass = (size) => {
+  switch (size) {
+    case 'xs':
+      return 'h-6 text-[11px] px-1.5 py-0 rounded';
+    case 'sm':
+      return 'h-7 text-xs px-2 py-0.5 rounded-md';
+    default:
+      return 'px-3 py-2 text-sm rounded-lg';
+  }
+};
+
 export const Input = ({
   label,
   error,
   id,
   type = 'text',
+  size,
   className = '',
   ...props
 }) => {
+  const paddingClass = getSizeClass(size);
   const inputEl = (
     <input
       type={type}
       id={id}
-      className={`w-full px-3 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-lg shadow-inner text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${
+      className={`w-full bg-white/50 backdrop-blur-sm border border-slate-200 shadow-inner text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${paddingClass} ${
         error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
       } ${className}`}
       {...props}
@@ -38,15 +51,17 @@ export const TextArea = ({
   label,
   error,
   id,
+  size,
   className = '',
   rows = 3,
   ...props
 }) => {
+  const paddingClass = size === 'xs' ? 'text-[11px] p-1.5 rounded' : size === 'sm' ? 'text-xs p-2 rounded-md' : 'px-3 py-2 text-sm rounded-lg';
   const areaEl = (
     <textarea
       id={id}
       rows={rows}
-      className={`w-full px-3 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-lg shadow-inner text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${
+      className={`w-full bg-white/50 backdrop-blur-sm border border-slate-200 shadow-inner text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${paddingClass} ${
         error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
       } ${className}`}
       {...props}
@@ -72,16 +87,18 @@ export const Select = ({
   label,
   error,
   id,
+  size,
   options = [],
   className = '',
   placeholder,
   children,
   ...props
 }) => {
+  const paddingClass = getSizeClass(size);
   const selectEl = (
     <select
       id={id}
-      className={`w-full px-3 py-2 bg-white/50 backdrop-blur-sm border border-slate-200 rounded-lg shadow-inner text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer ${
+      className={`w-full bg-white/50 backdrop-blur-sm border border-slate-200 shadow-inner text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer ${paddingClass} ${
         error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
       } ${className}`}
       {...props}

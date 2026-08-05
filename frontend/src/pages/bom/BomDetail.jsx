@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../services/api';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Edit2, Copy, Scale, ChevronLeft, History, Calculator, Info } from 'lucide-react';
+import { Edit2, Copy, Scale, ChevronLeft, History } from 'lucide-react';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import PriceDriftBanner from '../../features/bom/PriceDriftBanner';
 import BomRevisionHistory from '../../components/bom/BomRevisionHistory';
 
@@ -92,7 +91,8 @@ export default function BomDetail() {
       <div className="flex flex-col gap-4 mb-6">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">{bom.productId?.name}</h1>
         <div className="flex gap-4 text-sm text-slate-500 font-medium">
-          <Badge variant="outline" className="bg-white">Batch: {bom.batchSize} {bom.batchUOM}</Badge>
+          <Badge variant="outline" className="bg-white font-mono font-semibold">Batch Size: {bom.batchSize}</Badge>
+          <Badge variant="outline" className="bg-white font-mono font-semibold uppercase">UOM: {bom.batchUOM || '—'}</Badge>
           <Badge variant="outline" className="bg-white">Batch Code: {bom.batchCode || '—'}</Badge>
           <Badge variant="outline" className="bg-white">Effective: {eDate}</Badge>
           <span className={`font-bold uppercase tracking-wider ${(bom.status === 'Obsolete' || bom.status === 'Deleted') ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -126,94 +126,98 @@ export default function BomDetail() {
         newTotal={bom.liveTotalCost} 
       />
 
-      <Card className="border-slate-200 shadow-sm overflow-hidden mb-6">
-        <CardHeader className="bg-slate-50/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 sticky top-0 z-10 rounded-t-xl">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Recipe Components</h3>
+      {/* Recipe Components Data Sheet - Excel Format */}
+      <Card className="border border-slate-300 shadow-sm rounded-xl overflow-hidden mb-6">
+        <CardHeader className="bg-slate-100/90 border-b border-slate-300 py-3 px-6 sticky top-0 z-10 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Recipe Components Data Sheet</h3>
+          <span className="text-xs font-semibold text-slate-500 font-mono">
+            {bom.components?.length || 0} Line Items
+          </span>
         </CardHeader>
         <CardContent className="p-0 overflow-visible">
-          <div className="w-full overflow-x-auto pb-4">
-            <Table className="min-w-[1100px] w-full">
-              <TableHeader>
-                <TableRow className="bg-slate-50/50 border-b border-slate-200">
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[220px] py-4">MPN</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[180px] py-4">Material</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[180px] py-4">Vendor</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider text-right w-[120px] py-4">Price</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider text-right w-[120px] py-4">Quantity</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider w-[80px] py-4">UOM</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider text-right w-[100px] py-4">Loss %</TableHead>
-                  <TableHead className="font-extrabold text-xs text-slate-500 uppercase tracking-wider text-right w-[150px] py-4">Line Cost</TableHead>
-                </TableRow>
-              </TableHeader>
-            <TableBody>
-              {bom.components?.map((c, i) => {
-                const mpnObj = c.mpnId;
-                const qty = Number(c.qty) || 0;
-                const loss = Number(c.lossPercent) || 0;
-                const price = c.resolvedPrice || 0;
-                const baseCost = qty * price;
-                const finalCost = c.liveLineCost || 0;
+          <div className="w-full overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-tight border-b border-slate-300 select-none">
+                <tr>
+                  <th className="w-10 px-2 py-2 text-center font-mono border-r border-slate-200">#</th>
+                  <th className="px-2.5 py-2 w-32 border-r border-slate-200">MPN Code</th>
+                  <th className="px-2.5 py-2 min-w-[180px] border-r border-slate-200">Material Name</th>
+                  <th className="px-2.5 py-2 min-w-[180px] border-r border-slate-200">Vendor Name</th>
+                  <th className="px-2.5 py-2 w-28 text-right border-r border-slate-200">Unit Price (₹)</th>
+                  <th className="px-2.5 py-2 w-24 text-right border-r border-slate-200">Quantity</th>
+                  <th className="px-2.5 py-2 w-16 text-center border-r border-slate-200">UOM</th>
+                  <th className="px-2.5 py-2 w-20 text-right border-r border-slate-200">Loss %</th>
+                  <th className="px-2.5 py-2 w-32 text-right">Line Cost (₹)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {bom.components?.map((c, i) => {
+                  const mpnObj = c.mpnId;
+                  const qty = Number(c.qty) || 0;
+                  const loss = Number(c.lossPercent) || 0;
+                  const price = c.resolvedPrice || 0;
+                  const finalCost = c.liveLineCost || (qty * price * (1 + loss / 100));
 
-                return (
-                  <TableRow key={i} className="hover:bg-slate-50/50">
-                    <TableCell className="align-top py-3 text-xs font-bold text-blue-700">
-                      {mpnObj?.mpnCode}
-                    </TableCell>
-                    <TableCell className="align-top py-3">
-                      <div className="text-xs font-medium text-slate-700 truncate max-w-[150px]" title={mpnObj?.materialId?.name}>
-                        {mpnObj?.materialId?.name || '-'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top py-3">
-                      <div className="text-xs font-medium text-slate-700 truncate max-w-[150px]" title={mpnObj?.vendorId?.name}>
-                        {mpnObj?.vendorId?.name || '-'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top py-3 text-right">
-                      <div className="text-xs font-mono font-medium text-slate-600">
+                  return (
+                    <tr key={i} className="hover:bg-slate-50/80 transition-colors border-b border-slate-200">
+                      <td className="px-2 py-1.5 text-center font-mono text-slate-400 font-semibold text-[11px] border-r border-slate-200 bg-slate-50/50">
+                        {i + 1}
+                      </td>
+                      <td className="px-2.5 py-1.5 font-mono text-xs font-bold text-blue-700 border-r border-slate-200">
+                        {mpnObj?.mpnCode || '—'}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 border-r border-slate-200 truncate max-w-[200px]" title={mpnObj?.materialId?.name}>
+                        {mpnObj?.materialId?.name || '—'}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-xs text-slate-700 border-r border-slate-200 truncate max-w-[200px]" title={mpnObj?.vendorId?.name}>
+                        {mpnObj?.vendorId?.name || '—'}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-right font-mono text-slate-800 border-r border-slate-200">
                         ₹{price.toFixed(2)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top py-3 text-right text-xs font-mono font-semibold">
-                      {qty}
-                    </TableCell>
-                    <TableCell className="align-top py-3 text-[11px] font-medium text-slate-500 uppercase">
-                      {mpnObj?.materialId?.unit || '-'}
-                    </TableCell>
-                    <TableCell className="align-top py-3 text-right text-xs font-mono font-semibold text-amber-600">
-                      {loss}%
-                    </TableCell>
-                    <TableCell className="align-top py-3 text-right">
-                      <div className="flex items-center justify-end group/tooltip relative">
-                        <span className="text-xs font-mono font-bold text-slate-900">
-                          ₹{finalCost.toFixed(2)}
-                        </span>
-                        <div className="ml-1 text-slate-400 hover:text-blue-600 cursor-help transition-colors">
-                          <Info className="w-3.5 h-3.5" />
-                          <div className="absolute hidden group-hover/tooltip:block z-[9999] right-0 top-6 w-48 bg-slate-900 text-slate-50 text-[11px] font-mono p-3 rounded shadow-2xl whitespace-pre-wrap text-left border border-slate-700/50 transition-opacity opacity-0 group-hover/tooltip:opacity-100 duration-200">
-                            {`${qty} ${mpnObj?.materialId?.unit || ''} × ₹${price.toFixed(2)}\n= ₹${baseCost.toFixed(2)}\n\nLoss: ${loss}%\nFinal Cost: ₹${finalCost.toFixed(2)}`}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {(!bom.components || bom.components.length === 0) && (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-slate-400 text-sm font-semibold border-b-0">
-                    No components in recipe.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-            </Table>
+                      </td>
+                      <td className="px-2.5 py-1.5 text-right font-mono font-bold text-slate-900 border-r border-slate-200">
+                        {qty}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-center text-[11px] font-semibold text-slate-500 uppercase border-r border-slate-200">
+                        {mpnObj?.materialId?.unit || 'pcs'}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-right font-mono font-semibold text-amber-700 border-r border-slate-200">
+                        {loss}%
+                      </td>
+                      <td className="px-2.5 py-1.5 text-right font-mono font-bold text-slate-900">
+                        ₹{finalCost.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {(!bom.components || bom.components.length === 0) && (
+                  <tr>
+                    <td colSpan={9} className="h-24 text-center text-slate-400 text-xs font-semibold">
+                      No components registered in this recipe data sheet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot className="bg-slate-100/90 font-bold border-t-2 border-slate-300">
+                <tr>
+                  <td colSpan={4} className="px-3 py-2 text-xs text-slate-700 border-r border-slate-200 uppercase">
+                    Total Recipe Batch Summary
+                  </td>
+                  <td colSpan={4} className="px-3 py-2 text-xs text-right text-slate-600 border-r border-slate-200">
+                    Total Batch Cost:
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-sm text-emerald-700 font-extrabold">
+                    ₹{(bom.liveTotalCost || 0).toFixed(2)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </CardContent>
       </Card>
 
       <div className="flex flex-col gap-6">
-        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden rounded-lg mt-4 w-full">
+        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden rounded-lg w-full">
           <CardHeader className="bg-slate-900 border-b border-slate-800 py-2.5 px-4">
             <h3 className="text-[11px] font-black text-white uppercase tracking-wider flex items-center">
               Cost Breakdown Dashboard

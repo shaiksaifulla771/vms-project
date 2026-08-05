@@ -121,9 +121,15 @@ export default function BomScale() {
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Scale Parameters</h3>
           </CardHeader>
           <CardContent className="p-5 space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Current Batch Size</label>
-              <div className="text-lg font-bold text-slate-700">{bom.batchSize} {bom.batchUOM}</div>
+            <div className="flex items-center space-x-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Batch Size</label>
+                <div className="text-lg font-mono font-bold text-slate-900">{bom.batchSize}</div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">UOM</label>
+                <div className="text-lg font-mono font-semibold text-slate-600 uppercase">{bom.batchUOM || '—'}</div>
+              </div>
             </div>
             
             <div>

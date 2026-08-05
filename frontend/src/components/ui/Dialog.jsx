@@ -42,15 +42,17 @@ export const Dialog = ({ isOpen, onClose, title, children, className = '' }) => 
           >
         
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-800 tracking-tight">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        {Boolean(title) && (
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-800 tracking-tight">{title}</h2>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        )}
 
         {/* Content */}
         <div className="p-5 max-h-[82vh] overflow-y-auto">

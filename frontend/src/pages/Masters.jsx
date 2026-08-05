@@ -24,31 +24,28 @@ const Masters = () => {
       <div className="flex border-b border-slate-200">
         <button
           onClick={() => setActiveTab('materials')}
-          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'materials'
+          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${activeTab === 'materials'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+            }`}
         >
           Material Master
         </button>
         <button
           onClick={() => setActiveTab('vendors')}
-          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'vendors'
+          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${activeTab === 'vendors'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+            }`}
         >
           Vendor Master
         </button>
         <button
           onClick={() => setActiveTab('mpns')}
-          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'mpns'
+          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${activeTab === 'mpns'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+            }`}
         >
           MPN Master
         </button>

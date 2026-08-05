@@ -12,6 +12,7 @@ const {
   batchDeleteMPNs,
   exportMPNsExcel,
   generateMPNPdf,
+  bulkCreateMPNs,
 } = require('../controllers/mpnController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -23,6 +24,7 @@ router.route('/manufacturers').get(protect, getManufacturers);
 router.route('/export').get(protect, exportMPNsExcel);
 router.route('/deleted').get(protect, getDeletedMPNs);
 router.route('/batch-delete').post(protect, batchDeleteMPNs);
+router.route('/bulk').post(protect, bulkCreateMPNs);
 
 // Sub-resource static routes
 router.route('/:id/pdf').get(protect, generateMPNPdf);

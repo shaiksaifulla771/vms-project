@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome against localhost (Frontend)",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/frontend"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Backend Server",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/backend/server.js",
+            "cwd": "${workspaceFolder}/backend"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Launch Full Stack (Backend & Frontend)",
+            "configurations": [
+                "Launch Backend Server",
+                "Launch Chrome against localhost (Frontend)"
+            ]
+        }
+    ]
+}

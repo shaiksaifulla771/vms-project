@@ -137,7 +137,7 @@ export default function BomCostBreakdown() {
               ₹{totalCost.toFixed(2)}
             </div>
             <div className="text-xs font-semibold text-indigo-600/70">
-              For batch of {bom.batchSize} {bom.batchUOM}
+              Batch Size: <strong className="font-mono text-indigo-900">{bom.batchSize}</strong> | UOM: <strong className="font-mono uppercase text-indigo-900">{bom.batchUOM || '—'}</strong>
             </div>
           </CardContent>
         </Card>
