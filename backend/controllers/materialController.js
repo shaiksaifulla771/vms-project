@@ -1,4 +1,5 @@
 const Material = require('../models/Material');
+const { startSafeTransaction, commitSafeTransaction, abortSafeTransaction } = require('../utils/transaction');
 const InventoryItem = require('../models/InventoryItem');
 const BOM = require('../models/BOM');
 const PurchaseOrder = require('../models/PurchaseOrder');
@@ -78,12 +79,12 @@ exports.getMaterial = async (req, res, next) => {
 // @access  Private
 exports.createMaterial = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const { name, code, unit, type, subcategory, status, description } = req.body;
 
     if (!name || !code || !unit || typeof name !== 'string' || typeof code !== 'string' || typeof unit !== 'string') {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'Please provide valid text strings for name, code, and unit of measurement' });
     }
 
@@ -101,7 +102,7 @@ exports.createMaterial = async (req, res, next) => {
         }
         finalCode = `M${maxNum + 1}`;
       } else {
-        await session.abortTransaction();
+        await abortSafeTransaction(session);
         return res.status(400).json({ success: false, error: `Material with code '${finalCode}' already exists` });
       }
     }
@@ -142,10 +143,10 @@ exports.createMaterial = async (req, res, next) => {
     // Write audit log
     await writeAuditLog(session, 'Material', material._id, 'CREATE', null, material, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(201).json({ success: true, data: material });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -157,22 +158,22 @@ exports.createMaterial = async (req, res, next) => {
 // @access  Private
 exports.updateMaterial = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const { name, code, unit, type, subcategory, status, description } = req.body;
     let material = await Material.findById(req.params.id).session(session);
 
     if (!material) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'Material not found' });
     }
 
     if (code !== undefined && typeof code !== 'string') {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'Material code must be a valid text string' });
     }
     if (name !== undefined && typeof name !== 'string') {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'Material name must be a valid text string' });
     }
 
@@ -180,7 +181,7 @@ exports.updateMaterial = async (req, res, next) => {
     if (code && code.toUpperCase() !== material.code) {
       const existing = await Material.findOne({ code: code.toUpperCase() }).session(session);
       if (existing) {
-        await session.abortTransaction();
+        await abortSafeTransaction(session);
         return res.status(400).json({ success: false, error: `Material with code '${code}' already exists` });
       }
     }
@@ -200,10 +201,10 @@ exports.updateMaterial = async (req, res, next) => {
     // Write audit log
     await writeAuditLog(session, 'Material', material._id, 'UPDATE', oldDoc, material, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: material });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -215,7 +216,7 @@ exports.updateMaterial = async (req, res, next) => {
 // @access  Private
 exports.deleteMaterial = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const materialId = req.params.id;
 
@@ -228,7 +229,7 @@ exports.deleteMaterial = async (req, res, next) => {
       ]
     }).session(session);
     if (linkedBOM) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({
         success: false,
         error: 'Cannot delete material: it is currently referenced in one or more Bill of Materials (BOM) configurations.'
@@ -238,7 +239,7 @@ exports.deleteMaterial = async (req, res, next) => {
     // Check if referenced in any Purchase Order
     const linkedPO = await PurchaseOrder.findOne({ 'materials.materialId': materialId }).session(session);
     if (linkedPO) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({
         success: false,
         error: 'Cannot delete material: it is linked to historical or active Purchase Orders.'
@@ -249,7 +250,7 @@ exports.deleteMaterial = async (req, res, next) => {
     // Deleting the material is already blocked if BOM is present, but let's check inventory items
     const inventory = await InventoryItem.findOne({ materialId }).session(session);
     if (inventory && inventory.balance > 0) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({
         success: false,
         error: `Cannot delete material: there is an active stock balance of ${inventory.balance} in inventory.`
@@ -258,7 +259,7 @@ exports.deleteMaterial = async (req, res, next) => {
 
     const material = await Material.findById(materialId).session(session);
     if (!material) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'Material not found' });
     }
 
@@ -269,10 +270,10 @@ exports.deleteMaterial = async (req, res, next) => {
     // Write audit log for soft delete
     await writeAuditLog(session, 'Material', material._id, 'DELETE', oldDoc, material, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, message: 'Material moved to deleted history successfully', data: {} });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();

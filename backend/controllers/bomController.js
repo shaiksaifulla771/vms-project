@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { startSafeTransaction, commitSafeTransaction, abortSafeTransaction } = require('../utils/transaction');
 const BOM = require('../models/BOM');
 const BOMAuditLog = require('../models/BOMAuditLog');
 const Sequence = require('../models/Sequence');
@@ -132,7 +133,7 @@ exports.getBOM = async (req, res, next) => {
 // @route   POST /api/bom
 exports.createBOM = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const { productId, batchSize, batchUOM, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode } = req.body;
 
@@ -195,10 +196,10 @@ exports.createBOM = async (req, res, next) => {
 
     await writeAuditLog(session, 'BOM', newBom._id, 'CREATE', null, newBom, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(201).json({ success: true, data: newBom });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -209,14 +210,14 @@ exports.createBOM = async (req, res, next) => {
 // @route   PUT /api/bom/:id
 exports.updateBOM = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const { productId, batchSize, batchUOM, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode } = req.body;
 
 
     const bom = await BOM.findById(req.params.id).session(session);
     if (!bom || bom.status === 'Obsolete') {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'BOM not found or obsolete' });
     }
 
@@ -240,12 +241,12 @@ exports.updateBOM = async (req, res, next) => {
         details: updateFields
       }], { session });
 
-      await session.commitTransaction();
+      await commitSafeTransaction(session);
       return res.status(200).json({ success: true, message: 'BOM updated', data: { ...bom.toObject(), ...updateFields } });
     }
 
     if (version !== undefined && Number(version) !== bom.version) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(409).json({ 
         success: false, 
         error: `Version conflict: The BOM was modified by someone else (Server version: ${bom.version}, Your version: ${version}). Please reload and try again.` 
@@ -307,10 +308,10 @@ exports.updateBOM = async (req, res, next) => {
 
     await writeAuditLog(session, 'BOM', newBomData._id, 'UPDATE', oldDoc, newBomData, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: newBomData });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -321,16 +322,16 @@ exports.updateBOM = async (req, res, next) => {
 // @route   DELETE /api/bom/:id
 exports.deleteBOM = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const bom = await BOM.findById(req.params.id).session(session);
     if (!bom) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'BOM not found' });
     }
 
     if (bom.status === 'Deleted') {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'BOM is already deleted' });
     }
 
@@ -353,10 +354,10 @@ exports.deleteBOM = async (req, res, next) => {
 
     await writeAuditLog(session, 'BOM', bom._id, 'DELETE', oldDoc, bom, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, message: 'BOM deleted successfully' });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -367,16 +368,16 @@ exports.deleteBOM = async (req, res, next) => {
 // @route   PUT /api/bom/:id/restore
 exports.restoreBOM = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const bom = await BOM.findById(req.params.id).session(session);
     if (!bom) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'BOM not found' });
     }
 
     if (bom.status !== 'Deleted' && bom.status !== 'Obsolete') {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'BOM is not deleted or obsolete' });
     }
 
@@ -398,10 +399,10 @@ exports.restoreBOM = async (req, res, next) => {
 
     await writeAuditLog(session, 'BOM', bom._id, 'UPDATE', oldDoc, bom, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, message: 'BOM restored successfully', data: bom });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -476,23 +477,17 @@ exports.getBOMHistory = async (req, res, next) => {
     const bom = await BOM.findById(bomId);
     if (!bom) return res.status(404).json({ success: false, error: 'BOM not found' });
 
-    let rootId = bomId;
-    let current = bom;
-    while (current.previousVersionId) {
-      rootId = current.previousVersionId;
-      current = await BOM.findById(rootId);
-      if (!current) break;
-    }
-
-    let history = await BOM.find({
-      $or: [
-        { _id: bomId },
-        { previousVersionId: bomId },
-        { _id: bom.previousVersionId },
-        { _id: rootId },
-        { previousVersionId: rootId }
-      ]
-    }).populate('productId', 'name code').sort({ createdAt: -1 }).lean();
+    let history = await BOM.find({ bomNumber: bom.bomNumber })
+      .populate('productId', 'name code')
+      .populate({
+        path: 'components.mpnId',
+        populate: [
+          { path: 'materialId', select: 'name code unit type' },
+          { path: 'vendorId', select: 'name company' }
+        ]
+      })
+      .sort({ version: -1 })
+      .lean();
 
     history = await bomCostService.populateBomCostsBulk(history);
 

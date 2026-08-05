@@ -1,4 +1,5 @@
 const Vendor = require('../models/Vendor');
+const { startSafeTransaction, commitSafeTransaction, abortSafeTransaction } = require('../utils/transaction');
 const Sequence = require('../models/Sequence');
 const { syncExcelToMongoDB } = require('../utils/dbSync');
 const { escapeRegex } = require('../utils/security');
@@ -48,7 +49,7 @@ exports.getVendor = async (req, res, next) => {
 
 exports.createVendor = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const { 
       name, company, email, phone, address, address2, zipCode, city, state, country,
@@ -65,12 +66,12 @@ exports.createVendor = async (req, res, next) => {
     let vendorId = req.body.vendorId;
 
     if (!name || !email) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'Please provide name and email' });
     }
     const existing = await Vendor.findOne({ email }).session(session);
     if (existing) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
     }
 
@@ -87,7 +88,7 @@ exports.createVendor = async (req, res, next) => {
           });
           vendorId = `V${maxNum + 1}`;
         } else {
-          await session.abortTransaction();
+          await abortSafeTransaction(session);
           return res.status(400).json({ success: false, error: `Vendor with code '${vendorId}' already exists` });
         }
       }
@@ -123,10 +124,10 @@ exports.createVendor = async (req, res, next) => {
     // Write audit log
     await writeAuditLog(session, 'Vendor', vendor._id, 'CREATE', null, vendor, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(201).json({ success: true, data: vendor });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -135,11 +136,11 @@ exports.createVendor = async (req, res, next) => {
 
 exports.updateVendor = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     let vendor = await Vendor.findById(req.params.id).session(session);
     if (!vendor) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'Vendor not found' });
     }
     
@@ -147,7 +148,7 @@ exports.updateVendor = async (req, res, next) => {
     if (email && email !== vendor.email) {
       const existing = await Vendor.findOne({ email }).session(session);
       if (existing) {
-        await session.abortTransaction();
+        await abortSafeTransaction(session);
         return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
       }
     }
@@ -162,10 +163,10 @@ exports.updateVendor = async (req, res, next) => {
     // Write audit log
     await writeAuditLog(session, 'Vendor', vendor._id, 'UPDATE', oldDoc, vendor, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: vendor });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();
@@ -174,11 +175,11 @@ exports.updateVendor = async (req, res, next) => {
 
 exports.deleteVendor = async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
   try {
     const vendor = await Vendor.findById(req.params.id).session(session);
     if (!vendor) {
-      await session.abortTransaction();
+      await abortSafeTransaction(session);
       return res.status(404).json({ success: false, error: 'Vendor not found' });
     }
     
@@ -189,10 +190,10 @@ exports.deleteVendor = async (req, res, next) => {
     // Write audit log for soft delete
     await writeAuditLog(session, 'Vendor', vendor._id, 'DELETE', oldDoc, vendor, req.user ? req.user.id : null);
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, message: 'Vendor moved to deleted history successfully', data: {} });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     next(err);
   } finally {
     session.endSession();

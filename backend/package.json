@@ -25,6 +25,7 @@
     "express-rate-limit": "^8.6.1",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
+    "ioredis-mock": "^8.13.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.1",
     "multer": "^2.2.0",

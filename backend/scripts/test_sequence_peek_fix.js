@@ -68,7 +68,12 @@ async function runSequenceFixTest() {
       type: "Raw Material"
     }));
 
-    const mat1Id = matCreate1.bodyJson.data._id;
+    console.log("Create Material Response:", matCreate1.bodyJson);
+    const mat1Id = matCreate1.bodyJson?.data?._id;
+    if (!mat1Id) {
+      console.error("Failed to create material");
+      process.exit(1);
+    }
     createdMaterialIds.push(mat1Id);
     console.log(`Created Material (${initialMatCode}) HTTP Status: ${matCreate1.statusCode}`);
 
@@ -145,14 +150,19 @@ async function runSequenceFixTest() {
       manufacturerName: "TEST MFG",
       materialId,
       vendorId,
-      unitPrice: 500,
+      price: 500,
       moq: 1,
       uom: "pcs",
       gst: 18,
       status: "Active"
     }));
 
-    const mpn1Id = mpnCreate1.bodyJson.data._id;
+    console.log("Create MPN Response:", mpnCreate1.bodyJson);
+    const mpn1Id = mpnCreate1.bodyJson?.data?._id;
+    if (!mpn1Id) {
+      console.error("Failed to create MPN");
+      process.exit(1);
+    }
     createdMpnIds.push(mpn1Id);
     console.log(`Created MPN (${initialMpnCode}) HTTP Status: ${mpnCreate1.statusCode}`);
 
@@ -194,7 +204,7 @@ async function runSequenceFixTest() {
       manufacturerName: "TEST MFG",
       materialId,
       vendorId,
-      unitPrice: 250,
+      price: 250,
       moq: 5,
       uom: "pcs",
       gst: 18,

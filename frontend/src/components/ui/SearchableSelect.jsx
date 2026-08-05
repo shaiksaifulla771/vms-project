@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, ChevronDown, Check } from 'lucide-react';
 import { Input } from './Input';
 
@@ -14,13 +15,20 @@ export default function SearchableSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const wrapperRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  const [dropdownCoords, setDropdownCoords] = useState({ top: 0, left: 0, width: 0 });
 
   const selectedOption = options.find((opt) => opt.value === value);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+      if (
+        wrapperRef.current && 
+        !wrapperRef.current.contains(event.target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(event.target))
+      ) {
         setIsOpen(false);
       }
     }
@@ -40,6 +48,17 @@ export default function SearchableSelect({
     setSearchTerm('');
   };
 
+  useLayoutEffect(() => {
+    if (isOpen && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      setDropdownCoords({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width
+      });
+    }
+  }, [isOpen]);
+
   return (
     <div className={`relative ${className}`} ref={wrapperRef}>
       <div
@@ -54,8 +73,12 @@ export default function SearchableSelect({
         <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-2" />
       </div>
 
-      {isOpen && (
-        <div className="absolute z-50 w-[350px] mt-1 bg-white border border-slate-200 rounded-md shadow-lg">
+      {isOpen && createPortal(
+        <div 
+          ref={dropdownRef}
+          className="absolute z-[9999] mt-1 bg-white border border-slate-200 rounded-md shadow-2xl glass-panel"
+          style={{ top: dropdownCoords.top, left: dropdownCoords.left, width: dropdownCoords.width }}
+        >
           <div className="p-2 border-b border-slate-100 flex items-center bg-slate-50/50">
             <Search className="w-3.5 h-3.5 text-slate-400 mr-2" />
             <Input
@@ -92,7 +115,8 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

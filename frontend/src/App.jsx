@@ -14,6 +14,7 @@ import Manufacturing from './pages/Manufacturing';
 import Quality from './pages/Quality';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // New Routed BOM Module
 import BOMRoutes from './pages/bom/BOMRoutes';
@@ -158,11 +159,13 @@ const AppContent = () => {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

@@ -7,6 +7,16 @@
     <title>Enterprise Manufacturing ERP Operations Portal</title>
   </head>
   <body>
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        document.body.innerHTML = '<div style="padding: 20px; background: red; color: white; font-family: monospace; font-size: 20px;">' +
+          '<h2>GLOBAL INIT ERROR</h2>' +
+          '<p>' + message + '</p>' +
+          '<p>Source: ' + source + ':' + lineno + ':' + colno + '</p>' +
+          '<pre>' + (error && error.stack ? error.stack : '') + '</pre>' +
+          '</div>';
+      };
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

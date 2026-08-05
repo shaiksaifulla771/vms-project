@@ -14,6 +14,7 @@ const InventoryTransaction = require('./models/InventoryTransaction');
 const PurchaseOrder = require('./models/PurchaseOrder');
 const ProductionOrder = require('./models/ProductionOrder');
 const QualityRecord = require('./models/QualityRecord');
+const { detectTransactionSupport } = require('./utils/transaction');
 
 // Load environment variables
 dotenv.config();
@@ -84,6 +85,7 @@ function determineSubcategory(name, type, vendor) {
 
 // Connect to database and seed data
 connectDB().then(async () => {
+  await detectTransactionSupport();
   try {
     if (process.env.NODE_ENV === 'production') {
       console.log('Production mode active — skipping automatic database seeding.');

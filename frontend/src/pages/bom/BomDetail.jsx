@@ -8,6 +8,7 @@ import { Edit2, Copy, Scale, ChevronLeft, History, Calculator, Info } from 'luci
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import PriceDriftBanner from '../../features/bom/PriceDriftBanner';
+import BomRevisionHistory from '../../components/bom/BomRevisionHistory';
 
 export default function BomDetail() {
   const { id } = useParams();
@@ -17,6 +18,7 @@ export default function BomDetail() {
   const [bom, setBom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     const fetchBom = async () => {
@@ -76,6 +78,9 @@ export default function BomDetail() {
                   </Button>
                   <Button onClick={() => navigate(`/bom/${id}/scale`, { state: { returnTo: location.pathname } })} variant="outline" className="h-9">
                     <Scale className="w-4 h-4 mr-2" /> Scale
+                  </Button>
+                  <Button onClick={() => setShowHistory(true)} variant="outline" className="h-9 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800">
+                    <History className="w-4 h-4 mr-2" /> Revision History
                   </Button>
                 </>
               )}
@@ -207,8 +212,8 @@ export default function BomDetail() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden col-span-2 rounded-lg mt-4">
+      <div className="flex flex-col gap-6">
+        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden rounded-lg mt-4 w-full">
           <CardHeader className="bg-slate-900 border-b border-slate-800 py-2.5 px-4">
             <h3 className="text-[11px] font-black text-white uppercase tracking-wider flex items-center">
               Cost Breakdown Dashboard
@@ -253,23 +258,13 @@ export default function BomDetail() {
             </div>
           </CardContent>
         </Card>
-
-        <Card className="border-slate-200 shadow-sm h-full">
-          <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-4">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Insights & History</h3>
-          </CardHeader>
-          <CardContent className="p-3">
-            <div className="flex flex-col space-y-2">
-              <Button onClick={() => navigate(`/bom/${id}/cost-breakdown`)} variant="ghost" className="justify-start text-xs font-semibold h-9 text-slate-600 hover:text-blue-700 hover:bg-blue-50">
-                <Calculator className="w-4 h-4 mr-2" /> Cost Breakdown Analysis
-              </Button>
-              <Button onClick={() => navigate(`/bom/${id}/history`)} variant="ghost" className="justify-start text-xs font-semibold h-9 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50">
-                <History className="w-4 h-4 mr-2" /> Version History
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
+
+      <BomRevisionHistory 
+        isOpen={showHistory} 
+        onClose={() => setShowHistory(false)} 
+        currentBomId={bom._id} 
+      />
     </BomPageWrapper>
   );
 }

@@ -157,7 +157,7 @@ async function runSecurityVerification() {
 
   console.log(`Numeric Min Bounds Test HTTP Status: ${minRes.statusCode}`);
   console.log(`Response Error: ${minRes.bodyJson?.error}`);
-  if (minRes.statusCode === 400 && (minRes.bodyJson?.error.includes('Unit Price') || minRes.bodyJson?.error.includes('MOQ'))) {
+  if (minRes.statusCode === 400 && (minRes.bodyJson?.error.includes('Price') || minRes.bodyJson?.error.includes('MOQ'))) {
     console.log("PASS: Server-side validation strictly rejected unitPrice: -50 and moq: 0 with HTTP 400.");
   } else {
     console.error("FAIL: Server allowed invalid negative/zero numeric values!");

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const ProductionOrder = require('../models/ProductionOrder');
+const { startSafeTransaction, commitSafeTransaction, abortSafeTransaction } = require('../utils/transaction');
 const BOM = require('../models/BOM');
 const InventoryItem = require('../models/InventoryItem');
 const InventoryTransaction = require('../models/InventoryTransaction');
@@ -176,7 +177,7 @@ exports.submitForApproval = asyncHandler(async (req, res, next) => {
 // @access  Private (Manager only)
 exports.approveProductionOrder = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
 
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
@@ -208,10 +209,10 @@ exports.approveProductionOrder = asyncHandler(async (req, res, next) => {
     order.approvedBy = req.user ? req.user.id : null;
     await order.save({ session });
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: order });
   } catch (error) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     res.status(400).json({ success: false, error: error.message });
   } finally {
     session.endSession();
@@ -253,7 +254,7 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
   const { actualQuantity, scrapQuantity, wasteQuantity, componentsActuals } = req.body;
   
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
 
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
@@ -289,10 +290,10 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
       inspectedBy: req.user ? req.user.id : null,
     }], { session });
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: order });
   } catch (error) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     res.status(400).json({ success: false, error: error.message });
   } finally {
     session.endSession();
@@ -306,7 +307,7 @@ exports.completeProduction = asyncHandler(async (req, res, next) => {
   const { qcStatus, qcNotes } = req.body; // 'Passed' or 'Rejected'
 
   const session = await mongoose.startSession();
-  session.startTransaction();
+  startSafeTransaction(session);
 
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
@@ -407,10 +408,10 @@ exports.completeProduction = asyncHandler(async (req, res, next) => {
     order.completedBy = req.user ? req.user.id : null;
     await order.save({ session });
 
-    await session.commitTransaction();
+    await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: order });
   } catch (error) {
-    await session.abortTransaction();
+    await abortSafeTransaction(session);
     res.status(400).json({ success: false, error: error.message });
   } finally {
     session.endSession();
