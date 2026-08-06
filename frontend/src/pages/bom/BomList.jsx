@@ -261,12 +261,12 @@ export default function BomList() {
                         {(() => {
                           const displayStatus = bom.status === 'Obsolete' ? 'Deleted' : bom.status;
                           return (
-                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                            <span className={`font-bold ${
                               displayStatus === 'Active'
-                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                ? 'text-emerald-700'
                                 : displayStatus === 'Draft'
-                                ? 'text-amber-700 bg-amber-50 border border-amber-200'
-                                : 'text-slate-700 bg-slate-100 border border-slate-200'
+                                ? 'text-amber-700'
+                                : 'text-slate-700'
                             }`}>
                               {displayStatus}
                             </span>

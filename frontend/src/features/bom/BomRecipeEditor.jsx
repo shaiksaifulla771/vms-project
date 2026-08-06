@@ -292,7 +292,7 @@ export default function BomRecipeEditor({
  
  <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-1">
  <div className="flex flex-col xl:col-span-2">
- <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Assembly Product</label>
+ <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Assembly Product</label>
  <SearchableSelect 
  options={materials.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished' || m.type === 'Finished Good').map(m => ({
  value: m._id, label: `${m.name} (${m.code})`
@@ -315,18 +315,18 @@ export default function BomRecipeEditor({
  className="w-full shadow-sm rounded-lg text-sm"
  placeholder="Search Product..."
  />
- {errors.productId && <p className="text-red-500 text-[10px] mt-1 font-semibold">{errors.productId}</p>}
+ {errors.productId && <p className="text-red-500 text-sm mt-1 font-semibold">{errors.productId}</p>}
  </div>
  <div className="flex flex-col xl:col-span-1">
- <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Code</label>
+ <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Code</label>
  <Input value={batchCode} onChange={e => setBatchCode(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" placeholder="Optional..." />
  </div>
  <div className="flex flex-col xl:col-span-1">
- <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Manufacturer</label>
+ <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Manufacturer</label>
  <Input value={manufacturer} onChange={e => setManufacturer(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" placeholder="Optional..." />
  </div>
  <div className="flex flex-col xl:col-span-1">
- <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Size</label>
+ <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Size</label>
  <div className="flex space-x-2">
  <Input type="number" min="0.001" step="any" value={batchSize} onChange={e => setBatchSize(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm flex-1" />
  <select 
@@ -341,10 +341,10 @@ export default function BomRecipeEditor({
  <option value="pieces">pieces</option>
  </select>
  </div>
- {(errors.batchSize || errors.batchUOM) && <p className="text-red-500 text-[10px] mt-1 font-semibold">{errors.batchSize || errors.batchUOM}</p>}
+ {(errors.batchSize || errors.batchUOM) && <p className="text-red-500 text-sm mt-1 font-semibold">{errors.batchSize || errors.batchUOM}</p>}
  </div>
  <div className="flex flex-col xl:col-span-1">
- <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Effective Date</label>
+ <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Effective Date</label>
  <Input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" />
  </div>
  </div>
@@ -406,8 +406,8 @@ export default function BomRecipeEditor({
  <Card className="shadow-xl overflow-visible /95 backdrop-blur-sm rounded-xl glass-panel">
  <CardHeader className="bg-slate-50/80 backdrop-blur-md border-b border-slate-200 py-3 px-4 sticky top-0 z-20 rounded-t-xl">
  <div className="flex flex-row justify-between items-center w-full">
- <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Recipe Components</h3>
- <Button onClick={addRow} size="sm" className="h-7 px-3 shadow-sm transition-all rounded font-bold text-[11px] btn-premium">
+ <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Recipe Components</h3>
+ <Button onClick={addRow} size="sm" className="h-9 px-3 shadow-sm transition-all rounded font-bold text-sm btn-premium">
  <Plus className="w-3 h-3 mr-1" /> Add Ingredient
  </Button>
  </div>
@@ -438,7 +438,7 @@ export default function BomRecipeEditor({
  
  return (
                     <tr key={idx} id={`row-${idx}`} className={`hover:bg-slate-50/80 transition-colors border-b border-slate-200 ${errors[`row_${idx}`] ? 'bg-red-50/40' : ''}`}>
-                      <td className="px-2 py-1.5 text-center font-mono text-slate-400 font-semibold text-[11px] border-r border-slate-200 bg-slate-50/50">
+                      <td className="px-2 py-1.5 text-center font-mono text-slate-400 font-semibold text-sm border-r border-slate-200 bg-slate-50/50">
                         {idx + 1}
                       </td>
                       <td className="px-2 py-1.5 relative border-r border-slate-200" style={{ zIndex: 50 - idx }}>
@@ -450,27 +450,27 @@ export default function BomRecipeEditor({
                           disabled={isDeactivated}
                           className="w-full"
                         />
-                        {errors[`row_${idx}`] && <span className="text-[10px] text-red-500 font-semibold mt-1 block">{errors[`row_${idx}`]}</span>}
+                        {errors[`row_${idx}`] && <span className="text-sm text-red-500 font-semibold mt-1 block">{errors[`row_${idx}`]}</span>}
                         {isLoading && (
-                          <span className="text-[10px] text-blue-600 font-medium flex items-center mt-1">
+                          <span className="text-sm text-blue-600 font-medium flex items-center mt-1">
                             <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Loading Price...
                           </span>
                         )}
                       </td>
                       
                       <td className="px-2.5 py-1.5 border-r border-slate-200">
-                        <div className="text-xs font-semibold text-slate-800 truncate max-w-[150px]" title={mpnObj?.materialId?.name}>
+                        <div className="text-sm font-semibold text-slate-800 truncate max-w-[150px]" title={mpnObj?.materialId?.name}>
                           {mpnObj?.materialId?.name || '—'}
                         </div>
                       </td>
                       
                       <td className="px-2.5 py-1.5 border-r border-slate-200">
-                        <div className="text-xs text-slate-700 truncate max-w-[150px]" title={mpnObj?.vendorId?.name}>
+                        <div className="text-sm text-slate-700 truncate max-w-[150px]" title={mpnObj?.vendorId?.name}>
                           {mpnObj?.vendorId?.name || '—'}
                         </div>
                       </td>
 
-                      <td className="px-2.5 py-1.5 text-right font-mono text-xs text-slate-800 border-r border-slate-200">
+                      <td className="px-2.5 py-1.5 text-right font-mono text-sm text-slate-800 border-r border-slate-200">
                         {comp.resolvedPrice ? `₹${comp.resolvedPrice.toFixed(2)}` : '—'}
                       </td>
 
@@ -482,12 +482,12 @@ export default function BomRecipeEditor({
                           value={comp.qty}
                           onChange={(e) => updateRow(idx, 'qty', e.target.value)}
                           disabled={isDeactivated}
-                          className="text-xs text-right font-mono h-7 px-2 border-slate-200 font-bold text-slate-900"
+                          className="text-sm text-right font-mono h-9 px-2 border-slate-200 font-bold text-slate-900"
                         />
                       </td>
 
                       <td className="px-2 py-1.5 text-center border-r border-slate-200">
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase">
+                        <div className="text-sm font-semibold text-slate-500 uppercase">
                           {mpnObj?.priceUOM || mpnObj?.materialId?.unit || 'pcs'}
                         </div>
                       </td>
@@ -500,19 +500,19 @@ export default function BomRecipeEditor({
                           value={comp.lossPercent}
                           onChange={(e) => updateRow(idx, 'lossPercent', e.target.value)}
                           disabled={isDeactivated}
-                          className="w-20 min-w-[80px] text-xs text-right font-mono h-7 px-2 border-slate-200 font-semibold text-amber-700 ml-auto"
+                          className="w-20 min-w-[80px] text-sm text-right font-mono h-9 px-2 border-slate-200 font-semibold text-amber-700 ml-auto"
                         />
                       </td>
 
                       <td className="px-2.5 py-1.5 text-right border-r border-slate-200">
                         <div className="flex items-center justify-end group/tooltip relative">
-                          <span className="text-xs font-mono font-bold text-slate-900">
+                          <span className="text-sm font-mono font-bold text-slate-900">
                             ₹{comp.lineCost?.toFixed(2)}
                           </span>
                           {comp.formula && (
                             <div className="ml-1 text-slate-400 hover:text-blue-600 cursor-help transition-colors">
                               <Info className="w-3.5 h-3.5" />
-                              <div className="absolute hidden group-hover/tooltip:block z-[9999] right-0 top-6 w-48 bg-slate-900 text-slate-50 text-[11px] font-mono p-3 rounded shadow-2xl whitespace-pre-wrap text-left border border-slate-700/50 transition-opacity opacity-0 group-hover/tooltip:opacity-100 duration-200">
+                              <div className="absolute hidden group-hover/tooltip:block z-[9999] right-0 top-6 w-48 bg-slate-900 text-slate-50 text-sm font-mono p-3 rounded shadow-2xl whitespace-pre-wrap text-left border border-slate-700/50 transition-opacity opacity-0 group-hover/tooltip:opacity-100 duration-200">
                                 {`${comp.formula.qty} ${mpnObj?.materialId?.unit || ''} × ₹${comp.formula.price.toFixed(2)}\n= ₹${comp.formula.baseCost.toFixed(2)}\n\nLoss: ${comp.formula.loss}%\nFinal Cost: ₹${comp.formula.finalCost.toFixed(2)}`}
                               </div>
                             </div>
@@ -544,52 +544,52 @@ export default function BomRecipeEditor({
  {/* Compact Cost Breakdown Summary Card */}
  <Card className="overflow-hidden rounded-lg mt-4 glass-panel">
  <CardHeader className="bg-slate-900 border-b border-slate-800 py-2.5 px-4">
- <h3 className="text-[11px] font-black text-white uppercase tracking-wider flex items-center">
+ <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center">
  <AlertTriangle className="w-3 h-3 mr-1.5 text-indigo-400" /> Cost Breakdown Dashboard
  </h3>
  </CardHeader>
  <CardContent className="p-0">
  <div className="grid grid-cols-1 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
  <div className="p-3 lg:col-span-3 grid grid-cols-2 gap-3">
- <div className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded">
+ <div className="flex justify-between items-center text-sm p-2 bg-slate-50 rounded">
  <span className="text-slate-600 font-bold">Raw Material</span>
  <span className="font-mono font-black text-slate-800">₹{totals.breakdown.rawMaterialCost.toFixed(2)}</span>
  </div>
- <div className="flex justify-between items-center text-xs p-2 hover:bg-slate-50 rounded transition-colors">
+ <div className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded transition-colors">
  <span className="text-slate-600 font-bold">Packaging</span>
  <Input 
  type="number" min="0" step="any" 
  value={packagingCost} 
  onChange={e => { setPackagingCost(e.target.value); setIsDirty(true); }}
- className="w-20 h-7 text-xs text-right font-mono font-bold shadow-sm rounded" 
+ className="w-20 h-9 text-sm text-right font-mono font-bold shadow-sm rounded" 
  />
  </div>
- <div className="flex justify-between items-center text-xs p-2 hover:bg-slate-50 rounded transition-colors">
+ <div className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded transition-colors">
  <span className="text-slate-600 font-bold">Processing</span>
  <Input 
  type="number" min="0" step="any" 
  value={processingCost} 
  onChange={e => { setProcessingCost(e.target.value); setIsDirty(true); }}
- className="w-20 h-7 text-xs text-right font-mono font-bold shadow-sm rounded" 
+ className="w-20 h-9 text-sm text-right font-mono font-bold shadow-sm rounded" 
  />
  </div>
- <div className="flex justify-between items-center text-xs p-2 hover:bg-slate-50 rounded transition-colors">
+ <div className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded transition-colors">
  <span className="text-slate-600 font-bold">Overhead</span>
  <Input 
  type="number" min="0" step="any" 
  value={overheadCost} 
  onChange={e => { setOverheadCost(e.target.value); setIsDirty(true); }}
- className="w-20 h-7 text-xs text-right font-mono font-bold shadow-sm rounded" 
+ className="w-20 h-9 text-sm text-right font-mono font-bold shadow-sm rounded" 
  />
  </div>
  </div>
  <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 lg:col-span-2 flex flex-col justify-center space-y-3">
  <div className="flex justify-between items-end border-b border-indigo-200/50 pb-2">
- <span className="text-xs font-black text-indigo-900 uppercase">Total Cost</span>
+ <span className="text-sm font-black text-indigo-900 uppercase">Total Cost</span>
  <span className="text-lg font-black text-indigo-700 font-mono">₹{totals.totalCost.toFixed(2)}</span>
  </div>
  <div className="flex justify-between items-end">
- <span className="text-[10px] font-black text-indigo-900/70 uppercase">Cost per Unit <span className="lowercase">({batchUOM})</span></span>
+ <span className="text-sm font-black text-indigo-900/70 uppercase">Cost per Unit <span className="lowercase">({batchUOM})</span></span>
  <span className="text-base font-black text-blue-600 font-mono">₹{totals.costPerUnit.toFixed(4)}</span>
  </div>
  </div>

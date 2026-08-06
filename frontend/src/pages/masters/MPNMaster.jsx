@@ -394,15 +394,15 @@ export default function MPNMaster() {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'Active':
-        return <Badge variant="success">Active</Badge>;
+        return <span className="font-bold text-emerald-600">Active</span>;
       case 'Draft':
-        return <Badge variant="warning">Draft</Badge>;
+        return <span className="font-bold text-amber-600">Draft</span>;
       case 'Inactive':
-        return <Badge variant="secondary">Inactive</Badge>;
+        return <span className="font-bold text-slate-600">Inactive</span>;
       case 'Deleted':
-        return <Badge variant="danger">Deleted</Badge>;
+        return <span className="font-bold text-red-600">Deleted</span>;
       default:
-        return <Badge variant="default">{status}</Badge>;
+        return <span className="font-bold text-slate-700">{status}</span>;
     }
   };
 
@@ -683,7 +683,7 @@ export default function MPNMaster() {
                         <div className="flex items-center justify-center space-x-1">
                           <button
                             onClick={() => openViewModal(row)}
-                            className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                             title="View MPN Details"
                           >
                             <Eye className="h-3.5 w-3.5" />
@@ -692,14 +692,14 @@ export default function MPNMaster() {
                             <>
                               <button
                                 onClick={() => openEditModal(row)}
-                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                                 title="Edit MPN"
                               >
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDelete(row._id)}
-                                className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                className="p-1 text-slate-400 hover:text-red-600 transition-colors"
                                 title="Soft Delete MPN"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -708,10 +708,10 @@ export default function MPNMaster() {
                           ) : (
                             <button
                               onClick={() => handleRestore(row._id)}
-                              className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded text-[10px] font-bold transition-all flex items-center gap-1"
+                              className="p-1 text-emerald-600 hover:text-emerald-700 transition-colors flex items-center"
                               title="Restore Record"
                             >
-                              <RotateCcw className="h-3 w-3" /> Restore
+                              <RotateCcw className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
