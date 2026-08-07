@@ -5,6 +5,7 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
+    "seed": "node scripts/seed.js",
     "start": "node server.js",
     "dev": "node server.js",
     "dev:api": "node server.js",
