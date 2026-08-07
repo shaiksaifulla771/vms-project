@@ -4,16 +4,16 @@ const Material = require('../models/Material');
 /**
  * Traverses the BOM dependency graph to detect multi-level circular dependencies.
  * @param {string} targetProductId - The _id of the product whose BOM is being created/updated.
- * @param {Array} proposedComponents - Array of component objects [{ materialId, quantity }].
+ * @param {Array} proposedComponentMaterialIds - Array of string material IDs that this BOM will depend on.
  * @param {string|null} currentBomId - The _id of the current BOM (if updating) to exclude self.
  * @returns {Promise<{ hasCycle: boolean, cyclePath: string[]|null, cycleNames: string[]|null }>}
  */
-const detectCycle = async (targetProductId, proposedComponents, currentBomId = null) => {
+const detectCycle = async (targetProductId, proposedComponentMaterialIds, currentBomId = null) => {
   const targetIdStr = targetProductId.toString();
 
   // 1. Direct self-reference check
-  for (const comp of proposedComponents) {
-    if (comp.materialId && comp.materialId.toString() === targetIdStr) {
+  for (const compMatId of proposedComponentMaterialIds) {
+    if (compMatId === targetIdStr) {
       const targetMat = await Material.findById(targetProductId);
       const name = targetMat ? targetMat.name : targetIdStr;
       return {
@@ -38,14 +38,19 @@ const detectCycle = async (targetProductId, proposedComponents, currentBomId = n
       query._id = { $ne: currentBomId };
     }
 
-    const bomDoc = await BOM.findOne(query);
+    // In V2, BOM components reference mpnId. We need to populate to get materialId.
+    const bomDoc = await BOM.findOne(query).populate({
+      path: 'components.mpnId',
+      select: 'materialId'
+    });
+
     if (!bomDoc || !Array.isArray(bomDoc.components)) {
       return null;
     }
 
     for (const childComp of bomDoc.components) {
-      if (!childComp.materialId) continue;
-      const childIdStr = childComp.materialId.toString();
+      if (!childComp.mpnId || !childComp.mpnId.materialId) continue;
+      const childIdStr = childComp.mpnId.materialId.toString();
 
       if (childIdStr === targetIdStr) {
         return [...path, childIdStr];
@@ -60,9 +65,7 @@ const detectCycle = async (targetProductId, proposedComponents, currentBomId = n
     return null;
   };
 
-  for (const comp of proposedComponents) {
-    if (!comp.materialId) continue;
-    const startIdStr = comp.materialId.toString();
+  for (const startIdStr of proposedComponentMaterialIds) {
     const cyclePath = await dfs(startIdStr, [targetIdStr, startIdStr]);
 
     if (cyclePath) {

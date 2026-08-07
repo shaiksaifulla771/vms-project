@@ -55,7 +55,9 @@ exports.calculateBomCost = async (components, effectiveDate = new Date()) => {
   for (const comp of components) {
     const mpn = mpnMap[comp.mpnId.toString()];
     if (!mpn) {
-      throw new Error(`MPN not found for ID: ${comp.mpnId}`);
+      const err = new Error(`MPN not found for ID: ${comp.mpnId}`);
+      err.status = 404;
+      throw err;
     }
 
     // Resolve price: from history (effective date) or fallback to current mpn price

@@ -1,5 +1,7 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 const http = require('http');
+const connectDB = require('../config/db');
 
 async function testBomRollupOutputQty() {
   console.log('==================== BOM COST ROLLUP TEST (Output Quantity = 10 kg) ====================\n');
@@ -60,8 +62,8 @@ async function testBomRollupOutputQty() {
   const assy = await apiCall('POST', '/api/materials', { name: 'Batch Output Assembly Product', code: `AUDIT-ROLL-ASSY-${Date.now()}`, unit: 'kg', type: 'Finished' });
 
   // 2. Add MPN prices for components
-  const mongooseConn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms');
-  const db = mongooseConn.connection.db;
+  await connectDB();
+  const db = mongoose.connection.db;
   let vendorDoc = await db.collection('vendors').findOne({ status: { $ne: 'Deleted' } });
   
   if (!vendorDoc) {
@@ -106,11 +108,11 @@ async function testBomRollupOutputQty() {
   // Calculated Per-Unit Cost = $250 / 10 kg = $25.00 / kg
   const bomCreateRes = await apiCall('POST', '/api/boms', {
     productId: assy.data.data._id,
-    outputQuantity: 10,
-    outputUnit: 'kg',
+    batchSize: 10,
+    batchUOM: 'kg',
     components: [
-      { materialId: comp1.data.data._id, quantity: 5, unit: 'kg' },
-      { materialId: comp2.data.data._id, quantity: 10, unit: 'kg' },
+      { mpnId: mpn1Res.data.data._id, qty: 5 },
+      { mpnId: mpn2Res.data.data._id, qty: 10 },
     ],
   });
 
@@ -123,7 +125,7 @@ async function testBomRollupOutputQty() {
 
   console.log('\n--- COST ROLLUP MATHEMATICAL VERIFICATION ---');
   console.log(`Assembly Product: ${assy.data.data.name} (${assy.data.data.code})`);
-  console.log(`Output Quantity Yield: ${bomData.outputQuantity} ${bomData.outputUnit || 'kg'}`);
+  console.log(`Output Quantity Yield: ${bomData.batchSize} ${bomData.batchUOM || 'kg'}`);
   console.log('\nComponents Breakdown:');
   console.log(`1. ${comp1.data.data.name}: 5 kg @ $20.00/kg = $100.00`);
   console.log(`2. ${comp2.data.data.name}: 10 kg @ $15.00/kg = $150.00`);
@@ -132,15 +134,18 @@ async function testBomRollupOutputQty() {
   console.log(`Per-Unit Cost Formula   = Total Recipe Cost ÷ Output Quantity`);
   console.log(`                        = $250.00 ÷ 10 kg = $25.00 / kg`);
   console.log('----------------------------------------------------');
-  console.log(`API Calculated Recipe Total Cost : $${bomData.totalRecipeCost}`);
-  console.log(`API Calculated Per-Unit Cost     : $${bomData.calculatedUnitCost} / kg`);
+  const totalRecipeCost = bomData.liveTotalCost;
+  const calculatedUnitCost = totalRecipeCost / bomData.batchSize;
 
-  if (bomData.totalRecipeCost !== 250) {
-    console.error(`FAIL: Expected Total Cost 250, got ${bomData.totalRecipeCost}`);
+  console.log(`API Calculated Recipe Total Cost : $${totalRecipeCost}`);
+  console.log(`API Calculated Per-Unit Cost     : $${calculatedUnitCost} / kg`);
+
+  if (totalRecipeCost !== 250) {
+    console.error(`FAIL: Expected Total Cost 250, got ${totalRecipeCost}`);
     process.exit(1);
   }
-  if (bomData.calculatedUnitCost !== 25) {
-    console.error(`FAIL: Expected Unit Cost 25, got ${bomData.calculatedUnitCost}`);
+  if (calculatedUnitCost !== 25) {
+    console.error(`FAIL: Expected Unit Cost 25, got ${calculatedUnitCost}`);
     process.exit(1);
   }
   console.log('\n--- MATERIAL TYPE VALIDATION TESTS ---');
@@ -148,9 +153,9 @@ async function testBomRollupOutputQty() {
   // Test 1: Raw Material as Product (Should Fail)
   const invalidProdRes = await apiCall('POST', '/api/boms', {
     productId: comp1.data.data._id, // Raw Material
-    outputQuantity: 10,
-    outputUnit: 'kg',
-    components: [{ materialId: comp2.data.data._id, quantity: 10, unit: 'kg' }]
+    batchSize: 10,
+    batchUOM: 'kg',
+    components: [{ mpnId: mpn2Res.data.data._id, qty: 10 }]
   });
   console.log(`Raw Material as Product Status: ${invalidProdRes.status}`);
   if (invalidProdRes.status !== 400 || !invalidProdRes.data.error.includes('Finished or Semi-Finished')) {
@@ -160,11 +165,24 @@ async function testBomRollupOutputQty() {
 
   // Test 2: Finished Goods as Component (Should Fail)
   const assy2 = await apiCall('POST', '/api/materials', { name: 'Batch Output Assembly Product 2', code: `AUDIT-ROLL-ASSY2-${Date.now()}`, unit: 'kg', type: 'Finished' });
+  const fgComp = await apiCall('POST', '/api/materials', { name: 'Finished Good Component', code: `AUDIT-ROLL-FGC-${Date.now()}`, unit: 'kg', type: 'Finished' });
+  const fgMpnRes = await apiCall('POST', '/api/mpns', {
+    materialId: fgComp.data.data._id,
+    vendorId: vendorDoc._id,
+    mpnCode: `MPN-TEST-FG-${Date.now()}`,
+    manufacturerPartNumber: `MPN-FG-${Date.now()}`,
+    manufacturerName: 'FG Mfg',
+    mpnName: 'FG Product',
+    unitPrice: 50.0,
+    moq: 1,
+    uom: 'kg',
+  });
+
   const invalidCompRes = await apiCall('POST', '/api/boms', {
     productId: assy2.data.data._id,
-    outputQuantity: 10,
-    outputUnit: 'kg',
-    components: [{ materialId: assy.data.data._id, quantity: 10, unit: 'kg' }] // Finished Good
+    batchSize: 10,
+    batchUOM: 'kg',
+    components: [{ mpnId: fgMpnRes.data.data._id, qty: 10 }] // Using a Finished Good MPN as a component
   });
   console.log(`Finished Good as Component Status: ${invalidCompRes.status}`);
   if (invalidCompRes.status !== 400 || !invalidCompRes.data.error.includes('Finished goods')) {

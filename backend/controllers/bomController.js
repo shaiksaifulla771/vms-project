@@ -48,6 +48,9 @@ exports.createBOM = async (req, res, next) => {
     const newBom = await bomRecipeService.createBOM(req.body, userContext);
     res.status(201).json({ success: true, data: newBom });
   } catch (err) {
+    if (err.status === 400 || err.status === 404) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
     next(err);
   }
 };
@@ -71,7 +74,7 @@ exports.updateBOM = async (req, res, next) => {
     
     res.status(200).json({ success: true, data: result });
   } catch (err) {
-    if (err.status === 404 || err.status === 409) {
+    if (err.status === 404 || err.status === 409 || err.status === 400) {
       return res.status(err.status).json({ success: false, error: err.message });
     }
     next(err);

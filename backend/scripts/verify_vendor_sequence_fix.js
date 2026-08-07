@@ -1,5 +1,7 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 const http = require('http');
+const connectDB = require('../config/db');
 
 async function verifyVendorSequenceFix() {
   console.log('==================== VENDOR MASTER AUTO-SEQUENCE FIX VERIFICATION ====================\n');
@@ -75,8 +77,8 @@ async function verifyVendorSequenceFix() {
   console.log(`Post-Delete Vendor Sequence Peek: ${peek2.data.nextCode}`);
 
   // 5. Cleanup test vendor completely
-  const mongooseConn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vms');
-  const db = mongooseConn.connection.db;
+  await connectDB();
+  const db = mongoose.connection.db;
   await db.collection('vendors').deleteOne({ _id: new mongoose.Types.ObjectId(vendorId) });
   await mongoose.disconnect();
 
