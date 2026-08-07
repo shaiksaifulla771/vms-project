@@ -2,6 +2,7 @@ const MPN = require('../models/MPN');
 const Sequence = require('../models/Sequence');
 const XLSX = require('xlsx');
 const { generateSingleMpnPDF } = require('../utils/pdfGenerator');
+const MPNService = require('../services/mpnService');
 
 // Helper to normalize manufacturer name (trim and case-normalize to uppercase)
 const normalizeManufacturer = (name) => {
@@ -163,148 +164,13 @@ exports.getManufacturers = async (req, res, next) => {
 };
 
 // @desc    Create MPN (single save path, status drives validation strictness)
-// @desc    Create MPN (single save path, status drives validation strictness)
 // @route   POST /api/mpns
 const MPNPriceHistory = require('../models/MPNPriceHistory');
 
 exports.createMPN = async (req, res, next) => {
   try {
-    // Validate type for string fields against object/array injection payloads
-    const stringTypeError = validateStringFields(req.body, [
-      { name: 'manufacturerName', label: 'Manufacturer Name' },
-      { name: 'mpnName', label: 'MPN Name' },
-      { name: 'manufacturerPartNumber', label: 'Manufacturer Part Number' },
-
-      { name: 'partDescription', label: 'Part Description' },
-      { name: 'mpnCode', label: 'MPN Code' },
-      { name: 'gstin', label: 'GSTIN' },
-    ]);
-
-    if (stringTypeError) {
-      return res.status(400).json({ success: false, error: stringTypeError });
-    }
-
-    const { status = 'Active', isDirectFromManufacturer, vendorId } = req.body;
-    let { manufacturerName, manufacturerPartNumber } = req.body;
-
-    manufacturerName = normalizeManufacturer(manufacturerName);
-    if (typeof manufacturerPartNumber === 'string' && manufacturerPartNumber.trim()) {
-      manufacturerPartNumber = manufacturerPartNumber.trim();
-    } else {
-      manufacturerPartNumber = req.body.mpnCode || 'MPN-AUTO';
-    }
-
-    req.body.manufacturerName = manufacturerName;
-    req.body.manufacturerPartNumber = manufacturerPartNumber;
-
-    // Check linked Vendor's GSTIN: if vendor already has GSTIN, do not duplicate on MPN
-    if (vendorId) {
-      const Vendor = require('../models/Vendor');
-      const vendorDoc = await Vendor.findById(vendorId);
-      if (vendorDoc && vendorDoc.gstin && vendorDoc.gstin.trim()) {
-        req.body.gstin = '';
-      }
-    }
-
-    if (req.body.price === undefined && req.body.unitPrice !== undefined) {
-      req.body.price = req.body.unitPrice;
-    }
-
-    if (status === 'Draft' && (req.body.price === undefined || req.body.price === null)) {
-      req.body.price = 1;
-    }
-
-    // Status drives validation strictness: Draft bypasses required checks
-    if (status !== 'Draft') {
-      if (!manufacturerName) {
-        return res.status(400).json({ success: false, error: 'Manufacturer Name is required' });
-      }
-      if (!req.body.materialId) {
-        return res.status(400).json({ success: false, error: 'Please link a Material' });
-      }
-      if (!vendorId) {
-        return res.status(400).json({ success: false, error: 'Please link a Vendor' });
-      }
-      if (req.body.price === undefined || req.body.price === null || Number(req.body.price) <= 0) {
-        return res.status(400).json({ success: false, error: 'Price is required and must be greater than 0' });
-      }
-
-      if (!req.body.moq || req.body.moq < 1) {
-        return res.status(400).json({ success: false, error: 'MOQ must be at least 1' });
-      }
-
-
-      // Duplicate check for SAME vendor
-      const existing = await MPN.findOne({
-        status: { $ne: 'Deleted' },
-        vendorId,
-        manufacturerName: { $regex: new RegExp(`^${manufacturerName}$`, 'i') },
-        manufacturerPartNumber: { $regex: new RegExp(`^${manufacturerPartNumber}$`, 'i') },
-      });
-
-      if (existing) {
-        return res.status(400).json({
-          success: false,
-          error: `A part with Manufacturer '${manufacturerName}' and Part Number '${manufacturerPartNumber}' is already registered for this Vendor.`,
-        });
-      }
-    }
-
-    // Auto-generate code if missing
-    if (!req.body.mpnCode) {
-      const activeMPNs = await MPN.find(
-        { mpnCode: /^MPN\d{4}$/i, status: { $ne: 'Deleted' } },
-        { mpnCode: 1 }
-      );
-      let maxNum = 1000;
-      activeMPNs.forEach((m) => {
-        if (m.mpnCode) {
-          const num = parseInt(m.mpnCode.substring(3), 10);
-          if (!isNaN(num) && num < 10000 && num > maxNum) maxNum = num;
-        }
-      });
-      const Sequence = require('../models/Sequence');
-      const seqDoc = await Sequence.findOne({ $or: [{ name: /mpnCode/i }, { _id: 'mpnCode' }] });
-      const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
-      const finalMax = Math.max(maxNum, seqNum);
-      req.body.mpnCode = `MPN${finalMax + 1}`;
-    }
-
-    // Check for duplicates (no reuse)
-    if (req.body.mpnCode) {
-      const existingMpn = await MPN.findOne({ mpnCode: req.body.mpnCode });
-      if (existingMpn) {
-        return res.status(400).json({ success: false, error: `MPN with code '${req.body.mpnCode}' already exists.` });
-      }
-    }
-    const mpn = await MPN.create(req.body);
-    const match = mpn.mpnCode.match(/^MPN(\d{4})$/i);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num) && num >= 1000 && num < 10000) {
-        const Sequence = require('../models/Sequence');
-        const seqDoc = await Sequence.findById('mpnCode');
-        const currentSeq = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
-        if (num > currentSeq) {
-          await Sequence.findByIdAndUpdate(
-            'mpnCode',
-            { $set: { seq: num } },
-            { upsert: true, new: true }
-          );
-        }
-      }
-    }
-
-    if (mpn.price !== undefined && mpn.price !== null) {
-      await MPNPriceHistory.create({
-        mpnId: mpn._id,
-        previousPrice: null,
-        newPrice: mpn.price,
-        effectiveDate: new Date(),
-        modifiedBy: req.user ? req.user.name : 'System'
-      });
-    }
-
+    const mpn = await MPNService.createMPN(req.body);
+    
     const populated = await mpn.populate([
       { path: 'materialId', select: 'name code unit' },
       { path: 'vendorId', select: 'name company vendorId gstin' },
@@ -312,6 +178,9 @@ exports.createMPN = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
+    if (err.message && (err.message.includes('Validation Error') || err.message.includes('Duplicate Error'))) {
+      return res.status(400).json({ success: false, error: err.message.replace(/^(Validation Error:|Duplicate Error:)\s*/, '') });
+    }
     next(err);
   }
 };
