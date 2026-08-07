@@ -198,6 +198,8 @@ exports.updateMPN = async (req, res, next) => {
       { name: 'partDescription', label: 'Part Description' },
       { name: 'mpnCode', label: 'MPN Code' },
       { name: 'gstin', label: 'GSTIN' },
+      { name: 'uom', label: 'UOM' },
+      { name: 'priceUOM', label: 'Price UOM' },
     ]);
 
     if (stringTypeError) {
