@@ -6,6 +6,7 @@ const { escapeRegex } = require('../utils/security');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 const { writeAuditLog } = require('../services/auditService');
+const VendorService = require('../services/vendorService');
 
 exports.getVendors = async (req, res, next) => {
   try {
@@ -51,83 +52,14 @@ exports.createVendor = async (req, res, next) => {
   const session = await mongoose.startSession();
   startSafeTransaction(session);
   try {
-    const { 
-      name, company, email, phone, address, address2, zipCode, city, state, country,
-      gstin, gstList, hasNoGst,
-      primaryContactName, primaryContactPhone, primaryContactDesignation, notes, 
-      contacts,
-      category, subCategory, 
-      ffsc2200, ffsc2200Expiry, ffsc2200Qty,
-      fssai, fssaiExpiry, fssaiQty,
-      bankAccountHolder, bankAccountNumber, bankName, ifscCode,
-      status 
-    } = req.body;
-
-    let vendorId = req.body.vendorId;
-
-    if (!name || !email) {
-      await abortSafeTransaction(session);
-      return res.status(400).json({ success: false, error: 'Please provide name and email' });
-    }
-    const existing = await Vendor.findOne({ email }).session(session);
-    if (existing) {
-      await abortSafeTransaction(session);
-      return res.status(400).json({ success: false, error: 'Vendor with this email address already exists' });
-    }
-
-    // Ensure vendorId uniqueness and auto-increment if the provided one is taken
-    if (vendorId) {
-      const existingVendorId = await Vendor.findOne({ vendorId: vendorId.toUpperCase() }).session(session);
-      if (existingVendorId) {
-        if (/^V\d+$/i.test(vendorId.toUpperCase())) {
-          const allVendors = await Vendor.find({ vendorId: /^V\d+$/i }, { vendorId: 1 }).session(session);
-          let maxNum = 1000;
-          allVendors.forEach(v => {
-            const num = parseInt((v.vendorId || '').substring(1), 10);
-            if (!isNaN(num) && num > maxNum) maxNum = num;
-          });
-          vendorId = `V${maxNum + 1}`;
-        } else {
-          await abortSafeTransaction(session);
-          return res.status(400).json({ success: false, error: `Vendor with code '${vendorId}' already exists` });
-        }
-      }
-    }
-
-    if (!vendorId) {
-      const allVendors = await Vendor.find({ vendorId: /^V\d+$/i }, { vendorId: 1 }).session(session);
-      let maxNum = 1000;
-      allVendors.forEach(v => {
-        const num = parseInt((v.vendorId || '').substring(1), 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      });
-      vendorId = `V${maxNum + 1}`;
-      await Sequence.findByIdAndUpdate('vendorCode', { $set: { seq: maxNum + 1 } }, { upsert: true, session });
-    }
-
-    const vendor = new Vendor({
-      vendorId, name, company: company || name, email, phone: phone || '', 
-      address: address || '', address2, zipCode, city, state, country,
-      gstin, gstList: gstList || [], hasNoGst: hasNoGst || false,
-      primaryContactName, primaryContactPhone, primaryContactDesignation, notes,
-      contacts: contacts || [],
-      category: category || 'Other', subCategory, 
-      ffsc2200, ffsc2200Expiry, ffsc2200Qty,
-      fssai, fssaiExpiry, fssaiQty,
-      bankAccountHolder, bankAccountNumber, bankName, ifscCode,
-      status: status || 'Active',
-      secondaryAddresses: req.body.secondaryAddresses || [],
-    });
-    
-    await vendor.save({ session });
-
-    // Write audit log
-    await writeAuditLog(session, 'Vendor', vendor._id, 'CREATE', null, vendor, req.user ? req.user.id : null);
-
+    const vendor = await VendorService.createVendor(req.body, req.user, session);
     await commitSafeTransaction(session);
     res.status(201).json({ success: true, data: vendor });
   } catch (err) {
     await abortSafeTransaction(session);
+    if (err.message === 'Please provide name and email' || err.message.includes('already exists')) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
     next(err);
   } finally {
     session.endSession();
