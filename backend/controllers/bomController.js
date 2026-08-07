@@ -33,192 +33,48 @@ exports.getBOM = async (req, res, next) => {
   }
 };
 
+const bomRecipeService = require('../services/bomRecipeService');
+
 // @desc    Create new BOM
 // @route   POST /api/bom
 exports.createBOM = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  startSafeTransaction(session);
   try {
-    const { productId, batchSize, batchUOM, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode } = req.body;
+    const userContext = {
+      name: req.user ? req.user.name : 'System',
+      id: req.user ? req.user.id : null,
+      ip: req.ip || req.connection?.remoteAddress || 'Unknown'
+    };
 
-
-    const eDate = effectiveDate ? new Date(effectiveDate) : new Date();
-    const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
-
-    const cleanComponents = componentsWithCost.map(c => ({
-      mpnId: c.mpnId,
-      qty: c.qty,
-      lossPercent: c.lossPercent
-    }));
-
-    let seqDoc = await Sequence.findById('bomOrder').session(session);
-    if (!seqDoc) {
-      seqDoc = await Sequence.create([{ _id: 'bomOrder', seq: 1000 }], { session });
-      seqDoc = seqDoc[0];
-    } else {
-      seqDoc = await Sequence.findByIdAndUpdate('bomOrder', { $inc: { seq: 1 } }, { new: true, session });
-    }
-    const bomNumber = `BOM-${seqDoc.seq}`;
-
-    const newBom = new BOM({
-      productId,
-      bomNumber,
-      notes: req.body.notes || '',
-      manufacturer: manufacturer || '',
-      batchSize: Number(batchSize),
-      batchUOM: String(batchUOM || 'pcs').trim(),
-      batchCode: batchCode || '',
-      components: cleanComponents,
-      packagingCost: Number(packagingCost) || 0,
-      processingCost: Number(processingCost) || 0,
-      overheadCost: Number(overheadCost) || 0,
-      version: 1,
-      previousVersionId: previousVersionId || null,
-      effectiveDate: eDate,
-      status: 'Active',
-      createdBy: req.user ? req.user.name : 'System',
-      updatedBy: req.user ? req.user.name : 'System'
-    });
-    
-    await newBom.save({ session });
-
-    if (updateMasterManufacturer && manufacturer) {
-      await mongoose.model('MPN').findOneAndUpdate(
-        { materialId: productId },
-        { manufacturerName: manufacturer },
-        { session, sort: { createdAt: -1 } }
-      );
-    }
-
-    await BOMAuditLog.create([{
-      bomId: newBom._id,
-      action: 'CREATE',
-      performedBy: req.user ? req.user.name : 'System',
-      ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown',
-      details: { version: 1, batchSize, batchUOM }
-    }], { session });
-
-    await writeAuditLog(session, 'BOM', newBom._id, 'CREATE', null, newBom, req.user ? req.user.id : null);
-
-    await commitSafeTransaction(session);
+    const newBom = await bomRecipeService.createBOM(req.body, userContext);
     res.status(201).json({ success: true, data: newBom });
   } catch (err) {
-    await abortSafeTransaction(session);
     next(err);
-  } finally {
-    session.endSession();
   }
 };
 
 // @desc    Update BOM (Versioning)
 // @route   PUT /api/bom/:id
 exports.updateBOM = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  startSafeTransaction(session);
   try {
-    const { productId, batchSize, batchUOM, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode } = req.body;
+    const userContext = {
+      name: req.user ? req.user.name : 'System',
+      id: req.user ? req.user.id : null,
+      ip: req.ip || req.connection?.remoteAddress || 'Unknown'
+    };
 
-
-    const bom = await BOM.findById(req.params.id).session(session);
-    if (!bom || bom.status === 'Obsolete') {
-      await abortSafeTransaction(session);
-      return res.status(404).json({ success: false, error: 'BOM not found or obsolete' });
+    const result = await bomRecipeService.updateBOM(req.params.id, req.body, userContext);
+    
+    if (result._isPartialUpdate) {
+      delete result._isPartialUpdate;
+      return res.status(200).json({ success: true, message: 'BOM updated', data: result });
     }
-
-    // Handle partial updates without creating a new version
-    if ((status || batchCode !== undefined) && !components && !productId) {
-      const updateFields = { updatedBy: req.user ? req.user.name : 'System' };
-      if (status) updateFields.status = status;
-      if (batchCode !== undefined) updateFields.batchCode = batchCode;
-
-      await BOM.updateOne(
-        { _id: bom._id }, 
-        { $set: updateFields },
-        { session }
-      );
-      
-      await BOMAuditLog.create([{
-        bomId: bom._id,
-        action: 'UPDATE',
-        performedBy: req.user ? req.user.name : 'System',
-        ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown',
-        details: updateFields
-      }], { session });
-
-      await commitSafeTransaction(session);
-      return res.status(200).json({ success: true, message: 'BOM updated', data: { ...bom.toObject(), ...updateFields } });
-    }
-
-    if (version !== undefined && Number(version) !== bom.version) {
-      await abortSafeTransaction(session);
-      return res.status(409).json({ 
-        success: false, 
-        error: `Version conflict: The BOM was modified by someone else (Server version: ${bom.version}, Your version: ${version}). Please reload and try again.` 
-      });
-    }
-
-    const eDate = effectiveDate ? new Date(effectiveDate) : bom.effectiveDate;
-    const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
-    const cleanComponents = componentsWithCost.map(c => ({
-      mpnId: c.mpnId,
-      qty: c.qty,
-      lossPercent: c.lossPercent
-    }));
-
-    const oldDoc = bom.toObject();
-
-    // Mark old version as Deleted (previously Obsolete)
-    bom.status = 'Deleted';
-    bom.updatedBy = req.user ? req.user.name : 'System';
-    await bom.save({ session });
-
-    const newBomData = new BOM({
-      productId,
-      bomNumber: bom.bomNumber,
-      notes: req.body.notes !== undefined ? req.body.notes : bom.notes,
-      manufacturer: manufacturer !== undefined ? manufacturer : bom.manufacturer,
-      batchSize: Number(batchSize),
-      batchUOM: String(batchUOM || 'pcs').trim(),
-      batchCode: batchCode !== undefined ? batchCode : bom.batchCode,
-      components: cleanComponents,
-      packagingCost: Number(packagingCost) || 0,
-      processingCost: Number(processingCost) || 0,
-      overheadCost: Number(overheadCost) || 0,
-      version: bom.version + 1,
-      previousVersionId: bom._id,
-      effectiveDate: eDate,
-      status: status || 'Active',
-      createdBy: req.user ? req.user.name : 'System',
-      updatedBy: req.user ? req.user.name : 'System'
-    });
-
-    await newBomData.save({ session });
-
-    if (updateMasterManufacturer && manufacturer) {
-      await mongoose.model('MPN').findOneAndUpdate(
-        { materialId: productId },
-        { manufacturerName: manufacturer },
-        { session, sort: { createdAt: -1 } }
-      );
-    }
-
-    await BOMAuditLog.create([{
-      bomId: newBomData._id,
-      action: 'VERSION_BUMP',
-      performedBy: req.user ? req.user.name : 'System',
-      ipAddress: req.ip || req.connection?.remoteAddress || 'Unknown',
-      details: { oldVersionId: bom._id, newVersion: newBomData.version }
-    }], { session });
-
-    await writeAuditLog(session, 'BOM', newBomData._id, 'UPDATE', oldDoc, newBomData, req.user ? req.user.id : null);
-
-    await commitSafeTransaction(session);
-    res.status(200).json({ success: true, data: newBomData });
+    
+    res.status(200).json({ success: true, data: result });
   } catch (err) {
-    await abortSafeTransaction(session);
+    if (err.status === 404 || err.status === 409) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
     next(err);
-  } finally {
-    session.endSession();
   }
 };
 
