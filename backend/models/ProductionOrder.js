@@ -32,6 +32,10 @@ const ProductionOrderSchema = new mongoose.Schema({
     unique: true,
     index: true,
   },
+  planId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionPlan',
+  },
   bomId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'BOM',

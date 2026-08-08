@@ -634,7 +634,7 @@ export default function MpnBulkModal({ isOpen, onClose, vendors = [], materials 
                             />
                           </td>
 
-                          <td className="px-3 py-2.5 font-mono font-bold text-blue-700">
+                          <td className="px-3 py-2.5 font-mono font-bold text-blue-700 truncate max-w-[140px]" title={autoAssignedCode}>
                             {autoAssignedCode}
                           </td>
 
@@ -702,10 +702,10 @@ export default function MpnBulkModal({ isOpen, onClose, vendors = [], materials 
                             </>
                           ) : (
                             <>
-                              <td className="px-3 py-2.5 font-semibold text-slate-900">
-                                <div>{row.manufacturerPartNumber || row.mpnName || '—'}</div>
+                              <td className="px-3 py-2.5 font-semibold text-slate-900 truncate max-w-[200px]" title={row.manufacturerPartNumber || row.mpnName || ''}>
+                                <div className="truncate">{row.manufacturerPartNumber || row.mpnName || '—'}</div>
                                 {row.mpnName && row.mpnName !== row.manufacturerPartNumber && (
-                                  <div className="text-[11px] text-slate-500 font-normal">{row.mpnName}</div>
+                                  <div className="text-[11px] text-slate-500 font-normal truncate">{row.mpnName}</div>
                                 )}
                                 {row.apiError && (
                                   <div className="text-[11px] text-red-600 mt-1 flex items-center gap-1 font-normal">

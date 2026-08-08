@@ -636,10 +636,10 @@ export default function MPNMaster() {
                       <td className="px-2 py-1.5 text-center font-mono text-slate-400 font-semibold text-[11px] border-r border-slate-200 bg-slate-50/50">
                         {((currentPage - 1) * pageSize) + index + 1}
                       </td>
-                      <td className="px-2.5 py-1.5 font-mono text-xs font-bold text-blue-700 border-r border-slate-200">
+                      <td className="px-2.5 py-1.5 font-mono text-xs font-bold text-blue-700 border-r border-slate-200 truncate max-w-[140px]" title={row.mpnCode || ''}>
                         {row.mpnCode || '—'}
                       </td>
-                      <td className="px-2.5 py-1.5 font-mono text-xs text-slate-900 font-medium border-r border-slate-200">
+                      <td className="px-2.5 py-1.5 font-mono text-xs text-slate-900 font-medium border-r border-slate-200 truncate max-w-[180px]" title={row.manufacturerPartNumber || ''}>
                         {row.manufacturerPartNumber || '—'}
                       </td>
                       <td className="px-2.5 py-1.5 text-xs text-slate-800 border-r border-slate-200 truncate max-w-[160px]" title={row.manufacturerName || ''}>

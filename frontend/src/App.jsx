@@ -14,6 +14,8 @@ import Manufacturing from './pages/Manufacturing';
 import Quality from './pages/Quality';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Warehouse from './pages/Warehouse';
+import Scheduling from './pages/Scheduling';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // New Routed BOM Module
@@ -93,13 +95,15 @@ const AppContent = () => {
     return (
       <Routes>
         <Route path="/" element={<Navigate to="/masters" />} />
+        <Route path="/dashboard/*" element={<Dashboard />} />
         <Route path="/masters/*" element={<Masters />} />
-        <Route path="/bom/*" element={<BOMRoutes />} />
-        <Route path="/planning/*" element={<Planning />} />
+        <Route path="/warehouse/*" element={<Warehouse />} />
         <Route path="/inventory/*" element={<Inventory />} />
-        <Route path="/purchasing/*" element={<Purchasing />} />
+        <Route path="/planning/*" element={<Planning />} />
+        <Route path="/bom/*" element={<BOMRoutes />} />
         <Route path="/production/*" element={<ProductionRoutes />} />
-        <Route path="/quality/*" element={<Quality />} />
+        <Route path="/scheduling/*" element={<Scheduling />} />
+        <Route path="/purchasing/*" element={<Purchasing />} />
         <Route path="/reports/*" element={<Reports />} />
         <Route path="/settings/*" element={<Settings />} />
         <Route path="*" element={<Navigate to="/masters" />} />

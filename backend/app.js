@@ -106,6 +106,7 @@ app.use('/api/boms', require('./routes/bomRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/purchases', require('./routes/purchaseRoutes'));
 app.use('/api/productions', require('./routes/productionRoutes'));
+app.use('/api/production-plans', require('./routes/productionPlanRoutes'));
 app.use('/api/quality', require('./routes/qualityRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/imports', require('./routes/imports'));

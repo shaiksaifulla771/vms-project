@@ -13,7 +13,9 @@ import {
   LogOut,
   Settings,
   MoreVertical,
-  Menu
+  Menu,
+  Building2,
+  CalendarClock
 } from 'lucide-react';
 
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
@@ -21,11 +23,13 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
 
   const allMenuItems = [
     { id: 'masters', name: 'ERP Masters', icon: Database, roles: ['Admin', 'Inventory Manager'] },
+    { id: 'warehouse', name: 'Warehouse', icon: Building2, roles: ['Admin', 'Inventory Manager'] },
     { id: 'boms', name: 'Bill of Materials', icon: ClipboardList, roles: ['Admin', 'Production Manager'] },
     { id: 'planning', name: 'MRP Planning', icon: Cpu, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
     { id: 'inventory', name: 'Inventory Ledger', icon: Boxes, roles: ['Admin', 'Inventory Manager'] },
     { id: 'purchasing', name: 'Procurement (POs)', icon: ShoppingBag, roles: ['Admin', 'Inventory Manager'] },
     { id: 'production', name: 'Production Orders', icon: Factory, roles: ['Admin', 'Production Manager'] },
+    { id: 'scheduling', name: 'Scheduling', icon: CalendarClock, roles: ['Admin', 'Production Manager'] },
     { id: 'quality', name: 'Quality Control', icon: ShieldCheck, roles: ['Admin', 'Production Manager'] },
     { id: 'reports', name: 'ERP Reports', icon: BarChart3, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
     { id: 'settings', name: 'Settings & Roles', icon: Settings, roles: ['Admin', 'Inventory Manager', 'Production Manager'] }
