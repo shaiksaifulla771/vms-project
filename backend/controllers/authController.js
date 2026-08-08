@@ -26,6 +26,10 @@ exports.register = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Email address already registered' });
     }
 
+    // Validate requested role against allowed roles
+    const validRequestedRoles = ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor'];
+    let finalRequestedRole = validRequestedRoles.includes(role) ? role : 'Viewer';
+
     // Generate random 6-digit OTP
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // Expires in 10 minutes
@@ -34,21 +38,27 @@ exports.register = async (req, res, next) => {
       username,
       email,
       password,
-      role,
-      isVerified: true
+      role: 'Viewer', // Hardcode default role
+      requestedRole: finalRequestedRole, // Track what they asked for
+      accountStatus: 'Pending', // Force pending state for Admin approval
+      isVerified: false, // Force OTP verification
+      otp: generatedOtp,
+      otpExpires
     });
 
-    const token = getSignedJwtToken(user._id);
+    // DO NOT issue a token during registration if they still need to OTP and be approved.
+    // Instead return a success response instructing them to check their email.
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful.',
-      token,
+      message: 'Registration successful. Please verify your OTP.',
       user: {
         id: user._id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        requestedRole: user.requestedRole,
+        accountStatus: user.accountStatus
       }
     });
   } catch (err) {
@@ -87,6 +97,23 @@ exports.verifyOtp = async (req, res, next) => {
     user.otpExpires = undefined;
     await user.save();
 
+    // We DO NOT issue a token if they are pending admin approval.
+    // However, if they are already Active (e.g. they requested a new OTP after approval?), we can issue one.
+    // The strict flow says: OTP verification -> Admin approval. So after OTP, they are still Pending.
+    if (user.accountStatus === 'Pending') {
+       return res.status(200).json({
+         success: true,
+         message: 'OTP verified successfully. Your account is now pending administrator approval.',
+         user: {
+           id: user._id,
+           username: user.username,
+           email: user.email,
+           role: user.role,
+           accountStatus: user.accountStatus
+         }
+       });
+    }
+
     const token = getSignedJwtToken(user._id);
 
     res.status(200).json({
@@ -97,7 +124,8 @@ exports.verifyOtp = async (req, res, next) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        accountStatus: user.accountStatus
       }
     });
   } catch (err) {
@@ -126,13 +154,27 @@ exports.login = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    // Check verification status
+    // Check verification status (OTP)
     if (!user.isVerified) {
       return res.status(403).json({
         success: false,
         error: 'Account not verified. Please verify your OTP code.',
         requireVerification: true,
         email: user.email
+      });
+    }
+
+    // Check account status (Admin Approval)
+    if (user.accountStatus === 'Pending') {
+      return res.status(403).json({
+        success: false,
+        error: 'Your account is pending administrator approval.',
+      });
+    }
+    if (user.accountStatus === 'Suspended') {
+      return res.status(403).json({
+        success: false,
+        error: 'Your account has been suspended.',
       });
     }
 
@@ -146,6 +188,7 @@ exports.login = async (req, res, next) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        accountStatus: user.accountStatus
       },
     });
   } catch (err) {
@@ -165,6 +208,7 @@ exports.getMe = async (req, res, next) => {
         username: req.user.username,
         email: req.user.email,
         role: req.user.role,
+        accountStatus: req.user.accountStatus
       },
     });
   } catch (err) {

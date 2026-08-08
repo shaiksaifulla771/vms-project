@@ -24,7 +24,8 @@ async function setupTestDB() {
       email: 'admin@vms.com',
       password: 'admin123',
       role: 'Admin',
-      isVerified: true
+      isVerified: true,
+      accountStatus: 'Active'
     });
     console.log('Seeded Admin: admin@vms.com');
 

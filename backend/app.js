@@ -16,44 +16,12 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
-// Security headers: Content Security Policy (CSP) disabled explicitly because the frontend SPA relies on dynamic asset loading and Tailwind inline utility classes.
-app.use(helmet({ contentSecurityPolicy: false }));
+// 1. Dynamic proxy trust configuration (Phase 8 & Testing)
+if (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1' || process.env.NODE_ENV === 'test') {
+  app.set('trust proxy', 1);
+}
 
-// Dedicated rate limiter for sensitive authentication endpoint (login)
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Max 100 failed login attempts per 15 minutes per IP (bumped for test suite execution)
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'Too many authentication attempts from this IP. Please try again after 15 minutes.' }
-});
-
-app.use('/api/auth/login', loginLimiter);
-
-// Rate limiting scoped to write/mutating routes
-const writeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // 500 mutating requests per 15 min per IP (ERP safe)
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'Too many write requests from this IP, please try again after 15 minutes.' }
-});
-
-app.use((req, res, next) => {
-  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    return writeLimiter(req, res, next);
-  }
-  next();
-});
-
-// Body parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
-
-// Sanitize data against NoSQL query operator injection ($ and .)
-app.use(mongoSanitize());
-
-// Enable CORS with strict production domain filtering
+// 2. Enable CORS with strict production domain filtering
 const allowedOrigins = process.env.CLIENT_URL
   ? process.env.CLIENT_URL.split(',').map(url => url.trim())
   : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://127.0.0.1:3000'];
@@ -71,25 +39,65 @@ app.use(cors({
   credentials: true
 }));
 
-// Healthcheck endpoint
+// Security headers: Content Security Policy (CSP) disabled explicitly because the frontend SPA relies on dynamic asset loading and Tailwind inline utility classes.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// Healthcheck endpoints (Public, bypasses rate limiters and auth)
 app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+  res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
-
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+  res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
-// Mount routers
+
+
+// Body parser (Must be BEFORE any routes or rate limiters that might inspect body)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Import rate limiters and auth middleware
+const { unauthenticatedIpLimiter, writeLimiter, readLimiter } = require('./middleware/rateLimiter');
+const { protect } = require('./middleware/authMiddleware');
+
+// 1. Unauthenticated IP protection (Global defense against volumetric attacks & invalid JWT spam)
+// Skips 2xx/3xx successful requests, so valid corporate NAT traffic is never penalized.
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth')) {
+    return next(); // Auth routes have their own specific limiters
+  }
+  return unauthenticatedIpLimiter(req, res, next);
+});
+
+// 2. Mount public/auth routes BEFORE global protection
 app.use('/api/auth', require('./routes/authRoutes'));
+
+// 3. Global Authentication Validation (Ensures req.user is verified cryptographically)
+// Routes that don't need auth (e.g. /health) bypass this below since they are mounted on '/'
+app.use('/api', (req, res, next) => {
+  protect(req, res, next);
+});
+
+// 4. Authenticated User-Aware Rate Limiting
+// Since this runs AFTER protect, req.user is guaranteed to be cryptographically verified!
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    return writeLimiter(req, res, next);
+  } else if (req.method === 'GET') {
+    return readLimiter(req, res, next);
+  }
+  next();
+});
+
+// Sanitize data against NoSQL query operator injection ($ and .)
+app.use(mongoSanitize());
+
+
+
+
+
+// Mount routers (already protected by the global /api middleware chain)
+app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/vendors', require('./routes/vendorRoutes'));
 app.use('/api/vendor-masters', require('./routes/vendorMasterRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));

@@ -81,6 +81,7 @@ export const AuthProvider = ({ children }) => {
           error: err.response.data.error
         };
       }
+      
       const msg = err.response?.data?.error || 'Authentication failed. Invalid email or password.';
       setError(msg);
       return { success: false, error: msg };

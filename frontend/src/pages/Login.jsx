@@ -18,7 +18,7 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Inventory Manager');
+  const [role, setRole] = useState('Viewer');
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMsg, setSuccessMsg] = useState('');
@@ -122,7 +122,9 @@ const Login = () => {
     const res = await register(username, email, password, role);
     setIsLoading(false);
     if (res.success) {
-      setSuccessMsg('Account registered successfully! You are now logged in.');
+      setSuccessMsg('Account registered! Please check your email for the OTP.');
+      setActiveTab('otp');
+      setVerifyEmail(email);
       setGenieState('celebrate');
       setTimeout(() => setGenieState('idle'), 1500);
       setUsername('');
@@ -148,16 +150,21 @@ const Login = () => {
     setIsLoading(false);
 
     if (res.success) {
-      setSuccessMsg('Account verified successfully! You are now logged in.');
+      if (res.user && res.user.accountStatus === 'Pending') {
+         setSuccessMsg('OTP verified! Your account is pending Admin approval.');
+         setGenieState('celebrate');
+         setTimeout(() => setGenieState('idle'), 1500);
+      } else {
+         setSuccessMsg('Account verified successfully! You are now logged in.');
+         setGenieState('granting');
+         setTimeout(() => {
+           setUser(res.user);
+         }, 500);
+      }
       setOtpCode('');
       setDemoOtpCode('');
-      
-      setGenieState('granting');
-      setTimeout(() => {
-        setUser(res.user);
-      }, 500);
     } else {
-      setErrors({ otp: res.error });
+      setErrors({ otp: res.error || 'OTP verification failed' });
       setGenieState('error');
       setTimeout(() => setGenieState('idle'), 800);
     }
@@ -366,22 +373,22 @@ const Login = () => {
                       <label className="text-xs font-bold text-slate-300 uppercase tracking-wide">Define Password</label>
                       <input type="password" value={password} onKeyDown={handleTyping} onChange={(e) => setPassword(e.target.value)} className="w-full px-3 py-2 bg-slate-900/50 border border-purple-500/30 rounded-lg text-sm text-white focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.4)] transition-all" required />
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 uppercase tracking-wide">Requested Role</label>
+                      <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full px-3 py-2 bg-slate-900/50 border border-purple-500/30 rounded-lg text-sm text-white focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.4)] transition-all" required>
+                        <option value="Viewer">Viewer (Default)</option>
+                        <option value="Inventory">Inventory</option>
+                        <option value="Production">Production</option>
+                        <option value="Warehouse">Warehouse</option>
+                        <option value="Admin">Admin (Requires Admin Approval)</option>
+                      </select>
+                      <p className="text-[10px] text-purple-300 mt-1">Your selected role will be reviewed by an administrator.</p>
+                    </div>
                     <Button type="submit" isLoading={isLoading} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 shadow-lg shadow-emerald-500/25 border-0 mt-2">Create New Account</Button>
                   </form>
                 )}
               </CardContent>
             </Card>
-          )}
-
-          {activeTab === 'signin' && (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => handleQuickLogin('admin@vms.com', 'Admin')} disabled={isLoading} className="bg-purple-900/30 border border-purple-500/30 hover:bg-purple-800/40 p-2 rounded-xl text-center transition-all hover:scale-105">
-                <span className="text-[10px] font-black text-purple-300 uppercase tracking-wider">Admin</span>
-              </button>
-              <button onClick={() => handleQuickLogin('inventory@vms.com', 'Inventory Manager')} disabled={isLoading} className="bg-blue-900/30 border border-blue-500/30 hover:bg-blue-800/40 p-2 rounded-xl text-center transition-all hover:scale-105">
-                <span className="text-[10px] font-black text-blue-300 uppercase tracking-wider">Inventory</span>
-              </button>
-            </div>
           )}
         </div>
       </div>

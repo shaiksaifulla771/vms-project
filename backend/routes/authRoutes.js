@@ -2,11 +2,13 @@ const express = require('express');
 const { register, login, getMe, verifyOtp } = require('../controllers/authController');
 const { protect, checkRole } = require('../middleware/authMiddleware');
 
+const { loginLimiter, otpLimiter, registerLimiter } = require('../middleware/rateLimiter');
+
 const router = express.Router();
 
-router.post('/register', register);
-router.post('/verify-otp', verifyOtp);
-router.post('/login', login);
+router.post('/register', registerLimiter, register);
+router.post('/verify-otp', otpLimiter, verifyOtp);
+router.post('/login', loginLimiter, login);
 router.get('/me', protect, getMe);
 
 // QA Test Route for RBAC

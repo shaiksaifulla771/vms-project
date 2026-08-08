@@ -10,7 +10,7 @@
     "dev": "node server.js",
     "dev:api": "node server.js",
     "dev:worker": "node worker.js",
-    "test:integration": "node scripts/security_verification_pass.js && node scripts/test_nosql_typecheck_fix.js && node scripts/test_sequence_peek_fix.js && node scripts/test_mpn_requirements.js && node scripts/verify_bom_phase1.js && node scripts/test_bom_output_quantity_rollup.js && node scripts/verify_vendor_sequence_fix.js && jest",
+    "test:integration": "node scripts/security_verification_pass.js && node scripts/test_nosql_typecheck_fix.js && node scripts/test_sequence_peek_fix.js && node scripts/test_mpn_requirements.js && node scripts/verify_bom_phase1.js && node scripts/test_bom_output_quantity_rollup.js && node scripts/verify_vendor_sequence_fix.js && node scripts/test_rate_limits.js && jest",
     "pretest": "cross-env NODE_ENV=test node scripts/setup_test_db.js",
     "start:test": "cross-env NODE_ENV=test node server.js",
     "test": "cross-env NODE_ENV=test start-server-and-test start:test http://localhost:5000/api/health test:integration"
@@ -34,6 +34,7 @@
     "mongoose": "^8.3.1",
     "multer": "^2.2.0",
     "pdfkit": "^0.15.0",
+    "rate-limit-redis": "^6.0.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {

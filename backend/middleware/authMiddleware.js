@@ -4,6 +4,9 @@ const getJwtSecret = require('../config/jwt');
 
 // Protect routes
 exports.protect = async (req, res, next) => {
+  // Fast-path: if already authenticated (e.g. by a global middleware), skip re-validation
+  if (req.user) return next();
+  
   let token;
 
   if (

@@ -24,8 +24,18 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Admin', 'ProcurementManager', 'Vendor'],
-    default: 'Vendor',
+    enum: ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor'],
+    default: 'Viewer',
+  },
+  requestedRole: {
+    type: String,
+    enum: ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', null],
+    default: null,
+  },
+  accountStatus: {
+    type: String,
+    enum: ['Pending', 'Active', 'Suspended'],
+    default: 'Pending',
   },
   isVerified: {
     type: Boolean,
