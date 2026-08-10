@@ -48,25 +48,23 @@ export default function BomRecipeEditor({
 
  // Auto-fetch manufacturer on product change
  useEffect(() => {
- if (!productId || mpns.length === 0) return;
- 
- // Check if we are initializing an edit form and shouldn't overwrite existing
- // If we are editing, we ONLY want to auto-fetch if the user explicitly changes the productId to something else.
- const isEditingOriginalProduct = !isNew && productId === (initialData?.productId?._id || initialData?.productId);
- 
- if (isEditingOriginalProduct) {
- return;
- }
+    if (!productId) return;
 
- const mpn = mpns.find(m => (m.materialId?._id || m.materialId) === productId);
- if (mpn && mpn.manufacturerName) {
- setManufacturer(mpn.manufacturerName);
- setOriginalManufacturer(mpn.manufacturerName);
- } else {
- setManufacturer('');
- setOriginalManufacturer('');
- }
- }, [productId, mpns, isNew, initialData]);
+    const isEditingOriginalProduct = !isNew && productId === (initialData?.productId?._id || initialData?.productId);
+    if (isEditingOriginalProduct && manufacturer) {
+      return;
+    }
+
+    // Try finding linked MPN first
+    const mpn = mpns.find(m => (m.materialId?._id || m.materialId) === productId);
+    const mat = materials.find(m => m._id === productId);
+
+    const foundManufacturer = mpn?.manufacturerName || mpn?.manufacturer || mat?.manufacturerName || mat?.manufacturer || mat?.brand || '';
+    if (foundManufacturer) {
+      setManufacturer(foundManufacturer);
+      setOriginalManufacturer(foundManufacturer);
+    }
+  }, [productId, mpns, materials, isNew, initialData]);
 
  useEffect(() => {
  // Fetch MPNs and Materials for dropdowns

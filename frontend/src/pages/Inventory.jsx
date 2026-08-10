@@ -539,45 +539,94 @@ const Inventory = () => {
                 })()}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Adjustment Type *</label>
-                  <select
-                    value={adjForm.adjustmentType}
-                    onChange={(e) => setAdjForm({ ...adjForm, adjustmentType: e.target.value })}
-                    className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold uppercase text-slate-500">Adjustment Action *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjForm({ ...adjForm, adjustmentType: 'IN' })}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all border ${
+                      adjForm.adjustmentType === 'IN'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
                   >
-                    <option value="IN">IN (+ Stock Addition)</option>
-                    <option value="OUT">OUT (- Write-off / Loss)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Quantity *</label>
-                  <input
-                    type="number"
-                    value={adjForm.quantity}
-                    onChange={(e) => setAdjForm({ ...adjForm, quantity: parseFloat(e.target.value) || 0 })}
-                    required
-                    className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 font-mono"
-                  />
+                    <span className="text-sm font-extrabold">+</span> Stock Addition (Increment)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjForm({ ...adjForm, adjustmentType: 'OUT' })}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all border ${
+                      adjForm.adjustmentType === 'OUT'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="text-sm font-extrabold">-</span> Stock Deduction (Decrement)
+                  </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Reason *</label>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Adjustment Quantity *</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={adjForm.quantity}
+                    onChange={(e) => setAdjForm({ ...adjForm, quantity: Math.abs(parseFloat(e.target.value) || 0) })}
+                    required
+                    className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 font-mono text-sm font-bold"
+                  />
+                  {/* Quick Preset Buttons */}
+                  <div className="flex items-center gap-1">
+                    {[10, 50, 100].map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setAdjForm({ ...adjForm, quantity: q })}
+                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-mono font-bold"
+                      >
+                        {adjForm.adjustmentType === 'IN' ? `+${q}` : `-${q}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Reason / Justification *</label>
                 <input
                   type="text"
                   value={adjForm.reason}
                   onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })}
                   required
-                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
-                  placeholder="e.g. Moisture damage write-off"
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 text-xs mb-1.5"
+                  placeholder="e.g. Physical recount discrepancy"
                 />
+                <div className="flex flex-wrap gap-1">
+                  {['Physical Audit Recount', 'Damage Write-off', 'Found Excess Stock', 'Vendor Return', 'Production Scrap'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setAdjForm({ ...adjForm, reason: preset })}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[9px] font-medium"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-[10px] text-slate-500 flex items-center justify-between">
+                <span>Requested By: <strong className="text-slate-800 font-bold">System Admin (Operator)</strong></span>
+                <span className="font-mono text-emerald-700 font-bold">Audit Logging Enabled</span>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <Button variant="outline" size="sm" type="button" onClick={() => setIsAdjModalOpen(false)}>Cancel</Button>
-                <Button size="sm" type="submit" className="bg-blue-600 text-white font-bold">Submit for Approval</Button>
+                <Button size="sm" type="submit" className={adjForm.adjustmentType === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold' : 'bg-rose-600 hover:bg-rose-700 text-white font-bold'}>
+                  {adjForm.adjustmentType === 'IN' ? '+ Submit Stock Addition' : '- Submit Stock Deduction'}
+                </Button>
               </div>
             </form>
           </div>
