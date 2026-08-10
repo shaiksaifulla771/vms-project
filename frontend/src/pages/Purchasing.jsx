@@ -91,6 +91,12 @@ const Purchasing = () => {
   const handleRowChange = (index, field, value) => {
     const updated = [...poItemsList];
     updated[index][field] = value;
+    if (field === 'materialId' && value) {
+      const selectedMat = rawMaterials.find(m => m._id === value);
+      if (selectedMat && typeof selectedMat.basePrice === 'number' && selectedMat.basePrice > 0) {
+        updated[index].unitPrice = selectedMat.basePrice;
+      }
+    }
     setPoItemsList(updated);
   };
 

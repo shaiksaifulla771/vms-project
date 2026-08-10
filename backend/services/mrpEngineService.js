@@ -129,11 +129,15 @@ class MRPEngineService {
     const planningDocs = [];
     for (const req of requirements) {
       const sourceKey = `${mrpRun._id}_${req.materialId.toString()}`;
-      const doc = await PlanningRequirement.create({
-        mrpRunId: mrpRun._id,
-        sourceKey,
-        ...req,
-      });
+      const doc = await PlanningRequirement.findOneAndUpdate(
+        { sourceKey },
+        {
+          mrpRunId: mrpRun._id,
+          sourceKey,
+          ...req,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
       planningDocs.push(doc);
     }
 

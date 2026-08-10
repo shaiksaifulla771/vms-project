@@ -524,8 +524,19 @@ const Inventory = () => {
                   className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
                 >
                   <option value="">-- Select Material --</option>
-                  {materials.map(m => <option key={m._id} value={m._id}>{m.code} - {m.name}</option>)}
+                  {materials.map(m => <option key={m._id} value={m._id}>{m.code} - {m.name} ({m.unit || 'units'})</option>)}
                 </select>
+                {adjForm.materialId && (() => {
+                  const selMat = materials.find(m => m._id === adjForm.materialId);
+                  const selBal = balances.find(b => (b.materialId?._id || b.materialId) === adjForm.materialId);
+                  return (
+                    <div className="mt-1 text-[10px] text-slate-500 flex items-center justify-between font-mono bg-slate-50 p-1.5 rounded border border-slate-200">
+                      <span>UOM: <strong className="text-slate-800">{selMat?.unit || 'pcs'}</strong></span>
+                      <span>Category: <strong className="text-slate-800">{selMat?.type || 'Raw'}</strong></span>
+                      <span>On-Hand Stock: <strong className="text-blue-600 font-bold">{selBal?.quantity || selBal?.onHandQuantity || 0}</strong></span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
