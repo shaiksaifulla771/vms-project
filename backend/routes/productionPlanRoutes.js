@@ -6,7 +6,8 @@ const {
   scheduleProductionPlan,
   releaseProductionPlan,
   unscheduleProductionPlan,
-  cancelProductionPlan
+  cancelProductionPlan,
+  copyProductionPlan
 } = require('../controllers/productionPlanController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -25,6 +26,7 @@ router
   .get(getProductionPlanById);
 
 router.post('/:id/schedule', authorize('Admin', 'Production Manager', 'Planner'), scheduleProductionPlan);
+router.post('/:id/copy', authorize('Admin', 'Production Manager', 'Planner'), copyProductionPlan);
 router.post('/:id/release', authorize('Admin', 'Production Manager', 'Planner'), releaseProductionPlan);
 router.post('/:id/unschedule', authorize('Admin', 'Production Manager', 'Planner'), unscheduleProductionPlan);
 router.post('/:id/cancel', authorize('Admin', 'Production Manager', 'Planner'), cancelProductionPlan);

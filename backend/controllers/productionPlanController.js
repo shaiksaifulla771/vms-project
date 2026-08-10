@@ -57,7 +57,7 @@ exports.createProductionPlan = asyncHandler(async (req, res, next) => {
   res.status(201).json({ success: true, data: plan });
 });
 
-// @desc    Schedule production plan (with partial quantity support)
+// @desc    Schedule production plan (with partial quantity split-scheduling support)
 // @route   POST /api/production-plans/:id/schedule
 // @access  Private
 exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
@@ -68,7 +68,16 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: `Plan in status ${plan.status} cannot be scheduled` });
   }
 
-  const scheduleQty = req.body.quantity || plan.quantity;
+  // Ensure quantity bounds
+  const currentOriginal = plan.originalQuantity || plan.quantity;
+  const currentScheduled = plan.scheduledQuantity || 0;
+  const currentRemaining = plan.remainingQuantity !== undefined ? plan.remainingQuantity : (currentOriginal - currentScheduled);
+
+  if (currentRemaining <= 0) {
+    return res.status(400).json({ success: false, error: `Plan ${plan.planNumber} has already been 100% scheduled (${currentScheduled}/${currentOriginal} units)` });
+  }
+
+  const scheduleQty = Math.min(req.body.quantity || currentRemaining, currentRemaining);
 
   const bom = await BOM.findById(plan.bomId).populate('components.materialId').populate('components.mpnId');
   if (!bom) return res.status(404).json({ success: false, error: 'Associated BOM not found' });
@@ -135,10 +144,67 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
     }
   }
 
-  plan.status = 'Scheduled';
+  // Update split-scheduling counters
+  plan.scheduledQuantity = currentScheduled + scheduleQty;
+  plan.remainingQuantity = Math.max(0, currentOriginal - plan.scheduledQuantity);
+
+  if (plan.remainingQuantity > 0) {
+    plan.status = 'Partially Scheduled';
+  } else {
+    plan.status = 'Scheduled';
+  }
   await plan.save();
 
-  res.status(200).json({ success: true, data: plan, order });
+  res.status(200).json({
+    success: true,
+    data: plan,
+    order,
+    message: `✓ Scheduled ${scheduleQty} units for Plan ${plan.planNumber}. ${plan.remainingQuantity} units remaining to schedule.`
+  });
+});
+
+// @desc    Copy / Duplicate production plan
+// @route   POST /api/production-plans/:id/copy
+// @access  Private
+exports.copyProductionPlan = asyncHandler(async (req, res, next) => {
+  const sourcePlan = await ProductionPlan.findById(req.params.id);
+  if (!sourcePlan) return res.status(404).json({ success: false, error: 'Source plan not found' });
+
+  let seqDoc = await Sequence.findById('productionPlan');
+  if (!seqDoc) {
+    seqDoc = await Sequence.create({ _id: 'productionPlan', seq: 1000 });
+  } else {
+    seqDoc = await Sequence.findByIdAndUpdate('productionPlan', { $inc: { seq: 1 } }, { new: true });
+  }
+  const newPlanNumber = `PLAN-${seqDoc.seq}`;
+
+  const targetQuantity = req.body.quantity || sourcePlan.originalQuantity || sourcePlan.quantity;
+
+  const newPlan = await ProductionPlan.create({
+    planNumber: newPlanNumber,
+    productId: sourcePlan.productId,
+    bomId: sourcePlan.bomId,
+    siteId: sourcePlan.siteId,
+    warehouseId: sourcePlan.warehouseId,
+    quantity: targetQuantity,
+    originalQuantity: targetQuantity,
+    scheduledQuantity: 0,
+    remainingQuantity: targetQuantity,
+    requiredDate: req.body.requiredDate || new Date(Date.now() + 86400000 * 7),
+    status: 'Unscheduled',
+    planSource: 'Manual',
+    priority: sourcePlan.priority || 'Medium',
+    reason: `Duplicated from ${sourcePlan.planNumber}`,
+    notes: sourcePlan.notes ? `Copy of ${sourcePlan.planNumber}. ${sourcePlan.notes}` : `Copy of ${sourcePlan.planNumber}`,
+    copiedFromPlanId: sourcePlan._id,
+    createdBy: req.user ? req.user.id : null,
+  });
+
+  res.status(201).json({
+    success: true,
+    data: newPlan,
+    message: `✓ Plan ${sourcePlan.planNumber} copied successfully as ${newPlan.planNumber}`
+  });
 });
 
 // @desc    Release production plan (Trigger soft material reservation)

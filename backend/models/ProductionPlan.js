@@ -30,6 +30,23 @@ const ProductionPlanSchema = new mongoose.Schema({
     required: [true, 'Quantity is required'],
     min: [0.001, 'Quantity must be greater than zero'],
   },
+  originalQuantity: {
+    type: Number,
+    min: 0,
+  },
+  scheduledQuantity: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  remainingQuantity: {
+    type: Number,
+    min: 0,
+  },
+  copiedFromPlanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionPlan',
+  },
   requiredDate: {
     type: Date,
     required: [true, 'Required date is required'],
@@ -82,8 +99,15 @@ const ProductionPlanSchema = new mongoose.Schema({
   }
 });
 
-// Update timestamp on save
+// Update timestamp & quantity balances on save
 ProductionPlanSchema.pre('save', function (next) {
+  if (this.originalQuantity === undefined || this.originalQuantity === null) {
+    this.originalQuantity = this.quantity || 0;
+  }
+  if (this.scheduledQuantity === undefined || this.scheduledQuantity === null) {
+    this.scheduledQuantity = 0;
+  }
+  this.remainingQuantity = Math.max(0, (this.originalQuantity || 0) - (this.scheduledQuantity || 0));
   this.updatedAt = Date.now();
   next();
 });

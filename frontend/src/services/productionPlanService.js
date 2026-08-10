@@ -31,6 +31,12 @@ export const productionPlanService = {
   unschedulePlan: async (id) => {
     const response = await api.post(`/api/production-plans/${id}/unschedule`);
     return response.data;
+  },
+
+  // Copy / Duplicate production plan
+  copyPlan: async (id, overrideData = {}) => {
+    const response = await api.post(`/api/production-plans/${id}/copy`, overrideData);
+    return response.data;
   }
 };
 

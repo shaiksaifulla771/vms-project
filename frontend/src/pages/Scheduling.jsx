@@ -115,6 +115,27 @@ const Scheduling = () => {
     }
   };
 
+  // Copy / Duplicate Plan Action
+  const handleCopyPlan = async (planId, planNumber) => {
+    setActionLoadingId(planId);
+    setToastMsg(null);
+    try {
+      const res = await productionPlanService.copyPlan(planId);
+      if (res.success || res.data) {
+        setToastMsg({
+          type: 'success',
+          text: `✓ Plan ${planNumber} copied successfully as new Plan ${res.data?.planNumber || ''}!`
+        });
+        await fetchData();
+        setActiveTab('unscheduled');
+      }
+    } catch (err) {
+      setToastMsg({ type: 'error', text: err.response?.data?.error || `Failed to copy ${planNumber}.` });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   // Cancel Plan Action: Scheduled/Unscheduled -> Cancelled
   const handleCancelPlan = async (planId, planNumber) => {
     const reason = window.prompt(`Enter reason for cancelling Plan ${planNumber}:`, 'Planner cancellation');
@@ -300,7 +321,16 @@ const Scheduling = () => {
                               Scheduled
                             </span>
                           </td>
-                          <td className="p-4 text-right space-x-2">
+                          <td className="p-4 text-right space-x-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              isLoading={actionLoadingId === plan._id}
+                              onClick={() => handleCopyPlan(plan._id, plan.planNumber)}
+                              className="border-purple-200 text-purple-700 hover:bg-purple-50 font-bold text-xs"
+                            >
+                              Copy Plan
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
@@ -378,7 +408,7 @@ const Scheduling = () => {
                             Unscheduled
                           </span>
                         </td>
-                        <td className="p-4 text-right space-x-2">
+                        <td className="p-4 text-right space-x-1.5">
                           <Button
                             size="sm"
                             isLoading={actionLoadingId === plan._id}
@@ -386,6 +416,15 @@ const Scheduling = () => {
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
                           >
                             Schedule
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            isLoading={actionLoadingId === plan._id}
+                            onClick={() => handleCopyPlan(plan._id, plan.planNumber)}
+                            className="border-purple-200 text-purple-700 hover:bg-purple-50 font-bold text-xs"
+                          >
+                            Copy Plan
                           </Button>
                           <Button
                             size="sm"
