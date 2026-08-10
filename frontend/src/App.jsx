@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 import Warehouse from './pages/Warehouse';
 import Scheduling from './pages/Scheduling';
 
+import ErrorBoundary from './components/ErrorBoundary';
 import Sites from './pages/Sites';
 import MRP from './pages/MRP';
 import VMSWorkbench from './pages/VMSWorkbench';
