@@ -27,11 +27,11 @@ const Dashboard = () => {
       if (context.warehouseId) query.warehouseId = context.warehouseId;
 
       const [summaryRes, plansRes, ordersRes, transfersRes, adjRes] = await Promise.all([
-        api.get('/api/reports/summary', { params: query }),
-        api.get('/api/production-plans', { params: query }),
-        api.get('/api/productions', { params: query }),
-        api.get('/api/transfers?status=Pending Approval'),
-        api.get('/api/inventory/adjustments?status=Pending Approval')
+        api.get('/reports/summary', { params: query }),
+        api.get('/production-plans', { params: query }),
+        api.get('/productions', { params: query }),
+        api.get('/transfers?status=Pending Approval'),
+        api.get('/inventory/adjustments?status=Pending Approval')
       ]);
 
       if (summaryRes.data && summaryRes.data.success) {
@@ -70,7 +70,7 @@ const Dashboard = () => {
   const handleApproveTransfer = async (id, trfNum) => {
     setActionLoadingId(id);
     try {
-      await api.post(`/api/transfers/${id}/approve`);
+      await api.post(`/transfers/${id}/approve`);
       setToastMsg({ type: 'success', text: `Transfer ${trfNum} approved.` });
       fetchDashboardData();
     } catch (err) {
@@ -83,7 +83,7 @@ const Dashboard = () => {
   const handleApproveAdjustment = async (id, adjNum) => {
     setActionLoadingId(id);
     try {
-      await api.post(`/api/inventory/adjustments/${id}/approve`);
+      await api.post(`/inventory/adjustments/${id}/approve`);
       setToastMsg({ type: 'success', text: `Adjustment ${adjNum} approved.` });
       fetchDashboardData();
     } catch (err) {
@@ -96,7 +96,7 @@ const Dashboard = () => {
   const handleRejectAdjustment = async (id, adjNum) => {
     setActionLoadingId(id);
     try {
-      await api.post(`/api/inventory/adjustments/${id}/reject`, { rejectionReason: 'Rejected from dashboard' });
+      await api.post(`/inventory/adjustments/${id}/reject`, { rejectionReason: 'Rejected from dashboard' });
       setToastMsg({ type: 'info', text: `Adjustment ${adjNum} rejected.` });
       fetchDashboardData();
     } catch (err) {

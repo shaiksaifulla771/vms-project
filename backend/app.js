@@ -63,7 +63,7 @@ app.use(cookieParser());
 app.use(correlationMiddleware);
 
 // Import rate limiters and auth middleware
-const { unauthenticatedIpLimiter, writeLimiter, readLimiter } = require('./middleware/rateLimiter');
+const { unauthenticatedIpLimiter, writeLimiter, readLimiter, vmsVisitorLimiter, vmsMcpLimiter, vmsEmailLimiter } = require('./middleware/rateLimiter');
 const { protect } = require('./middleware/authMiddleware');
 
 // 1. Unauthenticated IP protection (Global defense against volumetric attacks & invalid JWT spam)
@@ -130,12 +130,12 @@ app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/warehouse-materials', require('./routes/warehouseMaterialRoutes'));
 app.use('/api/transfers', require('./routes/stockTransferRoutes'));
 app.use('/api/imports', require('./routes/imports'));
-app.use('/api/visitors', require('./routes/visitorRoutes'));
-app.use('/api/appointments', require('./routes/appointmentRoutes'));
-app.use('/api/email', require('./routes/emailRoutes'));
+app.use('/api/visitors', vmsVisitorLimiter, require('./routes/visitorRoutes'));
+app.use('/api/appointments', vmsVisitorLimiter, require('./routes/appointmentRoutes'));
+app.use('/api/email', vmsEmailLimiter, require('./routes/emailRoutes'));
 app.use('/api/workflows', require('./routes/workflowRoutes'));
 app.use('/api/plugins', require('./routes/pluginRoutes'));
-app.use('/api/mcp', require('./routes/mcpRoutes'));
+app.use('/api/mcp', vmsMcpLimiter, require('./routes/mcpRoutes'));
 
 // Register VMS Domain Event Handlers
 const { registerVMSEventHandlers } = require('./events/handlers/vmsEventHandlers');
