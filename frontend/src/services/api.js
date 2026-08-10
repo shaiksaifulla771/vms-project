@@ -35,6 +35,11 @@ const api = axios.create({
 
 // Request Interceptor: Attach token reliably to EVERY outgoing request
 api.interceptors.request.use(config => {
+  // Automatically sanitize double /api/ prefix if passed by legacy components
+  if (config.url && config.url.startsWith('/api/')) {
+    config.url = config.url.replace(/^\/api\//, '/');
+  }
+  
   const activeToken = getToken();
   if (activeToken) {
     config.headers = config.headers || {};

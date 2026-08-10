@@ -15,7 +15,7 @@ const Sites = () => {
   const [materials, setMaterials] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('all'); // 'all' | 'sites' | 'warehouses' | 'assignments'
+  const [viewMode, setViewMode] = useState('sites'); // 'sites' | 'warehouses' | 'assignments'
 
   // Expanded site cards state
   const [expandedSiteIds, setExpandedSiteIds] = useState(new Set());
@@ -133,20 +133,12 @@ const Sites = () => {
         <div className="flex items-center space-x-1.5">
           <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider mr-1">View Options:</span>
           <button
-            onClick={() => setViewMode('all')}
-            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-              viewMode === 'all' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Unified Overview ({sites.length} Sites)
-          </button>
-          <button
             onClick={() => setViewMode('sites')}
             className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
               viewMode === 'sites' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Sites Only
+            All Sites ({sites.length})
           </button>
           <button
             onClick={() => setViewMode('warehouses')}

@@ -18,13 +18,23 @@ class MaterialService {
     const session = await mongoose.startSession();
     startSafeTransaction(session);
     try {
-      const { name, code, unit, type, subcategory, status, description } = data;
+      let { name, code, unit, type, subcategory, status, description, basePrice } = data;
 
-      if (!name || !code || !unit || typeof name !== 'string' || typeof code !== 'string' || typeof unit !== 'string') {
-        throw new Error('VALIDATION_ERROR: Please provide valid text strings for name, code, and unit of measurement');
+      if (!name || !unit || typeof name !== 'string' || typeof unit !== 'string') {
+        throw new Error('VALIDATION_ERROR: Please provide valid text strings for name and unit of measurement');
       }
 
-      let finalCode = code.toUpperCase();
+      if (!code || typeof code !== 'string' || !code.trim()) {
+        const allM = await Material.find({ code: /^M\d+$/ }, 'code').session(session);
+        let maxNum = 1000;
+        for (const m of allM) {
+          const num = parseInt(m.code.substring(1), 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+        code = `M${maxNum + 1}`;
+      }
+
+      let finalCode = code.trim().toUpperCase();
       const existing = await Material.findOne({ code: finalCode }).session(session);
       
       if (existing) {
@@ -34,7 +44,7 @@ class MaterialService {
           let maxNum = 1000;
           for (const m of allM) {
             const num = parseInt(m.code.substring(1), 10);
-            if (num > maxNum) maxNum = num;
+            if (!isNaN(num) && num > maxNum) maxNum = num;
           }
           finalCode = `M${maxNum + 1}`;
         } else {
@@ -49,7 +59,8 @@ class MaterialService {
         type: type || 'Raw Material',
         subcategory,
         status: status || 'Active',
-        description
+        description,
+        basePrice: typeof basePrice === 'number' ? basePrice : parseFloat(basePrice) || 0
       });
       
       await material.save({ session });
