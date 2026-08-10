@@ -35,7 +35,8 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Request-Id', 'Idempotency-Key', 'idempotency-key'],
+  exposedHeaders: ['X-Correlation-Id', 'Set-Cookie'],
   credentials: true
 }));
 
@@ -52,9 +53,14 @@ app.get('/health', (req, res) => {
 
 
 
+const cookieParser = require('cookie-parser');
+const correlationMiddleware = require('./middleware/correlationMiddleware');
+
 // Body parser (Must be BEFORE any routes or rate limiters that might inspect body)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(cookieParser());
+app.use(correlationMiddleware);
 
 // Import rate limiters and auth middleware
 const { unauthenticatedIpLimiter, writeLimiter, readLimiter } = require('./middleware/rateLimiter');
@@ -73,14 +79,20 @@ app.use('/api', (req, res, next) => {
 app.use('/api/auth', require('./routes/authRoutes'));
 
 // 3. Global Authentication Validation (Ensures req.user is verified cryptographically)
-// Routes that don't need auth (e.g. /health) bypass this below since they are mounted on '/'
+// Routes that don't need auth (e.g. /health and /api/auth/*) bypass this
 app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth')) {
+    return next(); // Auth routes manage their own authentication
+  }
   protect(req, res, next);
 });
 
 // 4. Authenticated User-Aware Rate Limiting
 // Since this runs AFTER protect, req.user is guaranteed to be cryptographically verified!
 app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth')) {
+    return next();
+  }
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     return writeLimiter(req, res, next);
   } else if (req.method === 'GET') {
@@ -98,17 +110,25 @@ app.use(mongoSanitize());
 
 // Mount routers (already protected by the global /api middleware chain)
 app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/sites', require('./routes/siteRoutes'));
+app.use('/api/warehouses', require('./routes/warehouseRoutes'));
 app.use('/api/vendors', require('./routes/vendorRoutes'));
 app.use('/api/vendor-masters', require('./routes/vendorMasterRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/mpns', require('./routes/mpnRoutes'));
 app.use('/api/boms', require('./routes/bomRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
+app.use('/api/mrp', require('./routes/mrpRoutes'));
 app.use('/api/purchases', require('./routes/purchaseRoutes'));
 app.use('/api/productions', require('./routes/productionRoutes'));
 app.use('/api/production-plans', require('./routes/productionPlanRoutes'));
 app.use('/api/quality', require('./routes/qualityRoutes'));
+app.use('/api/qc', require('./routes/qcRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/approvals', require('./routes/approvalRoutes'));
+app.use('/api/audit', require('./routes/auditRoutes'));
+app.use('/api/warehouse-materials', require('./routes/warehouseMaterialRoutes'));
+app.use('/api/transfers', require('./routes/stockTransferRoutes'));
 app.use('/api/imports', require('./routes/imports'));
 
 // Root route

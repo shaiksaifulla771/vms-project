@@ -1,269 +1,355 @@
-import React, { useEffect, useState } from 'react';
-import api from '../services/api';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
+import React, { useState, useEffect } from 'react';
+import productionService from '../services/productionService';
+import SiteWarehouseSelector, { getStoredContext } from '../components/SiteWarehouseSelector';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Input, Select } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
-import { Dialog } from '../components/ui/Dialog';
-import { Plus, Play, CheckCircle, Factory, ShieldAlert, Cpu } from 'lucide-react';
+import {
+  Factory, Play, CheckCircle, AlertTriangle, RefreshCw,
+  Package, Clock, CheckCircle2, XCircle
+} from 'lucide-react';
+
+const TABS = [
+  { id: 'orders', label: '1. Production Orders', icon: Clock },
+  { id: 'shopfloor', label: '2. Shop Floor Execution', icon: Factory },
+  { id: 'completed', label: '3. Completed Orders', icon: CheckCircle },
+];
 
 const Manufacturing = () => {
+  const [activeTab, setActiveTab] = useState('orders');
+  const [context, setContext] = useState(getStoredContext());
   const [orders, setOrders] = useState([]);
-  const [boms, setBoms] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [toastMsg, setToastMsg] = useState(null);
 
-  // Form State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedBomId, setSelectedBomId] = useState('');
-  const [targetQuantity, setTargetQuantity] = useState('10');
-  const [formErrors, setFormErrors] = useState({});
-  const [submitLoading, setSubmitLoading] = useState(false);
-
-  const fetchManufacturingData = async () => {
+  // Fetch production orders filtered by operational context
+  const fetchOrders = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const [resOrders, resBoms] = await Promise.all([
-        api.get('/api/productions'),
-        api.get('/api/boms')
-      ]);
+      const query = {};
+      if (context.siteId) query.siteId = context.siteId;
+      if (context.warehouseId) query.warehouseId = context.warehouseId;
 
-      if (resOrders.data.success) setOrders(resOrders.data.data);
-      if (resBoms.data.success) setBoms(resBoms.data.data);
+      const res = await productionService.getProductionOrders(query);
+      setOrders(res.data || res.orders || []);
     } catch (err) {
-      console.error(err);
-      setError('Operational error: Failed to fetch manufacturing records.');
+      console.error('Failed to fetch production orders:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchManufacturingData();
-  }, []);
+    fetchOrders();
+  }, [context.siteId, context.warehouseId]);
 
-  const handleOpenModal = () => {
-    setSelectedBomId('');
-    setTargetQuantity('10');
-    setFormErrors({});
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setFormErrors({});
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    if (!selectedBomId) errors.bomId = 'Please select a Bill of Materials recipe';
-    if (!targetQuantity || isNaN(targetQuantity) || Number(targetQuantity) <= 0) {
-      errors.quantity = 'A valid positive quantity is required';
-    }
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-
-    setSubmitLoading(true);
+  // Handle Start Production: Scheduled -> In Production
+  const handleStartProduction = async (id, prdNumber) => {
+    setActionLoadingId(id);
+    setToastMsg(null);
     try {
-      await api.post('/api/productions', {
-        bomId: selectedBomId,
-        quantity: Number(targetQuantity)
-      });
-      fetchManufacturingData();
-      handleCloseModal();
+      const res = await productionService.startProduction(id);
+      if (res.success || res.data) {
+        setToastMsg({
+          type: 'success',
+          text: `▶ Order ${prdNumber} is now IN PRODUCTION on shop floor!`
+        });
+        await fetchOrders();
+        setActiveTab('shopfloor');
+      }
     } catch (err) {
-      console.error(err);
-      const msg = err.response?.data?.error || 'Failed to schedule production order.';
-      setFormErrors({ form: msg });
+      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to start production.' });
     } finally {
-      setSubmitLoading(false);
+      setActionLoadingId(null);
     }
   };
 
-  // State Machine Action: Start Production (consumes raw materials)
-  const handleStartProduction = async (id) => {
-    if (!window.confirm('Start production run? This checks stock and immediately consumes BOM components from inventory.')) return;
-
+  // Handle Complete Production: In Production -> Completed
+  const handleCompleteProduction = async (id, prdNumber) => {
+    setActionLoadingId(id);
+    setToastMsg(null);
     try {
-      await api.patch(`/api/productions/${id}/start`);
-      fetchManufacturingData();
+      const res = await productionService.completeProduction(id, { qcStatus: 'Passed' });
+      if (res.success || res.data) {
+        setToastMsg({
+          type: 'success',
+          text: `✓ Order ${prdNumber} completed! Materials consumed, Finished Goods credited to Inventory Ledger.`
+        });
+        await fetchOrders();
+        setActiveTab('completed');
+      }
     } catch (err) {
-      console.error(err);
-      const msg = err.response?.data?.error || 'Insufficient stock to start production run. Check Planning (MRP).';
-      alert(msg);
+      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to complete production.' });
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
-  // State Machine Action: Complete Production
-  const handleCompleteProduction = async (id) => {
-    if (!window.confirm('Mark this production run as completed? Lot will go to QC inspection.')) return;
-
-    try {
-      await api.patch(`/api/productions/${id}/complete`);
-      fetchManufacturingData();
-    } catch (err) {
-      console.error(err);
-      alert('Failed to complete production run.');
-    }
-  };
+  const scheduledOrders = orders.filter(o => o.status === 'Scheduled' || o.status === 'Approved' || o.status === 'Material Allocated');
+  const inProductionOrders = orders.filter(o => ['In Production', 'In Progress'].includes(o.status));
+  const completedOrders = orders.filter(o => o.status === 'Completed');
 
   return (
     <div className="space-y-6">
-      {/* Top Banner and button */}
-      <Card>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-xs font-semibold text-slate-400 uppercase">
-            <Factory className="h-4 w-4" />
-            <span>Manufacturing shop floor</span>
+      {/* Site / Warehouse Context Selector */}
+      <SiteWarehouseSelector onContextChange={setContext} />
+
+
+
+      {/* Toast Feedback */}
+      {toastMsg && (
+        <div className={`p-4 rounded-xl text-xs font-bold border flex items-center justify-between shadow-sm ${
+          toastMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+        }`}>
+          <div className="flex items-center space-x-2">
+            {toastMsg.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />}
+            <span>{toastMsg.text}</span>
           </div>
-          <Button onClick={handleOpenModal} className="flex items-center space-x-1">
-            <Plus className="h-4 w-4" />
-            <span>Schedule Run</span>
-          </Button>
-        </CardContent>
-      </Card>
+          <button onClick={() => setToastMsg(null)} className="text-slate-400 text-sm font-bold">×</button>
+        </div>
+      )}
 
-      {/* Production orders table */}
-      <Card>
-        <CardContent className="p-0">
-          {error && <div className="p-5 text-center text-sm font-semibold text-red-500 bg-red-50">{error}</div>}
+      {/* Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">READY TO START</span>
+          <div className="text-2xl font-black text-blue-600 font-mono">{loading ? '...' : scheduledOrders.length}</div>
+          <span className="text-[10px] text-slate-500 block font-medium">Scheduled Orders</span>
+        </div>
 
-          {loading ? (
-            <div className="flex flex-col items-center justify-center p-20 space-y-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
-              <p className="text-xs text-slate-400 font-semibold">Loading production runs...</p>
-            </div>
-          ) : orders.length === 0 ? (
-            <div className="p-20 text-center text-slate-400 font-medium">No production runs scheduled.</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Run Reference</TableHead>
-                  <TableHead>Finished Product</TableHead>
-                  <TableHead>Target Quantity</TableHead>
-                  <TableHead>Recipe Reference</TableHead>
-                  <TableHead>Execution Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((ord) => (
-                  <TableRow key={ord._id}>
-                    <TableCell>
-                      <div className="font-bold text-slate-800">RUN #{ord._id.slice(-6).toUpperCase()}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">Created: {new Date(ord.createdAt).toLocaleDateString()}</div>
-                    </TableCell>
-                    <TableCell className="font-semibold text-slate-700">
-                      {ord.bomId?.productId?.name || 'Smart Controller'}
-                    </TableCell>
-                    <TableCell className="font-bold text-slate-700 text-xs">{ord.quantity} pcs</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col space-y-0.5 text-xs text-slate-500">
-                        {ord.bomId?.components?.map((c, i) => (
-                          <div key={i}>
-                            • {c.materialId?.name}: <span className="font-bold text-slate-600">{(c.quantity * ord.quantity)} {c.materialId?.unit}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge>{ord.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {/* State Transitions Actions */}
-                      {ord.status === 'Pending' ? (
-                        <div className="flex items-center justify-end">
-                          <button
-                            onClick={() => handleStartProduction(ord._id)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold flex items-center space-x-1 transition-all"
-                          >
-                            <Play className="h-3.5 w-3.5 fill-current" />
-                            <span>Start Run</span>
-                          </button>
-                        </div>
-                      ) : ord.status === 'In Progress' ? (
-                        <div className="flex items-center justify-end">
-                          <button
-                            onClick={() => handleCompleteProduction(ord._id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold flex items-center space-x-1 transition-all"
-                          >
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            <span>Complete</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="text-xs text-slate-400 font-bold flex items-center justify-end space-x-1">
-                          <ShieldAlert className="h-4 w-4 text-slate-300" />
-                          <span>Finished</span>
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">SHOP FLOOR ACTIVE</span>
+          <div className="text-2xl font-black text-purple-600 font-mono">{loading ? '...' : inProductionOrders.length}</div>
+          <span className="text-[10px] text-slate-500 block font-medium">In Production</span>
+        </div>
 
-      {/* CRUD Form Modal */}
-      <Dialog
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        title="Schedule Production Run"
-      >
-        <form onSubmit={handleFormSubmit} className="space-y-4">
-          {formErrors.form && (
-            <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-600 font-semibold">
-              {formErrors.form}
-            </div>
-          )}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">COMPLETED</span>
+          <div className="text-2xl font-black text-emerald-600 font-mono">{loading ? '...' : completedOrders.length}</div>
+          <span className="text-[10px] text-slate-500 block font-medium">Finished Goods Credited</span>
+        </div>
+      </div>
 
-          {/* BOM Selector */}
-          <div className="flex flex-col space-y-1.5">
-            <label className="text-xs font-semibold text-slate-600">Product BOM Recipe</label>
-            <select
-              value={selectedBomId}
-              onChange={(e) => setSelectedBomId(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none cursor-pointer"
-              required
+      {/* TAB BAR */}
+      <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 pt-1">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center space-x-1.5 px-4 py-2.5 text-xs font-bold transition-all border-b-2 -mb-px ${
+                isActive
+                  ? 'border-emerald-600 text-emerald-700'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
             >
-              <option value="" disabled>Select Recipe</option>
-              {boms.map(b => (
-                <option key={b._id} value={b._id}>
-                  {b.productId?.name} ({b.productId?.code})
-                </option>
-              ))}
-            </select>
-            {formErrors.bomId && <span className="text-xs text-red-500 font-medium">{formErrors.bomId}</span>}
-          </div>
+              <Icon className="h-3.5 w-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-          <Input
-            label="Production Run Lot Target (pcs)"
-            id="qty"
-            type="number"
-            min="1"
-            placeholder="e.g. 10"
-            value={targetQuantity}
-            onChange={(e) => setTargetQuantity(e.target.value)}
-            error={formErrors.quantity}
-            required
-          />
+      {/* TAB 1: PRODUCTION ORDERS */}
+      {activeTab === 'orders' && (
+        <Card className="bg-white border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-100 pb-4">
+            <CardTitle className="text-xs font-bold text-slate-900 flex items-center justify-between uppercase tracking-wider">
+              <span>SCHEDULED PRODUCTION ORDERS (READY FOR EXECUTION)</span>
+              <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px]">
+                {scheduledOrders.length} Ready to Start
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">PO Number</th>
+                    <th className="p-4">Linked Batch/Plan</th>
+                    <th className="p-4">Product Name</th>
+                    <th className="p-4">Target Qty</th>
+                    <th className="p-4">Source Warehouse</th>
+                    <th className="p-4 text-center">Status</th>
+                    <th className="p-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {scheduledOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="p-8 text-center text-slate-400 text-xs">
+                        No scheduled production orders awaiting execution. Schedule a plan in the <strong>Scheduling</strong> workbench.
+                      </td>
+                    </tr>
+                  ) : (
+                    scheduledOrders.map((order) => (
+                      <tr key={order._id} className="hover:bg-slate-50">
+                        <td className="p-4 font-mono font-bold text-indigo-600">{order.prdNumber}</td>
+                        <td className="p-4 font-mono text-slate-500">{order.batchNumber || 'PLAN-001'}</td>
+                        <td className="p-4 font-bold text-slate-900">{order.productId?.name || 'Product'}</td>
+                        <td className="p-4 font-mono font-bold text-blue-600">{order.targetQuantity}</td>
+                        <td className="p-4 text-slate-700">{order.sourceWarehouseId?.name || 'WH-01'}</td>
+                        <td className="p-4 text-center">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            {order.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <Button
+                            size="sm"
+                            isLoading={actionLoadingId === order._id}
+                            onClick={() => handleStartProduction(order._id, order.prdNumber)}
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 py-1.5 rounded-xl shadow-sm flex items-center space-x-1.5 ml-auto"
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                            <span>Start Production</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100 mt-5">
-            <Button variant="outline" onClick={handleCloseModal}>Cancel</Button>
-            <Button type="submit" isLoading={submitLoading}>Schedule Batch</Button>
-          </div>
-        </form>
-      </Dialog>
+      {/* TAB 2: SHOP FLOOR EXECUTION */}
+      {activeTab === 'shopfloor' && (
+        <div className="space-y-6">
+          {inProductionOrders.length === 0 ? (
+            <Card className="bg-white border-slate-200 shadow-sm">
+              <CardContent className="p-8 text-center text-slate-400 text-xs">
+                No orders currently in active production. Click <strong>Start Production</strong> on a scheduled order.
+              </CardContent>
+            </Card>
+          ) : (
+            inProductionOrders.map((order) => (
+              <Card key={order._id} className="bg-white border-purple-200 shadow-md overflow-hidden">
+                <CardHeader className="bg-purple-50/50 border-b border-purple-100 pb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3">
+                      <span className="font-mono text-base font-black text-purple-700">{order.prdNumber}</span>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                        IN PRODUCTION
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-4 text-xs font-medium text-slate-700">
+                      <span>Product: <strong className="text-slate-900">{order.productId?.name}</strong></span>
+                      <span>Target Qty: <strong className="text-blue-600 font-mono">{order.targetQuantity}</strong></span>
+                      <span>Warehouse: <strong className="text-slate-900">{order.sourceWarehouseId?.name || 'WH-01'}</strong></span>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-6">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Component Material Consumption Allocation</h4>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs text-slate-700">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                          <tr>
+                            <th className="p-3">Material</th>
+                            <th className="p-3">Required Qty</th>
+                            <th className="p-3">Reserved Qty</th>
+                            <th className="p-3">Consumed Qty</th>
+                            <th className="p-3 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-mono">
+                          {(order.components || []).map((comp, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="p-3 font-sans font-bold text-slate-900">{comp.materialId?.name || 'Raw Component'}</td>
+                              <td className="p-3 font-bold text-slate-900">{comp.expectedQuantity || comp.qty || 0}</td>
+                              <td className="p-3 font-bold text-blue-600">{comp.expectedQuantity || comp.qty || 0}</td>
+                              <td className="p-3 font-bold text-emerald-600">{comp.consumedQuantity || 0}</td>
+                              <td className="p-3 text-center font-sans">
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                  Reserved
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-3 pt-2 border-t border-slate-100">
+                    <Button
+                      size="sm"
+                      isLoading={actionLoadingId === order._id}
+                      onClick={() => handleCompleteProduction(order._id, order.prdNumber)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2 rounded-xl shadow-md flex items-center space-x-2"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Complete Production & Record Finished Stock</span>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: COMPLETED ORDERS */}
+      {activeTab === 'completed' && (
+        <Card className="bg-white border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-100 pb-4">
+            <CardTitle className="text-xs font-bold text-slate-900 flex items-center justify-between uppercase tracking-wider">
+              <span>COMPLETED PRODUCTION ORDERS</span>
+              <Badge variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50 text-[10px]">
+                {completedOrders.length} Completed
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">PO Number</th>
+                    <th className="p-4">Product Name</th>
+                    <th className="p-4">Target Qty</th>
+                    <th className="p-4">Warehouse</th>
+                    <th className="p-4 text-center">Status</th>
+                    <th className="p-4">Completed Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {completedOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="p-8 text-center text-slate-400 text-xs">No completed production orders.</td>
+                    </tr>
+                  ) : (
+                    completedOrders.map((order) => (
+                      <tr key={order._id} className="hover:bg-slate-50">
+                        <td className="p-4 font-mono font-bold text-emerald-600">{order.prdNumber}</td>
+                        <td className="p-4 font-bold text-slate-900">{order.productId?.name || 'Product'}</td>
+                        <td className="p-4 font-mono font-bold text-blue-600">{order.targetQuantity}</td>
+                        <td className="p-4 text-slate-700">{order.sourceWarehouseId?.name || 'WH-01'}</td>
+                        <td className="p-4 text-center">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Completed
+                          </span>
+                        </td>
+                        <td className="p-4 font-mono text-slate-500">
+                          {order.completedDate ? new Date(order.completedDate).toLocaleDateString() : order.updatedAt ? new Date(order.updatedAt).toLocaleDateString() : '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

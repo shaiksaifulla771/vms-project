@@ -2,134 +2,135 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
+  Building2,
   Database,
-  ClipboardList,
-  Cpu,
   Boxes,
-  ShoppingBag,
+  Cpu,
+  CalendarClock,
   Factory,
+  ShoppingBag,
   ShieldCheck,
   BarChart3,
-  LogOut,
   Settings,
-  MoreVertical,
-  Menu,
-  Building2,
-  CalendarClock
+  LogOut,
+  X
 } from 'lucide-react';
 
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
   const { user, logout } = useAuth();
 
-  const allMenuItems = [
-    { id: 'masters', name: 'ERP Masters', icon: Database, roles: ['Admin', 'Inventory Manager'] },
-    { id: 'warehouse', name: 'Warehouse', icon: Building2, roles: ['Admin', 'Inventory Manager'] },
-    { id: 'boms', name: 'Bill of Materials', icon: ClipboardList, roles: ['Admin', 'Production Manager'] },
-    { id: 'planning', name: 'MRP Planning', icon: Cpu, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
-    { id: 'inventory', name: 'Inventory Ledger', icon: Boxes, roles: ['Admin', 'Inventory Manager'] },
-    { id: 'purchasing', name: 'Procurement (POs)', icon: ShoppingBag, roles: ['Admin', 'Inventory Manager'] },
-    { id: 'production', name: 'Production Orders', icon: Factory, roles: ['Admin', 'Production Manager'] },
-    { id: 'scheduling', name: 'Scheduling', icon: CalendarClock, roles: ['Admin', 'Production Manager'] },
-    { id: 'quality', name: 'Quality Control', icon: ShieldCheck, roles: ['Admin', 'Production Manager'] },
-    { id: 'reports', name: 'ERP Reports', icon: BarChart3, roles: ['Admin', 'Inventory Manager', 'Production Manager'] },
-    { id: 'settings', name: 'Settings & Roles', icon: Settings, roles: ['Admin', 'Inventory Manager', 'Production Manager'] }
+  // Navigation Blueprint (Network & Sites directly below Dashboard)
+  const menuItems = [
+    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
+    { id: 'sites', name: '1. Network & Sites', icon: Building2 },
+    { id: 'masters', name: '2. Master Data', icon: Database },
+    { id: 'inventory', name: '3. Inventory', icon: Boxes },
+    { id: 'planning', name: '4. MRP & Planning', icon: Cpu },
+    { id: 'scheduling', name: '5. Scheduling', icon: CalendarClock },
+    { id: 'production', name: '6. Production', icon: Factory },
+    { id: 'purchasing', name: '7. Procurement', icon: ShoppingBag },
+    { id: 'quality', name: '8. Quality Control', icon: ShieldCheck },
+    { id: 'reports', name: '9. Costing & Reports', icon: BarChart3 },
+    { id: 'settings', name: '10. Governance & Audit', icon: Settings }
   ];
 
-  const menuItems = allMenuItems.filter(item => user && item.roles.includes(user.role));
+  const handleSelectModule = (id) => {
+    setActivePage(id);
+    // Auto-hide sidebar completely to open module in 100% Full Screen
+    setIsCollapsed(true);
+  };
 
   return (
-    <div 
-      className={`w-64 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col h-screen fixed left-0 top-0 z-40 transition-all duration-300 ${
-        isCollapsed ? '-translate-x-full' : 'translate-x-0'
-      }`}
-    >
-      {/* Brand logo header */}
-      <div className={`p-4 border-b border-slate-800 flex items-center ${isCollapsed ? 'flex-col space-y-3 justify-center' : 'justify-between'} min-h-[73px]`}>
-        <div className="flex items-center space-x-2.5">
-          <div className="bg-blue-600 p-2 rounded-lg text-white shrink-0">
-            <Factory className="h-5 w-5" />
-          </div>
-          {!isCollapsed && (
-            <div className="transition-opacity duration-300">
-              <h1 className="text-sm font-bold text-white tracking-wide leading-tight">ERP Portal</h1>
-              <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase">Manufacturing</span>
+    <>
+      {/* Overlay backdrop when sidebar menu is active */}
+      {!isCollapsed && (
+        <div
+          onClick={() => setIsCollapsed(true)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-[9990] transition-opacity duration-300"
+        />
+      )}
+
+      <aside
+        className={`w-64 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col h-screen fixed left-0 top-0 z-[9999] transition-transform duration-300 ease-in-out shadow-2xl ${
+          isCollapsed ? '-translate-x-full' : 'translate-x-0'
+        }`}
+      >
+        {/* Brand logo & close button header */}
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between min-h-[64px]">
+          <div className="flex items-center space-x-3">
+            <div className="bg-blue-600 p-2 rounded-xl text-white shrink-0 shadow-lg shadow-blue-500/20">
+              <Factory className="h-5 w-5" />
             </div>
-          )}
+            <div>
+              <h1 className="text-sm font-black text-white tracking-wider leading-tight uppercase">VendorOS</h1>
+              <span className="text-[9px] text-blue-400 font-bold tracking-widest uppercase">Enterprise ERP</span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsCollapsed(true)}
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700/60"
+            title="Hide Module Menu (Full Screen)"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* Pin/Unpin sidebar toggle using dots menu */}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-          title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-        >
-          {isCollapsed ? <Menu className="h-4.5 w-4.5" /> : <MoreVertical className="h-4.5 w-4.5" />}
-        </button>
-      </div>
+        {/* Navigation menu list */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+          <p className="px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+            Select Module (Full Screen)
+          </p>
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activePage === item.id || (activePage === 'bom' && item.id === 'masters') || (activePage === 'warehouse' && item.id === 'sites') || (activePage === 'mrp' && item.id === 'planning');
 
-      {/* Menu links */}
-      <nav className={`flex-1 ${isCollapsed ? 'px-2' : 'px-4'} py-5 space-y-1 overflow-y-auto`}>
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activePage === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleSelectModule(item.id)}
+                onDoubleClick={() => handleSelectModule(item.id)}
+                className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all group ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 font-extrabold'
+                    : 'hover:bg-slate-800/80 hover:text-slate-100 text-slate-400'
+                }`}
+              >
+                <Icon className={`h-5 w-5 shrink-0 transition-transform duration-200 ${
+                  isActive ? 'text-white scale-110' : 'text-slate-400 group-hover:text-slate-200 group-hover:scale-110'
+                }`} />
+                <span className="truncate text-left">{item.name}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActivePage(item.id);
-                setIsCollapsed(true); // Automatically hide sidebar drawer on selection
-              }}
-              title={isCollapsed ? item.name : undefined}
-              className={`w-full flex items-center ${
-                isCollapsed ? 'justify-center px-2 py-3' : 'space-x-3 px-4 py-2.5'
-              } rounded-lg text-sm font-medium transition-all group ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'hover:bg-slate-800/60 hover:text-slate-100'
-              }`}
-            >
-              <Icon className={`h-4.5 w-4.5 transition-transform duration-200 ${
-                isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200 group-hover:scale-105'
-              }`} />
-              {!isCollapsed && <span className="truncate">{item.name}</span>}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* User profile details & logout */}
-      <div className={`p-4 border-t border-slate-800 bg-slate-950/40 flex flex-col ${isCollapsed ? 'items-center space-y-4' : 'space-y-3'}`}>
-        {user && (
-          <div className={`flex ${isCollapsed ? 'flex-col items-center justify-center' : 'items-center space-x-3'} w-full`}>
-            <div className="h-9 w-9 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-sm shrink-0">
-              {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
-            </div>
-            {!isCollapsed && (
-              <div className="flex-1 min-w-0 transition-opacity duration-300">
-                <p className="text-xs font-bold text-white truncate leading-none">{user.username}</p>
-                <div className="flex items-center space-x-1 mt-1">
-                  <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 tracking-wider uppercase leading-none">
-                    {user.role}
-                  </span>
-                </div>
+        {/* User profile & Logout footer */}
+        <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex flex-col space-y-2.5">
+          {user && (
+            <div className="flex items-center space-x-3 w-full">
+              <div className="h-8 w-8 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center font-black text-xs shrink-0">
+                {user?.username ? user.username.charAt(0).toUpperCase() : 'A'}
               </div>
-            )}
-          </div>
-        )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate leading-tight">{user.username || 'Admin User'}</p>
+                <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider block">
+                  {user.role || 'Admin'}
+                </span>
+              </div>
+            </div>
+          )}
 
-        <button
-          onClick={logout}
-          title={isCollapsed ? 'Sign Out' : undefined}
-          className={`flex items-center justify-center ${
-            isCollapsed ? 'p-2 w-9 h-9' : 'w-full px-4 py-2 space-x-2'
-          } bg-slate-800 hover:bg-slate-700/80 hover:text-white rounded-lg text-xs font-semibold tracking-wide transition-all border border-slate-700/50`}
-        >
-          <LogOut className="h-3.5 w-3.5" />
-          {!isCollapsed && <span>Sign Out</span>}
-        </button>
-      </div>
-    </div>
+          <button
+            onClick={logout}
+            className="flex items-center justify-center w-full px-3 py-2 space-x-2 bg-slate-800 hover:bg-rose-900/40 hover:border-rose-700/50 text-slate-300 hover:text-rose-300 rounded-xl text-xs font-bold transition-all border border-slate-700/60"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+    </>
   );
 };
 

@@ -7,9 +7,12 @@ async function seedAdmin() {
     console.log(`Connecting to DB for Admin seed: ${dbUri}`);
     await mongoose.connect(dbUri);
     
-    const admin = await User.findOne({ role: 'Admin' });
+    let admin = await User.findOne({ email: 'admin@vms.com' });
     if (admin) {
-      console.log('Admin user already exists. Skipping seed.');
+      admin.accountStatus = 'Active';
+      admin.isVerified = true;
+      await admin.save();
+      console.log('Admin user updated to Active.');
     } else {
       console.log('Admin user not found. Seeding now...');
       await User.create({
@@ -17,12 +20,32 @@ async function seedAdmin() {
         email: 'admin@vms.com',
         password: 'admin123',
         role: 'Admin',
+        accountStatus: 'Active',
         isVerified: true
       });
       console.log('Successfully seeded Admin: admin@vms.com / admin123');
     }
+
+    let manager = await User.findOne({ email: 'manager@vms.com' });
+    if (manager) {
+      manager.accountStatus = 'Active';
+      manager.isVerified = true;
+      await manager.save();
+      console.log('Manager user updated to Active.');
+    } else {
+      console.log('Manager user not found. Seeding now...');
+      await User.create({
+        username: 'Store Manager',
+        email: 'manager@vms.com',
+        password: 'manager123',
+        role: 'Inventory Manager',
+        accountStatus: 'Active',
+        isVerified: true
+      });
+      console.log('Successfully seeded Manager: manager@vms.com / manager123');
+    }
   } catch (error) {
-    console.error('Error seeding Admin user:', error);
+    console.error('Error seeding Admin/Manager users:', error);
     process.exit(1);
   } finally {
     await mongoose.disconnect();

@@ -16,6 +16,10 @@ const ProductionPlanSchema = new mongoose.Schema({
     ref: 'BOM',
     required: [true, 'BOM reference is required'],
   },
+  siteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+  },
   warehouseId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Warehouse',
@@ -32,13 +36,41 @@ const ProductionPlanSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Scheduled', 'Completed', 'Cancelled'],
-    default: 'Pending',
+    enum: ['Draft', 'Pending', 'Unscheduled', 'Partially Scheduled', 'Scheduled', 'Released', 'Material Reserved', 'Allocated', 'In Production', 'Completed', 'Cancelled'],
+    default: 'Unscheduled',
+  },
+  planSource: {
+    type: String,
+    enum: ['MRP', 'Manual'],
+    default: 'Manual',
+  },
+  priority: {
+    type: String,
+    enum: ['Low', 'Medium', 'High', 'Critical'],
+    default: 'Medium',
+  },
+  reason: {
+    type: String,
+    default: '',
+  },
+  cancelReason: {
+    type: String,
+  },
+  cancelledBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  cancelledAt: {
+    type: Date,
+  },
+  notes: {
+    type: String,
+    default: '',
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    required: false,
   },
   createdAt: {
     type: Date,
@@ -60,5 +92,6 @@ ProductionPlanSchema.pre('save', function (next) {
 ProductionPlanSchema.index({ status: 1 });
 ProductionPlanSchema.index({ requiredDate: 1 });
 ProductionPlanSchema.index({ warehouseId: 1 });
+ProductionPlanSchema.index({ siteId: 1 });
 
 module.exports = mongoose.model('ProductionPlan', ProductionPlanSchema);

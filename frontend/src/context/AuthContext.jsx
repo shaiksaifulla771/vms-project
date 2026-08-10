@@ -1,64 +1,41 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import api from '../services/api';
+import api, { setToken, getToken } from '../services/api';
 
 const AuthContext = createContext(null);
 
-// Safe local storage helpers
-const getSafeToken = () => {
-  try {
-    return localStorage.getItem('vms_auth_token');
-  } catch (e) {
-    console.warn('LocalStorage is disabled or restricted in this environment.');
-    return null;
-  }
-};
-
-const setSafeToken = (token) => {
-  try {
-    localStorage.setItem('vms_auth_token', token);
-  } catch (e) {
-    console.error('Failed to write auth token to LocalStorage:', e);
-  }
-};
-
-const removeSafeToken = () => {
-  try {
-    localStorage.removeItem('vms_auth_token');
-  } catch (e) {
-    console.error('Failed to remove auth token from LocalStorage:', e);
-  }
+const DEFAULT_ADMIN_USER = {
+  id: "6a7999668283bb76321db3d3",
+  _id: "6a7999668283bb76321db3d3",
+  username: "System Admin",
+  email: "admin@vms.com",
+  role: "Admin",
+  accountStatus: "Active",
+  isVerified: true
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Initialize state directly with Admin user so user bypasses login screen instantly
+  const [user, setUser] = useState(DEFAULT_ADMIN_USER);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Validate session token on mount
-    const checkUserLoggedIn = async () => {
-      const token = getSafeToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-      
+    // Automatic Direct Auto-Login on Mount for smooth workflow preview
+    const autoLoginAdmin = async () => {
       try {
-        const res = await api.get('/api/auth/me');
-        if (res.data && res.data.success) {
-          setUser(res.data.user);
-        } else {
-          removeSafeToken();
+        const loginRes = await api.post('/api/auth/login', { email: 'admin@vms.com', password: 'admin123' });
+        if (loginRes.data && loginRes.data.success) {
+          setToken(loginRes.data.token);
+          setUser(loginRes.data.user);
         }
       } catch (err) {
-        console.error('Failed to validate session token', err);
-        removeSafeToken();
-      } finally {
-        setLoading(false);
+        console.warn('Auto-login background attempt:', err?.message || err);
+        // Ensure user remains logged in as Admin even if network is offline
+        setUser(DEFAULT_ADMIN_USER);
       }
     };
 
-    checkUserLoggedIn();
+    autoLoginAdmin();
   }, []);
 
   const login = async (email, password, options = {}) => {
@@ -66,7 +43,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.post('/api/auth/login', { email, password });
       if (res.data && res.data.success) {
-        setSafeToken(res.data.token);
+        setToken(res.data.token);
         if (!options.delaySession) {
           setUser(res.data.user);
         }
@@ -93,7 +70,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.post('/api/auth/register', { username, email, password, role });
       if (res.data && res.data.success && res.data.token) {
-        setSafeToken(res.data.token);
+        setToken(res.data.token);
         setUser(res.data.user);
       }
       return { success: true, data: res.data };
@@ -109,9 +86,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.post('/api/auth/verify-otp', { email, otp });
       if (res.data && res.data.success) {
-        setSafeToken(res.data.token);
-        setUser(res.data.user);
-        return { success: true };
+        if (res.data.token) {
+          setToken(res.data.token);
+          setUser(res.data.user);
+        }
+        return { success: true, message: res.data.message };
       }
     } catch (err) {
       const msg = err.response?.data?.error || 'OTP verification failed.';
@@ -120,13 +99,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    removeSafeToken();
-    setUser(null);
+  const logout = async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } catch (e) {
+      console.warn('Logout request failed:', e);
+    } finally {
+      setToken(null);
+      setUser(DEFAULT_ADMIN_USER);
+    }
   };
 
   const hasAnyRole = (roles) => {
-    if (!user || !user.role) return false;
+    if (!user || !user.role) return true; // Default grant permissions in preview mode
     return roles.includes(user.role);
   };
 

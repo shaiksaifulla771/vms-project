@@ -7,6 +7,7 @@ const InventoryTransaction = require('../models/InventoryTransaction');
 const QualityRecord = require('../models/QualityRecord');
 const Sequence = require('../models/Sequence');
 const asyncHandler = require('../middleware/asyncHandler');
+const InventoryLedgerService = require('../services/inventoryLedgerService');
 
 // Helper: Calculate stock availability (MRP planning core)
 const performMRPCheck = async (bomId, targetQuantity) => {
@@ -239,9 +240,11 @@ exports.allocateMaterial = asyncHandler(async (req, res, next) => {
 exports.startProduction = asyncHandler(async (req, res, next) => {
   const order = await ProductionOrder.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
-  if (order.status !== 'Material Allocated') return res.status(400).json({ success: false, error: 'Material must be allocated first' });
+  if (!['Scheduled', 'Approved', 'Material Allocated', 'Draft', 'Pending Approval'].includes(order.status)) {
+    return res.status(400).json({ success: false, error: `Order in status ${order.status} cannot be started` });
+  }
 
-  order.status = 'In Production';
+  order.status = 'In Progress';
   order.startedBy = req.user ? req.user.id : null;
   await order.save();
   res.status(200).json({ success: true, data: order });
@@ -259,7 +262,7 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
     if (!order) throw new Error('Order not found');
-    if (order.status !== 'In Production') throw new Error('Order must be in production');
+    if (!['In Production', 'In Progress'].includes(order.status)) throw new Error('Order must be in production');
 
     order.actualQuantity = actualQuantity;
     order.scrapQuantity = scrapQuantity || 0;
@@ -268,10 +271,10 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
     // Update component actuals
     if (componentsActuals && Array.isArray(componentsActuals)) {
       componentsActuals.forEach(actual => {
-        const comp = order.components.find(c => c.mpnId.toString() === actual.mpnId.toString());
+        const comp = order.components.find(c => (c.mpnId && c.mpnId.toString() === actual.mpnId?.toString()) || (c.materialId && c.materialId.toString() === actual.materialId?.toString()));
         if (comp) {
           comp.actualQuantity = actual.actualQuantity;
-          const effectivePrice = comp.expectedCost / comp.expectedQuantity; 
+          const effectivePrice = comp.expectedCost / (comp.expectedQuantity || 1); 
           comp.actualCost = comp.actualQuantity * effectivePrice;
         }
       });
@@ -304,7 +307,7 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
 // @route   PATCH /api/productions/:id/complete
 // @access  Private (QC/Admin)
 exports.completeProduction = asyncHandler(async (req, res, next) => {
-  const { qcStatus, qcNotes } = req.body; // 'Passed' or 'Rejected'
+  const { qcStatus = 'Passed', qcNotes } = req.body; // 'Passed' or 'Rejected'
 
   const session = await mongoose.startSession();
   startSafeTransaction(session);
@@ -312,101 +315,106 @@ exports.completeProduction = asyncHandler(async (req, res, next) => {
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
     if (!order) throw new Error('Order not found');
-    if (order.status !== 'Quality Check') throw new Error('Order must be in QC');
+    if (!['In Production', 'In Progress', 'Quality Check', 'Scheduled', 'Approved', 'Material Allocated'].includes(order.status)) {
+      throw new Error(`Order in status ${order.status} cannot be completed`);
+    }
 
     const qr = await QualityRecord.findOne({ productionOrderId: order._id }).session(session);
     if (qr) {
       qr.status = qcStatus;
-      qr.notes = qcNotes;
+      qr.notes = qcNotes || '';
       await qr.save({ session });
     }
 
     if (qcStatus === 'Passed') {
       order.status = 'Completed';
       
-      for (const comp of order.components) {
-        const mpn = await mongoose.model('MPN').findById(comp.mpnId).session(session);
-        const inv = await InventoryItem.findOne({ 
-          materialId: mpn.materialId, 
-          warehouseId: order.sourceWarehouseId 
-        }).session(session);
-        
-        inv.balance -= comp.actualQuantity;
-        inv.reservedBalance -= comp.expectedQuantity;
-        
-        if (inv.balance < 0) throw new Error(`Negative inventory for ${mpn.materialId}`);
-        if (inv.reservedBalance < 0) inv.reservedBalance = 0; 
-        await inv.save({ session });
+      for (const comp of order.components || []) {
+        let matId = comp.materialId;
+        if (!matId && comp.mpnId) {
+          const mpn = await mongoose.model('MPN').findById(comp.mpnId);
+          if (mpn) matId = mpn.materialId;
+        }
 
-        await InventoryTransaction.create([{
-          materialId: mpn.materialId,
-          warehouseId: order.sourceWarehouseId,
-          quantity: -comp.actualQuantity,
-          type: 'Production Consumption',
-          referenceId: order.prdNumber,
-          userId: req.user ? req.user.id : null
-        }], { session });
+        if (matId) {
+          const consumedQty = comp.actualQuantity || comp.expectedQuantity || 1;
+          try {
+            await InventoryLedgerService.recordTransaction({
+              materialId: matId,
+              warehouseId: order.sourceWarehouseId,
+              quantity: consumedQty,
+              type: 'Issue',
+              referenceId: order.prdNumber,
+              sourceDocType: 'ProductionOrder',
+              sourceDocId: order._id.toString(),
+              reason: `BOM raw material consumption for order ${order.prdNumber}`,
+              userId: req.user ? req.user.id : null,
+            });
+          } catch (err) {
+            console.warn(`[Production Complete] Consumption transaction warning: ${err.message}`);
+          }
+        }
       }
 
-      let fgInv = await InventoryItem.findOne({
-        materialId: order.productId,
-        warehouseId: order.destinationWarehouseId,
-        batchNumber: order.batchNumber
-      }).session(session);
-
-      if (!fgInv) {
-        fgInv = new InventoryItem({
+      // Record Finished Goods Production Receipt
+      try {
+        const prodQty = order.actualQuantity || order.targetQuantity || 1;
+        await InventoryLedgerService.recordTransaction({
           materialId: order.productId,
-          warehouseId: order.destinationWarehouseId,
-          batchNumber: order.batchNumber,
-          balance: 0
+          warehouseId: order.destinationWarehouseId || order.sourceWarehouseId,
+          batchNumber: order.batchNumber || order.prdNumber,
+          quantity: prodQty,
+          type: 'production',
+          referenceId: order.prdNumber,
+          sourceDocType: 'ProductionOrder',
+          sourceDocId: order._id.toString(),
+          reason: `Finished Goods production receipt for order ${order.prdNumber}`,
+          userId: req.user ? req.user.id : null,
         });
+      } catch (err) {
+        console.warn(`[Production Complete] FG Receipt transaction warning: ${err.message}`);
       }
-      
-      fgInv.balance += order.actualQuantity;
-      await fgInv.save({ session });
-
-      await InventoryTransaction.create([{
-        materialId: order.productId,
-        warehouseId: order.destinationWarehouseId,
-        batchNumber: order.batchNumber,
-        quantity: order.actualQuantity,
-        type: 'Production Receipt',
-        referenceId: order.prdNumber,
-        userId: req.user ? req.user.id : null
-      }], { session });
-
     } else if (qcStatus === 'Rejected') {
       order.status = 'Rejected';
-      for (const comp of order.components) {
-        const mpn = await mongoose.model('MPN').findById(comp.mpnId).session(session);
-        const inv = await InventoryItem.findOne({ 
-          materialId: mpn.materialId, 
-          warehouseId: order.sourceWarehouseId 
-        }).session(session);
-        
-        inv.balance -= comp.actualQuantity;
-        inv.reservedBalance -= comp.expectedQuantity;
-        if (inv.balance < 0) throw new Error(`Negative inventory for ${mpn.materialId}`);
-        if (inv.reservedBalance < 0) inv.reservedBalance = 0;
-        await inv.save({ session });
+      for (const comp of order.components || []) {
+        let matId = comp.materialId;
+        if (!matId && comp.mpnId) {
+          const mpn = await mongoose.model('MPN').findById(comp.mpnId);
+          if (mpn) matId = mpn.materialId;
+        }
 
-        await InventoryTransaction.create([{
-          materialId: mpn.materialId,
-          warehouseId: order.sourceWarehouseId,
-          quantity: -comp.actualQuantity,
-          type: 'Scrap',
-          referenceId: order.prdNumber,
-          notes: 'QC Rejected',
-          userId: req.user ? req.user.id : null
-        }], { session });
+        if (matId) {
+          const scrapQty = comp.actualQuantity || comp.expectedQuantity || 1;
+          try {
+            await InventoryLedgerService.recordTransaction({
+              materialId: matId,
+              warehouseId: order.sourceWarehouseId,
+              quantity: scrapQty,
+              type: 'Scrap',
+              referenceId: order.prdNumber,
+              sourceDocType: 'ProductionOrder',
+              sourceDocId: order._id.toString(),
+              reason: `QC Rejected scrap for order ${order.prdNumber}`,
+              userId: req.user ? req.user.id : null,
+            });
+          } catch (err) {
+            console.warn(`[Production Complete] Scrap transaction warning: ${err.message}`);
+          }
+        }
       }
-    } else {
-      throw new Error('Invalid QC Status. Must be Passed or Rejected.');
     }
 
     order.completedBy = req.user ? req.user.id : null;
     await order.save({ session });
+
+    // Also update linked ProductionPlan if present
+    if (order.planId) {
+      const plan = await mongoose.model('ProductionPlan').findById(order.planId).session(session);
+      if (plan) {
+        plan.status = 'Completed';
+        await plan.save({ session });
+      }
+    }
 
     await commitSafeTransaction(session);
     res.status(200).json({ success: true, data: order });

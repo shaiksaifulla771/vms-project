@@ -1,11 +1,12 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const getJwtSecret = require('../config/jwt');
+const crypto = require('crypto');
 
 // Helper to sign JWT
-const getSignedJwtToken = (userId) => {
-  return jwt.sign({ id: userId }, getJwtSecret(), {
-    expiresIn: process.env.JWT_EXPIRE || '30d',
+const getSignedJwtToken = (userId, tokenVersion) => {
+  return jwt.sign({ id: userId, tokenVersion }, getJwtSecret(), {
+    expiresIn: '15m',
   });
 };
 
@@ -27,7 +28,7 @@ exports.register = async (req, res, next) => {
     }
 
     // Validate requested role against allowed roles
-    const validRequestedRoles = ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor'];
+    const validRequestedRoles = ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'];
     let finalRequestedRole = validRequestedRoles.includes(role) ? role : 'Viewer';
 
     // Generate random 6-digit OTP
@@ -45,9 +46,6 @@ exports.register = async (req, res, next) => {
       otp: generatedOtp,
       otpExpires
     });
-
-    // DO NOT issue a token during registration if they still need to OTP and be approved.
-    // Instead return a success response instructing them to check their email.
 
     res.status(201).json({
       success: true,
@@ -77,7 +75,7 @@ exports.verifyOtp = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please specify email and OTP' });
     }
 
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ success: false, error: 'User account not found' });
     }
@@ -97,9 +95,6 @@ exports.verifyOtp = async (req, res, next) => {
     user.otpExpires = undefined;
     await user.save();
 
-    // We DO NOT issue a token if they are pending admin approval.
-    // However, if they are already Active (e.g. they requested a new OTP after approval?), we can issue one.
-    // The strict flow says: OTP verification -> Admin approval. So after OTP, they are still Pending.
     if (user.accountStatus === 'Pending') {
        return res.status(200).json({
          success: true,
@@ -114,7 +109,7 @@ exports.verifyOtp = async (req, res, next) => {
        });
     }
 
-    const token = getSignedJwtToken(user._id);
+    const token = getSignedJwtToken(user._id, user.tokenVersion);
 
     res.status(200).json({
       success: true,
@@ -178,7 +173,22 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    const token = getSignedJwtToken(user._id);
+    const token = getSignedJwtToken(user._id, user.tokenVersion || 0);
+    const refreshToken = crypto.randomBytes(64).toString('hex');
+    const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { refreshTokenHash, lastLoginAt: new Date(), lastLoginIp: req.ip } }
+    );
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth'
+    });
 
     res.status(200).json({
       success: true,
@@ -211,6 +221,84 @@ exports.getMe = async (req, res, next) => {
         accountStatus: req.user.accountStatus
       },
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Refresh token
+// @route   POST /api/auth/refresh
+// @access  Public
+exports.refresh = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies ? req.cookies.refreshToken : null;
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, error: 'Not authorized: missing refresh cookie' });
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const user = await User.findOne({ refreshTokenHash: hashedToken });
+
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Not authorized: invalid refresh token' });
+    }
+
+    const token = getSignedJwtToken(user._id, user.tokenVersion || 0);
+    const newRefreshToken = crypto.randomBytes(64).toString('hex');
+    const newRefreshTokenHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+
+    await User.updateOne({ _id: user._id }, { $set: { refreshTokenHash: newRefreshTokenHash } });
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth'
+    });
+
+    res.status(200).json({ success: true, token });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Logout user
+// @route   POST /api/auth/logout
+// @access  Private
+exports.logout = async (req, res, next) => {
+  try {
+    if (req.user && req.user._id) {
+      await User.updateOne(
+        { _id: req.user._id },
+        { $inc: { tokenVersion: 1 }, $unset: { refreshTokenHash: 1 } }
+      );
+    }
+    res.cookie('refreshToken', 'none', {
+      expires: new Date(Date.now() + 5 * 1000),
+      httpOnly: true,
+      path: '/api/auth'
+    });
+    res.status(200).json({ success: true, data: {} });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Revoke user tokens
+// @route   POST /api/auth/revoke/:userId
+// @access  Admin
+exports.revokeUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    await User.updateOne(
+      { _id: user._id },
+      { $inc: { tokenVersion: 1 }, $unset: { refreshTokenHash: 1 } }
+    );
+    res.status(200).json({ success: true, data: {} });
   } catch (err) {
     next(err);
   }

@@ -4,10 +4,12 @@ const {
   getProductionPlanById,
   createProductionPlan,
   scheduleProductionPlan,
-  unscheduleProductionPlan
+  releaseProductionPlan,
+  unscheduleProductionPlan,
+  cancelProductionPlan
 } = require('../controllers/productionPlanController');
 
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -23,6 +25,8 @@ router
   .get(getProductionPlanById);
 
 router.post('/:id/schedule', authorize('Admin', 'Production Manager', 'Planner'), scheduleProductionPlan);
+router.post('/:id/release', authorize('Admin', 'Production Manager', 'Planner'), releaseProductionPlan);
 router.post('/:id/unschedule', authorize('Admin', 'Production Manager', 'Planner'), unscheduleProductionPlan);
+router.post('/:id/cancel', authorize('Admin', 'Production Manager', 'Planner'), cancelProductionPlan);
 
 module.exports = router;

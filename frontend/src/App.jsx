@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
@@ -16,7 +16,11 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Warehouse from './pages/Warehouse';
 import Scheduling from './pages/Scheduling';
+
 import ErrorBoundary from './components/ErrorBoundary';
+
+import Sites from './pages/Sites';
+import MRP from './pages/MRP';
 
 // New Routed BOM Module
 import BOMRoutes from './pages/bom/BOMRoutes';
@@ -30,7 +34,7 @@ const AppContent = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // Full screen mode by default
   const [chatOpen, setChatOpen] = useState(false);
 
   if (loading) {
@@ -42,113 +46,69 @@ const AppContent = () => {
     );
   }
 
-  // Redirect to login if session is empty
+  // Auto-login fallback if user is null
   if (!user) {
     return <Login />;
   }
 
   // Derive activePage from the first URL segment
-  let activePage = location.pathname.split('/')[1] || 'masters';
-
-  // The sidebar currently uses 'boms' as the ID for BOMs, but our new route is '/bom'.
-  // Map 'bom' to 'boms' for the sidebar active state, but keep URL as '/bom'.
+  let activePage = location.pathname.split('/')[1] || 'dashboard';
   const sidebarActivePage = activePage === 'bom' ? 'boms' : activePage;
 
-  // Custom setActivePage for the sidebar that updates the URL
   const setActivePage = (page) => {
-    // Map 'boms' back to '/bom' for the URL
     if (page === 'boms') navigate('/bom');
     else navigate(`/${page}`);
   };
 
-  const pageRoles = {
-    masters: ['Admin', 'Inventory Manager'],
-    bom: ['Admin', 'Production Manager'],
-    boms: ['Admin', 'Production Manager'],
-    planning: ['Admin', 'Inventory Manager', 'Production Manager'],
-    inventory: ['Admin', 'Inventory Manager'],
-    purchasing: ['Admin', 'Inventory Manager'],
-    production: ['Admin', 'Production Manager'],
-    quality: ['Admin', 'Production Manager'],
-    reports: ['Admin', 'Inventory Manager', 'Production Manager'],
-    settings: ['Admin', 'Inventory Manager', 'Production Manager']
-  };
-
-  const renderRoutes = () => {
-    const allowedRoles = pageRoles[activePage] || ['Admin'];
-    if (user && !allowedRoles.includes(user.role)) {
-      return (
-        <div className="bg-red-50 border border-red-100 rounded-2xl p-8 text-center max-w-lg mx-auto mt-20 space-y-4 shadow-sm">
-          <div className="text-red-500 flex justify-center">
-            <svg className="h-14 w-14 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h3 className="text-base font-extrabold text-slate-800 tracking-tight">Clearance Access Blocked</h3>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            Your operational role <strong>{user.role}</strong> does not have clearance permissions to access this module.
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <Routes>
-        <Route path="/" element={<Navigate to="/masters" />} />
-        <Route path="/dashboard/*" element={<Dashboard />} />
-        <Route path="/masters/*" element={<Masters />} />
-        <Route path="/warehouse/*" element={<Warehouse />} />
-        <Route path="/inventory/*" element={<Inventory />} />
-        <Route path="/planning/*" element={<Planning />} />
-        <Route path="/bom/*" element={<BOMRoutes />} />
-        <Route path="/production/*" element={<ProductionRoutes />} />
-        <Route path="/scheduling/*" element={<Scheduling />} />
-        <Route path="/purchasing/*" element={<Purchasing />} />
-        <Route path="/reports/*" element={<Reports />} />
-        <Route path="/settings/*" element={<Settings />} />
-        <Route path="*" element={<Navigate to="/masters" />} />
-      </Routes>
-    );
-  };
-
-  // Determine if current route should be full-screen (hide sidebar/header)
-  const isFullscreenMode = location.pathname === '/bom/new' || location.pathname.match(/^\/bom\/[a-f0-9]+\/edit$/i);
-
   return (
     <div className="min-h-screen bg-slate-50/50 flex">
       {/* Sidebar navigation */}
-      {!isFullscreenMode && (
-        <Sidebar
-          activePage={sidebarActivePage}
-          setActivePage={setActivePage}
-          isCollapsed={sidebarCollapsed}
-          setIsCollapsed={setSidebarCollapsed}
-        />
-      )}
+      <Sidebar
+        activePage={sidebarActivePage}
+        setActivePage={setActivePage}
+        isCollapsed={sidebarCollapsed}
+        setIsCollapsed={setSidebarCollapsed}
+      />
 
       {/* Main page context */}
-      <div className={`flex-1 ${!isFullscreenMode && !sidebarCollapsed ? 'pl-64' : 'pl-0'} flex flex-col min-h-screen transition-all duration-300`}>
+      <div className="flex-1 pl-0 flex flex-col min-h-screen transition-all duration-300">
         {/* Top Header navbar */}
-        {!isFullscreenMode && (
-          <Header
-            activePage={sidebarActivePage}
-            sidebarCollapsed={sidebarCollapsed}
-            setSidebarCollapsed={setSidebarCollapsed}
-          />
-        )}
+        <Header
+          activePage={sidebarActivePage}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+        />
 
         {/* Central content area */}
-        <main className={`flex-1 ${isFullscreenMode ? 'p-0' : 'pt-16 p-8'} overflow-y-auto`}>
+        <main className="flex-1 pt-16 p-8 overflow-y-auto">
           <div className="w-full h-full">
-            {renderRoutes()}
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" />} />
+              <Route path="/dashboard/*" element={<Dashboard />} />
+              <Route path="/sites/*" element={<Sites />} />
+              <Route path="/masters/*" element={<Masters />} />
+              <Route path="/mrp/*" element={<MRP />} />
+              <Route path="/warehouse/*" element={<Warehouse />} />
+              <Route path="/inventory/*" element={<Inventory />} />
+              <Route path="/planning/*" element={<Planning />} />
+              <Route path="/bom/*" element={<BOMRoutes />} />
+              <Route path="/production/*" element={<Manufacturing />} />
+              <Route path="/scheduling/*" element={<Scheduling />} />
+              <Route path="/purchasing/*" element={<Purchasing />} />
+              <Route path="/quality/*" element={<Quality />} />
+              <Route path="/reports/*" element={<Reports />} />
+              <Route path="/settings/*" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/masters" />} />
+            </Routes>
           </div>
         </main>
       </div>
+
       {/* Floating AI Chat Button */}
-      {user && !isFullscreenMode && (
+      {user && (
         <button
           onClick={() => setChatOpen(true)}
-          className="fixed bottom-6 right-6 p-4 bg-indigo-600 text-white rounded-full shadow-2xl hover:bg-indigo-700 hover:shadow-indigo-500/50 hover:-translate-y-1 transition-all z-50 flex items-center justify-center group"
+          className="fixed bottom-6 right-6 p-4 bg-blue-600 text-white rounded-full shadow-2xl hover:bg-blue-700 hover:shadow-blue-500/50 hover:-translate-y-1 transition-all z-50 flex items-center justify-center group"
           title="Open AI Assistant"
         >
           <Sparkles className="w-6 h-6 group-hover:scale-110 transition-transform" />

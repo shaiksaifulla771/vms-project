@@ -1942,8 +1942,8 @@ const MaterialsTab = () => {
   return (
     <div className="space-y-3 w-full">
       {/* Search & Filters */}
-      <Card className="shadow-none border overflow-visible relative z-50 glass-panel">
-        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-50">
+      <Card className="shadow-none border overflow-visible relative z-10 glass-panel">
+        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-10">
           <div className="flex items-center space-x-2 w-full md:w-auto">
             <div className="relative w-48">
               <input

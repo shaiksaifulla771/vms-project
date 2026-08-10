@@ -1,10 +1,15 @@
 const mongoose = require('mongoose');
 
 const POComponentSchema = new mongoose.Schema({
+  materialId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Material',
+    required: false,
+  },
   mpnId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'MPN',
-    required: true,
+    required: false,
   },
   expectedQuantity: {
     type: Number,
@@ -12,6 +17,11 @@ const POComponentSchema = new mongoose.Schema({
   },
   actualQuantity: {
     type: Number,
+    default: 0,
+  },
+  consumedQuantity: {
+    type: Number,
+    default: 0,
   },
   lossPercent: {
     type: Number,
@@ -19,10 +29,11 @@ const POComponentSchema = new mongoose.Schema({
   },
   expectedCost: {
     type: Number,
-    required: true,
+    default: 0,
   },
   actualCost: {
     type: Number,
+    default: 0,
   }
 }, { _id: false });
 
@@ -103,15 +114,18 @@ const ProductionOrderSchema = new mongoose.Schema({
     type: String,
     enum: [
       'Draft', 
+      'Scheduled',
       'Pending Approval', 
       'Approved', 
       'Material Allocated', 
-      'In Production', 
+      'In Production',
+      'In Progress',
       'Quality Check', 
       'Completed', 
-      'Closed'
+      'Closed',
+      'Cancelled'
     ],
-    default: 'Draft',
+    default: 'Scheduled',
   },
   components: [POComponentSchema],
   expectedCost: {
@@ -133,7 +147,7 @@ const ProductionOrderSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    required: false,
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,

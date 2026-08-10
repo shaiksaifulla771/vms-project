@@ -1,0 +1,254 @@
+const StockTransfer = require('../models/StockTransfer');
+const InventoryItem = require('../models/InventoryItem');
+const InventoryLedgerService = require('../services/inventoryLedgerService');
+const Sequence = require('../models/Sequence');
+const asyncHandler = require('../middleware/asyncHandler');
+
+// @desc    Get all stock transfers with filters
+// @route   GET /api/transfers
+// @access  Private
+exports.getStockTransfers = asyncHandler(async (req, res) => {
+  const query = {};
+  if (req.query.status) query.status = req.query.status;
+  if (req.query.fromWarehouseId) query.fromWarehouseId = req.query.fromWarehouseId;
+  if (req.query.toWarehouseId) query.toWarehouseId = req.query.toWarehouseId;
+
+  const transfers = await StockTransfer.find(query)
+    .populate('materialId', 'name code unit type')
+    .populate('fromSiteId', 'name code')
+    .populate('fromWarehouseId', 'name code')
+    .populate('toSiteId', 'name code')
+    .populate('toWarehouseId', 'name code')
+    .populate('createdBy', 'username email')
+    .populate('approvedBy', 'username email')
+    .populate('receivedBy', 'username email')
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({ success: true, count: transfers.length, data: transfers });
+});
+
+// @desc    Create stock transfer request (Pending Approval)
+// @route   POST /api/transfers
+// @access  Private
+exports.createStockTransfer = asyncHandler(async (req, res) => {
+  const { fromSiteId, fromWarehouseId, toSiteId, toWarehouseId, materialId, batchNumber, quantity, reason, notes } = req.body;
+
+  if (!fromWarehouseId || !toWarehouseId || !materialId || !quantity || !reason) {
+    return res.status(400).json({ success: false, error: 'Please provide fromWarehouseId, toWarehouseId, materialId, quantity, and reason' });
+  }
+
+  if (fromWarehouseId.toString() === toWarehouseId.toString()) {
+    return res.status(400).json({ success: false, error: 'Source and destination warehouses cannot be the same' });
+  }
+
+  // Check available stock in source warehouse
+  const sourceStock = await InventoryItem.findOne({
+    materialId,
+    warehouseId: fromWarehouseId,
+    batchNumber: batchNumber || 'DEFAULT'
+  });
+
+  const availableQty = sourceStock ? (sourceStock.balance - (sourceStock.reservedBalance || 0)) : 0;
+  if (availableQty < parseFloat(quantity)) {
+    return res.status(400).json({
+      success: false,
+      error: `Insufficient stock in source warehouse. Available: ${availableQty}, Requested: ${quantity}`
+    });
+  }
+
+  let seqDoc = await Sequence.findById('stockTransfer');
+  if (!seqDoc) {
+    seqDoc = await Sequence.create({ _id: 'stockTransfer', seq: 1000 });
+  } else {
+    seqDoc = await Sequence.findByIdAndUpdate('stockTransfer', { $inc: { seq: 1 } }, { new: true });
+  }
+  const transferNumber = `TRF-${seqDoc.seq}`;
+
+  const isAdmin = req.user && req.user.role === 'Admin';
+
+  const transfer = await StockTransfer.create({
+    transferNumber,
+    fromSiteId,
+    fromWarehouseId,
+    toSiteId,
+    toWarehouseId,
+    materialId,
+    batchNumber: batchNumber || 'DEFAULT',
+    quantity: parseFloat(quantity),
+    reason,
+    notes,
+    status: isAdmin ? 'Approved' : 'Pending Approval',
+    approvedBy: isAdmin ? req.user.id : null,
+    approvedAt: isAdmin ? new Date() : null,
+    createdBy: req.user ? req.user.id : null,
+  });
+
+  if (isAdmin) {
+    await InventoryLedgerService.recordTransaction({
+      siteId: fromSiteId || null,
+      warehouseId: fromWarehouseId,
+      materialId,
+      batchNumber: batchNumber || 'DEFAULT',
+      type: 'RESERVATION',
+      quantity: parseFloat(quantity),
+      referenceDocument: 'StockTransfer',
+      referenceId: transfer._id,
+      userId: req.user.id,
+      description: `Admin auto-approved transfer reservation: ${reason}`
+    });
+  }
+
+  res.status(201).json({ success: true, data: transfer });
+});
+
+// @desc    Approve stock transfer request
+// @route   POST /api/transfers/:id/approve
+// @access  Private (Manager/Admin)
+exports.approveStockTransfer = asyncHandler(async (req, res) => {
+  const transfer = await StockTransfer.findById(req.params.id);
+  if (!transfer) {
+    return res.status(404).json({ success: false, error: 'Transfer request not found' });
+  }
+
+  if (transfer.status !== 'Pending Approval') {
+    return res.status(400).json({ success: false, error: `Transfer in state ${transfer.status} cannot be approved` });
+  }
+
+  // Record soft reservation at source warehouse
+  try {
+    await InventoryLedgerService.recordTransaction({
+      materialId: transfer.materialId,
+      warehouseId: transfer.fromWarehouseId,
+      quantity: transfer.quantity,
+      type: 'RESERVATION',
+      referenceId: transfer.transferNumber,
+      sourceDocType: 'StockTransfer',
+      sourceDocId: transfer._id.toString(),
+      reason: `Transfer reservation for TRF ${transfer.transferNumber}`,
+      userId: req.user ? req.user.id : null,
+    });
+  } catch (err) {
+    console.warn(`[Stock Transfer Approve] Reservation notice: ${err.message}`);
+  }
+
+  transfer.status = 'Approved';
+  transfer.approvedBy = req.user ? req.user.id : null;
+  transfer.approvedAt = Date.now();
+  await transfer.save();
+
+  res.status(200).json({ success: true, message: 'Stock transfer approved and stock reserved', data: transfer });
+});
+
+// @desc    Dispatch transfer (Move to In Transit - deduct from source)
+// @route   POST /api/transfers/:id/dispatch
+// @access  Private
+exports.dispatchStockTransfer = asyncHandler(async (req, res) => {
+  const transfer = await StockTransfer.findById(req.params.id);
+  if (!transfer) {
+    return res.status(404).json({ success: false, error: 'Transfer request not found' });
+  }
+
+  if (transfer.status !== 'Approved') {
+    return res.status(400).json({ success: false, error: `Transfer must be Approved before dispatching (current: ${transfer.status})` });
+  }
+
+  // Release reservation and deduct stock via TRANSFER_OUT
+  try {
+    await InventoryLedgerService.recordTransaction({
+      materialId: transfer.materialId,
+      warehouseId: transfer.fromWarehouseId,
+      quantity: transfer.quantity,
+      type: 'TRANSFER_OUT',
+      referenceId: transfer.transferNumber,
+      sourceDocType: 'StockTransfer',
+      sourceDocId: transfer._id.toString(),
+      reason: `Transfer dispatch to destination warehouse for ${transfer.transferNumber}`,
+      userId: req.user ? req.user.id : null,
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: `Dispatch failed: ${err.message}` });
+  }
+
+  transfer.status = 'In Transit';
+  transfer.dispatchedAt = Date.now();
+  await transfer.save();
+
+  res.status(200).json({ success: true, message: 'Stock dispatched and in transit', data: transfer });
+});
+
+// @desc    Receive transfer (Complete Transfer - add to destination)
+// @route   POST /api/transfers/:id/receive
+// @access  Private
+exports.receiveStockTransfer = asyncHandler(async (req, res) => {
+  const transfer = await StockTransfer.findById(req.params.id);
+  if (!transfer) {
+    return res.status(404).json({ success: false, error: 'Transfer request not found' });
+  }
+
+  if (transfer.status !== 'In Transit' && transfer.status !== 'Approved') {
+    return res.status(400).json({ success: false, error: `Transfer in state ${transfer.status} cannot be received` });
+  }
+
+  // Add stock to destination warehouse via TRANSFER_IN
+  try {
+    await InventoryLedgerService.recordTransaction({
+      materialId: transfer.materialId,
+      warehouseId: transfer.toWarehouseId,
+      quantity: transfer.quantity,
+      type: 'TRANSFER_IN',
+      referenceId: transfer.transferNumber,
+      sourceDocType: 'StockTransfer',
+      sourceDocId: transfer._id.toString(),
+      reason: `Transfer receipt from source warehouse for ${transfer.transferNumber}`,
+      userId: req.user ? req.user.id : null,
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: `Receive failed: ${err.message}` });
+  }
+
+  transfer.status = 'Completed';
+  transfer.receivedBy = req.user ? req.user.id : null;
+  transfer.receivedAt = Date.now();
+  await transfer.save();
+
+  res.status(200).json({ success: true, message: 'Transfer received and completed successfully', data: transfer });
+});
+
+// @desc    Reject stock transfer request
+// @route   POST /api/transfers/:id/reject
+// @access  Private (Manager/Admin)
+exports.rejectStockTransfer = asyncHandler(async (req, res) => {
+  const transfer = await StockTransfer.findById(req.params.id);
+  if (!transfer) {
+    return res.status(404).json({ success: false, error: 'Transfer request not found' });
+  }
+
+  if (['Completed', 'Cancelled'].includes(transfer.status)) {
+    return res.status(400).json({ success: false, error: `Cannot reject transfer in status ${transfer.status}` });
+  }
+
+  // If was approved, release soft reservation
+  if (transfer.status === 'Approved') {
+    try {
+      await InventoryLedgerService.recordTransaction({
+        materialId: transfer.materialId,
+        warehouseId: transfer.fromWarehouseId,
+        quantity: transfer.quantity,
+        type: 'RELEASE',
+        referenceId: transfer.transferNumber,
+        sourceDocType: 'StockTransfer',
+        sourceDocId: transfer._id.toString(),
+        reason: `Reservation release for rejected transfer TRF ${transfer.transferNumber}`,
+        userId: req.user ? req.user.id : null,
+      });
+    } catch (err) {
+      console.warn(`[Reject Transfer] Release reservation warning: ${err.message}`);
+    }
+  }
+
+  transfer.status = 'Rejected';
+  transfer.rejectionReason = req.body.rejectionReason || 'Rejected by manager';
+  await transfer.save();
+
+  res.status(200).json({ success: true, message: 'Stock transfer rejected', data: transfer });
+});

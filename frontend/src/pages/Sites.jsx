@@ -1,0 +1,410 @@
+import React, { useState, useEffect } from 'react';
+import api from '../services/api';
+import { Card, CardContent } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
+import {
+  Building2, Warehouse as WarehouseIcon, Layers, Plus,
+  MapPin, RefreshCw, X, CheckCircle2, ChevronDown, ChevronRight
+} from 'lucide-react';
+import WarehouseAssignmentTab from './sites/WarehouseAssignmentTab';
+
+const Sites = () => {
+  const [sites, setSites] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'sites' | 'warehouses' | 'assignments'
+
+  // Expanded site cards state
+  const [expandedSiteIds, setExpandedSiteIds] = useState(new Set());
+
+  // Modals
+  const [isSiteModalOpen, setIsSiteModalOpen] = useState(false);
+  const [isWarehouseModalOpen, setIsWarehouseModalOpen] = useState(false);
+  const [siteFormData, setSiteFormData] = useState({ code: '', name: '', type: 'Manufacturing Plant', city: '', state: '', country: 'India' });
+  const [whFormData, setWhFormData] = useState({ code: '', name: '', siteId: '', type: 'General', location: '' });
+
+  const [toastMsg, setToastMsg] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [sitesRes, whRes, matRes, assignRes] = await Promise.all([
+        api.get('/api/sites'),
+        api.get('/api/warehouses'),
+        api.get('/api/materials'),
+        api.get('/api/warehouse-materials')
+      ]);
+
+      const siteList = sitesRes.data?.sites || sitesRes.data?.data || [];
+      const whList = whRes.data?.warehouses || whRes.data?.data || [];
+      const matList = matRes.data?.data || [];
+      const assignList = assignRes.data?.data || [];
+
+      setSites(siteList);
+      setWarehouses(whList);
+      setMaterials(matList);
+      setAssignments(assignList);
+
+      // Auto-expand all sites by default
+      setExpandedSiteIds(new Set(siteList.map(s => s._id)));
+    } catch (err) {
+      console.error('Failed to load network & sites:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const toggleExpandSite = (siteId) => {
+    const next = new Set(expandedSiteIds);
+    if (next.has(siteId)) next.delete(siteId);
+    else next.add(siteId);
+    setExpandedSiteIds(next);
+  };
+
+  // Submit Site Handler
+  const handleCreateSite = async (e) => {
+    e.preventDefault();
+    if (!siteFormData.code || !siteFormData.name) {
+      setToastMsg({ type: 'error', text: 'Site Code and Name are required.' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await api.post('/api/sites', siteFormData);
+      if (res.data && (res.data.success || res.data.site || res.data.data)) {
+        setToastMsg({ type: 'success', text: `✓ Site ${siteFormData.name} created successfully!` });
+        setIsSiteModalOpen(false);
+        setSiteFormData({ code: '', name: '', type: 'Manufacturing Plant', city: '', state: '', country: 'India' });
+        fetchData();
+      }
+    } catch (err) {
+      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to create site.' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Submit Warehouse Handler
+  const handleCreateWarehouse = async (e) => {
+    e.preventDefault();
+    if (!whFormData.code || !whFormData.name || !whFormData.siteId) {
+      setToastMsg({ type: 'error', text: 'Warehouse Code, Name, and Parent Site are required.' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await api.post('/api/warehouses', whFormData);
+      if (res.data && (res.data.success || res.data.warehouse || res.data.data)) {
+        setToastMsg({ type: 'success', text: `✓ Warehouse ${whFormData.name} created successfully!` });
+        setIsWarehouseModalOpen(false);
+        setWhFormData({ code: '', name: '', siteId: '', type: 'General', location: '' });
+        fetchData();
+      }
+    } catch (err) {
+      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to create warehouse.' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Toast alert */}
+      {toastMsg && (
+        <div className={`p-3 rounded-lg text-xs font-semibold border flex items-center justify-between shadow-xs ${
+          toastMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+        }`}>
+          <span>{toastMsg.text}</span>
+          <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-slate-700 text-sm font-bold">×</button>
+        </div>
+      )}
+
+      {/* Top Action & View Control Bar */}
+      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        {/* View Mode Options */}
+        <div className="flex items-center space-x-1.5">
+          <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider mr-1">View Options:</span>
+          <button
+            onClick={() => setViewMode('all')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              viewMode === 'all' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Unified Overview ({sites.length} Sites)
+          </button>
+          <button
+            onClick={() => setViewMode('sites')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              viewMode === 'sites' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Sites Only
+          </button>
+          <button
+            onClick={() => setViewMode('warehouses')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              viewMode === 'warehouses' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Warehouses Only ({warehouses.length})
+          </button>
+          <button
+            onClick={() => setViewMode('assignments')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              viewMode === 'assignments' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Material Assignments ({assignments.length})
+          </button>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center space-x-2">
+          <Button size="sm" onClick={() => setIsSiteModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs">
+            <Plus className="h-3.5 w-3.5 mr-1" /> New Site
+          </Button>
+          <Button size="sm" onClick={() => { if(sites[0]) setWhFormData(p => ({ ...p, siteId: sites[0]._id })); setIsWarehouseModalOpen(true); }} className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs">
+            <Plus className="h-3.5 w-3.5 mr-1" /> New Warehouse
+          </Button>
+        </div>
+      </div>
+
+      {/* SINGLE UNIFIED PAGE VIEW */}
+      {viewMode === 'assignments' ? (
+        <WarehouseAssignmentTab />
+      ) : (
+        <div className="space-y-3">
+          {loading ? (
+            <div className="p-8 bg-white rounded-xl border border-slate-200 text-center text-slate-400 text-xs font-semibold">
+              Loading Network Facilities & Warehouses...
+            </div>
+          ) : sites.length === 0 ? (
+            <div className="p-8 bg-white rounded-xl border border-slate-200 text-center space-y-3">
+              <Building2 className="h-8 w-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">No Manufacturing Sites Registered Yet.</p>
+              <Button size="sm" onClick={() => setIsSiteModalOpen(true)} className="bg-blue-600 text-white font-bold text-xs">
+                Register First Facility Site
+              </Button>
+            </div>
+          ) : (
+            sites.map((site) => {
+              const siteWarehouses = warehouses.filter(w => (w.siteId?._id || w.siteId) === site._id);
+              const isExpanded = expandedSiteIds.has(site._id);
+
+              return (
+                <Card key={site._id} className="bg-white border-slate-200 shadow-xs overflow-hidden">
+                  {/* Site Header Card Bar */}
+                  <div
+                    onClick={() => toggleExpandSite(site._id)}
+                    className="p-4 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-100/60 transition-colors"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <button className="text-slate-400">
+                        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </button>
+                      <div className="p-2 bg-blue-50 border border-blue-100 rounded-lg text-blue-600">
+                        <Building2 className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-sm font-bold text-slate-900">{site.name}</h3>
+                          <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                            {site.code}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium">
+                          {site.address?.city || site.city || 'Location N/A'}, {site.address?.state || site.state || 'State'} • {site.type || 'Manufacturing Plant'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3 text-xs">
+                      <Badge variant="outline" className="border-slate-200 bg-white text-slate-700 font-bold">
+                        {siteWarehouses.length} Warehouses Linked
+                      </Badge>
+                      <Badge variant="solid" className={site.status === 'Active' ? 'bg-emerald-600 text-white' : 'bg-slate-400 text-white'}>
+                        {site.status || 'Active'}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Expanded Details: Warehouses & Assignments inside this Site */}
+                  {isExpanded && viewMode !== 'sites' && (
+                    <CardContent className="p-4 bg-white space-y-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                        <span>Associated Warehouse Nodes</span>
+                        <button
+                          onClick={() => { setWhFormData(p => ({ ...p, siteId: site._id })); setIsWarehouseModalOpen(true); }}
+                          className="text-blue-600 hover:text-blue-700 text-[11px] font-bold flex items-center space-x-1"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>Add Warehouse to {site.name}</span>
+                        </button>
+                      </h4>
+
+                      {siteWarehouses.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-2">No warehouses linked to this site.</p>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {siteWarehouses.map((wh) => {
+                            const whAssignments = assignments.filter(a => (a.warehouseId?._id || a.warehouseId) === wh._id);
+
+                            return (
+                              <div key={wh._id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <WarehouseIcon className="h-4 w-4 text-purple-600 shrink-0" />
+                                    <span className="font-bold text-xs text-slate-900">{wh.name}</span>
+                                    <span className="font-mono text-[10px] text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
+                                      {wh.code}
+                                    </span>
+                                  </div>
+                                  <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-800 text-[10px]">
+                                    {wh.type || 'General'}
+                                  </Badge>
+                                </div>
+
+                                <div className="text-[11px] text-slate-500 font-medium flex items-center justify-between">
+                                  <span>Assigned Materials: <strong className="text-slate-800">{whAssignments.length}</strong></span>
+                                  <span>Status: <strong className="text-emerald-600">{wh.status || 'Active'}</strong></span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* NEW SITE MODAL */}
+      {isSiteModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">Register New Facility Site</h3>
+              <button onClick={() => setIsSiteModalOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+            </div>
+            <form onSubmit={handleCreateSite} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Site Code *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. SITE-01"
+                  value={siteFormData.code}
+                  onChange={(e) => setSiteFormData({ ...siteFormData, code: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Site Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Bengaluru Plant"
+                  value={siteFormData.name}
+                  onChange={(e) => setSiteFormData({ ...siteFormData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">City</label>
+                  <input
+                    type="text"
+                    placeholder="City"
+                    value={siteFormData.city}
+                    onChange={(e) => setSiteFormData({ ...siteFormData, city: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">State</label>
+                  <input
+                    type="text"
+                    placeholder="State"
+                    value={siteFormData.state}
+                    onChange={(e) => setSiteFormData({ ...siteFormData, state: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsSiteModalOpen(false)}>Cancel</Button>
+                <Button type="submit" size="sm" isLoading={actionLoading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">Register Site</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* NEW WAREHOUSE MODAL */}
+      {isWarehouseModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">Add Warehouse Node</h3>
+              <button onClick={() => setIsWarehouseModalOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+            </div>
+            <form onSubmit={handleCreateWarehouse} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Parent Facility Site *</label>
+                <select
+                  value={whFormData.siteId}
+                  onChange={(e) => setWhFormData({ ...whFormData, siteId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  required
+                >
+                  <option value="">Select Parent Site</option>
+                  {sites.map(s => <option key={s._id} value={s._id}>{s.name} ({s.code})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Warehouse Code *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. WH-01"
+                  value={whFormData.code}
+                  onChange={(e) => setWhFormData({ ...whFormData, code: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Warehouse Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Central Raw Storage"
+                  value={whFormData.name}
+                  onChange={(e) => setWhFormData({ ...whFormData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                  required
+                />
+              </div>
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsWarehouseModalOpen(false)}>Cancel</Button>
+                <Button type="submit" size="sm" isLoading={actionLoading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">Create Warehouse</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Sites;

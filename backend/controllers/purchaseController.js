@@ -141,6 +141,20 @@ exports.createPurchaseOrder = async (req, res, next) => {
       .populate('materials.materialId', 'name code unit')
       .populate('requestedBy', 'username email');
 
+    const auditService = require('../services/auditService');
+    await auditService.writeAuditLog(
+      null,
+      'PurchaseOrder',
+      po._id,
+      'CREATE',
+      null,
+      { poNumber, vendorId, totalAmount },
+      req.user ? req.user._id : null,
+      req.correlationId,
+      req.ip,
+      req.headers['user-agent']
+    );
+
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
     next(err);
@@ -210,23 +224,45 @@ exports.receiveGoods = async (req, res, next) => {
       // Find or initialize inventory item
       let stockItem = await InventoryItem.findOne({ materialId: item.materialId });
       if (!stockItem) {
-        stockItem = await InventoryItem.create({ materialId: item.materialId, balance: 0 });
+        stockItem = await InventoryItem.create({
+          materialId: item.materialId,
+          warehouseId: req.body.warehouseId,
+          balance: 0,
+          onHand: 0,
+          available: 0
+        });
       }
 
       // Add to inventory
-      stockItem.balance += item.quantity;
+      stockItem.onHand = (stockItem.onHand || 0) + item.quantity;
+      stockItem.available = (stockItem.available || 0) + item.quantity;
       stockItem.updatedAt = Date.now();
       await stockItem.save();
 
       // Log stock transaction
       await InventoryTransaction.create({
         materialId: item.materialId,
+        warehouseId: req.body.warehouseId,
         quantity: item.quantity,
         type: 'purchase',
         referenceId: po._id.toString(),
         notes: `Received items from PO #${po._id.toString().slice(-6).toUpperCase()}`
       });
     }
+
+    const auditService = require('../services/auditService');
+    await auditService.writeAuditLog(
+      null,
+      'PurchaseOrder',
+      po._id,
+      'UPDATE',
+      { status: po.status },
+      { status: 'Received' },
+      req.user ? req.user._id : null,
+      req.correlationId,
+      req.ip,
+      req.headers['user-agent']
+    );
 
     po.status = 'Received';
     await po.save();

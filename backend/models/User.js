@@ -24,12 +24,12 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor'],
+    enum: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'],
     default: 'Viewer',
   },
   requestedRole: {
     type: String,
-    enum: ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', null],
+    enum: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator', null],
     default: null,
   },
   accountStatus: {
@@ -51,6 +51,14 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  siteIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Site' }],
+  fieldSecurityLevel: { type: String, enum: ['Public', 'Internal', 'Confidential', 'Restricted'], default: 'Internal' },
+  refreshTokenHash: { type: String, select: false },
+  tokenVersion: { type: Number, default: 0 },
+  mfaEnabled: { type: Boolean, default: false },
+  mfaSecret: { type: String, select: false },
+  lastLoginAt: Date,
+  lastLoginIp: String,
 });
 
 // Encrypt password before saving

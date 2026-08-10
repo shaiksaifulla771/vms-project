@@ -13,9 +13,31 @@ const WarehouseSchema = new mongoose.Schema({
     required: [true, 'Warehouse name is required'],
     trim: true,
   },
+  siteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+    required: false,
+  },
+  type: {
+    type: String,
+    enum: ['Raw', 'FG', 'WIP', 'General', 'Quarantine', 'Scrap', 'Transit'],
+    default: 'General',
+  },
   location: {
     type: String,
     trim: true,
+  },
+  addressOverride: {
+    street: String,
+    city: String,
+    state: String,
+    country: String,
+    postalCode: String,
+  },
+  status: {
+    type: String,
+    enum: ['Active', 'Inactive'],
+    default: 'Active',
   },
   isActive: {
     type: Boolean,

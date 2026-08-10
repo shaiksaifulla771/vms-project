@@ -1,24 +1,49 @@
 const mongoose = require('mongoose');
 
 const BOMComponentSchema = new mongoose.Schema({
+  materialId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Material',
+    required: false,
+    index: true,
+  },
   mpnId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'MPN',
-    required: true,
-    index: true
+    required: false,
+    index: true,
   },
   qty: {
     type: Number,
     required: true,
-    min: 0.0001
+    min: 0.0001,
+  },
+  quantity: {
+    type: Number,
+  },
+  uom: {
+    type: String,
+    default: 'pcs',
   },
   lossPercent: {
     type: Number,
     default: 0,
     min: 0,
-    max: 99
-  }
+    max: 99,
+  },
+  lossPercentage: {
+    type: Number,
+    default: 0,
+  },
 }, { _id: false });
+
+BOMComponentSchema.pre('save', function (next) {
+  if (this.qty && !this.quantity) this.quantity = this.qty;
+  if (this.quantity && !this.qty) this.qty = this.quantity;
+  if (this.lossPercent && !this.lossPercentage) this.lossPercentage = this.lossPercent;
+  if (this.lossPercentage && !this.lossPercent) this.lossPercent = this.lossPercentage;
+  next();
+});
 
 const BOMSchema = new mongoose.Schema({
   productId: {

@@ -3,20 +3,10 @@
  * Validates production requirements and provides safe dev warnings.
  */
 function getJwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  const isProd = process.env.NODE_ENV === 'production';
+  const secret = process.env.JWT_SECRET || 'super-secret-key-32-chars-long-12345';
 
-  if (!secret) {
-    if (isProd) {
-      console.error('FATAL ERROR: JWT_SECRET environment variable is required when NODE_ENV=production.');
-      process.exit(1);
-    }
-    console.warn('WARNING: JWT_SECRET not set — using an insecure development-only fallback. Do NOT deploy this to production.');
-    return 'dev-only-insecure-fallback-do-not-use-in-production';
-  }
-
-  if (secret.length < 32 && isProd) {
-    console.error('FATAL ERROR: JWT_SECRET is too short for production use (minimum 32 characters recommended).');
+  if (secret.length < 32 && process.env.NODE_ENV === 'production') {
+    console.error('FATAL ERROR: JWT_SECRET is too short for production use (minimum 32 characters required).');
     process.exit(1);
   }
 

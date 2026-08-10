@@ -6,6 +6,10 @@ const InventoryItemSchema = new mongoose.Schema({
     ref: 'Material',
     required: [true, 'Material reference is required'],
   },
+  siteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+  },
   warehouseId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Warehouse',
@@ -32,15 +36,60 @@ const InventoryItemSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Inventory balance cannot fall below zero'],
   },
+  onHand: {
+    type: Number,
+    default: 0,
+    min: [0, 'On-hand quantity cannot fall below zero'],
+  },
+  available: {
+    type: Number,
+    default: 0,
+    min: [0, 'Available quantity cannot fall below zero'],
+  },
+  reserved: {
+    type: Number,
+    default: 0,
+    min: [0, 'Reserved quantity cannot fall below zero'],
+  },
+  allocated: {
+    type: Number,
+    default: 0,
+    min: [0, 'Allocated quantity cannot fall below zero'],
+  },
+  blocked: {
+    type: Number,
+    default: 0,
+    min: [0, 'Blocked quantity cannot fall below zero'],
+  },
   reservedBalance: {
     type: Number,
     default: 0,
     min: [0, 'Reserved balance cannot fall below zero'],
   },
+  uom: {
+    type: String,
+    default: 'pcs',
+  },
+  version: {
+    type: Number,
+    default: 1, // Optimistic concurrency control
+  },
   updatedAt: {
     type: Date,
     default: Date.now,
   },
+});
+
+// Sync balance with onHand automatically
+InventoryItemSchema.pre('save', function (next) {
+  if (this.onHand !== undefined) {
+    this.balance = this.onHand;
+  }
+  if (this.reserved !== undefined) {
+    this.reservedBalance = this.reserved;
+  }
+  this.updatedAt = Date.now();
+  next();
 });
 
 // Compound unique index for batch-level tracking per warehouse

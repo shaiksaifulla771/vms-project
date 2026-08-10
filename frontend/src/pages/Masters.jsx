@@ -14,6 +14,7 @@ import BulkVendorUploadGrid from '../components/BulkVendorUploadGrid';
 import MPNMaster from './masters/MPNMaster';
 import MaterialsTab from './masters/MaterialsTab';
 import VendorsTab from './masters/VendorsTab';
+import BomList from './bom/BomList';
 
 const Masters = () => {
   const [activeTab, setActiveTab] = useState('materials');
@@ -49,14 +50,25 @@ const Masters = () => {
         >
           MPN Master
         </button>
+        <button
+          onClick={() => setActiveTab('boms')}
+          className={`px-4 py-1.5 font-bold text-xs transition-all border-b-2 -mb-px ${activeTab === 'boms'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+        >
+          BOM / Recipes
+        </button>
       </div>
 
       {activeTab === 'materials' ? (
         <MaterialsTab />
       ) : activeTab === 'vendors' ? (
         <VendorsTab />
-      ) : (
+      ) : activeTab === 'mpns' ? (
         <MPNMaster />
+      ) : (
+        <BomList />
       )}
     </div>
   );

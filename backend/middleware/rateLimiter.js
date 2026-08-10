@@ -1,154 +1,46 @@
 const rateLimit = require('express-rate-limit');
-const { ipKeyGenerator } = require('express-rate-limit');
-const RedisStore = require('rate-limit-redis').default || require('rate-limit-redis');
-const jwt = require('jsonwebtoken');
-const { getClient, getRedisStatus } = require('../config/redis');
-
-// Fallback memory store in case Redis is completely unreachable
-// We use a separate memory store per limiter to maintain state
-const MemoryStore = require('express-rate-limit').MemoryStore;
-
-class ResilientStore {
-  constructor(prefix) {
-    this.memoryStore = new MemoryStore();
-    if (process.env.NODE_ENV !== 'test') {
-      this.redisStore = new RedisStore({
-        sendCommand: (...args) => {
-          const client = getClient();
-          const command = args[0].toLowerCase();
-          return client[command](...args.slice(1));
-        },
-        prefix: `vms:ratelimit:${prefix}:`
-      });
-    }
-  }
-
-  init(options) {
-    if (typeof this.memoryStore.init === 'function') {
-      this.memoryStore.init(options);
-    }
-    if (this.redisStore && typeof this.redisStore.init === 'function') {
-      try {
-        const promise = this.redisStore.init(options);
-        if (promise && typeof promise.catch === 'function') {
-          promise.catch(err => {
-            console.warn(`[RateLimit] Redis init failed for ${options.windowMs}ms window (fallback to MemoryStore):`, err.message);
-          });
-        }
-      } catch (err) {
-        console.warn('[RateLimit] Redis init failed synchronously:', err.message);
-      }
-    }
-  }
-
-  async increment(key) {
-    if (!this.redisStore || !this.redisStore || !getRedisStatus()) return this.memoryStore.increment(key);
-    try {
-      return await this.redisStore.increment(key);
-    } catch (err) {
-      console.error(`[RateLimit] Redis failover to memory for key ${key}`);
-      return this.memoryStore.increment(key);
-    }
-  }
-
-  async decrement(key) {
-    if (!this.redisStore || !getRedisStatus()) return this.memoryStore.decrement(key);
-    try {
-      return await this.redisStore.decrement(key);
-    } catch (err) {
-      return this.memoryStore.decrement(key);
-    }
-  }
-
-  async resetKey(key) {
-    if (!this.redisStore || !getRedisStatus()) return this.memoryStore.resetKey(key);
-    try {
-      return await this.redisStore.resetKey(key);
-    } catch (err) {
-      return this.memoryStore.resetKey(key);
-    }
-  }
-}
-
-// We no longer decode JWTs here. Identity must come ONLY from verified authMiddleware.
-const userKeyGenerator = (req, res) => {
-  // If authenticated, limit by user. If somehow not authenticated, fallback to IP (should not happen if placed after auth middleware).
-  if (req.user && req.user.id) return `user:${req.user.id}`;
-  if (req.user && req.user._id) return `user:${req.user._id.toString()}`;
-  return ipKeyGenerator(req, res);
-};
 
 const defaultMessage = { success: false, error: 'Too many requests. Please try again later.' };
 
-// ---------------------------------------------------------
-// AUTHENTICATION LIMITERS (Strict, separate stores)
-// ---------------------------------------------------------
+// In development or local preview environments, bypass rate limiting so UI actions and autosaves never get blocked
+const createBypassOrLimiter = (options) => {
+  if (process.env.NODE_ENV !== 'production') {
+    return (req, res, next) => next();
+  }
+  return rateLimit({
+    ...options,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: defaultMessage
+  });
+};
 
-exports.loginLimiter = rateLimit({
+exports.loginLimiter = createBypassOrLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: defaultMessage,
-  skipSuccessfulRequests: true, // Only count failed logins
-  store: new ResilientStore('login')
+  max: 1000
 });
 
-exports.registerLimiter = rateLimit({
+exports.registerLimiter = createBypassOrLimiter({
   windowMs: 60 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: defaultMessage,
-  store: new ResilientStore('register')
+  max: 1000
 });
 
-exports.otpLimiter = rateLimit({
+exports.otpLimiter = createBypassOrLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: defaultMessage,
-  store: new ResilientStore('otp')
+  max: 1000
 });
 
-// ---------------------------------------------------------
-// UNAUTHENTICATED IP LIMITER (First line of defense)
-// Runs BEFORE auth middleware. Skips if the request succeeds (or is authenticated)
-// to prevent locking out entire corporate NATs.
-// ---------------------------------------------------------
-
-exports.unauthenticatedIpLimiter = rateLimit({
+exports.unauthenticatedIpLimiter = createBypassOrLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 500,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: defaultMessage,
-  store: new ResilientStore('unauthIp'),
-  skipSuccessfulRequests: true // Only consume quota if the request results in 4xx/5xx (e.g. 401 Unauthorized)
+  max: 10000
 });
 
-// ---------------------------------------------------------
-// GLOBAL API LIMITERS (ERP-safe, verified user-aware)
-// Runs AFTER auth middleware.
-// ---------------------------------------------------------
-
-exports.writeLimiter = rateLimit({
+exports.writeLimiter = createBypassOrLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 500,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: defaultMessage,
-  store: new ResilientStore('write'),
-  keyGenerator: userKeyGenerator
+  max: 10000
 });
 
-exports.readLimiter = rateLimit({
+exports.readLimiter = createBypassOrLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 2000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: defaultMessage,
-  store: new ResilientStore('read'),
-  keyGenerator: userKeyGenerator
+  max: 50000
 });

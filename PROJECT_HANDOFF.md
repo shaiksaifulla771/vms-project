@@ -32,12 +32,18 @@ This document provides a comprehensive technical handoff of all completed featur
 ### 4. **Table Sorting & Order**
 - **Newest Data at Top:** Vendor Master table lists vendors in descending order (newest `V100x` code at the top).
 
+### 5. **Project Organization & Backend Restructuring**
+- **Restored Node.js Backend Integrity:** Re-established clean `backend/` Node.js Express structure (`server.js`, controllers, models, services, routes, middleware, scripts).
+- **FastAPI Separation (`backend_fastapi/`):** Isolated Python FastAPI components (`main.py`, `app/`, `requirements.txt`) into a dedicated directory.
+- **Frontend Modular Routing:** Kept modular structure cleanly divided in `frontend/src/pages/masters/`, `frontend/src/pages/bom/`, and `frontend/src/pages/production/`.
+
 ---
 
 ## 💾 Latest Git Commits
 
 | Commit ID | Message |
 | :--- | :--- |
+| `a18c481` | `Phase 6.4: MRP -> Production Plan -> Scheduling decoupled architecture` |
 | `d729422` | `feat: expand Material Master manual entry modal to a big screen 75vw dialog with 3-column grid layout` |
 | `0694d4d` | `fix: import missing Eye icon from lucide-react in Masters.jsx` |
 | `529bbd5` | `feat: add dark floating hover tooltip popups for Vendor Name, Company, Email, and GSTIN cells` |
@@ -48,6 +54,7 @@ This document provides a comprehensive technical handoff of all completed featur
 ---
 
 ## 🛠️ Verification & Build Status
-- **Vite Production Build:** `built in 5.85s` (0 errors)
-- **Backend API Status:** Port `5000` (Listening)
-- **Frontend App Status:** Port `3000` (Listening)
+- **Vite Production Build:** `built in 5.85s` / verified (0 errors)
+- **Backend API Status:** Port `5000` (Node.js / Express - Ready)
+- **Frontend App Status:** Port `3000` (React / Vite - Ready)
+

@@ -31,8 +31,14 @@ router.route('/:id')
 router.post('/:id/submit', protect, submitForApproval);
 router.post('/:id/approve', protect, approveProductionOrder);
 router.post('/:id/allocate', protect, allocateMaterial);
+
+// Support both POST and PATCH for start & complete transitions
+router.post('/:id/start', protect, startProduction);
 router.patch('/:id/start', protect, startProduction);
+
 router.post('/:id/qc', protect, sendToQC);
+
+router.post('/:id/complete', protect, completeProduction);
 router.patch('/:id/complete', protect, completeProduction);
 
 module.exports = router;
