@@ -36,9 +36,9 @@ export default function VMSWorkbench() {
         api.get('/appointments'),
         api.get('/sites')
       ]);
-      setVisitors(vRes.data.visitors || []);
-      setAppointments(aRes.data.appointments || []);
-      setSites(sRes.data.data || []);
+      setVisitors(vRes.data.visitors || vRes.data.data || []);
+      setAppointments(aRes.data.appointments || aRes.data.data || []);
+      setSites(sRes.data.sites || sRes.data.data || []);
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to load VMS data');
     } finally {

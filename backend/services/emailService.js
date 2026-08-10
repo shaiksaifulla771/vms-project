@@ -185,6 +185,60 @@ class EmailService {
   }
 
   /**
+   * Process email queue in background
+   */
+  async processEmailQueue() {
+    try {
+      const now = new Date();
+      const items = await EmailQueue.find({
+        status: { $in: ['QUEUED', 'RETRYING'] },
+        $or: [
+          { nextRetryAt: { $exists: false } },
+          { nextRetryAt: null },
+          { nextRetryAt: { $lte: now } }
+        ]
+      }).limit(10);
+
+      for (const item of items) {
+        item.status = 'PROCESSING';
+        item.lastAttemptAt = now;
+        item.attempts += 1;
+        await item.save();
+
+        try {
+          await this.sendEmail({
+            recipient: item.recipient,
+            cc: item.cc,
+            bcc: item.bcc,
+            subject: item.subject,
+            htmlBody: item.htmlBody,
+            textBody: item.textBody,
+            templateCode: item.templateCode
+          });
+          item.status = 'SENT';
+          item.sentAt = new Date();
+          item.deliveryStatus = 'Success';
+          await item.save();
+        } catch (err) {
+          item.errorLog.push(`Attempt ${item.attempts}: ${err.message}`);
+          if (item.attempts >= item.maxAttempts) {
+            item.status = 'FAILED';
+            item.deliveryStatus = 'Failed after max attempts';
+          } else {
+            item.status = 'RETRYING';
+            // Exponential backoff: 2^attempts minutes
+            const backoffMinutes = Math.pow(2, item.attempts);
+            item.nextRetryAt = new Date(now.getTime() + backoffMinutes * 60000);
+          }
+          await item.save();
+        }
+      }
+    } catch (err) {
+      logger.error('EmailService', 'Failed processing email queue', err);
+    }
+  }
+
+  /**
    * Get logs with filtering & pagination
    */
   async getEmailLogs(query = {}, limit = 50, page = 1) {

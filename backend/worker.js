@@ -34,6 +34,15 @@ async function startWorker() {
   commitWorker.on('failed', (job, err) => console.error(`❌ [COMMIT] Job ${job.id} failed:`, err));
 
   console.log('👷 Workers are listening for jobs on Redis...');
+
+  const emailService = require('./services/emailService');
+  setInterval(async () => {
+    try {
+      await emailService.processEmailQueue();
+    } catch (err) {
+      console.error('[EMAIL QUEUE] Error processing queue:', err);
+    }
+  }, 10000);
   
   // Graceful shutdown
   process.on('SIGTERM', async () => {

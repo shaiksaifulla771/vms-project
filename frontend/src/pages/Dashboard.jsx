@@ -15,6 +15,7 @@ const Dashboard = () => {
   const [schedulingMetrics, setSchedulingMetrics] = useState({ pending: 0, scheduled: 0, inProduction: 0, completed: 0 });
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [pendingAdjustments, setPendingAdjustments] = useState([]);
+  const [pendingAppointments, setPendingAppointments] = useState([]);
   const [context, setContext] = useState(getStoredContext());
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
@@ -26,12 +27,13 @@ const Dashboard = () => {
       if (context.siteId) query.siteId = context.siteId;
       if (context.warehouseId) query.warehouseId = context.warehouseId;
 
-      const [summaryRes, plansRes, ordersRes, transfersRes, adjRes] = await Promise.all([
+      const [summaryRes, plansRes, ordersRes, transfersRes, adjRes, apptRes] = await Promise.all([
         api.get('/reports/summary', { params: query }),
         api.get('/production-plans', { params: query }),
         api.get('/productions', { params: query }),
         api.get('/transfers?status=Pending Approval'),
-        api.get('/inventory/adjustments?status=Pending Approval')
+        api.get('/inventory/adjustments?status=Pending Approval'),
+        api.get('/appointments')
       ]);
 
       if (summaryRes.data && summaryRes.data.success) {
@@ -55,6 +57,9 @@ const Dashboard = () => {
 
       setPendingTransfers(transfersRes.data?.data || []);
       setPendingAdjustments(adjRes.data?.data || []);
+      
+      const appts = apptRes.data?.appointments || apptRes.data?.data || [];
+      setPendingAppointments(appts.filter(a => a.status === 'Pending Approval' || a.status === 'PENDING_APPROVAL'));
     } catch (err) {
       console.error('Error fetching dashboard telemetry:', err);
     } finally {
@@ -93,20 +98,33 @@ const Dashboard = () => {
     }
   };
 
-  const handleRejectAdjustment = async (id, adjNum) => {
+  const handleApproveAppointment = async (id, num) => {
     setActionLoadingId(id);
     try {
-      await api.post(`/inventory/adjustments/${id}/reject`, { rejectionReason: 'Rejected from dashboard' });
-      setToastMsg({ type: 'info', text: `Adjustment ${adjNum} rejected.` });
+      await api.post(`/appointments/${id}/approve`);
+      setToastMsg({ type: 'success', text: `Appointment ${num} approved.` });
       fetchDashboardData();
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to reject adjustment.' });
+      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to approve appointment.' });
     } finally {
       setActionLoadingId(null);
     }
   };
 
-  const totalPendingApprovals = pendingTransfers.length + pendingAdjustments.length;
+  const handleRejectAppointment = async (id, num) => {
+    setActionLoadingId(id);
+    try {
+      await api.post(`/appointments/${id}/reject`, { rejectionReason: 'Rejected from dashboard' });
+      setToastMsg({ type: 'info', text: `Appointment ${num} rejected.` });
+      fetchDashboardData();
+    } catch (err) {
+      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Failed to reject appointment.' });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const totalPendingApprovals = pendingTransfers.length + pendingAdjustments.length + pendingAppointments.length;
 
   return (
     <div className="space-y-4">
@@ -267,6 +285,36 @@ const Dashboard = () => {
                             variant="outline"
                             isLoading={actionLoadingId === adj._id}
                             onClick={() => handleRejectAdjustment(adj._id, adj.adjNumber)}
+                            className="border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-[11px] px-2.5 py-1 rounded-md"
+                          >
+                            Reject
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* VMS Appointments */}
+                    {pendingAppointments.map((apt) => (
+                      <tr key={apt._id} className="hover:bg-slate-50">
+                        <td className="p-3 font-mono font-bold text-emerald-600">{apt.appointmentNumber}</td>
+                        <td className="p-3 font-bold text-emerald-700">Visitor Appointment</td>
+                        <td className="p-3 font-bold text-slate-900">{apt.visitorId?.fullName || apt.visitorName || 'Visitor'}</td>
+                        <td className="p-3 font-mono text-purple-600">1 Person</td>
+                        <td className="p-3 text-slate-600">{apt.purpose}</td>
+                        <td className="p-3 font-mono text-slate-500">{apt.hostUserId?.username || apt.employeeName || 'Host'}</td>
+                        <td className="p-3 text-right space-x-2">
+                          <Button
+                            size="sm"
+                            isLoading={actionLoadingId === apt._id}
+                            onClick={() => handleApproveAppointment(apt._id, apt.appointmentNumber)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            isLoading={actionLoadingId === apt._id}
+                            onClick={() => handleRejectAppointment(apt._id, apt.appointmentNumber)}
                             className="border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-[11px] px-2.5 py-1 rounded-md"
                           >
                             Reject

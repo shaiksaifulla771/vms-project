@@ -16,10 +16,12 @@ class VisitorService {
 
   async createVisitor(data, userId = null) {
     const visitorCode = await this.getNextVisitorCode();
+    const hostEmployeeId = data.hostEmployeeId || userId;
     const visitor = await Visitor.create({
       ...data,
+      hostEmployeeId,
       visitorCode,
-      createdBy: userId || data.hostEmployeeId
+      createdBy: userId || hostEmployeeId
     });
 
     if (userId) {

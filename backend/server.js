@@ -23,6 +23,9 @@ connectDB().then(async () => {
   await detectTransactionSupport();
   console.log('[VMS] MongoDB: connected');
 
+  // Start the background queue worker
+  require('./worker');
+
   // Seed default templates, workflows, and plugins
   try {
     await require('./services/emailTemplateService').seedDefaultTemplates();
