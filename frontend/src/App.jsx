@@ -17,10 +17,12 @@ import Settings from './pages/Settings';
 import Warehouse from './pages/Warehouse';
 import Scheduling from './pages/Scheduling';
 
-import ErrorBoundary from './components/ErrorBoundary';
-
 import Sites from './pages/Sites';
 import MRP from './pages/MRP';
+import VMSWorkbench from './pages/VMSWorkbench';
+import EmailTemplates from './pages/EmailTemplates';
+import Workflows from './pages/Workflows';
+import Plugins from './pages/Plugins';
 
 // New Routed BOM Module
 import BOMRoutes from './pages/bom/BOMRoutes';
@@ -85,6 +87,7 @@ const AppContent = () => {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" />} />
               <Route path="/dashboard/*" element={<Dashboard />} />
+              <Route path="/vms/*" element={<VMSWorkbench />} />
               <Route path="/sites/*" element={<Sites />} />
               <Route path="/masters/*" element={<Masters />} />
               <Route path="/mrp/*" element={<MRP />} />
@@ -95,6 +98,9 @@ const AppContent = () => {
               <Route path="/production/*" element={<Manufacturing />} />
               <Route path="/scheduling/*" element={<Scheduling />} />
               <Route path="/purchasing/*" element={<Purchasing />} />
+              <Route path="/workflows/*" element={<Workflows />} />
+              <Route path="/email/*" element={<EmailTemplates />} />
+              <Route path="/plugins/*" element={<Plugins />} />
               <Route path="/quality/*" element={<Quality />} />
               <Route path="/reports/*" element={<Reports />} />
               <Route path="/settings/*" element={<Settings />} />

@@ -22,6 +22,16 @@ console.log('[VMS] MongoDB: connecting...');
 connectDB().then(async () => {
   await detectTransactionSupport();
   console.log('[VMS] MongoDB: connected');
+
+  // Seed default templates, workflows, and plugins
+  try {
+    await require('./services/emailTemplateService').seedDefaultTemplates();
+    await require('./services/workflowEngineService').seedDefaultWorkflows();
+    await require('./services/pluginManagerService').seedDefaultPlugins();
+  } catch (err) {
+    console.error('[VMS] Initial Seeding Error:', err.message);
+  }
+
   console.log('[VMS] Redis: connecting...');
 
   const app = require('./app');

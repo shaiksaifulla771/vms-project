@@ -4,7 +4,7 @@ const AuditLogSchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: true,
-    enum: ['Vendor', 'Material', 'BOM', 'InventoryItem', 'PurchaseOrder', 'PurchaseRequest', 'ProductionOrder', 'ProductionPlan', 'MRPRun', 'QualityRecord', 'User', 'ApprovalRequest', 'Contract', 'MPN', 'Warehouse', 'Site', 'VendorMaster', 'ImportJob', 'System']
+    enum: ['Vendor', 'Material', 'BOM', 'InventoryItem', 'PurchaseOrder', 'PurchaseRequest', 'ProductionOrder', 'ProductionPlan', 'MRPRun', 'QualityRecord', 'User', 'ApprovalRequest', 'Contract', 'MPN', 'Warehouse', 'Site', 'VendorMaster', 'ImportJob', 'System', 'Visitor', 'Appointment', 'EmailTemplate', 'EmailQueue', 'Workflow', 'WorkflowExecution', 'Plugin', 'MCPTool']
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -13,7 +13,7 @@ const AuditLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'APPROVE', 'REJECT', 'VIEW', 'EXPORT', 'LOGIN', 'LOGOUT', 'BULK_IMPORT']
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'APPROVE', 'REJECT', 'VIEW', 'EXPORT', 'LOGIN', 'LOGOUT', 'BULK_IMPORT', 'EXECUTE', 'SEND', 'QUEUE', 'RETRY', 'ENABLE', 'DISABLE', 'CHECK_IN', 'CHECK_OUT']
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,

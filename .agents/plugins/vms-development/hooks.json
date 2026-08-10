@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "onBeforeCommit": "npm test --prefix backend",
+    "onInit": "echo 'VMS Antigravity Workspace Plugin Initialized'"
+  }
+}

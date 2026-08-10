@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vms-mcp-gateway": {
+      "command": "node",
+      "args": ["backend/services/mcpService.js"],
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "description": "VMS Secure MCP Integration Gateway exposing visitor, appointment, workflow, email, and plugin tools."
+    }
+  }
+}

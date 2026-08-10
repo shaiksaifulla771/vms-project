@@ -130,6 +130,16 @@ app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/warehouse-materials', require('./routes/warehouseMaterialRoutes'));
 app.use('/api/transfers', require('./routes/stockTransferRoutes'));
 app.use('/api/imports', require('./routes/imports'));
+app.use('/api/visitors', require('./routes/visitorRoutes'));
+app.use('/api/appointments', require('./routes/appointmentRoutes'));
+app.use('/api/email', require('./routes/emailRoutes'));
+app.use('/api/workflows', require('./routes/workflowRoutes'));
+app.use('/api/plugins', require('./routes/pluginRoutes'));
+app.use('/api/mcp', require('./routes/mcpRoutes'));
+
+// Register VMS Domain Event Handlers
+const { registerVMSEventHandlers } = require('./events/handlers/vmsEventHandlers');
+registerVMSEventHandlers();
 
 // Root route
 app.get('/', (req, res) => {

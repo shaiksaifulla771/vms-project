@@ -55,7 +55,20 @@ const EVENTS = {
   QC_FAILED: 'QC_FAILED',
   MATERIAL_CREATED: 'MATERIAL_CREATED',
   VENDOR_APPROVED: 'VENDOR_APPROVED',
-  APPROVAL_COMPLETED: 'APPROVAL_COMPLETED'
+  APPROVAL_COMPLETED: 'APPROVAL_COMPLETED',
+  VISITOR_CREATED: 'visitor.created',
+  VISITOR_UPDATED: 'visitor.updated',
+  VISITOR_APPROVED: 'visitor.approved',
+  VISITOR_REJECTED: 'visitor.rejected',
+  APPOINTMENT_CREATED: 'appointment.created',
+  APPOINTMENT_APPROVED: 'appointment.approved',
+  APPOINTMENT_REJECTED: 'appointment.rejected',
+  APPOINTMENT_CANCELLED: 'appointment.cancelled',
+  VISITOR_CHECKED_IN: 'visitor.checked_in',
+  VISITOR_CHECKED_OUT: 'visitor.checked_out',
+  WORKFLOW_STARTED: 'workflow.started',
+  WORKFLOW_COMPLETED: 'workflow.completed',
+  WORKFLOW_FAILED: 'workflow.failed'
 };
 
 module.exports = {
