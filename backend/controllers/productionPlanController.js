@@ -111,6 +111,26 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
   if (req.body.endDate) plan.scheduledEndDate = new Date(req.body.endDate);
   if (req.body.workCenter) plan.workCenter = req.body.workCenter;
 
+  plan.scheduling = {
+    direction: req.body.direction || 'Forward',
+    schedulingDate: req.body.schedulingDate ? new Date(req.body.schedulingDate) : (req.body.startDate ? new Date(req.body.startDate) : new Date()),
+    startTime: req.body.startTime || '09:00',
+    durationHours: req.body.durationHours ? parseFloat(req.body.durationHours) : 6,
+    plannedStartDateTime: req.body.startDate ? new Date(req.body.startDate) : new Date(),
+    plannedEndDateTime: req.body.endDate ? new Date(req.body.endDate) : new Date(Date.now() + 86400000 * 3),
+    resourceGroup: req.body.resourceGroup || 'Assembly & Production',
+    selectedResource: req.body.workCenter || req.body.selectedResource || 'Main Assembly Line 1',
+    capacityRequired: req.body.capacityRequired ? parseFloat(req.body.capacityRequired) : 6,
+    capacityAvailable: req.body.capacityAvailable ? parseFloat(req.body.capacityAvailable) : 8,
+    materialCheckStatus: req.body.materialCheckStatus || 'Ready',
+    capacityCheckStatus: req.body.capacityCheckStatus || 'Sufficient',
+    operations: req.body.operations || [
+      { seq: 10, name: 'Mixing', resource: 'Mixer-01', setupMins: 30, runMins: 120, startTime: '09:00', endTime: '11:30' },
+      { seq: 20, name: 'Cooking / Processing', resource: 'Cooker-01', setupMins: 20, runMins: 180, startTime: '11:30', endTime: '14:50' },
+      { seq: 30, name: 'Packing & Quality Check', resource: 'Pack-01', setupMins: 15, runMins: 60, startTime: '14:50', endTime: '16:05' }
+    ]
+  };
+
   const order = await ProductionOrder.create({
     prdNumber,
     planId: plan._id,

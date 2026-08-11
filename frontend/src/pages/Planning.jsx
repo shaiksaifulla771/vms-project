@@ -8,7 +8,8 @@ import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
 import {
   Cpu, Calculator, AlertTriangle, CheckCircle, Package, ArrowRight, RefreshCw,
-  FilePlus, CalendarClock, Play, Undo2, Factory, Clock, ShieldCheck
+  FilePlus, CalendarClock, Play, Undo2, Factory, Clock, ShieldCheck, Copy, Trash2, Zap,
+  Layers, CheckCircle2, XCircle, Settings, ArrowLeftRight
 } from 'lucide-react';
 
 const Planning = () => {
@@ -32,19 +33,32 @@ const Planning = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Modal State for Create Production Plan
+  // Modal State for Manual Production Plan Creation
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [manualProductId, setManualProductId] = useState('');
+  const [manualBomId, setManualBomId] = useState('');
+  const [manualWarehouseId, setManualWarehouseId] = useState('');
+  const [manualPriority, setManualPriority] = useState('Medium');
   const [plannedQty, setPlannedQty] = useState(100);
-  const [planNotes, setPlanNotes] = useState('MRP Production Requirement Commitment');
+  const [manualRequiredDate, setManualRequiredDate] = useState(new Date().toISOString().split('T')[0]);
+  const [planNotes, setPlanNotes] = useState('Manual Production Plan Commitment');
   const [submittingPlan, setSubmittingPlan] = useState(false);
 
-  // Modal State for Schedule Production Plan
+  // Modal State for Enterprise Schedule Plan (Dynamics 365 Architecture)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [targetPlanToSchedule, setTargetPlanToSchedule] = useState(null);
   const [scheduleQty, setScheduleQty] = useState(100);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]);
-  const [workCenter, setWorkCenter] = useState('Main Assembly Line 1');
+  const [schedulingDirection, setSchedulingDirection] = useState('Forward'); // 'Forward' or 'Backward'
+  const [schedulingDate, setSchedulingDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startTime, setStartTime] = useState('09:00');
+  const [durationHours, setDurationHours] = useState(6);
+  const [resourceGroup, setResourceGroup] = useState('Assembly & Production');
+  const [selectedResource, setSelectedResource] = useState('Main Assembly Line 1');
+  const [capacityRequired, setCapacityRequired] = useState(6);
+  const [capacityAvailable, setCapacityAvailable] = useState(8);
+  const [materialReadinessList, setMaterialReadinessList] = useState([]);
+  const [checkingReadiness, setCheckingReadiness] = useState(false);
+
   const [submittingSchedule, setSubmittingSchedule] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
@@ -72,15 +86,24 @@ const Planning = () => {
 
         const whList = whRes.data.data || whRes.data.warehouses || [];
         setWarehouses(whList);
-        if (whList.length > 0) setSelectedWarehouseId(whList[0]._id);
+        if (whList.length > 0) {
+          setSelectedWarehouseId(whList[0]._id);
+          setManualWarehouseId(whList[0]._id);
+        }
 
         const matList = matRes.data.data || matRes.data.materials || [];
         setProducts(matList);
-        if (matList.length > 0) setSelectedProductId(matList[0]._id);
+        if (matList.length > 0) {
+          setSelectedProductId(matList[0]._id);
+          setManualProductId(matList[0]._id);
+        }
 
         const bomList = bomRes.data.data || bomRes.data.boms || [];
         setBoms(bomList);
-        if (bomList.length > 0) setSelectedBomId(bomList[0]._id);
+        if (bomList.length > 0) {
+          setSelectedBomId(bomList[0]._id);
+          setManualBomId(bomList[0]._id);
+        }
       } catch (err) {
         console.error('Failed to load planning master data:', err);
       }
@@ -89,7 +112,15 @@ const Planning = () => {
     fetchPlans();
   }, []);
 
-  // Update selected BOM automatically when Product changes
+  // Sync manual BOM when product changes
+  useEffect(() => {
+    if (manualProductId && boms.length > 0) {
+      const matched = boms.find(b => (b.productId?._id || b.productId) === manualProductId);
+      if (matched) setManualBomId(matched._id);
+    }
+  }, [manualProductId, boms]);
+
+  // Update selected BOM automatically when Product changes in MRP form
   useEffect(() => {
     if (selectedProductId && boms.length > 0) {
       const matched = boms.find(b => (b.productId?._id || b.productId) === selectedProductId);
@@ -129,7 +160,7 @@ const Planning = () => {
     }
   };
 
-  // Handle Create Production Plan Submission
+  // Handle Create Production Plan Submission (Manual Plan Options)
   const handleConfirmCreatePlan = async () => {
     if (!plannedQty || plannedQty <= 0) return;
     setSubmittingPlan(true);
@@ -137,18 +168,19 @@ const Planning = () => {
 
     try {
       const res = await productionPlanService.createProductionPlan({
-        productId: selectedProductId,
-        bomId: selectedBomId,
-        warehouseId: selectedWarehouseId,
+        productId: manualProductId || selectedProductId,
+        bomId: manualBomId || selectedBomId,
+        warehouseId: manualWarehouseId || selectedWarehouseId,
         quantity: parseFloat(plannedQty),
-        requiredDate,
+        priority: manualPriority,
+        requiredDate: manualRequiredDate || requiredDate,
         status: 'Unscheduled',
         notes: planNotes
       });
 
       if (res.success || res.data) {
         const createdPlan = res.data;
-        setSuccessMsg(`✓ Production Plan ${createdPlan.planNumber || 'PLAN-001'} created successfully!`);
+        setSuccessMsg(`✓ Production Plan ${createdPlan.planNumber || 'PLAN-001'} created successfully in UNSCHEDULED state!`);
         setIsCreateModalOpen(false);
         await fetchPlans();
         setActiveTab('plans');
@@ -161,11 +193,36 @@ const Planning = () => {
     }
   };
 
-  // Open Schedule Modal for a selected plan
-  const handleOpenScheduleModal = (plan) => {
+  // Open Schedule Modal for a selected plan & evaluate material readiness
+  const handleOpenScheduleModal = async (plan) => {
     setTargetPlanToSchedule(plan);
-    setScheduleQty(plan.remainingQuantity || plan.quantity);
+    const initialQty = plan.remainingQuantity !== undefined ? plan.remainingQuantity : plan.quantity;
+    setScheduleQty(initialQty);
+    setSelectedResource(plan.workCenter || 'Main Assembly Line 1');
     setIsScheduleModalOpen(true);
+
+    // Fetch real-time material readiness for this plan
+    setCheckingReadiness(true);
+    try {
+      const productId = plan.productId?._id || plan.productId;
+      const bomId = plan.bomId?._id || plan.bomId;
+      const warehouseId = plan.warehouseId?._id || plan.warehouseId;
+
+      if (productId && warehouseId) {
+        const res = await planningService.calculateMRP({
+          productId,
+          bomId,
+          warehouseId,
+          targetQty: parseFloat(initialQty),
+          requiredDate: plan.requiredDate ? new Date(plan.requiredDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        });
+        setMaterialReadinessList(res.requirements || []);
+      }
+    } catch (err) {
+      console.warn('Readiness check warning:', err.message);
+    } finally {
+      setCheckingReadiness(false);
+    }
   };
 
   // Confirm Schedule Plan (Validates inventory, soft-reserves stock, creates ProductionOrder)
@@ -176,11 +233,21 @@ const Planning = () => {
     setSuccessMsg('');
 
     try {
+      const hasShortage = materialReadinessList.some(m => (m.shortageQty || 0) > 0);
       const res = await productionPlanService.schedulePlan(targetPlanToSchedule._id, {
         quantity: parseFloat(scheduleQty),
-        startDate,
-        endDate,
-        workCenter
+        direction: schedulingDirection,
+        schedulingDate,
+        startTime,
+        durationHours,
+        resourceGroup,
+        workCenter: selectedResource,
+        capacityRequired,
+        capacityAvailable,
+        materialCheckStatus: hasShortage ? 'Shortage' : 'Ready',
+        capacityCheckStatus: capacityRequired <= capacityAvailable ? 'Sufficient' : 'Overcapacity',
+        startDate: schedulingDate,
+        endDate: new Date(new Date(schedulingDate).getTime() + (durationHours * 3600000)).toISOString().split('T')[0]
       });
 
       if (res.success || res.data) {
@@ -216,9 +283,39 @@ const Planning = () => {
     }
   };
 
+  // 1-Click Copy Plan
+  const handleCopyPlan = async (plan) => {
+    setActionLoadingId(plan._id);
+    try {
+      const res = await productionPlanService.copyPlan(plan._id);
+      if (res.success || res.data) {
+        setSuccessMsg(`✓ Duplicate Plan ${res.data?.planNumber || 'PLAN-COPY'} created!`);
+        await fetchPlans();
+      }
+    } catch (err) {
+      setErrorMsg(err.response?.data?.error || 'Failed to copy Production Plan.');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const selectedProductObj = products.find(p => p._id === selectedProductId);
   const selectedWarehouseObj = warehouses.find(w => w._id === selectedWarehouseId);
   const selectedBomObj = boms.find(b => b._id === selectedBomId);
+
+  // Computed End Date/Time string
+  const calculatedEndTimeStr = () => {
+    try {
+      const [h, m] = startTime.split(':').map(Number);
+      const startMs = new Date(schedulingDate).setHours(h, m, 0, 0);
+      const endMs = startMs + (durationHours * 3600000);
+      return new Date(endMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (e) {
+      return `${schedulingDate} ${startTime}`;
+    }
+  };
+
+  const hasMaterialShortage = materialReadinessList.some(m => (m.shortageQty || 0) > 0);
 
   return (
     <div className="space-y-6">
@@ -229,9 +326,9 @@ const Planning = () => {
             <Cpu className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">MRP Planning & Production Scheduling</h1>
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">MRP Planning & Production Scheduling Workbench</h1>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Calculate net material requirements, schedule production plans, and manage soft inventory reservations
+              Decision layer connecting MRP proposals to Production Orders with finite material availability and resource capacity checks
             </p>
           </div>
         </div>
@@ -255,7 +352,7 @@ const Planning = () => {
           }`}
         >
           <CalendarClock className="h-4 w-4" />
-          <span>1. Production Plans & Scheduling Workbench ({plans.length})</span>
+          <span>1. Schedule Plans Workbench ({plans.length})</span>
         </button>
 
         <button
@@ -299,7 +396,7 @@ const Planning = () => {
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-sm flex items-center space-x-1.5"
               >
                 <FilePlus className="h-4 w-4" />
-                <span>+ Create Production Plan</span>
+                <span>+ Create Manual Production Plan</span>
               </Button>
             </div>
           </div>
@@ -308,9 +405,9 @@ const Planning = () => {
           <Card className="bg-white border-slate-200 shadow-sm">
             <CardHeader className="border-b border-slate-100 pb-4">
               <CardTitle className="text-xs font-bold text-slate-900 flex items-center justify-between uppercase tracking-wider">
-                <span>PRODUCTION PLANS WORKBENCH</span>
+                <span>SCHEDULE PLANS WORKBENCH (DECISION LAYER)</span>
                 <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px]">
-                  {plans.length} Total Plans
+                  {plans.length} Total Proposals
                 </Badge>
               </CardTitle>
             </CardHeader>
@@ -319,8 +416,9 @@ const Planning = () => {
                 <table className="w-full text-left text-xs text-slate-700">
                   <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                     <tr>
-                      <th className="p-4">Plan No</th>
+                      <th className="p-4">Plan ID</th>
                       <th className="p-4">Product Name</th>
+                      <th className="p-4">Priority</th>
                       <th className="p-4">Target Warehouse</th>
                       <th className="p-4">Target Qty</th>
                       <th className="p-4">Scheduled Qty</th>
@@ -332,8 +430,8 @@ const Planning = () => {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {plans.length === 0 ? (
                       <tr>
-                        <td colSpan="8" className="p-8 text-center text-slate-400 text-xs">
-                          No production plans generated yet. Click <strong>+ Create Production Plan</strong> or run MRP in Tab 2.
+                        <td colSpan="9" className="p-8 text-center text-slate-400 text-xs">
+                          No production plans generated yet. Click <strong>+ Create Manual Production Plan</strong> or run MRP in Tab 2.
                         </td>
                       </tr>
                     ) : (
@@ -348,6 +446,15 @@ const Planning = () => {
                             </td>
                             <td className="p-4 font-bold text-slate-900">
                               {plan.productId?.name || 'Finished Goods'}
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                plan.priority === 'High' || plan.priority === 'Critical'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {plan.priority || 'Medium'}
+                              </span>
                             </td>
                             <td className="p-4 text-slate-700">
                               {plan.warehouseId?.name || 'Main Warehouse'}
@@ -371,6 +478,16 @@ const Planning = () => {
                               </span>
                             </td>
                             <td className="p-4 text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                title="Copy Plan"
+                                onClick={() => handleCopyPlan(plan)}
+                                className="text-slate-600 border-slate-200 hover:bg-slate-100 p-1.5 rounded-lg"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+
                               {canUnschedule ? (
                                 <Button
                                   size="sm"
@@ -389,7 +506,7 @@ const Planning = () => {
                                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3.5 py-1.5 rounded-lg shadow-xs"
                                 >
                                   <CalendarClock className="h-3.5 w-3.5 mr-1" />
-                                  + Schedule
+                                  Schedule
                                 </Button>
                               )}
                             </td>
@@ -599,49 +716,104 @@ const Planning = () => {
         </div>
       )}
 
-      {/* Modal: CREATE PRODUCTION PLAN */}
+      {/* Modal: CREATE MANUAL PRODUCTION PLAN */}
       <Dialog
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         title="CREATE MANUAL PRODUCTION PLAN"
-        className="!max-w-lg bg-white border border-slate-200 text-slate-900 rounded-xl p-6 shadow-xl"
+        className="!max-w-xl bg-white border border-slate-200 text-slate-900 rounded-xl p-6 shadow-xl"
       >
         <div className="space-y-4">
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 font-mono text-xs">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Product:</span>
-              <span className="text-slate-900 font-bold">{selectedProductObj?.name || 'Product'}</span>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Product *</label>
+              <select
+                value={manualProductId}
+                onChange={(e) => setManualProductId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+              >
+                {products.map(p => (
+                  <option key={p._id} value={p._id}>{p.name} [{p.code}]</option>
+                ))}
+              </select>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">BOM Reference:</span>
-              <span className="text-indigo-600 font-bold">{selectedBomObj?.bomNumber || 'BOM-001'}</span>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">BOM Recipe *</label>
+              <select
+                value={manualBomId}
+                onChange={(e) => setManualBomId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+              >
+                {boms.map(b => (
+                  <option key={b._id} value={b._id}>{b.name || b.bomNumber || 'BOM-001'}</option>
+                ))}
+              </select>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Target Warehouse:</span>
-              <span className="text-slate-900 font-bold">{selectedWarehouseObj?.name || 'WH-01'}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Target Warehouse *</label>
+              <select
+                value={manualWarehouseId}
+                onChange={(e) => setManualWarehouseId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+              >
+                {warehouses.map(w => (
+                  <option key={w._id} value={w._id}>{w.name} ({w.code})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Priority *</label>
+              <select
+                value={manualPriority}
+                onChange={(e) => setManualPriority(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Planned Quantity *</label>
+              <input
+                type="number"
+                min="1"
+                value={plannedQty}
+                onChange={(e) => setPlannedQty(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Required Date *</label>
+              <input
+                type="date"
+                value={manualRequiredDate}
+                onChange={(e) => setManualRequiredDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                required
+              />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Planned Quantity *</label>
-            <input
-              type="number"
-              min="1"
-              value={plannedQty}
-              onChange={(e) => setPlannedQty(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Reason / Planning Notes</label>
+            <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Planning Notes / Reason</label>
             <textarea
               rows={2}
               value={planNotes}
               onChange={(e) => setPlanNotes(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Production requirement commitment notes..."
+              placeholder="Manual production commitment rationale..."
             />
           </div>
 
@@ -658,97 +830,363 @@ const Planning = () => {
               isLoading={submittingPlan}
               className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-xl shadow-md"
             >
-              Create Plan
+              Create Manual Plan
             </Button>
           </div>
         </div>
       </Dialog>
 
-      {/* Modal: SCHEDULE PRODUCTION PLAN */}
+      {/* Modal: ENTERPRISE SCHEDULE PLAN DECISION WORKBENCH (Dynamics 365 Architecture) */}
       <Dialog
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
-        title={`SCHEDULE PLAN: ${targetPlanToSchedule?.planNumber}`}
-        className="!max-w-lg bg-white border border-slate-200 text-slate-900 rounded-xl p-6 shadow-xl"
+        title={`SCHEDULE PLAN: ${targetPlanToSchedule?.planNumber || 'PLAN-001'}`}
+        className="!max-w-3xl bg-white border border-slate-200 text-slate-900 rounded-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="space-y-4">
-          <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 space-y-2 text-xs font-medium text-blue-900">
-            <div className="flex justify-between">
-              <span>Product:</span>
-              <strong className="font-bold">{targetPlanToSchedule?.productId?.name || 'Product'}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Warehouse:</span>
-              <strong className="font-bold">{targetPlanToSchedule?.warehouseId?.name || 'Main Warehouse'}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Remaining Qty:</span>
-              <strong className="font-mono font-bold text-amber-700">{targetPlanToSchedule?.remainingQuantity || targetPlanToSchedule?.quantity}</strong>
-            </div>
-          </div>
+        <div className="space-y-6">
 
-          <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Schedule Quantity *</label>
-            <input
-              type="number"
-              min="1"
-              max={targetPlanToSchedule?.remainingQuantity || targetPlanToSchedule?.quantity}
-              value={scheduleQty}
-              onChange={(e) => setScheduleQty(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Start Date *</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                required
-              />
+          {/* SECTION 1: READ-ONLY PLAN INFORMATION */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <span className="font-bold text-slate-500 uppercase text-[10px] tracking-wider">SECTION 1 — PLAN INFORMATION</span>
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-mono font-bold">
+                {targetPlanToSchedule?.planNumber}
+              </Badge>
             </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">End Date *</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                required
-              />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-slate-700">
+              <div>
+                <span className="text-slate-400 block font-medium">Product:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.productId?.name || 'Product'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">BOM Reference:</span>
+                <strong className="text-indigo-600 font-mono">{targetPlanToSchedule?.bomId?.bomNumber || 'BOM-001'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Warehouse:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.warehouseId?.name || 'Main Warehouse'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Priority:</span>
+                <span className="font-bold text-rose-600">{targetPlanToSchedule?.priority || 'Medium'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Demand Quantity:</span>
+                <strong className="text-slate-900 font-mono">{targetPlanToSchedule?.originalQuantity || targetPlanToSchedule?.quantity} Pcs</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Remaining to Schedule:</span>
+                <strong className="text-amber-700 font-mono font-bold">{targetPlanToSchedule?.remainingQuantity !== undefined ? targetPlanToSchedule?.remainingQuantity : targetPlanToSchedule?.quantity} Pcs</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Required Date:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.requiredDate ? new Date(targetPlanToSchedule.requiredDate).toLocaleDateString() : '-'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Plan Source:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.planSource || 'Manual'}</strong>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Work Center Line</label>
-            <input
-              type="text"
-              value={workCenter}
-              onChange={(e) => setWorkCenter(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-            />
+          {/* SECTION 2: SCHEDULING INPUTS (DIRECTION & TIMING) */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+              <CalendarClock className="h-4 w-4 text-blue-600" />
+              <span>SECTION 2 — SCHEDULING INPUTS & DIRECTION</span>
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Scheduling Quantity *</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={targetPlanToSchedule?.remainingQuantity || targetPlanToSchedule?.quantity}
+                  value={scheduleQty}
+                  onChange={(e) => setScheduleQty(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Scheduling Direction *</label>
+                <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-xl border border-slate-200 h-10">
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingDirection('Forward')}
+                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all ${
+                      schedulingDirection === 'Forward'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Forward ➔
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingDirection('Backward')}
+                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all ${
+                      schedulingDirection === 'Backward'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    ← Backward
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Scheduling Date *</label>
+                <input
+                  type="date"
+                  value={schedulingDate}
+                  onChange={(e) => setSchedulingDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Start Time *</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Calculated Duration (Hrs)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={durationHours}
+                  onChange={(e) => setDurationHours(parseFloat(e.target.value) || 1)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Calculated Completion Time</label>
+                <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 h-10 flex items-center">
+                  {calculatedEndTimeStr()}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] font-medium leading-relaxed">
-            ⚡ <strong>Soft Reservation Warning</strong>: Scheduling creates Production Order <strong>PRD-001</strong> and soft-reserves raw materials in target warehouse (<strong>Reserved ↑, Available ↓, On Hand UNCHANGED</strong>).
+          {/* SECTION 3: RESOURCE GROUP & CAPACITY */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+              <Factory className="h-4 w-4 text-blue-600" />
+              <span>SECTION 3 — RESOURCE GROUP & WORK CENTER CAPACITY</span>
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Resource Group *</label>
+                <select
+                  value={resourceGroup}
+                  onChange={(e) => setResourceGroup(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                >
+                  <option value="Assembly & Production">Assembly & Production</option>
+                  <option value="Mixing & Blending">Mixing & Blending</option>
+                  <option value="Cooking & Processing">Cooking & Processing</option>
+                  <option value="Packaging & QC">Packaging & QC</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Selected Resource Line *</label>
+                <select
+                  value={selectedResource}
+                  onChange={(e) => setSelectedResource(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                >
+                  <option value="Main Assembly Line 1">Main Assembly Line 1</option>
+                  <option value="Line 2 - High Speed">Line 2 - High Speed</option>
+                  <option value="Mixer-01 Heavy Duty">Mixer-01 Heavy Duty</option>
+                  <option value="Cooker Bay A">Cooker Bay A</option>
+                  <option value="Pack Station 01">Pack Station 01</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Capacity Status</label>
+                <div className="w-full px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold h-10 flex items-center justify-between">
+                  <span>Req: {durationHours}h / Avail: {capacityAvailable}h</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-600 text-white uppercase font-black">
+                    {durationHours <= capacityAvailable ? '✅ SUFFICIENT' : '⚠ OVERCAPACITY'}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-100">
-            <Button variant="outline" size="sm" onClick={() => setIsScheduleModalOpen(false)} className="text-slate-700 border-slate-300">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirmSchedulePlan}
-              isLoading={submittingSchedule}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2 rounded-xl shadow-md"
-            >
-              Confirm Schedule
-            </Button>
+          {/* SECTION 4: COMPONENT MATERIAL READINESS CHECK TABLE */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+                <ShieldCheck className="h-4 w-4 text-blue-600" />
+                <span>SECTION 4 — COMPONENT MATERIAL READINESS CHECK</span>
+              </h4>
+
+              {hasMaterialShortage ? (
+                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] font-bold">
+                  ❌ MATERIAL SHORTAGE DETECTED
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">
+                  ✅ ALL MATERIALS READY FOR RESERVATION
+                </Badge>
+              )}
+            </div>
+
+            <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Component Material</th>
+                    <th className="p-3">Required</th>
+                    <th className="p-3">Available Stock</th>
+                    <th className="p-3">Reserved</th>
+                    <th className="p-3">Shortage</th>
+                    <th className="p-3 text-center">Readiness Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {checkingReadiness ? (
+                    <tr><td colSpan="6" className="p-4 text-center text-slate-400">Evaluating warehouse inventory...</td></tr>
+                  ) : materialReadinessList.length === 0 ? (
+                    <tr><td colSpan="6" className="p-4 text-center text-slate-400">No BOM components required or BOM is empty.</td></tr>
+                  ) : (
+                    materialReadinessList.map((m, idx) => {
+                      const isShort = (m.shortageQty || 0) > 0;
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-3 font-bold text-slate-900">{m.materialName}</td>
+                          <td className="p-3 font-mono text-slate-900">{m.requiredQty} {m.unit}</td>
+                          <td className="p-3 font-mono text-emerald-600 font-bold">{m.availableQty} {m.unit}</td>
+                          <td className="p-3 font-mono text-slate-500">{m.reservedQty || 0} {m.unit}</td>
+                          <td className="p-3 font-mono font-bold text-rose-600">{m.shortageQty || 0} {m.unit}</td>
+                          <td className="p-3 text-center">
+                            {isShort ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                ❌ Shortage
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                ✅ Ready
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
+
+          {/* SECTION 5: OPERATION ROUTE SCHEDULE */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+              <Layers className="h-4 w-4 text-blue-600" />
+              <span>SECTION 5 — MANUFACTURING OPERATION ROUTE SCHEDULE</span>
+            </h4>
+
+            <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Seq</th>
+                    <th className="p-3">Operation Name</th>
+                    <th className="p-3">Work Resource</th>
+                    <th className="p-3">Setup</th>
+                    <th className="p-3">Run Time</th>
+                    <th className="p-3">Scheduled Start - End</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  <tr className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-blue-600">10</td>
+                    <td className="p-3 font-bold text-slate-900">Component Preparation & Mixing</td>
+                    <td className="p-3 text-slate-600">Mixer-01 Heavy Duty</td>
+                    <td className="p-3 font-mono">30 mins</td>
+                    <td className="p-3 font-mono">2.0 hrs</td>
+                    <td className="p-3 font-mono text-slate-900 font-bold">09:00 AM - 11:30 AM</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-blue-600">20</td>
+                    <td className="p-3 font-bold text-slate-900">Main Assembly & Cooking</td>
+                    <td className="p-3 text-slate-600">Cooker Bay A / Line 1</td>
+                    <td className="p-3 font-mono">20 mins</td>
+                    <td className="p-3 font-mono">3.0 hrs</td>
+                    <td className="p-3 font-mono text-slate-900 font-bold">11:30 AM - 02:50 PM</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-blue-600">30</td>
+                    <td className="p-3 font-bold text-slate-900">Packaging & Quality Inspection</td>
+                    <td className="p-3 text-slate-600">Pack Station 01</td>
+                    <td className="p-3 font-mono">15 mins</td>
+                    <td className="p-3 font-mono">1.0 hr</td>
+                    <td className="p-3 font-mono text-slate-900 font-bold">02:50 PM - 04:05 PM</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* SECTION 6: SCHEDULING CONFIRMATION SUMMARY */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 rounded-xl text-white shadow-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+              <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">SCHEDULE CONFIRMATION SUMMARY</span>
+              <span className="text-xs font-mono font-bold text-emerald-400">ORDER PREVIEW: PRD-GENERATED</span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Product:</span>
+                <strong className="text-white font-bold">{targetPlanToSchedule?.productId?.name || 'Product'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Schedule Qty:</span>
+                <strong className="text-emerald-400 font-mono font-black text-sm">{scheduleQty} Pcs</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Resource Line:</span>
+                <strong className="text-blue-300">{selectedResource}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Material Status:</span>
+                <strong className={hasMaterialShortage ? "text-rose-400" : "text-emerald-400"}>
+                  {hasMaterialShortage ? '⚠ SHORTAGE DETECTED' : '✅ ALL READY'}
+                </strong>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-700/80 flex items-center justify-end space-x-3">
+              <Button variant="outline" size="sm" onClick={() => setIsScheduleModalOpen(false)} className="text-slate-300 border-slate-600 hover:bg-slate-800">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmSchedulePlan}
+                isLoading={submittingSchedule}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-lg flex items-center space-x-2"
+              >
+                <CalendarClock className="h-4 w-4" />
+                <span>Confirm & Schedule Plan</span>
+              </Button>
+            </div>
+          </div>
+
         </div>
       </Dialog>
     </div>

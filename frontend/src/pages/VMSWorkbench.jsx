@@ -14,7 +14,9 @@ import {
   ShieldCheck,
   UserCheck,
   Users,
-  XCircle
+  XCircle,
+  QrCode,
+  Printer
 } from 'lucide-react';
 
 const statusStyles = {
@@ -64,6 +66,8 @@ export default function VMSWorkbench() {
   const [success, setSuccess] = useState('');
   const [showVisitorModal, setShowVisitorModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [showGatePassModal, setShowGatePassModal] = useState(false);
+  const [selectedGatePassVisitor, setSelectedGatePassVisitor] = useState(null);
 
   const [visitorForm, setVisitorForm] = useState({
     fullName: '',
@@ -117,7 +121,6 @@ export default function VMSWorkbench() {
   }, [query, visitors]);
 
   const pendingAppointments = appointments.filter((appointment) => appointment.status === 'REQUESTED');
-  const upcomingAppointments = appointments.filter((appointment) => ['SCHEDULED', 'EXPECTED', 'RESCHEDULED'].includes(appointment.status));
   const insideVisitors = visitors.filter((visitor) => ['CHECKED_IN', 'IN_VISIT'].includes(visitor.status));
 
   const action = async (callback, message) => {
@@ -138,7 +141,7 @@ export default function VMSWorkbench() {
       await api.post('/visitors', visitorForm);
       setVisitorForm({ fullName: '', email: '', phone: '', company: '', siteId: '' });
       setShowVisitorModal(false);
-    }, 'Visitor registered');
+    }, 'Visitor registered successfully');
   };
 
   const createAppointment = async (event) => {
@@ -147,13 +150,18 @@ export default function VMSWorkbench() {
       await api.post('/appointments', appointmentForm);
       setAppointmentForm({ visitorId: '', siteId: '', scheduledStartTime: '', scheduledEndTime: '', purpose: '' });
       setShowAppointmentModal(false);
-    }, 'Appointment request created');
+    }, 'Appointment request created successfully');
   };
 
   const reschedule = (id, minutes) => action(
     () => api.post(`/appointments/${id}/reschedule`, { minutes, notes: `Moved ${minutes} minutes later` }),
     `Appointment moved ${minutes} minutes later`
   );
+
+  const handleOpenGatePass = (visitor) => {
+    setSelectedGatePassVisitor(visitor);
+    setShowGatePassModal(true);
+  };
 
   return (
     <div className="space-y-5">
@@ -162,17 +170,17 @@ export default function VMSWorkbench() {
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-700">
               <ShieldCheck className="h-4 w-4" />
-              Visitor Management System
+              Visitor Management System & Security Gate Control
             </div>
-            <h1 className="mt-2 text-2xl font-black tracking-normal text-slate-950">Visitor Overview</h1>
-            <p className="mt-1 text-sm text-slate-500">Admin command center for today, with operations handled by departments and hosts.</p>
+            <h1 className="mt-2 text-2xl font-black tracking-normal text-slate-950">VMS Security Workbench</h1>
+            <p className="mt-1 text-sm text-slate-500">Admin & Security command center for today, with automated gate pass generation and check-in workflows.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setShowVisitorModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800">
-              <Plus className="h-4 w-4" /> Visitor
+              <Plus className="h-4 w-4" /> + Register Visitor
             </button>
             <button onClick={() => setShowAppointmentModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-sm font-bold text-white hover:bg-orange-700 shadow-2xs">
-              <Calendar className="h-4 w-4" /> Schedule Appointment
+              <Calendar className="h-4 w-4" /> + Schedule Appointment
             </button>
             <button onClick={loadData} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -214,15 +222,15 @@ export default function VMSWorkbench() {
           </div>
 
           {activeView === 'overview' && (
-            <VisitorTable visitors={overview.todaysVisitors || []} empty="No visitor activity for today." onCheckIn={(id) => action(() => api.post(`/visitors/${id}/check-in`), 'Visitor checked in')} onCheckOut={(id) => action(() => api.post(`/visitors/${id}/check-out`), 'Visitor checked out')} />
+            <VisitorTable visitors={overview.todaysVisitors || []} empty="No visitor activity for today." onCheckIn={(id) => action(() => api.post(`/visitors/${id}/check-in`), 'Visitor checked in')} onCheckOut={(id) => action(() => api.post(`/visitors/${id}/check-out`), 'Visitor checked out')} onGatePass={handleOpenGatePass} />
           )}
 
           {activeView === 'visitors' && (
-            <VisitorTable visitors={filteredVisitors} empty="No visitors found." onCheckIn={(id) => action(() => api.post(`/visitors/${id}/check-in`), 'Visitor checked in')} onCheckOut={(id) => action(() => api.post(`/visitors/${id}/check-out`), 'Visitor checked out')} />
+            <VisitorTable visitors={filteredVisitors} empty="No visitors found." onCheckIn={(id) => action(() => api.post(`/visitors/${id}/check-in`), 'Visitor checked in')} onCheckOut={(id) => action(() => api.post(`/visitors/${id}/check-out`), 'Visitor checked out')} onGatePass={handleOpenGatePass} />
           )}
 
           {activeView === 'checkin' && (
-            <VisitorTable visitors={insideVisitors.length ? insideVisitors : filteredVisitors} empty="No active visitors." onCheckIn={(id) => action(() => api.post(`/visitors/${id}/check-in`), 'Visitor checked in')} onCheckOut={(id) => action(() => api.post(`/visitors/${id}/check-out`), 'Visitor checked out')} compact />
+            <VisitorTable visitors={insideVisitors.length ? insideVisitors : filteredVisitors} empty="No active visitors." onCheckIn={(id) => action(() => api.post(`/visitors/${id}/check-in`), 'Visitor checked in')} onCheckOut={(id) => action(() => api.post(`/visitors/${id}/check-out`), 'Visitor checked out')} onGatePass={handleOpenGatePass} compact />
           )}
 
           {activeView === 'appointments' && (
@@ -273,6 +281,7 @@ export default function VMSWorkbench() {
         </aside>
       </div>
 
+      {/* Modal: REGISTER VISITOR */}
       {showVisitorModal && (
         <Modal title="Register Visitor" onClose={() => setShowVisitorModal(false)}>
           <form onSubmit={createVisitor} className="space-y-3">
@@ -292,6 +301,7 @@ export default function VMSWorkbench() {
         </Modal>
       )}
 
+      {/* Modal: CREATE APPOINTMENT */}
       {showAppointmentModal && (
         <Modal title="Create Appointment" onClose={() => setShowAppointmentModal(false)}>
           <form onSubmit={createAppointment} className="space-y-3">
@@ -313,11 +323,66 @@ export default function VMSWorkbench() {
           </form>
         </Modal>
       )}
+
+      {/* Modal: DIGITAL GATE PASS BADGE */}
+      {showGatePassModal && selectedGatePassVisitor && (
+        <Modal title="Digital Security Gate Pass" onClose={() => setShowGatePassModal(false)}>
+          <div className="space-y-4">
+            <div className="bg-gradient-to-tr from-slate-900 to-slate-800 text-white p-5 rounded-xl border border-slate-700 shadow-xl space-y-4 font-mono">
+              <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+                <div>
+                  <h4 className="text-sm font-black tracking-wider text-blue-400">XPERTE SECURITY PASS</h4>
+                  <span className="text-[10px] text-slate-400">AUTHORIZATION BADGE</span>
+                </div>
+                <QrCode className="h-8 w-8 text-cyan-400" />
+              </div>
+
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Badge Code:</span>
+                  <span className="text-emerald-400 font-bold">{selectedGatePassVisitor.visitorCode || 'VIS-BADGE-1001'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Visitor Name:</span>
+                  <span className="text-white font-bold">{selectedGatePassVisitor.fullName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Company:</span>
+                  <span className="text-slate-300">{selectedGatePassVisitor.company || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Host Employee:</span>
+                  <span className="text-blue-300 font-bold">{selectedGatePassVisitor.hostEmployeeId?.username || 'System Host'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Status:</span>
+                  <span className="text-emerald-400 font-bold">{selectedGatePassVisitor.status}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                <Printer className="h-4 w-4" /> Print / Issue Gate Pass
+              </button>
+              <button
+                onClick={() => setShowGatePassModal(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
-function VisitorTable({ visitors, empty, onCheckIn, onCheckOut, compact = false }) {
+function VisitorTable({ visitors, empty, onCheckIn, onCheckOut, onGatePass, compact = false }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
@@ -344,6 +409,9 @@ function VisitorTable({ visitors, empty, onCheckIn, onCheckOut, compact = false 
               <td className="p-4"><StatusBadge status={visitor.status} /></td>
               <td className="p-4">
                 <div className="flex gap-2">
+                  <button onClick={() => onGatePass(visitor)} className="inline-flex items-center gap-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 text-xs font-bold hover:bg-blue-100">
+                    <QrCode className="h-3.5 w-3.5" /> Gate Pass
+                  </button>
                   {!['IN_VISIT', 'CHECKED_IN', 'CHECKED_OUT'].includes(visitor.status) && (
                     <button onClick={() => onCheckIn(visitor._id)} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-bold text-white">
                       <LogIn className="h-3.5 w-3.5" /> Check in

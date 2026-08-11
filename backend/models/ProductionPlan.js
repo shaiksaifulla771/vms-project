@@ -6,6 +6,10 @@ const ProductionPlanSchema = new mongoose.Schema({
     unique: true,
     index: true,
   },
+  mrpRunId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MRPRun',
+  },
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Material',
@@ -76,6 +80,67 @@ const ProductionPlanSchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: 'Main Assembly Line 1',
+  },
+  scheduling: {
+    direction: {
+      type: String,
+      enum: ['Forward', 'Backward'],
+      default: 'Forward',
+    },
+    schedulingDate: {
+      type: Date,
+    },
+    startTime: {
+      type: String,
+      default: '09:00',
+    },
+    durationHours: {
+      type: Number,
+      default: 6,
+    },
+    plannedStartDateTime: {
+      type: Date,
+    },
+    plannedEndDateTime: {
+      type: Date,
+    },
+    resourceGroup: {
+      type: String,
+      default: 'Assembly & Production',
+    },
+    selectedResource: {
+      type: String,
+      default: 'Main Assembly Line 1',
+    },
+    capacityRequired: {
+      type: Number,
+      default: 6,
+    },
+    capacityAvailable: {
+      type: Number,
+      default: 8,
+    },
+    materialCheckStatus: {
+      type: String,
+      enum: ['Ready', 'Shortage', 'Not Evaluated'],
+      default: 'Not Evaluated',
+    },
+    capacityCheckStatus: {
+      type: String,
+      enum: ['Sufficient', 'Overcapacity', 'Not Evaluated'],
+      default: 'Not Evaluated',
+    },
+    operations: [
+      {
+        seq: Number,
+        name: String,
+        resource: String,
+        setupMins: Number,
+        runMins: Number,
+        startTime: String,
+        endTime: String,
+      }
+    ]
   },
   reason: {
     type: String,
