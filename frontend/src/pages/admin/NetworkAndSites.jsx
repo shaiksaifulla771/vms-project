@@ -22,7 +22,8 @@ import {
   FileText,
   Activity,
   Key,
-  Edit2
+  Edit2,
+  ChevronDown
 } from 'lucide-react';
 
 const DEFAULT_SITES = [
@@ -32,6 +33,7 @@ const DEFAULT_SITES = [
     name: 'Hyderabad Plant',
     type: 'Manufacturing Plant',
     status: 'Active',
+    description: 'Primary manufacturing & assembly unit',
     address: { city: 'Hyderabad', state: 'Telangana', country: 'India' },
     assignedWarehouses: [
       { _id: 'wh-1', name: 'Main Warehouse', code: 'HYD-MWH', type: 'General', status: 'Active' },
@@ -45,6 +47,7 @@ const DEFAULT_SITES = [
     name: 'Bangalore Plant',
     type: 'Manufacturing Plant',
     status: 'Active',
+    description: 'Component fabrication facility',
     address: { city: 'Bangalore', state: 'Karnataka', country: 'India' },
     assignedWarehouses: []
   },
@@ -54,6 +57,7 @@ const DEFAULT_SITES = [
     name: 'Chennai Distribution Center',
     type: 'Distribution Center',
     status: 'Active',
+    description: 'Regional logistics & distribution hub',
     address: { city: 'Chennai', state: 'Tamil Nadu', country: 'India' },
     assignedWarehouses: []
   },
@@ -64,16 +68,17 @@ const DEFAULT_SITES = [
     type: 'R&D Center',
     status: 'Inactive',
     deactivationReason: 'Site restructuring and facility relocation',
+    description: 'Research & testing facility',
     address: { city: 'Pune', state: 'Maharashtra', country: 'India' },
     assignedWarehouses: []
   }
 ];
 
 const DEFAULT_WAREHOUSES = [
-  { _id: 'wh-1', code: 'HYD-MWH', name: 'Main Warehouse', type: 'General', status: 'Active', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
-  { _id: 'wh-2', code: 'HYD-RMW', name: 'Raw Material Warehouse', type: 'Raw', status: 'Active', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
-  { _id: 'wh-3', code: 'HYD-FGW', name: 'Finished Goods Warehouse', type: 'FG', status: 'Active', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
-  { _id: 'wh-4', code: 'PUN-OLD', name: 'Old Storage Depot', type: 'Scrap', status: 'Inactive', deactivationReason: 'Structure maintenance', siteId: { _id: 'site-4', name: 'Pune Facility' } }
+  { _id: 'wh-1', code: 'HYD-MWH', name: 'Main Warehouse', type: 'General', subCategory: 'Main Storage', status: 'Active', description: 'Central inventory receiving depot', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
+  { _id: 'wh-2', code: 'HYD-RMW', name: 'Raw Material Warehouse', type: 'Raw Material', subCategory: 'Retail Components', status: 'Active', description: 'Raw component item sourcing bay', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
+  { _id: 'wh-3', code: 'HYD-FGW', name: 'Finished Goods Warehouse', type: 'Finished Goods', subCategory: 'Puree / Porridge', status: 'Active', description: 'Assembled finished product storage', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
+  { _id: 'wh-4', code: 'PUN-OLD', name: 'Old Storage Depot', type: 'Scrap', subCategory: 'Maintenance', status: 'Inactive', deactivationReason: 'Structure maintenance', description: 'Legacy storage bay', siteId: { _id: 'site-4', name: 'Pune Facility' } }
 ];
 
 const DEFAULT_USERS = [
@@ -90,8 +95,8 @@ const DEFAULT_AUDIT_LOGS = [
 ];
 
 const NetworkAndSites = () => {
-  const [mainTab, setMainTab] = useState('hierarchy');
-  const [hierarchyTab, setHierarchyTab] = useState('sites');
+  const [activeTab, setActiveTab] = useState('sites'); // sites | warehouses | userScope | auditLog
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [sites, setSites] = useState(DEFAULT_SITES);
   const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
@@ -107,7 +112,6 @@ const NetworkAndSites = () => {
   const [transferModal, setTransferModal] = useState(null);
   const [unlinkModal, setUnlinkModal] = useState(null);
   const [editUserScopeModal, setEditUserScopeModal] = useState(null);
-  const [selectedAuditDetail, setSelectedAuditDetail] = useState(null);
 
   const [mandatoryReason, setMandatoryReason] = useState('');
   const [selectedTargetSiteId, setSelectedTargetSiteId] = useState('');
@@ -145,21 +149,21 @@ const NetworkAndSites = () => {
     fetchData();
   }, []);
 
-  const handleCreateSite = async (e) => {
+  const handleCreateSite = (e) => {
     e.preventDefault();
     if (!newSite.code || !newSite.name) return;
-    const created = { _id: `site-${Date.now()}`, code: newSite.code, name: newSite.name, type: newSite.type, status: 'Active', address: { city: newSite.city, state: newSite.state, country: newSite.country }, assignedWarehouses: [] };
+    const created = { _id: `site-${Date.now()}`, code: newSite.code, name: newSite.name, type: newSite.type, status: 'Active', description: 'Newly registered plant facility', address: { city: newSite.city, state: newSite.state, country: newSite.country }, assignedWarehouses: [] };
     setSites([...sites, created]);
     setSystemNotice({ title: 'Site Created', message: `Registered ${newSite.name} (${newSite.code}) successfully.` });
     setShowAddSiteModal(false);
     setNewSite({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
   };
 
-  const handleCreateWarehouse = async (e) => {
+  const handleCreateWarehouse = (e) => {
     e.preventDefault();
     if (!newWarehouse.code || !newWarehouse.name) return;
     const targetSite = sites.find(s => s._id === newWarehouse.siteId);
-    const created = { _id: `wh-${Date.now()}`, code: newWarehouse.code, name: newWarehouse.name, type: newWarehouse.type, status: 'Active', siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null };
+    const created = { _id: `wh-${Date.now()}`, code: newWarehouse.code, name: newWarehouse.name, type: newWarehouse.type, subCategory: 'General Storage', status: 'Active', description: 'Newly assigned warehouse depot', siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null };
     setWarehouses([...warehouses, created]);
     setSystemNotice({ title: 'Warehouse Created', message: `Registered ${newWarehouse.name} (${newWarehouse.code}) successfully.` });
     setShowAddWarehouseModal(false);
@@ -199,342 +203,330 @@ const NetworkAndSites = () => {
     setEditUserScopeModal(null);
   };
 
-  const activeSitesCount = sites.filter(s => s.status === 'Active').length;
-  const activeWarehousesCount = warehouses.filter(w => w.status === 'Active').length;
-  const inactiveCount = sites.filter(s => s.status === 'Inactive').length + warehouses.filter(w => w.status === 'Inactive').length;
-
   return (
-    <div className="space-y-4 text-slate-900 bg-slate-50 min-h-screen p-1 font-sans">
-      {/* CLEAN BLACK & WHITE HEADER */}
-      <div className="bg-white border border-slate-300 p-4 rounded-2xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center space-x-2 mb-1">
-            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white rounded-md">
-              Master Network
-            </span>
-            <span className="text-xs text-slate-500 font-bold">Sites & Locations</span>
-          </div>
-          <h1 className="text-xl font-black text-slate-900 tracking-tight">Network & Sites</h1>
+    <div className="space-y-3 font-sans text-slate-900 bg-white min-h-screen p-1">
+      {/* EXACT MASTER DATA STYLED TOP UNDERLINE TABS */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('sites')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
+            activeTab === 'sites'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Site Master
+        </button>
+        <button
+          onClick={() => setActiveTab('warehouses')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
+            activeTab === 'warehouses'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Warehouse Master
+        </button>
+        <button
+          onClick={() => setActiveTab('userScope')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
+            activeTab === 'userScope'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          User Access Scope
+        </button>
+        <button
+          onClick={() => setActiveTab('auditLog')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
+            activeTab === 'auditLog'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Activity & Audit Log
+        </button>
+      </div>
+
+      {/* SEARCH AND CONTROL BAR */}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search by name/code..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-64 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none transition focus:border-blue-500 shadow-2xs"
+          />
         </div>
 
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setShowAddSiteModal(true)}
-            className="flex items-center space-x-1 py-2 px-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Add Site</span>
-          </button>
+          {activeTab === 'sites' && (
+            <button
+              onClick={() => setShowAddSiteModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Site</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowAddWarehouseModal(true)}
-            className="flex items-center space-x-1 py-2 px-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Add Warehouse</span>
-          </button>
+          {activeTab === 'warehouses' && (
+            <button
+              onClick={() => setShowAddWarehouseModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Warehouse</span>
+            </button>
+          )}
+
+          {activeTab === 'userScope' && (
+            <button
+              onClick={() => setShowAddUserModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add User</span>
+            </button>
+          )}
 
           <button
             onClick={fetchData}
-            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors border border-slate-300"
-            title="Refresh Data"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+            <span>Select Options</span>
           </button>
         </div>
       </div>
 
       {/* SYSTEM NOTICE */}
       {systemNotice && (
-        <div className="p-3 bg-white border border-slate-300 text-slate-900 rounded-xl flex items-center justify-between text-xs font-semibold shadow-xs">
+        <div className="p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-lg flex items-center justify-between text-xs font-semibold">
           <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-slate-900" />
-            <div>
-              <span className="font-black uppercase">{systemNotice.title}:</span>{' '}
-              <span>{systemNotice.message}</span>
-            </div>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span><strong>{systemNotice.title}:</strong> {systemNotice.message}</span>
           </div>
-          <button onClick={() => setSystemNotice(null)} className="font-bold underline text-slate-700">Dismiss</button>
+          <button onClick={() => setSystemNotice(null)} className="font-bold underline text-slate-600">Dismiss</button>
         </div>
       )}
 
-      {/* TABS NAVIGATION */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => setMainTab('hierarchy')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            mainTab === 'hierarchy'
-              ? 'bg-slate-900 text-white shadow-xs font-black'
-              : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-          }`}
-        >
-          <Building2 className="w-4 h-4" />
-          <span>1. Sites & Hierarchy ({sites.length} Sites, {warehouses.length} Warehouses)</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab('scope')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            mainTab === 'scope'
-              ? 'bg-slate-900 text-white shadow-xs font-black'
-              : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>2. User Access & Permissions ({users.length} Users)</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab('control')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            mainTab === 'control'
-              ? 'bg-slate-900 text-white shadow-xs font-black'
-              : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-          }`}
-        >
-          <Activity className="w-4 h-4" />
-          <span>3. Audit Trail ({auditLogs.length} Logs)</span>
-        </button>
-      </div>
-
-      {/* SECTION 1: HIERARCHY TAB */}
-      {mainTab === 'hierarchy' && (
-        <div className="space-y-4">
-          <div className="flex items-center space-x-2">
-            {['sites', 'warehouses', 'assignments', 'inactive'].map((t) => (
-              <button
-                key={t}
-                onClick={() => setHierarchyTab(t)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                  hierarchyTab === t
-                    ? 'bg-slate-900 text-white font-black'
-                    : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-                }`}
-              >
-                {t === 'sites' && `Sites (${activeSitesCount})`}
-                {t === 'warehouses' && `Warehouses (${activeWarehousesCount})`}
-                {t === 'assignments' && 'Site ↔ Warehouse Tree'}
-                {t === 'inactive' && `Inactive Locations (${inactiveCount})`}
-              </button>
-            ))}
-          </div>
-
-          {hierarchyTab === 'sites' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {sites.filter(s => s.status === 'Active').map((s) => (
-                <div key={s._id} className="bg-white border border-slate-300 rounded-2xl p-4 shadow-xs space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-sm font-black text-slate-900">{s.name}</h3>
-                      <span className="text-[10px] text-slate-500 font-mono font-bold">{s.code} • {s.type}</span>
-                    </div>
-                    <span className="px-2 py-0.5 bg-slate-900 text-white font-bold text-[10px] rounded-md">
-                      Active
+      {/* TAB 1: SITE MASTER TABLE */}
+      {activeTab === 'sites' && (
+        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>SITE NAME</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>CODE</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>FACILITY TYPE</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>LOCATION</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>STATUS</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">DESCRIPTION</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
+              {sites.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.code.toLowerCase().includes(searchTerm.toLowerCase())).map((s) => (
+                <tr key={s._id} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{s.name}</td>
+                  <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer">{s.code}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs">{s.type}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs">{s.address?.city || 'Hyderabad'}, {s.address?.state || 'Telangana'}</td>
+                  <td className="py-2.5 px-3.5 text-xs">
+                    <span className={`font-bold ${s.status === 'Active' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {s.status}
                     </span>
-                  </div>
-
-                  <div className="text-xs text-slate-600 font-medium">
-                    📍 {s.address?.city || 'Hyderabad'}, {s.address?.state || 'Telangana'}
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-500 block">Warehouses ({warehouses.filter(w => w.siteId?._id === s._id || w.siteId === s._id).length})</span>
-                    <div className="flex flex-wrap gap-1">
-                      {warehouses.filter(w => w.siteId?._id === s._id || w.siteId === s._id).map((wh) => (
-                        <button
-                          key={wh._id}
-                          onClick={() => setSelectedWarehouseDetail(wh)}
-                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold text-[10px] rounded-lg border border-slate-300 transition-colors"
-                        >
-                          📦 {wh.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                  </td>
+                  <td className="py-2.5 px-3.5 text-slate-400 text-xs">{s.description || '-'}</td>
+                </tr>
               ))}
-            </div>
-          )}
-
-          {hierarchyTab === 'warehouses' && (
-            <div className="bg-white border border-slate-300 rounded-2xl shadow-xs overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                    <th className="py-2.5 px-3">Code</th>
-                    <th className="py-2.5 px-3">Warehouse Name</th>
-                    <th className="py-2.5 px-3">Type</th>
-                    <th className="py-2.5 px-3">Parent Site</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                  {warehouses.filter(w => w.status === 'Active').map((wh) => (
-                    <tr key={wh._id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-2.5 px-3 font-mono font-bold">{wh.code}</td>
-                      <td className="py-2.5 px-3 font-black">{wh.name}</td>
-                      <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-slate-100 text-slate-900 font-bold text-[10px] rounded-md border border-slate-300">{wh.type}</span></td>
-                      <td className="py-2.5 px-3 font-bold">{wh.siteId ? (wh.siteId.name || 'Assigned') : <span className="text-slate-400">Unassigned</span>}</td>
-                      <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-slate-900 text-white font-bold text-[10px] rounded-md">Active</span></td>
-                      <td className="py-2.5 px-3 text-center">
-                        <div className="flex items-center justify-center space-x-1.5">
-                          <button onClick={() => setSelectedWarehouseDetail(wh)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-lg border border-slate-300">Inspect</button>
-                          <button onClick={() => setTransferModal(wh)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-lg border border-slate-300">Change Site</button>
-                          <button onClick={() => setUnlinkModal(wh)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-lg border border-slate-300">Unlink</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {hierarchyTab === 'assignments' && (
-            <div className="bg-white border border-slate-300 rounded-2xl p-5 shadow-xs space-y-3">
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Site & Warehouse Tree</h3>
-              <div className="space-y-3 pl-2 border-l-2 border-slate-300">
-                {sites.map((s) => (
-                  <div key={s._id} className="space-y-1.5">
-                    <div className="flex items-center space-x-2 text-xs font-black text-slate-900 bg-slate-100 p-2 rounded-xl border border-slate-300">
-                      <Building2 className="w-4 h-4 text-slate-900" />
-                      <span>{s.name} ({s.code})</span>
-                    </div>
-                    <div className="pl-5 space-y-1">
-                      {warehouses.filter(w => w.siteId?._id === s._id || w.siteId === s._id).map((wh) => (
-                        <div key={wh._id} className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold">
-                          <span>📦 {wh.name} ({wh.code})</span>
-                          <button onClick={() => setSelectedWarehouseDetail(wh)} className="text-[10px] font-bold text-slate-900 underline">View</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {hierarchyTab === 'inactive' && (
-            <div className="bg-white border border-slate-300 rounded-2xl p-4 shadow-xs space-y-2">
-              {[...sites.filter(s => s.status === 'Inactive'), ...warehouses.filter(w => w.status === 'Inactive')].map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                  <div>
-                    <h4 className="font-extrabold text-slate-900">{item.name} ({item.code})</h4>
-                    <p className="text-[11px] text-slate-500 italic">Reason: {item.deactivationReason || 'Deactivated'}</p>
-                  </div>
-                  <span className="px-2.5 py-1 bg-slate-200 text-slate-800 font-extrabold text-[10px] rounded-md">
-                    INACTIVE
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* SECTION 2: USER ACCESS TAB */}
-      {mainTab === 'scope' && (
-        <div className="bg-white border border-slate-300 rounded-2xl p-4 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <div>
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">User Access & Location Scope</h3>
-              <p className="text-xs text-slate-500">Restricting users to specific sites or warehouses.</p>
-            </div>
-            <button onClick={() => setShowAddUserModal(true)} className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl">+ Add User</button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                  <th className="py-2.5 px-3">User</th>
-                  <th className="py-2.5 px-3">Email</th>
-                  <th className="py-2.5 px-3">Role</th>
-                  <th className="py-2.5 px-3">Site Scope</th>
-                  <th className="py-2.5 px-3">Warehouse Scope</th>
-                  <th className="py-2.5 px-3 text-center">Manage</th>
+      {/* TAB 2: WAREHOUSE MASTER TABLE */}
+      {activeTab === 'warehouses' && (
+        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>WAREHOUSE NAME</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>CODE</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>PARENT SITE</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>CATEGORY</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>SUB-CATEGORY</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">
+                  <div className="flex items-center justify-between">
+                    <span>STATUS</span>
+                    <Filter className="w-3 h-3 text-slate-300" />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3.5">DESCRIPTION</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
+              {warehouses.filter(w => w.name.toLowerCase().includes(searchTerm.toLowerCase()) || w.code.toLowerCase().includes(searchTerm.toLowerCase())).map((wh) => (
+                <tr key={wh._id} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{wh.name}</td>
+                  <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer" onClick={() => setSelectedWarehouseDetail(wh)}>{wh.code}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs font-semibold">{wh.siteId?.name || <span className="text-slate-400">-</span>}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs">{wh.type}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs">{wh.subCategory || '-'}</td>
+                  <td className="py-2.5 px-3.5 text-xs">
+                    <span className={`font-bold ${wh.status === 'Active' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {wh.status}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3.5 text-slate-400 text-xs">{wh.description || '-'}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                {users.map(u => (
-                  <tr key={u._id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-2.5 px-3 font-black">{u.username}</td>
-                    <td className="py-2.5 px-3 font-mono text-slate-500">{u.email}</td>
-                    <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-slate-100 text-slate-900 font-bold text-[10px] rounded-md">{u.role}</span></td>
-                    <td className="py-2.5 px-3">
-                      {(u.siteIds && u.siteIds.length > 0) ? u.siteIds.map(s => s.name).join(', ') : <span className="text-slate-400">All Sites</span>}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      {(u.warehouseIds && u.warehouseIds.length > 0) ? u.warehouseIds.map(w => w.name).join(', ') : <span className="text-slate-400">All Warehouses</span>}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <button onClick={() => handleOpenEditScope(u)} className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold text-xs rounded-lg border border-slate-300">Edit Scope</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* SECTION 3: AUDIT LOG TAB */}
-      {mainTab === 'control' && (
-        <div className="bg-white border border-slate-300 rounded-2xl p-4 shadow-xs space-y-3">
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Audit Log History</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                  <th className="py-2.5 px-3">Date & Time</th>
-                  <th className="py-2.5 px-3">User</th>
-                  <th className="py-2.5 px-3">Action</th>
-                  <th className="py-2.5 px-3">Module</th>
-                  <th className="py-2.5 px-3">Location</th>
-                  <th className="py-2.5 px-3 text-center">Inspect</th>
+      {/* TAB 3: USER ACCESS SCOPE TABLE */}
+      {activeTab === 'userScope' && (
+        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                <th className="py-2.5 px-3.5">USER NAME</th>
+                <th className="py-2.5 px-3.5">WORK EMAIL</th>
+                <th className="py-2.5 px-3.5">ROLE</th>
+                <th className="py-2.5 px-3.5">ALLOWED SITES</th>
+                <th className="py-2.5 px-3.5">ALLOWED WAREHOUSES</th>
+                <th className="py-2.5 px-3.5 text-center">MANAGE</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
+              {users.map(u => (
+                <tr key={u._id} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{u.username}</td>
+                  <td className="py-2.5 px-3.5 text-slate-500 font-mono text-xs">{u.email}</td>
+                  <td className="py-2.5 px-3.5 text-slate-800 font-bold text-xs">{u.role}</td>
+                  <td className="py-2.5 px-3.5 text-xs text-slate-600">
+                    {(u.siteIds && u.siteIds.length > 0) ? u.siteIds.map(s => s.name).join(', ') : <span className="text-slate-400 font-bold">All Sites</span>}
+                  </td>
+                  <td className="py-2.5 px-3.5 text-xs text-slate-600">
+                    {(u.warehouseIds && u.warehouseIds.length > 0) ? u.warehouseIds.map(w => w.name).join(', ') : <span className="text-slate-400 font-bold">All Warehouses</span>}
+                  </td>
+                  <td className="py-2.5 px-3.5 text-center">
+                    <button onClick={() => handleOpenEditScope(u)} className="px-3 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs">Edit Scope</button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                {auditLogs.map((log, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">{new Date(log.timestamp).toLocaleString()}</td>
-                    <td className="py-2.5 px-3 font-bold">{log.userName || 'Admin'}</td>
-                    <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-slate-900 text-white rounded-md font-bold text-[10px]">{log.action}</span></td>
-                    <td className="py-2.5 px-3 font-semibold">{log.module || 'General'}</td>
-                    <td className="py-2.5 px-3 font-bold">{log.locationName || 'System'}</td>
-                    <td className="py-2.5 px-3 text-center">
-                      <button onClick={() => setSelectedWarehouseDetail(log)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold text-xs rounded-lg border border-slate-300">Inspect</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* TAB 4: AUDIT LOG HISTORY TABLE */}
+      {activeTab === 'auditLog' && (
+        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                <th className="py-2.5 px-3.5">TIMESTAMP</th>
+                <th className="py-2.5 px-3.5">USER</th>
+                <th className="py-2.5 px-3.5">ACTION</th>
+                <th className="py-2.5 px-3.5">MODULE</th>
+                <th className="py-2.5 px-3.5">LOCATION TARGET</th>
+                <th className="py-2.5 px-3.5 text-center">INSPECT</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
+              {auditLogs.map((log, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-2.5 px-3.5 text-slate-500 font-mono text-[11px]">{new Date(log.timestamp).toLocaleString()}</td>
+                  <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{log.userName || 'Admin'}</td>
+                  <td className="py-2.5 px-3.5 text-xs font-bold text-blue-600">{log.action}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs">{log.module || 'General'}</td>
+                  <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{log.locationName || 'System'}</td>
+                  <td className="py-2.5 px-3.5 text-center">
+                    <button onClick={() => setSelectedWarehouseDetail(log)} className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs">Inspect</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       {/* MODAL: ADD SITE */}
       {showAddSiteModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateSite} className="bg-white border border-slate-300 rounded-2xl max-w-md w-full p-5 space-y-3 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleCreateSite} className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-sm font-black text-slate-900">Add Site</h3>
+              <h3 className="text-sm font-bold text-slate-900">Add Site Master</h3>
               <button type="button" onClick={() => setShowAddSiteModal(false)} className="text-slate-400 font-bold">✕</button>
             </div>
             <div className="space-y-2 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Code:</label>
-                <input type="text" required placeholder="HYD-02" value={newSite.code} onChange={e => setNewSite({ ...newSite, code: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold" />
+                <label className="block text-slate-600 font-bold mb-1">Site Code:</label>
+                <input type="text" required placeholder="HYD-02" value={newSite.code} onChange={e => setNewSite({ ...newSite, code: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold" />
               </div>
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Name:</label>
-                <input type="text" required placeholder="Hyderabad Plant II" value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold" />
+                <label className="block text-slate-600 font-bold mb-1">Site Name:</label>
+                <input type="text" required placeholder="Hyderabad Plant II" value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold" />
               </div>
             </div>
             <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
-              <button type="button" onClick={() => setShowAddSiteModal(false)} className="px-3.5 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300">Cancel</button>
-              <button type="submit" className="px-3.5 py-1.5 bg-slate-900 text-white font-bold text-xs rounded-xl">Save Site</button>
+              <button type="button" onClick={() => setShowAddSiteModal(false)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Site</button>
             </div>
           </form>
         </div>
@@ -542,18 +534,19 @@ const NetworkAndSites = () => {
 
       {/* INSPECTION DRAWER */}
       {selectedWarehouseDetail && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-300 rounded-2xl max-w-md w-full p-5 space-y-3 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-sm font-black text-slate-900">Details</h3>
+              <h3 className="text-sm font-bold text-slate-900">Details Inspection</h3>
               <button onClick={() => setSelectedWarehouseDetail(null)} className="text-slate-400 font-bold">✕</button>
             </div>
-            <div className="space-y-1.5 text-xs font-semibold text-slate-800 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <p><strong>Name:</strong> {selectedWarehouseDetail.name || selectedWarehouseDetail.locationName}</p>
-              <p><strong>Status:</strong> {selectedWarehouseDetail.status || 'Logged'}</p>
+            <div className="space-y-1.5 text-xs font-semibold text-slate-800 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <p><strong>Name / Target:</strong> {selectedWarehouseDetail.name || selectedWarehouseDetail.locationName}</p>
+              <p><strong>Status / Action:</strong> {selectedWarehouseDetail.status || selectedWarehouseDetail.action}</p>
+              <p><strong>Description / Reason:</strong> {selectedWarehouseDetail.description || selectedWarehouseDetail.reason || '-'}</p>
             </div>
             <div className="pt-2 border-t border-slate-100 flex justify-end">
-              <button onClick={() => setSelectedWarehouseDetail(null)} className="px-4 py-1.5 bg-slate-900 text-white font-bold text-xs rounded-xl">Close</button>
+              <button onClick={() => setSelectedWarehouseDetail(null)} className="px-4 py-1.5 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-lg">Close</button>
             </div>
           </div>
         </div>
