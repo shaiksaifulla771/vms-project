@@ -1,29 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-  Building2,
-  Warehouse,
-  Plus,
-  ArrowRightLeft,
-  AlertTriangle,
   CheckCircle2,
-  XCircle,
-  Eye,
   RefreshCw,
-  Search,
   Filter,
-  Layers,
-  ShieldAlert,
-  Info,
-  Unlink,
-  ExternalLink,
-  Users,
-  ShieldCheck,
-  FileText,
-  Activity,
-  Key,
-  Edit2,
-  ChevronDown
+  Plus
 } from 'lucide-react';
 
 const DEFAULT_SITES = [
@@ -109,12 +90,9 @@ const NetworkAndSites = () => {
   const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [selectedWarehouseDetail, setSelectedWarehouseDetail] = useState(null);
-  const [transferModal, setTransferModal] = useState(null);
-  const [unlinkModal, setUnlinkModal] = useState(null);
   const [editUserScopeModal, setEditUserScopeModal] = useState(null);
 
   const [mandatoryReason, setMandatoryReason] = useState('');
-  const [selectedTargetSiteId, setSelectedTargetSiteId] = useState('');
   const [systemNotice, setSystemNotice] = useState(null);
 
   const [selectedRole, setSelectedRole] = useState('Inventory Manager');
@@ -170,20 +148,6 @@ const NetworkAndSites = () => {
     setNewWarehouse({ code: '', name: '', type: 'General', location: '', siteId: '' });
   };
 
-  const handleUnlinkWarehouse = (wh) => {
-    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: null } : w));
-    setSystemNotice({ title: 'Warehouse Unlinked', message: `Detached ${wh.name} from its site.` });
-    setUnlinkModal(null);
-  };
-
-  const handleTransferSite = (wh) => {
-    if (!selectedTargetSiteId) return;
-    const targetSite = sites.find(s => s._id === selectedTargetSiteId);
-    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null } : w));
-    setSystemNotice({ title: 'Site Transferred', message: `Transferred ${wh.name} to ${targetSite?.name}.` });
-    setTransferModal(null);
-  };
-
   const handleOpenEditScope = (u) => {
     setEditUserScopeModal(u);
     setSelectedRole(u.role || 'Viewer');
@@ -204,70 +168,27 @@ const NetworkAndSites = () => {
   };
 
   return (
-    <div className="space-y-3 font-sans text-slate-900 bg-white min-h-screen p-1">
-      {/* EXACT MASTER DATA STYLED TOP UNDERLINE TABS */}
-      <div className="flex border-b border-slate-200">
-        <button
-          onClick={() => setActiveTab('sites')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'sites'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          Site Master
-        </button>
-        <button
-          onClick={() => setActiveTab('warehouses')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'warehouses'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          Warehouse Master
-        </button>
-        <button
-          onClick={() => setActiveTab('userScope')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'userScope'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          User Access Scope
-        </button>
-        <button
-          onClick={() => setActiveTab('auditLog')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px ${
-            activeTab === 'auditLog'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          Activity & Audit Log
-        </button>
-      </div>
-
-      {/* SEARCH AND CONTROL BAR */}
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search by name/code..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-64 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none transition focus:border-blue-500 shadow-2xs"
-          />
+    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
+      {/* INAPP TOPBAR & PAGE TITLE */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div>
+          <div className="flex items-center space-x-2 mb-1">
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-orange-500 text-white rounded-md">
+              InApp Master Network
+            </span>
+            <span className="text-xs text-slate-500 font-medium">● Sites & Hierarchy Governance</span>
+          </div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Network & Sites Master</h1>
+          <p className="text-xs text-slate-500 font-normal">Manage Plant Sites, Warehouse Depots, and User Access Scope.</p>
         </div>
 
         <div className="flex items-center space-x-2">
           {activeTab === 'sites' && (
             <button
               onClick={() => setShowAddSiteModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <i className="ti ti-plus fs-5"></i>
               <span>Add Site</span>
             </button>
           )}
@@ -275,47 +196,100 @@ const NetworkAndSites = () => {
           {activeTab === 'warehouses' && (
             <button
               onClick={() => setShowAddWarehouseModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <i className="ti ti-plus fs-5"></i>
               <span>Add Warehouse</span>
-            </button>
-          )}
-
-          {activeTab === 'userScope' && (
-            <button
-              onClick={() => setShowAddUserModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add User</span>
             </button>
           )}
 
           <button
             onClick={fetchData}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs rounded-lg shadow-2xs transition-colors"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
-            <span>Select Options</span>
+            <i className={`ti ti-refresh fs-5 ${loading ? 'animate-spin' : ''}`}></i>
+            <span>Refresh</span>
           </button>
         </div>
       </div>
 
       {/* SYSTEM NOTICE */}
       {systemNotice && (
-        <div className="p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-lg flex items-center justify-between text-xs font-semibold">
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs font-medium">
           <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <i className="ti ti-circle-check fs-4 text-emerald-600"></i>
             <span><strong>{systemNotice.title}:</strong> {systemNotice.message}</span>
           </div>
-          <button onClick={() => setSystemNotice(null)} className="font-bold underline text-slate-600">Dismiss</button>
+          <button onClick={() => setSystemNotice(null)} className="font-bold underline text-emerald-700">Dismiss</button>
         </div>
       )}
 
+      {/* INAPP TEMPLATE STYLED TOP UNDERLINE TABS WITH TABLER ICONS */}
+      <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl">
+        <button
+          onClick={() => setActiveTab('sites')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'sites'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <i className="ti ti-building fs-5"></i>
+          <span>Site Master</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('warehouses')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'warehouses'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <i className="ti ti-home-2 fs-5"></i>
+          <span>Warehouse Master</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('userScope')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'userScope'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <i className="ti ti-user-check fs-5"></i>
+          <span>User Access Scope</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('auditLog')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'auditLog'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <i className="ti ti-history fs-5"></i>
+          <span>Activity & Audit Log</span>
+        </button>
+      </div>
+
+      {/* CONTROL SEARCH BAR */}
+      <div className="bg-white px-4 py-2 border-x border-slate-200 flex items-center justify-between gap-3">
+        <input
+          type="text"
+          placeholder="Search locations/users..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-64 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none transition focus:border-orange-500 shadow-2xs font-normal"
+        />
+
+        <div className="flex items-center space-x-2 text-xs font-semibold text-slate-600">
+          <span>Showing {sites.length} Sites, {warehouses.length} Warehouses</span>
+        </div>
+      </div>
+
       {/* TAB 1: SITE MASTER TABLE */}
       {activeTab === 'sites' && (
-        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
@@ -374,46 +348,16 @@ const NetworkAndSites = () => {
 
       {/* TAB 2: WAREHOUSE MASTER TABLE */}
       {activeTab === 'warehouses' && (
-        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>WAREHOUSE NAME</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>CODE</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>PARENT SITE</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>CATEGORY</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>SUB-CATEGORY</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>STATUS</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
+                <th className="py-2.5 px-3.5">WAREHOUSE NAME</th>
+                <th className="py-2.5 px-3.5">CODE</th>
+                <th className="py-2.5 px-3.5">PARENT SITE</th>
+                <th className="py-2.5 px-3.5">CATEGORY</th>
+                <th className="py-2.5 px-3.5">SUB-CATEGORY</th>
+                <th className="py-2.5 px-3.5">STATUS</th>
                 <th className="py-2.5 px-3.5">DESCRIPTION</th>
               </tr>
             </thead>
@@ -440,7 +384,7 @@ const NetworkAndSites = () => {
 
       {/* TAB 3: USER ACCESS SCOPE TABLE */}
       {activeTab === 'userScope' && (
-        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
@@ -474,9 +418,9 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* TAB 4: AUDIT LOG HISTORY TABLE */}
+      {/* TAB 4: AUDIT LOG TABLE */}
       {activeTab === 'auditLog' && (
-        <div className="bg-white border border-slate-200/90 rounded-lg overflow-hidden shadow-2xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
@@ -526,7 +470,7 @@ const NetworkAndSites = () => {
             </div>
             <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
               <button type="button" onClick={() => setShowAddSiteModal(false)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
-              <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Site</button>
+              <button type="submit" className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Site</button>
             </div>
           </form>
         </div>
