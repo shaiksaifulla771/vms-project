@@ -13,12 +13,22 @@ const AuditLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'APPROVE', 'REJECT', 'VIEW', 'EXPORT', 'LOGIN', 'LOGOUT', 'BULK_IMPORT', 'EXECUTE', 'SEND', 'QUEUE', 'RETRY', 'ENABLE', 'DISABLE', 'CHECK_IN', 'CHECK_OUT']
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'APPROVE', 'REJECT', 'VIEW', 'EXPORT', 'LOGIN', 'LOGOUT', 'BULK_IMPORT', 'EXECUTE', 'SEND', 'QUEUE', 'RETRY', 'ENABLE', 'DISABLE', 'CHECK_IN', 'CHECK_OUT', 'DEACTIVATE', 'REACTIVATE', 'TRANSFER_SITE', 'ACCESS_CHANGE', 'ROLE_CHANGE']
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  userName: String,
+  role: String,
+  module: { type: String, default: 'General' },
+  result: { type: String, enum: ['Success', 'Failure'], default: 'Success' },
+  siteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Site' },
+  warehouseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
+  locationName: String,
+  reason: String,
+  previousValue: mongoose.Schema.Types.Mixed,
+  newValue: mongoose.Schema.Types.Mixed,
   changes: {
     type: mongoose.Schema.Types.Mixed, // Stores the true before/after diff payload
     required: true

@@ -52,6 +52,7 @@ const UserSchema = new mongoose.Schema({
     default: Date.now,
   },
   siteIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Site' }],
+  warehouseIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }],
   fieldSecurityLevel: { type: String, enum: ['Public', 'Internal', 'Confidential', 'Restricted'], default: 'Internal' },
   refreshTokenHash: { type: String, select: false },
   tokenVersion: { type: Number, default: 0 },
@@ -59,11 +60,17 @@ const UserSchema = new mongoose.Schema({
   mfaSecret: { type: String, select: false },
   lastLoginAt: Date,
   lastLoginIp: String,
+  lastActivityAt: { type: Date, default: Date.now },
+  lastActivityIp: String,
+  lastActivityUserAgent: String,
 });
 
 // Encrypt password before saving
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
+    return next();
+  }
+  if (this.password && (this.password.startsWith('$2a$') || this.password.startsWith('$2b$'))) {
     return next();
   }
   const salt = await bcrypt.genSalt(10);

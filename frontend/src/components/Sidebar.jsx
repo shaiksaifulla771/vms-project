@@ -21,21 +21,22 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
 
   // Navigation Blueprint (Network & Sites directly below Dashboard)
   const menuItems = [
-    { id: 'sites', name: '1. Network & Sites', icon: Building2 },
-    { id: 'dashboard', name: '2. Dashboard', icon: LayoutDashboard },
-    { id: 'vms', name: '3. VMS Workbench', icon: ShieldCheck },
-    { id: 'masters', name: '4. Master Data', icon: Database },
-    { id: 'inventory', name: '5. Inventory', icon: Boxes },
-    { id: 'planning', name: '6. MRP & Planning', icon: Cpu },
-    { id: 'scheduling', name: '7. Scheduling', icon: CalendarClock },
-    { id: 'production', name: '8. Production', icon: Factory },
-    { id: 'purchasing', name: '9. Procurement', icon: ShoppingBag },
-    { id: 'workflows', name: '10. Workflow Engine', icon: CalendarClock },
-    { id: 'email', name: '11. Email Templates', icon: BarChart3 },
-    { id: 'plugins', name: '12. Plugins & MCP', icon: Settings },
-    { id: 'quality', name: '13. Quality Control', icon: ShieldCheck },
-    { id: 'reports', name: '14. Costing & Reports', icon: BarChart3 },
-    { id: 'settings', name: '15. Governance & Audit', icon: Settings }
+    { id: 'dashboard', name: '1. Admin Control Center', icon: LayoutDashboard },
+    { id: 'sites', name: '2. Network & Sites', icon: Building2 },
+    { id: 'users-access', name: '3. Users & Scope Access', icon: ShieldCheck },
+    { id: 'vms', name: '4. VMS Workbench', icon: ShieldCheck },
+    { id: 'masters', name: '5. Master Data', icon: Database },
+    { id: 'inventory', name: '6. Inventory', icon: Boxes },
+    { id: 'planning', name: '7. MRP & Planning', icon: Cpu },
+    { id: 'scheduling', name: '8. Scheduling', icon: CalendarClock },
+    { id: 'production', name: '9. Production', icon: Factory },
+    { id: 'purchasing', name: '10. Procurement', icon: ShoppingBag },
+    { id: 'workflows', name: '11. Workflow Engine', icon: CalendarClock },
+    { id: 'email', name: '12. Email Templates', icon: BarChart3 },
+    { id: 'plugins', name: '13. Plugins & MCP', icon: Settings },
+    { id: 'quality', name: '14. Quality Control', icon: ShieldCheck },
+    { id: 'reports', name: '15. Costing & Reports', icon: BarChart3 },
+    { id: 'settings', name: '16. Activity & Audit Trail', icon: Settings }
   ];
 
   const handleSelectModule = (id) => {

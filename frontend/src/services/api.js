@@ -1,12 +1,9 @@
 import axios from 'axios';
 
-// Valid 365-day Admin JWT token for instant preview fallback
-const PREVIEW_FALLBACK_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzk5OTY2ODI4M2JiNzYzMjFkYjNkMyIsInRva2VuVmVyc2lvbiI6MCwiaWF0IjoxNzg2MzYzNzAyLCJleHAiOjE4MTc4OTk3MDJ9.4YT4znebv2Y82viwoT5RKqvBUrS1KxQM3R1Hki3AxQ0";
-
-let memoryToken = PREVIEW_FALLBACK_TOKEN;
+let memoryToken = null;
 
 export const setToken = (token) => {
-  memoryToken = token || PREVIEW_FALLBACK_TOKEN;
+  memoryToken = token || null;
   if (token) {
     try { sessionStorage.setItem('vms_access_token', token); } catch (e) {}
     try { localStorage.setItem('vms_access_token', token); } catch (e) {}
@@ -25,7 +22,7 @@ export const getToken = () => {
       return stored;
     }
   } catch (e) {}
-  return PREVIEW_FALLBACK_TOKEN;
+  return null;
 };
 
 const api = axios.create({
@@ -118,15 +115,9 @@ api.interceptors.response.use(
         // Retry the original request
         return api(originalRequest);
       } catch (refreshError) {
-        setToken(PREVIEW_FALLBACK_TOKEN);
-        processQueue(null, PREVIEW_FALLBACK_TOKEN);
-
-        if (originalRequest.headers && typeof originalRequest.headers.set === 'function') {
-          originalRequest.headers.set('Authorization', `Bearer ${PREVIEW_FALLBACK_TOKEN}`);
-        }
-        originalRequest.headers['Authorization'] = `Bearer ${PREVIEW_FALLBACK_TOKEN}`;
-        originalRequest.headers.Authorization = `Bearer ${PREVIEW_FALLBACK_TOKEN}`;
-        return api(originalRequest);
+        setToken(null);
+        processQueue(refreshError, null);
+        return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
       }

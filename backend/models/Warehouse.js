@@ -43,6 +43,29 @@ const WarehouseSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  deactivatedAt: {
+    type: Date,
+    default: null,
+  },
+  deactivatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  deactivationReason: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  siteTransferHistory: [
+    {
+      previousSiteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Site' },
+      newSiteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Site' },
+      transferredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      transferredAt: { type: Date, default: Date.now },
+      reason: { type: String, required: true },
+    },
+  ],
   createdAt: {
     type: Date,
     default: Date.now,

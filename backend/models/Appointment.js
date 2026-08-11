@@ -11,8 +11,8 @@ const AppointmentSchema = new mongoose.Schema({
   purpose: { type: String, required: true },
   status: {
     type: String,
-    enum: ['Draft', 'Pending Approval', 'Approved', 'Rejected', 'Completed', 'Cancelled'],
-    default: 'Pending Approval',
+    enum: ['DRAFT', 'REQUESTED', 'APPROVED', 'SCHEDULED', 'EXPECTED', 'CHECKED_IN', 'IN_VISIT', 'CHECKED_OUT', 'RESCHEDULED', 'REJECTED', 'NO_SHOW', 'CANCELLED'],
+    default: 'REQUESTED',
     index: true
   },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

@@ -5,9 +5,28 @@ const emailTemplateService = require('./emailTemplateService');
 const auditService = require('./auditService');
 const logger = require('../utils/logger');
 
+let nodemailer = null;
+try {
+  nodemailer = require('nodemailer');
+} catch (err) {
+  nodemailer = null;
+}
+
 class EmailService {
-  constructor() {
-    this.provider = process.env.EMAIL_PROVIDER || 'console'; // 'console' | 'smtp'
+  getProvider() {
+    return process.env.EMAIL_PROVIDER || 'console';
+  }
+
+  getSmtpCredentials() {
+    return {
+      user: process.env.EMAIL_USER || process.env.EMAIL_USERNAME,
+      pass: process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD
+    };
+  }
+
+  isSmtpConfigured() {
+    const { user, pass } = this.getSmtpCredentials();
+    return Boolean(process.env.EMAIL_HOST && process.env.EMAIL_PORT && user && pass);
   }
 
   /**
@@ -15,20 +34,51 @@ class EmailService {
    */
   async sendEmail(options) {
     const { recipient, cc, bcc, subject, htmlBody, textBody, templateCode, metadata, userId } = options;
+    const provider = this.getProvider();
 
-    logger.info('EmailService', `Dispatching email to [${recipient}] with subject: "${subject}" via [${this.provider}] provider`);
+    logger.info('EmailService', `Dispatching email to [${recipient}] with subject: "${subject}" via [${provider}] provider`);
 
     let status = 'Sent';
     let errorMsg = null;
     let messageId = `MSG-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     try {
-      if (this.provider === 'smtp' && process.env.EMAIL_HOST) {
-        // SMTP dispatch integration spot if configured
+      if (provider === 'smtp') {
+        if (!nodemailer) {
+          throw new Error('SMTP email requires the nodemailer package to be installed');
+        }
+
+        if (!this.isSmtpConfigured()) {
+          throw new Error('SMTP email is not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER/EMAIL_USERNAME, and EMAIL_PASS/EMAIL_PASSWORD.');
+        }
+
+        const { user: emailUser, pass: emailPass } = this.getSmtpCredentials();
+
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: Number(process.env.EMAIL_PORT || 587),
+          secure: process.env.EMAIL_SECURE === 'true',
+          auth: emailUser && emailPass ? {
+            user: emailUser,
+            pass: emailPass
+          } : undefined
+        });
+
+        const info = await transporter.sendMail({
+          from: process.env.EMAIL_FROM || emailUser || 'no-reply@vendoros.local',
+          to: recipient,
+          cc,
+          bcc,
+          subject,
+          html: htmlBody,
+          text: textBody
+        });
+
+        messageId = info.messageId || messageId;
         logger.info('EmailService', `SMTP Email dispatched to ${recipient}`);
       } else {
         // Console / Mock Dev Provider
-        logger.info('EmailService', `[DEV MOCK EMAIL DISPATCH] To: ${recipient} | Subject: ${subject}`);
+        logger.info('EmailService', `[DEV MOCK EMAIL DISPATCH] To: ${recipient} | Subject: ${subject} | Body: ${textBody || htmlBody || ''}`);
       }
     } catch (err) {
       status = 'Failed';
@@ -44,7 +94,7 @@ class EmailService {
       sentAt: new Date(),
       messageId,
       error: errorMsg,
-      metadata: metadata || {}
+      metadata: { ...(metadata || {}), provider }
     });
 
     if (userId) {

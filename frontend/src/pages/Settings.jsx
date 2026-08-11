@@ -1,12 +1,48 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Badge } from '../components/ui/Badge';
-import { Settings, Shield, ShieldCheck, UserCheck, ToggleLeft, Database, Info } from 'lucide-react';
+import api from '../services/api';
+import { Settings, Shield, UserCheck, Database, Info, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 
 const SettingsPage = () => {
   const { user } = useAuth();
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [requestMessage, setRequestMessage] = useState('');
+  const [requestError, setRequestError] = useState('');
+
+  const loadPendingUsers = async () => {
+    if (user?.role !== 'Admin') return;
+    setLoadingRequests(true);
+    setRequestError('');
+    try {
+      const res = await api.get('/users?status=Pending');
+      setPendingUsers(res.data.data || []);
+    } catch (err) {
+      setRequestError(err.response?.data?.error || err.response?.data?.message || 'Failed to load access requests');
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPendingUsers();
+  }, [user?.role]);
+
+  const handleAccessDecision = async (id, decision) => {
+    setRequestMessage('');
+    setRequestError('');
+    try {
+      const endpoint = decision === 'approve' ? `/users/${id}/approve` : `/users/${id}/reject`;
+      const res = await api.put(endpoint);
+      setRequestMessage(res.data.message || `User ${decision}d`);
+      await loadPendingUsers();
+    } catch (err) {
+      setRequestError(err.response?.data?.error || err.response?.data?.message || `Failed to ${decision} user`);
+    }
+  };
 
   const permissions = [
     { module: 'Material Registry', description: 'Create and edit material master definitions', admin: true, manager: true },
@@ -93,6 +129,67 @@ const SettingsPage = () => {
       </div>
 
       {/* Permissions matrix */}
+      {user?.role === 'Admin' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-2 text-blue-600">
+                  <UserCheck className="h-5 w-5" />
+                  <CardTitle>Access Requests</CardTitle>
+                </div>
+                <CardDescription>Review verified users waiting for Admin approval</CardDescription>
+              </div>
+              <button onClick={loadPendingUsers} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                <RefreshCw className={`h-4 w-4 ${loadingRequests ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {requestMessage && <div className="mx-4 mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{requestMessage}</div>}
+            {requestError && <div className="mx-4 mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{requestError}</div>}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Requested Role</TableHead>
+                  <TableHead>Requested At</TableHead>
+                  <TableHead className="text-right">Decision</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-sm font-semibold text-slate-400">No pending access requests.</TableCell>
+                  </TableRow>
+                ) : pendingUsers.map((pendingUser) => (
+                  <TableRow key={pendingUser._id}>
+                    <TableCell className="font-bold text-slate-800">{pendingUser.username}</TableCell>
+                    <TableCell className="font-mono text-xs text-slate-500">{pendingUser.email}</TableCell>
+                    <TableCell><Badge variant="warning">{pendingUser.requestedRole || 'Viewer'}</Badge></TableCell>
+                    <TableCell className="text-xs text-slate-500">{new Date(pendingUser.createdAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => handleAccessDecision(pendingUser._id, 'approve')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Approve
+                        </button>
+                        <button onClick={() => handleAccessDecision(pendingUser._id, 'reject')} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700">
+                          <XCircle className="h-3.5 w-3.5" />
+                          Reject
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex items-center space-x-2 text-blue-600">

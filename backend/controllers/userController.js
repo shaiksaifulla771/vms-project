@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const emailService = require('../services/emailService');
 
 // @desc    Get all users (or filter by status/role)
 // @route   GET /api/users
@@ -53,7 +54,7 @@ exports.approveUser = async (req, res, next) => {
     const newRole = user.requestedRole || 'Viewer';
     
     // Explicitly validate against the enum to prevent schema errors
-    const validRoles = ['Admin', 'Inventory', 'Production', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor'];
+    const validRoles = ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'];
     if (!validRoles.includes(newRole)) {
        return res.status(400).json({ success: false, error: 'Invalid requested role' });
     }
@@ -63,6 +64,24 @@ exports.approveUser = async (req, res, next) => {
     user.requestedRole = null; // Clear the request
 
     await user.save();
+
+    await emailService.sendEmail({
+      recipient: user.email,
+      subject: 'Your VendorOS VMS access has been approved',
+      textBody: `Hello ${user.username},\n\nYour VendorOS VMS access request has been approved. You can now log in with your registered email and password.\n\nAssigned role: ${newRole}\n\nRegards,\nVendorOS VMS Administration`,
+      htmlBody: `
+        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
+          <h2>Access approved</h2>
+          <p>Hello ${user.username},</p>
+          <p>Your VendorOS VMS access request has been approved.</p>
+          <p><strong>Assigned role:</strong> ${newRole}</p>
+          <p>You can now log in with your registered email and password.</p>
+          <p>Regards,<br/>VendorOS VMS Administration</p>
+        </div>
+      `,
+      templateCode: 'AUTH_ACCESS_APPROVED',
+      metadata: { userId: user._id, role: newRole }
+    });
 
     res.status(200).json({
       success: true,
@@ -100,6 +119,23 @@ exports.rejectUser = async (req, res, next) => {
     user.requestedRole = null; 
 
     await user.save();
+
+    await emailService.sendEmail({
+      recipient: user.email,
+      subject: 'VendorOS VMS access request update',
+      textBody: `Hello ${user.username},\n\nYour VendorOS VMS access request was not approved at this time. Please contact your administrator if you believe this was a mistake.\n\nRegards,\nVendorOS VMS Administration`,
+      htmlBody: `
+        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
+          <h2>Access request update</h2>
+          <p>Hello ${user.username},</p>
+          <p>Your VendorOS VMS access request was not approved at this time.</p>
+          <p>Please contact your administrator if you believe this was a mistake.</p>
+          <p>Regards,<br/>VendorOS VMS Administration</p>
+        </div>
+      `,
+      templateCode: 'AUTH_ACCESS_REJECTED',
+      metadata: { userId: user._id }
+    });
 
     res.status(200).json({
       success: true,

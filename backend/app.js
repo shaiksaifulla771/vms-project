@@ -108,7 +108,11 @@ app.use(mongoSanitize());
 
 
 
+// Import location enforcement middleware
+const { enforceActiveLocation } = require('./middleware/locationEnforcement');
+
 // Mount routers (already protected by the global /api middleware chain)
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/sites', require('./routes/siteRoutes'));
 app.use('/api/warehouses', require('./routes/warehouseRoutes'));
@@ -117,10 +121,10 @@ app.use('/api/vendor-masters', require('./routes/vendorMasterRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/mpns', require('./routes/mpnRoutes'));
 app.use('/api/boms', require('./routes/bomRoutes'));
-app.use('/api/inventory', require('./routes/inventoryRoutes'));
+app.use('/api/inventory', enforceActiveLocation, require('./routes/inventoryRoutes'));
 app.use('/api/mrp', require('./routes/mrpRoutes'));
 app.use('/api/purchases', require('./routes/purchaseRoutes'));
-app.use('/api/productions', require('./routes/productionRoutes'));
+app.use('/api/productions', enforceActiveLocation, require('./routes/productionRoutes'));
 app.use('/api/production-plans', require('./routes/productionPlanRoutes'));
 app.use('/api/quality', require('./routes/qualityRoutes'));
 app.use('/api/qc', require('./routes/qcRoutes'));
@@ -128,10 +132,10 @@ app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/approvals', require('./routes/approvalRoutes'));
 app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/warehouse-materials', require('./routes/warehouseMaterialRoutes'));
-app.use('/api/transfers', require('./routes/stockTransferRoutes'));
+app.use('/api/transfers', enforceActiveLocation, require('./routes/stockTransferRoutes'));
 app.use('/api/imports', require('./routes/imports'));
 app.use('/api/visitors', vmsVisitorLimiter, require('./routes/visitorRoutes'));
-app.use('/api/appointments', vmsVisitorLimiter, require('./routes/appointmentRoutes'));
+app.use('/api/appointments', vmsVisitorLimiter, enforceActiveLocation, require('./routes/appointmentRoutes'));
 app.use('/api/email', vmsEmailLimiter, require('./routes/emailRoutes'));
 app.use('/api/workflows', require('./routes/workflowRoutes'));
 app.use('/api/plugins', require('./routes/pluginRoutes'));

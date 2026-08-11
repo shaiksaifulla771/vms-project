@@ -11,8 +11,8 @@ const VisitorSchema = new mongoose.Schema({
   siteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Site', required: true, index: true },
   status: {
     type: String,
-    enum: ['Registered', 'Pending Approval', 'Approved', 'Rejected', 'Checked In', 'Checked Out', 'Cancelled'],
-    default: 'Registered',
+    enum: ['REGISTERED', 'REQUESTED', 'APPROVED', 'SCHEDULED', 'EXPECTED', 'CHECKED_IN', 'IN_VISIT', 'CHECKED_OUT', 'REJECTED', 'NO_SHOW', 'CANCELLED'],
+    default: 'REGISTERED',
     index: true
   },
   checkInTime: { type: Date },

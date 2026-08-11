@@ -21,6 +21,7 @@ class VisitorService {
       ...data,
       hostEmployeeId,
       visitorCode,
+      status: data.status || 'REGISTERED',
       createdBy: userId || hostEmployeeId
     });
 
@@ -47,7 +48,7 @@ class VisitorService {
     const visitor = await Visitor.findById(visitorId).populate('hostEmployeeId', 'username email');
     if (!visitor) throw new Error('Visitor not found');
 
-    visitor.status = 'Checked In';
+    visitor.status = 'IN_VISIT';
     visitor.checkInTime = new Date();
     await visitor.save();
 
@@ -70,7 +71,7 @@ class VisitorService {
     const visitor = await Visitor.findById(visitorId).populate('hostEmployeeId', 'username email');
     if (!visitor) throw new Error('Visitor not found');
 
-    visitor.status = 'Checked Out';
+    visitor.status = 'CHECKED_OUT';
     visitor.checkOutTime = new Date();
     await visitor.save();
 

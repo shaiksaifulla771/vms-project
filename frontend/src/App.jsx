@@ -25,6 +25,11 @@ import EmailTemplates from './pages/EmailTemplates';
 import Workflows from './pages/Workflows';
 import Plugins from './pages/Plugins';
 
+import AdminControlCenter from './pages/admin/AdminControlCenter';
+import NetworkAndSites from './pages/admin/NetworkAndSites';
+import AuditAndActivity from './pages/admin/AuditAndActivity';
+import UsersAndAccessScope from './pages/admin/UsersAndAccessScope';
+
 // New Routed BOM Module
 import BOMRoutes from './pages/bom/BOMRoutes';
 import ProductionRoutes from './pages/production/ProductionRoutes';
@@ -87,9 +92,10 @@ const AppContent = () => {
           <div className="w-full h-full">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" />} />
-              <Route path="/dashboard/*" element={<Dashboard />} />
+              <Route path="/dashboard/*" element={<AdminControlCenter />} />
+              <Route path="/sites/*" element={<NetworkAndSites />} />
+              <Route path="/users-access/*" element={<UsersAndAccessScope />} />
               <Route path="/vms/*" element={<VMSWorkbench />} />
-              <Route path="/sites/*" element={<Sites />} />
               <Route path="/masters/*" element={<Masters />} />
               <Route path="/mrp/*" element={<MRP />} />
               <Route path="/warehouse/*" element={<Warehouse />} />
@@ -104,8 +110,8 @@ const AppContent = () => {
               <Route path="/plugins/*" element={<Plugins />} />
               <Route path="/quality/*" element={<Quality />} />
               <Route path="/reports/*" element={<Reports />} />
-              <Route path="/settings/*" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/masters" />} />
+              <Route path="/settings/*" element={<AuditAndActivity />} />
+              <Route path="*" element={<Navigate to="/dashboard" />} />
             </Routes>
           </div>
         </main>
