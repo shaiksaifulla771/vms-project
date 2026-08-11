@@ -7,7 +7,6 @@ import {
   BadgeCheck,
   Building2,
   Check,
-  Factory,
   LockKeyhole,
   Mail,
   ShieldAlert,
@@ -16,6 +15,36 @@ import {
 } from 'lucide-react';
 
 const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100';
+
+// 3D Isometric Emblem Logo for Xperte
+const Xperte3DLogo = ({ size = "h-11 w-11" }) => (
+  <div className={`relative flex items-center justify-center ${size} rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-600 to-cyan-400 p-2.5 shadow-[0_10px_25px_rgba(37,99,235,0.5),inset_0_2px_4px_rgba(255,255,255,0.4)] border border-white/20 transform hover:scale-105 transition-all duration-300`}>
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]">
+      {/* 3D Cube Top Face */}
+      <path d="M24 4L42 14L24 24L6 14L24 4Z" fill="url(#topGrad)" />
+      {/* 3D Cube Left Face */}
+      <path d="M6 14L24 24V44L6 34V14Z" fill="url(#leftGrad)" />
+      {/* 3D Cube Right Face */}
+      <path d="M24 24L42 14V34L24 44V24Z" fill="url(#rightGrad)" />
+      {/* Inner Glowing Emblem lines */}
+      <path d="M16 16L32 32M32 16L16 32" stroke="#FFFFFF" strokeWidth="4.5" strokeLinecap="round" opacity="0.95" />
+      <defs>
+        <linearGradient id="topGrad" x1="6" y1="4" x2="42" y2="24" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#60A5FA" />
+          <stop offset="1" stopColor="#3B82F6" />
+        </linearGradient>
+        <linearGradient id="leftGrad" x1="6" y1="14" x2="24" y2="44" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#1D4ED8" />
+          <stop offset="1" stopColor="#1E40AF" />
+        </linearGradient>
+        <linearGradient id="rightGrad" x1="24" y1="14" x2="42" y2="44" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#3B82F6" />
+          <stop offset="1" stopColor="#1D4ED8" />
+        </linearGradient>
+      </defs>
+    </svg>
+  </div>
+);
 
 const Login = () => {
   const { login, register, verifyOtp, setUser } = useAuth();
@@ -158,73 +187,81 @@ const Login = () => {
       <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
         <section className="relative hidden overflow-hidden bg-slate-950 p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(37,99,235,0.28),transparent_42%),radial-gradient(circle_at_80%_18%,rgba(20,184,166,0.22),transparent_30%)]" />
+          
+          {/* 3D XPERTE BRAND HEADER */}
           <div className="relative z-10 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600 shadow-lg shadow-blue-950/40">
-              <Factory className="h-6 w-6" />
-            </div>
+            <Xperte3DLogo size="h-12 w-12" />
             <div>
-              <h1 className="text-lg font-black uppercase tracking-wide">VendorOS VMS</h1>
-              <p className="text-xs font-semibold uppercase tracking-widest text-blue-200">Enterprise operations suite</p>
+              <h1 className="text-xl font-black uppercase tracking-wider bg-gradient-to-r from-white via-slate-100 to-blue-300 bg-clip-text text-transparent">
+                Xperte
+              </h1>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Enterprise Operations Suite</p>
             </div>
           </div>
 
+          {/* 2-LINE SHORT & SIMPLE PERFORMANCE DESCRIPTION */}
           <div className="relative z-10 max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wider text-blue-100">
-              <ShieldCheck className="h-4 w-4" />
-              Secured access gateway
+              <ShieldCheck className="h-4 w-4 text-cyan-400" />
+              Secured Access Gateway
             </div>
-            <h2 className="text-4xl font-black leading-tight tracking-normal">Control vendors, sites, materials, production, and approvals from one governed workspace.</h2>
+            
+            {/* EXACT 2 SINGLE LINES AS REQUESTED */}
+            <div className="space-y-2 text-2xl lg:text-3xl font-black leading-snug tracking-tight text-white">
+              <p>Unified enterprise hub to control vendors, multi-site networks, and inventory.</p>
+              <p className="text-blue-300">Streamline production, location scope access, and audit approvals in real time.</p>
+            </div>
+
             <div className="mt-8 grid grid-cols-3 gap-3">
               {[
-                ['15+', 'ERP modules'],
-                ['JWT', 'Session security'],
-                ['RBAC', 'Role controls']
+                ['15+', 'ERP MODULES'],
+                ['JWT', 'SESSION SECURITY'],
+                ['RBAC', 'ROLE CONTROLS']
               ].map(([value, label]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/10 p-4">
-                  <p className="text-2xl font-black">{value}</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-300">{label}</p>
+                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xs">
+                  <p className="text-2xl font-black text-white">{value}</p>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="relative z-10 grid grid-cols-3 gap-3 text-xs font-semibold text-slate-300">
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-300" />OTP verification</span>
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-300" />Admin approval</span>
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-300" />Audit-ready</span>
+            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />OTP verification</span>
+            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />Admin approval</span>
+            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />Audit-ready</span>
           </div>
         </section>
 
         <main className="flex items-center justify-center px-5 py-10 sm:px-8">
           <div className="w-full max-w-md">
+            {/* Mobile Header with 3D Xperte Logo */}
             <div className="mb-8 flex items-center gap-3 lg:hidden">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
-                <Factory className="h-5 w-5" />
-              </div>
+              <Xperte3DLogo size="h-10 w-10" />
               <div>
-                <h1 className="text-base font-black uppercase tracking-wide">VendorOS VMS</h1>
-                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Enterprise operations</p>
+                <h1 className="text-lg font-black uppercase tracking-wider text-slate-900">Xperte</h1>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Enterprise Operations</p>
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60">
               <div className="mb-6">
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-md">
                   {activeTab === 'signup' ? <UserPlus className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
                 </div>
-                <h2 className="text-2xl font-black tracking-normal">Secure sign in</h2>
-                <p className="mt-1 text-sm text-slate-500">Use an approved account to enter the VMS workspace.</p>
+                <h2 className="text-2xl font-black tracking-tight">Secure sign in</h2>
+                <p className="mt-1 text-sm text-slate-500 font-medium">Use an approved account to enter the Xperte workspace.</p>
               </div>
 
               {successMsg && (
-                <div className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
+                <div className="mb-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
                   <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{successMsg}</span>
                 </div>
               )}
 
               {errors.form && (
-                <div className="mb-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">
+                <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{errors.form}</span>
                 </div>
@@ -246,9 +283,9 @@ const Login = () => {
                 </form>
               ) : (
                 <>
-                  <div className="mb-5 grid grid-cols-2 rounded-lg bg-slate-100 p-1">
-                    <button type="button" onClick={() => switchTab('signin')} className={`rounded-md px-3 py-2 text-sm font-bold transition ${activeTab === 'signin' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Sign in</button>
-                    <button type="button" onClick={() => switchTab('signup')} className={`rounded-md px-3 py-2 text-sm font-bold transition ${activeTab === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Request access</button>
+                  <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+                    <button type="button" onClick={() => switchTab('signin')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signin' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Sign in</button>
+                    <button type="button" onClick={() => switchTab('signup')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Request access</button>
                   </div>
 
                   <form onSubmit={activeTab === 'signin' ? handleSignInSubmit : handleSignUpSubmit} className="space-y-4">
@@ -285,7 +322,7 @@ const Login = () => {
                         </select>
                       </div>
                     )}
-                    <Button type="submit" isLoading={isLoading} className="w-full py-2.5">
+                    <Button type="submit" isLoading={isLoading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold shadow-md">
                       {activeTab === 'signin' ? 'Enter workspace' : 'Submit access request'}
                     </Button>
                   </form>
@@ -307,11 +344,11 @@ const Login = () => {
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3 text-xs font-semibold text-slate-500">
-              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <ShieldCheck className="h-4 w-4 text-blue-600" />
                 JWT sessions
               </div>
-              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <Building2 className="h-4 w-4 text-blue-600" />
                 Role approval
               </div>

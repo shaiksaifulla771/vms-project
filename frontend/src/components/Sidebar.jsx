@@ -56,11 +56,16 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
         {/* Brand logo & close button header */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between min-h-[64px]">
           <div className="flex items-center space-x-3">
-            <div className="bg-blue-600 p-2 rounded-xl text-white shrink-0 shadow-lg shadow-blue-500/20">
-              <Factory className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 p-1.5 shadow-lg shadow-blue-500/30 border border-white/20">
+              <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+                <path d="M24 4L42 14L24 24L6 14L24 4Z" fill="#60A5FA" />
+                <path d="M6 14L24 24V44L6 34V14Z" fill="#1D4ED8" />
+                <path d="M24 24L42 14V34L24 44V24Z" fill="#3B82F6" />
+                <path d="M16 16L32 32M32 16L16 32" stroke="#FFFFFF" strokeWidth="4.5" strokeLinecap="round" />
+              </svg>
             </div>
             <div>
-              <h1 className="text-sm font-black text-white tracking-wider leading-tight uppercase">VendorOS</h1>
+              <h1 className="text-sm font-black text-white tracking-wider leading-tight uppercase">Xperte</h1>
               <span className="text-[9px] text-blue-400 font-bold tracking-widest uppercase">Enterprise ERP</span>
             </div>
           </div>
