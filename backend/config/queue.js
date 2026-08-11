@@ -1,26 +1,39 @@
-const { Queue, Worker, QueueEvents } = require('bullmq');
-const Redis = require('ioredis-mock');
+const { Queue } = require('bullmq');
 
-// Shared Redis connection for BullMQ (Mocked)
-const redisOptions = {
-  port: process.env.REDIS_PORT || 6379,
-  host: process.env.REDIS_HOST || '127.0.0.1',
-  password: process.env.REDIS_PASSWORD || undefined,
-  maxRetriesPerRequest: null // Required by BullMQ
-};
+// Only create real Redis connections when REDIS_HOST or REDIS_URL is set
+const hasRealRedis = process.env.REDIS_URL || process.env.REDIS_HOST;
 
-// Use provided REDIS_URL if available, otherwise fallback to options
-const connection = new Redis(redisOptions);
+let connection = null;
+let importQueue = null;
+let commitQueue = null;
 
-// Define Queue names
 const QUEUES = {
   IMPORT: 'import-queue',
   COMMIT: 'commit-queue'
 };
 
-// Instantiate Queues
-const importQueue = new Queue(QUEUES.IMPORT, { connection });
-const commitQueue = new Queue(QUEUES.COMMIT, { connection });
+if (hasRealRedis) {
+  try {
+    const Redis = require('ioredis');
+    const redisOptions = {
+      port: process.env.REDIS_PORT || 6379,
+      host: process.env.REDIS_HOST || '127.0.0.1',
+      password: process.env.REDIS_PASSWORD || undefined,
+      maxRetriesPerRequest: null
+    };
+    connection = process.env.REDIS_URL
+      ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
+      : new Redis(redisOptions);
+
+    importQueue = new Queue(QUEUES.IMPORT, { connection });
+    commitQueue = new Queue(QUEUES.COMMIT, { connection });
+    console.log('[Queue] BullMQ queues initialized with Redis.');
+  } catch (err) {
+    console.warn('[Queue] Failed to connect to Redis:', err.message);
+  }
+} else {
+  console.log('[Queue] No REDIS_HOST/REDIS_URL set. BullMQ queues disabled (in-memory fallback).');
+}
 
 module.exports = {
   connection,

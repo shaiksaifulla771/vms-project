@@ -239,10 +239,10 @@ const Dashboard = () => {
                     {/* Stock Transfers */}
                     {pendingTransfers.map((trf) => (
                       <tr key={trf._id} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-blue-600">{trf.transferNumber}</td>
-                        <td className="p-3 font-bold text-purple-700">Transfer</td>
+                        <td className="p-3 font-mono font-medium text-slate-900">{trf.transferNumber}</td>
+                        <td className="p-3 font-medium text-slate-600">Transfer</td>
                         <td className="p-3 font-bold text-slate-900">{trf.materialId?.name}</td>
-                        <td className="p-3 font-mono text-blue-600">{trf.quantity} {trf.materialId?.unit}</td>
+                        <td className="p-3 font-mono text-slate-900">{trf.quantity} {trf.materialId?.unit}</td>
                         <td className="p-3 text-slate-600">{trf.fromWarehouseId?.name} → {trf.toWarehouseId?.name}</td>
                         <td className="p-3 font-mono text-slate-500">{trf.createdBy?.username || 'User'}</td>
                         <td className="p-3 text-right">
@@ -250,7 +250,7 @@ const Dashboard = () => {
                             size="sm"
                             isLoading={actionLoadingId === trf._id}
                             onClick={() => handleApproveTransfer(trf._id, trf.transferNumber)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
                           >
                             Approve
                           </Button>
@@ -261,12 +261,12 @@ const Dashboard = () => {
                     {/* Stock Adjustments */}
                     {pendingAdjustments.map((adj) => (
                       <tr key={adj._id} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-amber-600">{adj.adjNumber}</td>
-                        <td className="p-3 font-bold text-amber-700">
+                        <td className="p-3 font-mono font-medium text-slate-900">{adj.adjNumber}</td>
+                        <td className="p-3 font-medium text-slate-600">
                           Adjustment ({adj.adjustmentType})
                         </td>
                         <td className="p-3 font-bold text-slate-900">{adj.materialId?.name}</td>
-                        <td className={`p-3 font-mono font-bold ${adj.adjustmentType === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        <td className="p-3 font-mono text-slate-900">
                           {adj.adjustmentType === 'IN' ? '+' : '-'}{adj.quantity}
                         </td>
                         <td className="p-3 text-slate-600">{adj.reason}</td>
@@ -276,7 +276,7 @@ const Dashboard = () => {
                             size="sm"
                             isLoading={actionLoadingId === adj._id}
                             onClick={() => handleApproveAdjustment(adj._id, adj.adjNumber)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
                           >
                             Approve
                           </Button>
@@ -295,10 +295,10 @@ const Dashboard = () => {
                     {/* VMS Appointments */}
                     {pendingAppointments.map((apt) => (
                       <tr key={apt._id} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-emerald-600">{apt.appointmentNumber}</td>
-                        <td className="p-3 font-bold text-emerald-700">Visitor Appointment</td>
+                        <td className="p-3 font-mono font-medium text-slate-900">{apt.appointmentNumber}</td>
+                        <td className="p-3 font-medium text-slate-600">Visitor Appointment</td>
                         <td className="p-3 font-bold text-slate-900">{apt.visitorId?.fullName || apt.visitorName || 'Visitor'}</td>
-                        <td className="p-3 font-mono text-purple-600">1 Person</td>
+                        <td className="p-3 font-mono text-slate-900">1 Person</td>
                         <td className="p-3 text-slate-600">{apt.purpose}</td>
                         <td className="p-3 font-mono text-slate-500">{apt.hostUserId?.username || apt.employeeName || 'Host'}</td>
                         <td className="p-3 text-right space-x-2">
@@ -306,7 +306,7 @@ const Dashboard = () => {
                             size="sm"
                             isLoading={actionLoadingId === apt._id}
                             onClick={() => handleApproveAppointment(apt._id, apt.appointmentNumber)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-3 py-1 rounded-md"
                           >
                             Approve
                           </Button>

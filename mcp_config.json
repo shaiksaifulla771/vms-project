@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "vms-erp-gateway": {
+      "command": "node",
+      "args": [
+        "./tools/mcpServer.js"
+      ],
+      "env": {
+        "MCP_SERVER_URL": "http://localhost:5000/api/mcp",
+        "MCP_AUTH_TOKEN": "super-secret-mcp-token-12345",
+        "NODE_ENV": "development"
+      },
+      "description": "VMS Enterprise ERP Gateway - Visitor, Appointment, Inventory, and Workflow MCP Tools"
+    }
+  }
+}

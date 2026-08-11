@@ -136,6 +136,10 @@ app.use('/api/email', vmsEmailLimiter, require('./routes/emailRoutes'));
 app.use('/api/workflows', require('./routes/workflowRoutes'));
 app.use('/api/plugins', require('./routes/pluginRoutes'));
 app.use('/api/mcp', vmsMcpLimiter, require('./routes/mcpRoutes'));
+app.use('/api/contracts', require('./routes/contractRoutes'));
+app.use('/api/requests', require('./routes/requestRoutes'));
+app.use('/api/performance', require('./routes/performanceRoutes'));
+app.use('/api/chat', require('./routes/chatRoutes'));
 
 // Register VMS Domain Event Handlers
 const { registerVMSEventHandlers } = require('./events/handlers/vmsEventHandlers');

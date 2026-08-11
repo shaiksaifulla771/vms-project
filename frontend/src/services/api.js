@@ -98,8 +98,8 @@ api.interceptors.response.use(
 
       try {
         // Request a new token (cookie is sent automatically)
-        const { data } = await axios.post('/api/auth/refresh', {}, { 
-          baseURL: import.meta.env.VITE_API_URL || '',
+        const { data } = await axios.post('/auth/refresh', {}, { 
+          baseURL: import.meta.env.VITE_API_URL || '/api',
           withCredentials: true 
         });
         
