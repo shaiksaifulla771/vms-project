@@ -13,7 +13,10 @@ import {
   Eye,
   Edit2,
   ShieldAlert,
-  ChevronRight
+  ChevronRight,
+  UserCheck,
+  XCircle,
+  Bell
 } from 'lucide-react';
 
 const DEFAULT_SITES = [
@@ -72,10 +75,29 @@ const DEFAULT_WAREHOUSES = [
 ];
 
 const DEFAULT_USERS = [
-  { _id: 'usr-1', username: 'Shaik Saifulla', email: 'admin@vendoros.com', role: 'Admin', siteIds: [], warehouseIds: [] },
-  { _id: 'usr-2', username: 'Rahul Kumar', email: 'rahul@vendoros.com', role: 'Inventory Manager', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-1', name: 'Main Warehouse' }, { _id: 'wh-2', name: 'Raw Material Warehouse' }] },
-  { _id: 'usr-3', username: 'Priya Sharma', email: 'priya@vendoros.com', role: 'Production Manager', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-3', name: 'Finished Goods Warehouse' }] },
-  { _id: 'usr-4', username: 'Ahmed Khan', email: 'ahmed@vendoros.com', role: 'Planner', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [] }
+  { _id: 'usr-1', username: 'Shaik Saifulla', email: 'admin@vendoros.com', role: 'Admin', status: 'Active', siteIds: [], warehouseIds: [] },
+  { _id: 'usr-2', username: 'Rahul Kumar', email: 'rahul@vendoros.com', role: 'Inventory Manager', status: 'Active', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-1', name: 'Main Warehouse' }, { _id: 'wh-2', name: 'Raw Material Warehouse' }] },
+  { _id: 'usr-3', username: 'Priya Sharma', email: 'priya@vendoros.com', role: 'Production Manager', status: 'Active', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-3', name: 'Finished Goods Warehouse' }] },
+  { _id: 'usr-4', username: 'Ahmed Khan', email: 'ahmed@vendoros.com', role: 'Planner', status: 'Active', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [] }
+];
+
+const DEFAULT_PENDING_REGISTRATIONS = [
+  {
+    _id: 'req-101',
+    username: 'Amit Malhotra',
+    email: 'amit.m@vendoros.com',
+    requestedRole: 'Inventory Manager',
+    proposedSite: 'Hyderabad Plant',
+    registeredAt: new Date(Date.now() - 15 * 60 * 1000).toISOString()
+  },
+  {
+    _id: 'req-102',
+    username: 'Sneha Patel',
+    email: 'sneha.p@vendoros.com',
+    requestedRole: 'QC Inspector',
+    proposedSite: 'Bangalore Plant',
+    registeredAt: new Date(Date.now() - 35 * 60 * 1000).toISOString()
+  }
 ];
 
 const DEFAULT_AUDIT_LOGS = [
@@ -85,12 +107,13 @@ const DEFAULT_AUDIT_LOGS = [
 ];
 
 const NetworkAndSites = () => {
-  const [activeTab, setActiveTab] = useState('hierarchyTree'); // hierarchyTree | sites | warehouses | userScope | auditLog
+  const [activeTab, setActiveTab] = useState('pendingApprovals'); // hierarchyTree | sites | warehouses | userScope | pendingApprovals | auditLog
   const [searchTerm, setSearchTerm] = useState('');
 
   const [sites, setSites] = useState(DEFAULT_SITES);
   const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
   const [users, setUsers] = useState(DEFAULT_USERS);
+  const [pendingRequests, setPendingRequests] = useState(DEFAULT_PENDING_REGISTRATIONS);
   const [auditLogs, setAuditLogs] = useState(DEFAULT_AUDIT_LOGS);
   const [loading, setLoading] = useState(true);
 
@@ -99,11 +122,12 @@ const NetworkAndSites = () => {
   const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [selectedWarehouseDetail, setSelectedWarehouseDetail] = useState(null);
-  const [assignWarehouseModal, setAssignWarehouseModal] = useState(null); // Site object
-  const [transferModal, setTransferModal] = useState(null); // Warehouse object
-  const [unlinkModal, setUnlinkModal] = useState(null); // Warehouse object
-  const [deactivateModal, setDeactivateModal] = useState(null); // Site or Warehouse
+  const [assignWarehouseModal, setAssignWarehouseModal] = useState(null);
+  const [transferModal, setTransferModal] = useState(null);
+  const [unlinkModal, setUnlinkModal] = useState(null);
+  const [deactivateModal, setDeactivateModal] = useState(null);
   const [editUserScopeModal, setEditUserScopeModal] = useState(null);
+  const [approveUserModal, setApproveUserModal] = useState(null); // Pending Request object
 
   const [mandatoryReason, setMandatoryReason] = useState('');
   const [selectedTargetSiteId, setSelectedTargetSiteId] = useState('');
@@ -169,12 +193,38 @@ const NetworkAndSites = () => {
   const handleCreateUser = (e) => {
     e.preventDefault();
     if (!newUser.username || !newUser.email) return;
-    const created = { _id: `usr-${Date.now()}`, username: newUser.username, email: newUser.email, role: newUser.role, siteIds: [], warehouseIds: [] };
+    const created = { _id: `usr-${Date.now()}`, username: newUser.username, email: newUser.email, role: newUser.role, status: 'Active', siteIds: [], warehouseIds: [] };
     setUsers([...users, created]);
     setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'User Scope', locationName: newUser.username, reason: 'Added new system user' }, ...auditLogs]);
     setSystemNotice({ title: 'User Registered', message: `Added user ${newUser.username} successfully.` });
     setShowAddUserModal(false);
     setNewUser({ username: '', email: '', role: 'Inventory Manager' });
+  };
+
+  const handleApproveRegistration = () => {
+    if (!approveUserModal) return;
+    const req = approveUserModal;
+    const approvedUser = {
+      _id: `usr-${Date.now()}`,
+      username: req.username,
+      email: req.email,
+      role: selectedRole,
+      status: 'Active',
+      siteIds: sites.filter(s => selectedSiteIds.includes(s._id)),
+      warehouseIds: warehouses.filter(w => selectedWarehouseIds.includes(w._id))
+    };
+    setUsers([...users, approvedUser]);
+    setPendingRequests(pendingRequests.filter(r => r._id !== req._id));
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'APPROVE_USER', module: 'User Access Scope', locationName: req.username, reason: mandatoryReason || 'Registration approved by Admin' }, ...auditLogs]);
+    setSystemNotice({ title: 'User Registration Approved', message: `Activated account for ${req.username} (${selectedRole}).` });
+    setApproveUserModal(null);
+    setMandatoryReason('');
+  };
+
+  const handleRejectRegistration = (req) => {
+    setPendingRequests(pendingRequests.filter(r => r._id !== req._id));
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'REJECT_USER', module: 'User Access Scope', locationName: req.username, reason: 'Registration declined by Admin' }, ...auditLogs]);
+    setSystemNotice({ title: 'User Registration Declined', message: `Rejected registration for ${req.username}.` });
   };
 
   const handleAssignWarehouseToSite = () => {
@@ -264,10 +314,10 @@ const NetworkAndSites = () => {
             <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-orange-500 text-white rounded-md">
               InApp Master Network
             </span>
-            <span className="text-xs text-slate-500 font-medium">● Sites & Hierarchy Governance</span>
+            <span className="text-xs text-slate-500 font-medium">● User Approvals & Scope Governance</span>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Network & Sites Master</h1>
-          <p className="text-xs text-slate-500 font-normal">Manage Plant Sites, Warehouse Depots, Site-Warehouse Assignments, and User Scope.</p>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Network & User Scope Master</h1>
+          <p className="text-xs text-slate-500 font-normal">Approve user registration requests, manage multi-site scopes, and inspect location hierarchy.</p>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -322,8 +372,25 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* INAPP TEMPLATE STYLED TOP UNDERLINE TABS WITH TABLER ICONS */}
-      <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl">
+      {/* INAPP TEMPLATE STYLED TOP UNDERLINE TABS WITH PENDING APPROVALS BADGE */}
+      <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('pendingApprovals')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'pendingApprovals'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>Pending User Approvals</span>
+          {pendingRequests.length > 0 && (
+            <span className="ml-1 px-2 py-0.5 text-[10px] font-black bg-rose-600 text-white rounded-full">
+              {pendingRequests.length}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={() => setActiveTab('hierarchyTree')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
@@ -335,6 +402,7 @@ const NetworkAndSites = () => {
           <i className="ti ti-git-fork fs-5"></i>
           <span>Site ↔ Warehouse Tree</span>
         </button>
+
         <button
           onClick={() => setActiveTab('sites')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
@@ -346,6 +414,7 @@ const NetworkAndSites = () => {
           <i className="ti ti-building fs-5"></i>
           <span>Site Master</span>
         </button>
+
         <button
           onClick={() => setActiveTab('warehouses')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
@@ -357,6 +426,7 @@ const NetworkAndSites = () => {
           <i className="ti ti-home-2 fs-5"></i>
           <span>Warehouse Master</span>
         </button>
+
         <button
           onClick={() => setActiveTab('userScope')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
@@ -366,8 +436,9 @@ const NetworkAndSites = () => {
           }`}
         >
           <i className="ti ti-user-check fs-5"></i>
-          <span>User Access Scope</span>
+          <span>Active Users & Scope</span>
         </button>
+
         <button
           onClick={() => setActiveTab('auditLog')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
@@ -392,11 +463,70 @@ const NetworkAndSites = () => {
         />
 
         <div className="flex items-center space-x-2 text-xs font-semibold text-slate-600">
-          <span>Showing {sites.length} Sites, {warehouses.length} Warehouses</span>
+          <span>{pendingRequests.length} Pending User Approvals</span>
         </div>
       </div>
 
-      {/* TAB 0: SITE ↔ WAREHOUSE ASSIGNMENT TREE FEATURE */}
+      {/* TAB 0: PENDING USER APPROVALS QUEUE */}
+      {activeTab === 'pendingApprovals' && (
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl p-5 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4 text-orange-600" /> Pending User Registration Approvals
+              </h3>
+              <p className="text-xs text-slate-500 font-normal">Review newly registered user requests, assign roles, and set site/warehouse permissions.</p>
+            </div>
+          </div>
+
+          {pendingRequests.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {pendingRequests.map((req) => (
+                <div key={req._id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 shadow-2xs">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">{req.username}</h4>
+                      <p className="text-xs font-mono text-slate-500">{req.email}</p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-800 rounded-md">Requested: {req.requestedRole}</span>
+                        <span className="text-[11px] text-slate-600 font-medium">Site: {req.proposedSite}</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">{new Date(req.registeredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                    <button
+                      onClick={() => {
+                        setApproveUserModal(req);
+                        setSelectedRole(req.requestedRole);
+                        setSelectedSiteIds([]);
+                        setSelectedWarehouseIds([]);
+                        setMandatoryReason('');
+                      }}
+                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Approve & Assign Scope
+                    </button>
+                    <button
+                      onClick={() => handleRejectRegistration(req)}
+                      className="py-1.5 px-3 bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 font-bold text-xs rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <XCircle className="w-4 h-4" /> Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-6 text-center text-slate-400 text-xs italic bg-slate-50 rounded-xl border border-slate-200">
+              ✓ No pending user registrations. All user accounts are active and verified.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 1: SITE ↔ WAREHOUSE ASSIGNMENT TREE */}
       {activeTab === 'hierarchyTree' && (
         <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl p-5 shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -444,7 +574,6 @@ const NetworkAndSites = () => {
                     </div>
                   </div>
 
-                  {/* ASSIGNED WAREHOUSES LIST */}
                   <div className="pl-6 pt-2 border-t border-slate-200 space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Assigned Warehouses ({assigned.length})</span>
                     {assigned.length > 0 ? (
@@ -477,7 +606,7 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* TAB 1: SITE MASTER TABLE */}
+      {/* TAB 2: SITE MASTER TABLE */}
       {activeTab === 'sites' && (
         <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
@@ -515,7 +644,7 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* TAB 2: WAREHOUSE MASTER TABLE */}
+      {/* TAB 3: WAREHOUSE MASTER TABLE */}
       {activeTab === 'warehouses' && (
         <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
@@ -556,7 +685,7 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* TAB 3: USER ACCESS SCOPE TABLE */}
+      {/* TAB 4: ACTIVE USER ACCESS SCOPE TABLE */}
       {activeTab === 'userScope' && (
         <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
@@ -592,7 +721,7 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* TAB 4: AUDIT LOG TABLE */}
+      {/* TAB 5: AUDIT LOG TABLE */}
       {activeTab === 'auditLog' && (
         <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
@@ -621,6 +750,57 @@ const NetworkAndSites = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* MODAL: APPROVE & ASSIGN SCOPE TO PENDING USER */}
+      {approveUserModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Approve Account: {approveUserModal.username}</h3>
+              <button onClick={() => setApproveUserModal(null)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Assign User Role:</label>
+                <select value={selectedRole} onChange={e => setSelectedRole(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold">
+                  <option>Admin</option>
+                  <option>Inventory Manager</option>
+                  <option>Production Manager</option>
+                  <option>Planner</option>
+                  <option>QC Inspector</option>
+                  <option>Viewer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Allowed Sites Access:</label>
+                <div className="space-y-1 max-h-28 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
+                  {sites.map(s => (
+                    <label key={s._id} className="flex items-center space-x-2 font-medium">
+                      <input
+                        type="checkbox"
+                        checked={selectedSiteIds.includes(s._id)}
+                        onChange={e => {
+                          if (e.target.checked) setSelectedSiteIds([...selectedSiteIds, s._id]);
+                          else setSelectedSiteIds(selectedSiteIds.filter(id => id !== s._id));
+                        }}
+                      />
+                      <span>{s.name} ({s.code})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Mandatory Approval Reason:</label>
+                <textarea rows={2} placeholder="Optional approval reason..." value={mandatoryReason} onChange={e => setMandatoryReason(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium" />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button onClick={() => setApproveUserModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button onClick={handleApproveRegistration} className="px-3.5 py-1.5 bg-emerald-600 text-white font-bold text-xs rounded-lg shadow-sm">Confirm & Activate Account</button>
+            </div>
+          </div>
         </div>
       )}
 
