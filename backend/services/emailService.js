@@ -15,10 +15,11 @@ try {
 
 class EmailService {
   getProvider() {
-    if (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY) {
+    const key = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+    if (key && !key.includes('your-actual-brevo-api-key')) {
       return 'brevo';
     }
-    return process.env.EMAIL_PROVIDER || 'console';
+    return (process.env.EMAIL_PROVIDER && process.env.EMAIL_PROVIDER !== 'brevo') ? process.env.EMAIL_PROVIDER : 'console';
   }
 
   getSmtpCredentials() {
@@ -38,8 +39,8 @@ class EmailService {
    */
   async sendViaBrevo(options) {
     const apiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Brevo email dispatch failed: BREVO_API_KEY environment variable is missing.');
+    if (!apiKey || apiKey.includes('your-actual-brevo-api-key')) {
+      throw new Error('Brevo email dispatch failed: Valid BREVO_API_KEY environment variable is required.');
     }
 
     const senderEmail = process.env.EMAIL_FROM || process.env.BREVO_SENDER_EMAIL || 'no-reply@vms-erp.local';
