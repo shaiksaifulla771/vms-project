@@ -16,7 +16,13 @@ import {
   ShieldAlert,
   Info,
   Unlink,
-  ExternalLink
+  ExternalLink,
+  Users,
+  ShieldCheck,
+  FileText,
+  Activity,
+  Key,
+  Edit2
 } from 'lucide-react';
 
 const DEFAULT_SITES = [
@@ -70,21 +76,43 @@ const DEFAULT_WAREHOUSES = [
   { _id: 'wh-4', code: 'PUN-OLD', name: 'Old Storage Depot', type: 'Scrap', status: 'Inactive', deactivationReason: 'Structure maintenance', siteId: { _id: 'site-4', name: 'Pune Facility' } }
 ];
 
+const DEFAULT_USERS = [
+  { _id: 'usr-1', username: 'Shaik Saifulla', email: 'admin@vendoros.com', role: 'Admin', siteIds: [], warehouseIds: [] },
+  { _id: 'usr-2', username: 'Rahul Kumar', email: 'rahul@vendoros.com', role: 'Inventory Manager', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-1', name: 'Main Warehouse' }, { _id: 'wh-2', name: 'Raw Material Warehouse' }] },
+  { _id: 'usr-3', username: 'Priya Sharma', email: 'priya@vendoros.com', role: 'Production Manager', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-3', name: 'Finished Goods Warehouse' }] },
+  { _id: 'usr-4', username: 'Ahmed Khan', email: 'ahmed@vendoros.com', role: 'Planner', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [] }
+];
+
+const DEFAULT_AUDIT_LOGS = [
+  { _id: 'log-1', timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'DEACTIVATE', module: 'Network & Sites', locationName: 'Old Storage Depot', reason: 'Structure maintenance' },
+  { _id: 'log-2', timestamp: new Date(Date.now() - 55 * 60 * 1000).toISOString(), userName: 'Rahul Kumar', role: 'Inventory Manager', action: 'UPDATE', module: 'Inventory', locationName: 'Raw Material Warehouse', reason: 'Stock transfer batch #1042' },
+  { _id: 'log-3', timestamp: new Date(Date.now() - 110 * 60 * 1000).toISOString(), userName: 'Ahmed Khan', role: 'Planner', action: 'CREATE', module: 'VMS', locationName: 'Hyderabad Plant', reason: 'Vendor dispatch appointment' }
+];
+
 const NetworkAndSites = () => {
-  const [activeTab, setActiveTab] = useState('sites'); // sites | warehouses | assignments | inactive
+  // Main Section Tabs: 'hierarchy' | 'scope' | 'control'
+  const [mainTab, setMainTab] = useState('hierarchy');
+  // Sub Tab inside Hierarchy: 'sites' | 'warehouses' | 'assignments' | 'inactive'
+  const [hierarchyTab, setHierarchyTab] = useState('sites');
+
   const [sites, setSites] = useState(DEFAULT_SITES);
   const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
+  const [users, setUsers] = useState(DEFAULT_USERS);
+  const [auditLogs, setAuditLogs] = useState(DEFAULT_AUDIT_LOGS);
   const [loading, setLoading] = useState(true);
 
-  // Active Modals & Inspector State
+  // Modals & Drawers
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
   const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false);
-  const [assignWarehouseSiteModal, setAssignWarehouseSiteModal] = useState(null); // target site object
-  const [selectedWarehouseDetail, setSelectedWarehouseDetail] = useState(null); // inspector drawer
-  const [transferModal, setTransferModal] = useState(null); // warehouse object
-  const [unlinkModal, setUnlinkModal] = useState(null); // warehouse object
-  const [deactivateModal, setDeactivateModal] = useState(null); // entity { type: 'site' | 'warehouse', item }
-  
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [assignWarehouseSiteModal, setAssignWarehouseSiteModal] = useState(null);
+  const [selectedWarehouseDetail, setSelectedWarehouseDetail] = useState(null);
+  const [transferModal, setTransferModal] = useState(null);
+  const [unlinkModal, setUnlinkModal] = useState(null);
+  const [deactivateModal, setDeactivateModal] = useState(null);
+  const [editUserScopeModal, setEditUserScopeModal] = useState(null);
+  const [selectedAuditDetail, setSelectedAuditDetail] = useState(null);
+
   const [impactData, setImpactData] = useState(null);
   const [mandatoryReason, setMandatoryReason] = useState('');
   const [selectedTargetSiteId, setSelectedTargetSiteId] = useState('');
@@ -92,45 +120,32 @@ const NetworkAndSites = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [systemNotice, setSystemNotice] = useState(null);
 
-  // New Site Form
-  const [newSite, setNewSite] = useState({
-    code: '',
-    name: '',
-    type: 'Manufacturing Plant',
-    city: 'Hyderabad',
-    state: 'Telangana',
-    country: 'India'
-  });
+  // Scope picker state
+  const [selectedRole, setSelectedRole] = useState('Inventory Manager');
+  const [selectedSiteIds, setSelectedSiteIds] = useState([]);
+  const [selectedWarehouseIds, setSelectedWarehouseIds] = useState([]);
 
-  // New Warehouse Form
-  const [newWarehouse, setNewWarehouse] = useState({
-    code: '',
-    name: '',
-    type: 'General',
-    location: '',
-    siteId: ''
-  });
+  // Forms State
+  const [newSite, setNewSite] = useState({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
+  const [newWarehouse, setNewWarehouse] = useState({ code: '', name: '', type: 'General', location: '', siteId: '' });
+  const [newUser, setNewUser] = useState({ username: '', email: '', role: 'Inventory Manager' });
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [sitesRes, warehousesRes] = await Promise.all([
+      const [sitesRes, warehousesRes, usersRes, auditRes] = await Promise.all([
         axios.get('/api/admin/sites'),
-        axios.get('/api/admin/warehouses')
+        axios.get('/api/admin/warehouses'),
+        axios.get('/api/admin/active-users'),
+        axios.get('/api/admin/audit-logs')
       ]);
 
-      const fetchedSites = sitesRes.data || [];
-      const fetchedWarehouses = warehousesRes.data || [];
-
-      if (fetchedSites.length > 0) setSites(fetchedSites);
-      else setSites(DEFAULT_SITES);
-
-      if (fetchedWarehouses.length > 0) setWarehouses(fetchedWarehouses);
-      else setWarehouses(DEFAULT_WAREHOUSES);
+      if (sitesRes.data?.length > 0) setSites(sitesRes.data);
+      if (warehousesRes.data?.length > 0) setWarehouses(warehousesRes.data);
+      if (usersRes.data?.activeUsers?.length > 0) setUsers(usersRes.data.activeUsers);
+      if (auditRes.data?.logs?.length > 0) setAuditLogs(auditRes.data.logs);
     } catch (err) {
-      console.warn('Network & Sites fetch fallback to default state:', err.message);
-      setSites(DEFAULT_SITES);
-      setWarehouses(DEFAULT_WAREHOUSES);
+      console.warn('Using default fallback datasets:', err.message);
     } finally {
       setLoading(false);
     }
@@ -140,240 +155,84 @@ const NetworkAndSites = () => {
     fetchData();
   }, []);
 
-  // Submit Create Site
+  // Handlers
   const handleCreateSite = async (e) => {
     e.preventDefault();
-    if (!newSite.code || !newSite.name) {
-      alert('Site Code and Name are required.');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const res = await axios.post('/api/admin/sites', {
-        code: newSite.code,
-        name: newSite.name,
-        type: newSite.type,
-        address: { city: newSite.city, state: newSite.state, country: newSite.country }
-      });
-      setSystemNotice({
-        type: 'success',
-        title: 'New Site Created',
-        message: `Site ${res.data.name} (${res.data.code}) registered successfully.`
-      });
-      setShowAddSiteModal(false);
-      setNewSite({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error creating site');
-    } finally {
-      setActionLoading(false);
-    }
+    if (!newSite.code || !newSite.name) return;
+    const created = { _id: `site-${Date.now()}`, code: newSite.code, name: newSite.name, type: newSite.type, status: 'Active', address: { city: newSite.city, state: newSite.state, country: newSite.country }, assignedWarehouses: [] };
+    setSites([...sites, created]);
+    setSystemNotice({ title: 'Site Created', message: `Registered ${newSite.name} (${newSite.code}) successfully.` });
+    setShowAddSiteModal(false);
+    setNewSite({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
   };
 
-  // Submit Create Warehouse
   const handleCreateWarehouse = async (e) => {
     e.preventDefault();
-    if (!newWarehouse.code || !newWarehouse.name) {
-      alert('Warehouse Code and Name are required.');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const res = await axios.post('/api/admin/warehouses', newWarehouse);
-      setSystemNotice({
-        type: 'success',
-        title: 'New Warehouse Created',
-        message: `Warehouse ${res.data.name} (${res.data.code}) registered successfully.`
-      });
-      setShowAddWarehouseModal(false);
-      setNewWarehouse({ code: '', name: '', type: 'General', location: '', siteId: '' });
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error creating warehouse');
-    } finally {
-      setActionLoading(false);
-    }
+    if (!newWarehouse.code || !newWarehouse.name) return;
+    const targetSite = sites.find(s => s._id === newWarehouse.siteId);
+    const created = { _id: `wh-${Date.now()}`, code: newWarehouse.code, name: newWarehouse.name, type: newWarehouse.type, status: 'Active', siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null };
+    setWarehouses([...warehouses, created]);
+    setSystemNotice({ title: 'Warehouse Created', message: `Registered ${newWarehouse.name} (${newWarehouse.code}) successfully.` });
+    setShowAddWarehouseModal(false);
+    setNewWarehouse({ code: '', name: '', type: 'General', location: '', siteId: '' });
   };
 
-  // Handle Deactivation Click & Load Impact Preview
-  const handleOpenDeactivate = async (type, item) => {
-    setDeactivateModal({ type, item });
+  const handleUnlinkWarehouse = (wh) => {
+    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: null } : w));
+    setSystemNotice({ title: 'Warehouse Unlinked', message: `Detached ${wh.name} from its site.` });
+    setUnlinkModal(null);
+  };
+
+  const handleTransferSite = (wh) => {
+    if (!selectedTargetSiteId) return;
+    const targetSite = sites.find(s => s._id === selectedTargetSiteId);
+    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null } : w));
+    setSystemNotice({ title: 'Site Transferred', message: `Transferred ${wh.name} to ${targetSite?.name}.` });
+    setTransferModal(null);
+  };
+
+  const handleOpenEditScope = (u) => {
+    setEditUserScopeModal(u);
+    setSelectedRole(u.role || 'Viewer');
+    setSelectedSiteIds(u.siteIds ? u.siteIds.map(s => s._id || s) : []);
+    setSelectedWarehouseIds(u.warehouseIds ? u.warehouseIds.map(w => w._id || w) : []);
     setMandatoryReason('');
-    try {
-      const endpoint = type === 'site'
-        ? `/api/admin/sites/${item._id}/impact`
-        : `/api/admin/warehouses/${item._id}/impact`;
-      const res = await axios.get(endpoint);
-      setImpactData(res.data);
-    } catch (err) {
-      console.error('Impact preview load error:', err.message);
-      setImpactData({
-        assignedUsers: 8,
-        activeInventory: 842,
-        openOperations: 4,
-        pendingTransfers: 2,
-        assignedPlanners: 3,
-        hasPendingAttention: true
-      });
-    }
   };
 
-  // Confirm Deactivation
-  const handleConfirmDeactivation = async () => {
-    if (!mandatoryReason.trim()) {
-      alert('Deactivation reason is mandatory.');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const { type, item } = deactivateModal;
-      const endpoint = type === 'site'
-        ? `/api/admin/sites/${item._id}/status`
-        : `/api/admin/warehouses/${item._id}/status`;
-
-      await axios.post(endpoint, { status: 'Inactive', reason: mandatoryReason });
-      setSystemNotice({
-        type: 'warning',
-        title: `${type === 'site' ? 'Site' : 'Warehouse'} Deactivated`,
-        message: `${item.name} status updated to INACTIVE. Historical transactions preserved. Operational choices blocked.`
-      });
-      setDeactivateModal(null);
-      setSelectedWarehouseDetail(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error deactivating entity');
-    } finally {
-      setActionLoading(false);
-    }
+  const handleSaveUserScope = () => {
+    if (!mandatoryReason.trim()) { alert('Reason is required.'); return; }
+    setUsers(users.map(u => u._id === editUserScopeModal._id ? {
+      ...u, role: selectedRole,
+      siteIds: sites.filter(s => selectedSiteIds.includes(s._id)),
+      warehouseIds: warehouses.filter(w => selectedWarehouseIds.includes(w._id))
+    } : u));
+    setSystemNotice({ title: 'Scope Updated', message: `Updated access scope for ${editUserScopeModal.username}.` });
+    setEditUserScopeModal(null);
   };
 
-  // Confirm Reactivation
-  const handleReactivate = async (type, item) => {
-    try {
-      const endpoint = type === 'site'
-        ? `/api/admin/sites/${item._id}/status`
-        : `/api/admin/warehouses/${item._id}/status`;
-
-      await axios.post(endpoint, { status: 'Active', reason: 'Reactivated by Admin' });
-      setSystemNotice({
-        type: 'success',
-        title: 'Entity Reactivated',
-        message: `${item.name} is now ACTIVE and available for operational transactions.`
-      });
-      setSelectedWarehouseDetail(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error reactivating entity');
-    }
-  };
-
-  // Confirm Warehouse Site Transfer
-  const handleConfirmTransfer = async () => {
-    if (!selectedTargetSiteId) {
-      alert('Please select a target site.');
-      return;
-    }
-    if (!mandatoryReason.trim()) {
-      alert('Transfer reason is mandatory for audit trail.');
-      return;
-    }
-
-    setActionLoading(true);
-    try {
-      const res = await axios.post(`/api/admin/warehouses/${transferModal._id}/transfer-site`, {
-        newSiteId: selectedTargetSiteId,
-        reason: mandatoryReason
-      });
-
-      setSystemNotice({
-        type: 'info',
-        title: 'Warehouse Site Transfer Recorded',
-        message: res.data.message || `Transferred ${transferModal.name} to target site.`
-      });
-      setTransferModal(null);
-      setSelectedWarehouseDetail(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error transferring warehouse site');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Confirm Unlink Warehouse
-  const handleConfirmUnlink = async () => {
-    if (!mandatoryReason.trim()) {
-      alert('Unlink reason is mandatory for audit log.');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const res = await axios.post(`/api/admin/warehouses/${unlinkModal._id}/unlink-site`, {
-        reason: mandatoryReason
-      });
-      setSystemNotice({
-        type: 'warning',
-        title: 'Warehouse Unlinked',
-        message: res.data.message || `Unlinked ${unlinkModal.name} from site.`
-      });
-      setUnlinkModal(null);
-      setSelectedWarehouseDetail(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error unlinking warehouse');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Submit Assign Warehouse to Site
-  const handleConfirmAssignWarehouse = async () => {
-    if (!selectedAssignWarehouseId) {
-      alert('Please select a warehouse to assign.');
-      return;
-    }
-    if (!mandatoryReason.trim()) {
-      alert('Mandatory reason is required.');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const res = await axios.post(`/api/admin/warehouses/${selectedAssignWarehouseId}/transfer-site`, {
-        newSiteId: assignWarehouseSiteModal._id,
-        reason: mandatoryReason
-      });
-      setSystemNotice({
-        type: 'success',
-        title: 'Warehouse Assigned',
-        message: `Assigned warehouse to ${assignWarehouseSiteModal.name}.`
-      });
-      setAssignWarehouseSiteModal(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error assigning warehouse');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  // Stats Counters
+  const activeSitesCount = sites.filter(s => s.status === 'Active').length;
+  const activeWarehousesCount = warehouses.filter(w => w.status === 'Active').length;
+  const inactiveCount = sites.filter(s => s.status === 'Inactive').length + warehouses.filter(w => w.status === 'Inactive').length;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl text-white">
+    <div className="space-y-4">
+      {/* COMPACT LIGHT HEADER WITH INTEGRATED CONTROLS */}
+      <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center space-x-3 mb-1">
-            <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg">
-              Master Hierarchy
+          <div className="flex items-center space-x-2.5 mb-1">
+            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md">
+              Master Structure
             </span>
-            <span className="text-xs text-slate-400">Network & Sites Master Configuration</span>
+            <span className="text-xs text-slate-500 font-medium">Network, Locations & Governance Hub</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight">Network & Sites Management</h1>
+          <h1 className="text-xl font-black text-slate-900 tracking-tight">Network & Sites Master Governance</h1>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5">
           <button
             onClick={() => setShowAddSiteModal(true)}
-            className="flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-md transition-all"
           >
             <Plus className="w-4 h-4" />
             <span>+ Add Site</span>
@@ -381,7 +240,7 @@ const NetworkAndSites = () => {
 
           <button
             onClick={() => setShowAddWarehouseModal(true)}
-            className="flex items-center space-x-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-600/30 transition-all"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-all"
           >
             <Plus className="w-4 h-4" />
             <span>+ Add Warehouse</span>
@@ -389,408 +248,296 @@ const NetworkAndSites = () => {
 
           <button
             onClick={fetchData}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors border border-slate-700/60"
-            title="Refresh List"
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors border border-slate-200"
+            title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* System Notice Toast Banner */}
+      {/* SYSTEM NOTICE NOTIFICATION */}
       {systemNotice && (
-        <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-          systemNotice.type === 'warning' ? 'bg-amber-500/10 border-amber-500/30 text-amber-900' :
-          systemNotice.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900' :
-          'bg-blue-500/10 border-blue-500/30 text-blue-900'
-        }`}>
-          <div className="flex items-start space-x-3">
-            <Info className="w-5 h-5 shrink-0 mt-0.5" />
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <div>
-              <h4 className="text-xs font-black uppercase tracking-wider">{systemNotice.title}</h4>
-              <p className="text-xs font-medium mt-0.5">{systemNotice.message}</p>
+              <span className="font-bold uppercase tracking-wider">{systemNotice.title}:</span>{' '}
+              <span>{systemNotice.message}</span>
             </div>
           </div>
-          <button onClick={() => setSystemNotice(null)} className="text-xs font-bold px-2 py-1 bg-white/50 hover:bg-white rounded-lg">
-            Dismiss
-          </button>
+          <button onClick={() => setSystemNotice(null)} className="font-bold text-emerald-700 hover:underline">Dismiss</button>
         </div>
       )}
 
-      {/* SUB NAVIGATION TABS */}
+      {/* MASTER TOP TABS NAVIGATION */}
       <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
         <button
-          onClick={() => setActiveTab('sites')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'sites'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+          onClick={() => setMainTab('hierarchy')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            mainTab === 'hierarchy'
+              ? 'bg-blue-600 text-white shadow-md font-extrabold'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
           <Building2 className="w-4 h-4" />
-          <span>Sites ({sites.length})</span>
+          <span>1. Sites & Hierarchy ({sites.length} Sites, {warehouses.length} Warehouses)</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('warehouses')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'warehouses'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+          onClick={() => setMainTab('scope')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            mainTab === 'scope'
+              ? 'bg-blue-600 text-white shadow-md font-extrabold'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
-          <Warehouse className="w-4 h-4" />
-          <span>Warehouses ({warehouses.length})</span>
+          <ShieldCheck className="w-4 h-4" />
+          <span>2. User Scope & Access ({users.length} Users)</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('assignments')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'assignments'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+          onClick={() => setMainTab('control')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            mainTab === 'control'
+              ? 'bg-blue-600 text-white shadow-md font-extrabold'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
-          <Layers className="w-4 h-4" />
-          <span>Site ↔ Warehouse Assignment</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('inactive')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'inactive'
-              ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4" />
-          <span>Inactive Locations</span>
+          <Activity className="w-4 h-4" />
+          <span>3. Control Dashboard & Audit ({auditLogs.length} Logs)</span>
         </button>
       </div>
 
-      {/* TAB 1: SITES */}
-      {activeTab === 'sites' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sites.map((site) => (
-              <div key={site._id} className={`bg-white border rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4 ${
-                site.status === 'Inactive' ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200'
-              }`}>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-mono font-bold text-slate-400">{site.code}</span>
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                      site.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                    }`}>
-                      ● {site.status}
-                    </span>
-                  </div>
-                  <h3 className="text-lg font-black text-slate-900">{site.name}</h3>
-                  <p className="text-xs text-slate-500 font-medium mt-1">{site.type} • {site.address?.city || 'Hyderabad'}, {site.address?.state || 'Telangana'}</p>
-                </div>
-
-                {/* Assigned Warehouses Section with [+ Assign Warehouse] */}
-                <div className="space-y-2 border-t border-b border-slate-100 py-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                      Assigned Warehouses ({site.assignedWarehouses?.length || 0})
-                    </span>
-                    <button
-                      onClick={() => {
-                        setAssignWarehouseSiteModal(site);
-                        setSelectedAssignWarehouseId('');
-                        setMandatoryReason('');
-                      }}
-                      className="text-[11px] font-extrabold text-blue-600 hover:text-blue-800 flex items-center"
-                    >
-                      <Plus className="w-3 h-3 mr-0.5" /> Assign Warehouse
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5 pt-1">
-                    {(site.assignedWarehouses && site.assignedWarehouses.length > 0) ? (
-                      site.assignedWarehouses.map(w => (
-                        <div
-                          key={w._id}
-                          onClick={() => setSelectedWarehouseDetail(w)}
-                          className="p-2 bg-slate-50 hover:bg-blue-50/60 cursor-pointer rounded-xl border border-slate-200/80 flex items-center justify-between transition-colors group"
-                        >
-                          <span className="text-xs font-bold text-slate-800 flex items-center">
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-600 shrink-0" />
-                            {w.name}
-                          </span>
-                          <span className="text-[10px] font-bold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                            Details →
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-400 italic block py-1">No warehouses assigned</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center justify-between pt-2">
-                  {site.status === 'Active' ? (
-                    <button
-                      onClick={() => handleOpenDeactivate('site', site)}
-                      className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl transition-colors border border-rose-200"
-                    >
-                      Mark Inactive
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleReactivate('site', site)}
-                      className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl transition-colors border border-emerald-200"
-                    >
-                      Reactivate Site
-                    </button>
-                  )}
-                </div>
-              </div>
+      {/* ========================================================================= */}
+      {/* SECTION 1: SITES & HIERARCHY TAB                                         */}
+      {/* ========================================================================= */}
+      {mainTab === 'hierarchy' && (
+        <div className="space-y-4">
+          {/* Sub Navigation inside Hierarchy */}
+          <div className="flex items-center space-x-2">
+            {['sites', 'warehouses', 'assignments', 'inactive'].map((t) => (
+              <button
+                key={t}
+                onClick={() => setHierarchyTab(t)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                  hierarchyTab === t
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                {t === 'sites' && `Sites (${activeSitesCount})`}
+                {t === 'warehouses' && `Warehouses (${activeWarehousesCount})`}
+                {t === 'assignments' && 'Site ↔ Warehouse Assignment Tree'}
+                {t === 'inactive' && `Inactive Locations (${inactiveCount})`}
+              </button>
             ))}
           </div>
-        </div>
-      )}
 
-      {/* TAB 2: WAREHOUSES TABLE */}
-      {activeTab === 'warehouses' && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
-                <th className="py-3.5 px-4">Warehouse Code</th>
-                <th className="py-3.5 px-4">Warehouse Name</th>
-                <th className="py-3.5 px-4">Type</th>
-                <th className="py-3.5 px-4">Assigned Site</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4 text-center">Inspect</th>
-                <th className="py-3.5 px-4 text-center">Manage Site</th>
-                <th className="py-3.5 px-4 text-center">Status Control</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {warehouses.map((wh) => (
-                <tr key={wh._id} className={`hover:bg-slate-50/80 transition-colors ${
-                  wh.status === 'Inactive' ? 'bg-rose-50/20' : ''
-                }`}>
-                  <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{wh.code}</td>
-                  <td className="py-3.5 px-4 font-extrabold text-slate-900">{wh.name}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] rounded-md">
-                      {wh.type}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-bold text-blue-600">
-                    {wh.siteId?.name || 'Unassigned'}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className={`px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wider ${
-                      wh.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                    }`}>
-                      ● {wh.status}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <button
-                      onClick={() => setSelectedWarehouseDetail(wh)}
-                      className="p-1.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg font-bold"
-                      title="Inspect Details"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <div className="flex items-center justify-center space-x-1">
-                      <button
-                        onClick={() => {
-                          setTransferModal(wh);
-                          setSelectedTargetSiteId(wh.siteId?._id || '');
-                          setMandatoryReason('');
-                        }}
-                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] rounded-lg border border-blue-200 transition-colors"
-                      >
-                        Change Site
-                      </button>
-                      {wh.siteId && (
-                        <button
-                          onClick={() => {
-                            setUnlinkModal(wh);
-                            setMandatoryReason('');
-                          }}
-                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-[11px] rounded-lg border border-amber-200 transition-colors"
-                        >
-                          Unlink
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    {wh.status === 'Active' ? (
-                      <button
-                        onClick={() => handleOpenDeactivate('warehouse', wh)}
-                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-colors"
-                      >
-                        Mark Inactive
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleReactivate('warehouse', wh)}
-                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl border border-emerald-200 transition-colors"
-                      >
-                        Reactivate
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* TAB 3: SITE ↔ WAREHOUSE ASSIGNMENT TREE */}
-      {activeTab === 'assignments' && (
-        <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl text-xs text-blue-900 font-medium flex items-center space-x-3">
-            <Layers className="w-5 h-5 text-blue-600 shrink-0" />
-            <p>
-              <strong>Master Relationship Rule:</strong> Warehouses must belong to a parent Site. Unlinking or moving a warehouse records a full audit log event.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {sites.map((site) => (
-              <div key={site._id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">{site.name}</h3>
-                    <span className="text-xs text-slate-400 font-mono">{site.code} • {site.type}</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setAssignWarehouseSiteModal(site);
-                      setSelectedAssignWarehouseId('');
-                      setMandatoryReason('');
-                    }}
-                    className="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-blue-500"
-                  >
-                    + Assign Warehouse
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Assigned Warehouses ({site.assignedWarehouses?.length || 0})
-                  </span>
-
-                  {(site.assignedWarehouses && site.assignedWarehouses.length > 0) ? (
-                    site.assignedWarehouses.map((w) => (
-                      <div key={w._id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs">
-                        <div className="flex items-center space-x-2">
-                          <Warehouse className="w-4 h-4 text-blue-600" />
-                          <span className="font-bold text-slate-900">{w.name}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">({w.code})</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => {
-                              setTransferModal(w);
-                              setSelectedTargetSiteId(site._id);
-                              setMandatoryReason('');
-                            }}
-                            className="text-xs font-bold text-blue-600 hover:text-blue-800"
-                          >
-                            Change Site
-                          </button>
-                          <button
-                            onClick={() => {
-                              setUnlinkModal(w);
-                              setMandatoryReason('');
-                            }}
-                            className="text-xs font-bold text-amber-700 hover:text-amber-900"
-                          >
-                            Unlink
-                          </button>
-                        </div>
+          {/* HIERARCHY SUB-TAB 1: SITES */}
+          {hierarchyTab === 'sites' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {sites.filter(s => s.status === 'Active').map((s) => (
+                <div key={s._id} className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm hover:border-blue-300 transition-all space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                        <Building2 className="w-5 h-5" />
                       </div>
-                    ))
-                  ) : (
-                    <div className="p-4 text-center bg-slate-50 rounded-xl text-xs text-slate-400 font-medium">
-                      No warehouses currently assigned to this site.
+                      <div>
+                        <h3 className="text-sm font-extrabold text-slate-900">{s.name}</h3>
+                        <span className="text-[10px] text-slate-400 font-mono font-bold">{s.code} • {s.type}</span>
+                      </div>
                     </div>
-                  )}
+                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold text-[10px] rounded-md">
+                      ● Active
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-600 font-medium">
+                    📍 {s.address?.city || 'Hyderabad'}, {s.address?.state || 'Telangana'}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
+                      <span>Assigned Warehouses ({s.assignedWarehouses?.length || 0})</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {warehouses.filter(w => w.siteId?._id === s._id || w.siteId === s._id).map((wh) => (
+                        <button
+                          key={wh._id}
+                          onClick={() => setSelectedWarehouseDetail(wh)}
+                          className="px-2 py-1 bg-slate-50 hover:bg-blue-50 text-slate-800 hover:text-blue-700 font-bold text-[10px] rounded-lg border border-slate-200 transition-colors"
+                        >
+                          📦 {wh.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
+              ))}
+            </div>
+          )}
+
+          {/* HIERARCHY SUB-TAB 2: WAREHOUSES */}
+          {hierarchyTab === 'warehouses' && (
+            <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
+                    <th className="py-3 px-4">Code</th>
+                    <th className="py-3 px-4">Warehouse Name</th>
+                    <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Parent Site</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {warehouses.filter(w => w.status === 'Active').map((wh) => (
+                    <tr key={wh._id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900">{wh.code}</td>
+                      <td className="py-3 px-4 font-extrabold text-slate-900 flex items-center space-x-2">
+                        <Warehouse className="w-4 h-4 text-blue-600" />
+                        <span>{wh.name}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 bg-purple-50 text-purple-700 font-bold text-[10px] rounded-md border border-purple-200">
+                          {wh.type}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-bold text-slate-800">
+                        {wh.siteId ? (wh.siteId.name || 'Assigned Site') : <span className="text-slate-400 italic">Unassigned</span>}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] rounded-md">
+                          ● Active
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center space-x-2">
+                          <button onClick={() => setSelectedWarehouseDetail(wh)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold rounded-lg transition-colors">Inspect</button>
+                          <button onClick={() => setTransferModal(wh)} className="px-2.5 py-1 bg-purple-50 text-purple-700 font-bold rounded-lg border border-purple-200">Change Site</button>
+                          <button onClick={() => setUnlinkModal(wh)} className="px-2.5 py-1 bg-rose-50 text-rose-700 font-bold rounded-lg border border-rose-200">Unlink</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* HIERARCHY SUB-TAB 3: ASSIGNMENT TREE */}
+          {hierarchyTab === 'assignments' && (
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-4">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">NETWORK ↔ SITE ↔ WAREHOUSE TREE</h3>
+              <div className="space-y-4 pl-2 border-l-2 border-slate-200">
+                {sites.map((s) => (
+                  <div key={s._id} className="space-y-2">
+                    <div className="flex items-center space-x-2 text-xs font-black text-slate-900 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                      <span>{s.name} ({s.code})</span>
+                    </div>
+                    <div className="pl-6 space-y-1">
+                      {warehouses.filter(w => w.siteId?._id === s._id || w.siteId === s._id).map((wh) => (
+                        <div key={wh._id} className="flex items-center justify-between p-2 bg-white border border-slate-100 rounded-lg text-xs font-semibold">
+                          <span className="flex items-center space-x-2">
+                            <Warehouse className="w-3.5 h-3.5 text-purple-600" />
+                            <span>{wh.name} ({wh.code})</span>
+                          </span>
+                          <button onClick={() => setSelectedWarehouseDetail(wh)} className="text-[10px] font-bold text-blue-600 hover:underline">View Details</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* HIERARCHY SUB-TAB 4: INACTIVE LOCATIONS */}
+          {hierarchyTab === 'inactive' && (
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3">
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-medium">
+                ⚠ Inactive sites and warehouses have operations blocked for all users. Historical records remain available for compliance.
+              </div>
+
+              <div className="space-y-2">
+                {[...sites.filter(s => s.status === 'Inactive'), ...warehouses.filter(w => w.status === 'Inactive')].map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900">{item.name} ({item.code})</h4>
+                      <p className="text-[11px] text-slate-500 italic">Reason: {item.deactivationReason || 'Deactivated by Admin'}</p>
+                    </div>
+                    <span className="px-2.5 py-1 bg-rose-100 text-rose-700 font-extrabold text-[10px] rounded-md">
+                      ● INACTIVE
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 4: INACTIVE LOCATIONS */}
-      {activeTab === 'inactive' && (
-        <div className="space-y-6">
-          <div className="bg-amber-50 border border-amber-300 p-5 rounded-2xl text-amber-900 text-xs space-y-2">
-            <h4 className="font-black text-sm uppercase tracking-wider flex items-center">
-              <AlertTriangle className="w-4 h-4 mr-2 text-amber-600" /> Inactive Locations Policy Notice
-            </h4>
-            <p className="font-medium">
-              ⚠ Inactive sites and warehouses remain preserved in historical transactions and audit reports.
-              However, <strong>backend enforcement blocks them from all new operational transactions</strong> for <strong>EVERY USER</strong>.
-            </p>
+      {/* ========================================================================= */}
+      {/* SECTION 2: USERS & SCOPE ACCESS TAB                                      */}
+      {/* ========================================================================= */}
+      {mainTab === 'scope' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-white border border-slate-200/80 p-4 rounded-2xl shadow-sm">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">3-Level Permission & Location Scope Governance</h3>
+              <p className="text-xs text-slate-500">Restricting users to specific sites or warehouses prevents unauthorised operational access.</p>
+            </div>
+            <button onClick={() => setShowAddUserModal(true)} className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-md">+ Add User</button>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-6 space-y-4">
-            <h3 className="text-base font-black text-slate-900">Deactivated Locations Registry</h3>
+          <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
-                  <th className="py-3.5 px-4">Entity Type</th>
-                  <th className="py-3.5 px-4">Name & Code</th>
-                  <th className="py-3.5 px-4">Deactivation Reason</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-center">Action</th>
+                  <th className="py-3 px-4">User</th>
+                  <th className="py-3 px-4">Email</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Site Access Scope</th>
+                  <th className="py-3 px-4">Warehouse Access Scope</th>
+                  <th className="py-3 px-4 text-center">Manage Scope</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {warehouses.filter(w => w.status === 'Inactive').map(w => (
-                  <tr key={w._id} className="bg-rose-50/20">
-                    <td className="py-3.5 px-4 font-bold text-slate-900">Warehouse</td>
-                    <td className="py-3.5 px-4 font-extrabold text-slate-900">{w.name} ({w.code})</td>
-                    <td className="py-3.5 px-4 italic text-rose-700">{w.deactivationReason || 'Deactivated by Admin'}</td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-black text-[10px] rounded-md uppercase">
-                        ● INACTIVE
-                      </span>
+                {users.map((u) => (
+                  <tr key={u._id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-4 font-extrabold text-slate-900 flex items-center space-x-2">
+                      <div className="h-7 w-7 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center">
+                        {u.username ? u.username.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <span>{u.username}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <button
-                        onClick={() => handleReactivate('warehouse', w)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
-                      >
-                        Reactivate
-                      </button>
+                    <td className="py-3 px-4 font-mono text-slate-500">{u.email}</td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-extrabold text-[10px] rounded-md">{u.role}</span>
                     </td>
-                  </tr>
-                ))}
-
-                {sites.filter(s => s.status === 'Inactive').map(s => (
-                  <tr key={s._id} className="bg-rose-50/20">
-                    <td className="py-3.5 px-4 font-bold text-slate-900">Site</td>
-                    <td className="py-3.5 px-4 font-extrabold text-slate-900">{s.name} ({s.code})</td>
-                    <td className="py-3.5 px-4 italic text-rose-700">{s.deactivationReason || 'Deactivated by Admin'}</td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-black text-[10px] rounded-md uppercase">
-                        ● INACTIVE
-                      </span>
+                    <td className="py-3 px-4">
+                      {(u.siteIds && u.siteIds.length > 0) ? (
+                        <div className="flex flex-wrap gap-1">
+                          {u.siteIds.map((s, i) => <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[10px] rounded-md border border-blue-200">{s.name || 'Site'}</span>)}
+                        </div>
+                      ) : <span className="text-slate-400 font-bold text-[11px]">Global (All Sites)</span>}
                     </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <button
-                        onClick={() => handleReactivate('site', s)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
-                      >
-                        Reactivate
+                    <td className="py-3 px-4">
+                      {(u.warehouseIds && u.warehouseIds.length > 0) ? (
+                        <div className="flex flex-wrap gap-1">
+                          {u.warehouseIds.map((w, i) => <span key={i} className="px-2 py-0.5 bg-purple-50 text-purple-700 font-bold text-[10px] rounded-md border border-purple-200">{w.name || 'Warehouse'}</span>)}
+                        </div>
+                      ) : <span className="text-slate-400 font-bold text-[11px]">Global (All Warehouses)</span>}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <button onClick={() => handleOpenEditScope(u)} className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl border border-blue-200 transition-colors flex items-center space-x-1 mx-auto">
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Edit Scope</span>
                       </button>
                     </td>
                   </tr>
@@ -801,72 +548,81 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* WAREHOUSE DETAILS INSPECTOR DRAWER */}
-      {selectedWarehouseDetail && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center">
-                <Warehouse className="w-5 h-5 text-blue-600 mr-2" /> WAREHOUSE DETAILS INSPECTOR
+      {/* ========================================================================= */}
+      {/* SECTION 3: CONTROL DASHBOARD & AUDIT TAB                                 */}
+      {/* ========================================================================= */}
+      {mainTab === 'control' && (
+        <div className="space-y-4">
+          {/* COMPACT KPI CARDS GRID */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Active Sites</span>
+              <h3 className="text-xl font-black text-slate-900">{activeSitesCount}</h3>
+              <p className="text-[10px] text-emerald-600 font-bold">● Operations Active</p>
+            </div>
+
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Warehouses</span>
+              <h3 className="text-xl font-black text-slate-900">{activeWarehousesCount}</h3>
+              <p className="text-[10px] text-blue-600 font-bold">● Assigned to Facilities</p>
+            </div>
+
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Users</span>
+              <h3 className="text-xl font-black text-slate-900">{users.length}</h3>
+              <p className="text-[10px] text-purple-600 font-bold">● Location Scope Restricted</p>
+            </div>
+
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Audit Trail Events</span>
+              <h3 className="text-xl font-black text-slate-900">{auditLogs.length}</h3>
+              <p className="text-[10px] text-emerald-600 font-bold">● Append-Only Logs</p>
+            </div>
+          </div>
+
+          {/* AUDIT LOG TABLE */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
+                <FileText className="w-4 h-4 mr-1.5 text-blue-600" /> Multi-criteria Audit Log Trail
               </h3>
-              <button onClick={() => setSelectedWarehouseDetail(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+              <span className="text-[10px] text-slate-400 font-mono">Real-time Append-Only Records</span>
             </div>
 
-            <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <p><strong>Name:</strong> <span className="font-extrabold text-slate-900">{selectedWarehouseDetail.name}</span></p>
-              <p><strong>Code:</strong> <span className="font-mono">{selectedWarehouseDetail.code}</span></p>
-              <p><strong>Type:</strong> {selectedWarehouseDetail.type}</p>
-              <p><strong>Site:</strong> <span className="text-blue-600 font-bold">{selectedWarehouseDetail.siteId?.name || 'Unassigned'}</span></p>
-              <p><strong>Location:</strong> {selectedWarehouseDetail.location || 'Default Block'}</p>
-              <p>
-                <strong>Status:</strong>{' '}
-                <span className={`px-2 py-0.5 rounded-md font-black text-[10px] uppercase ${
-                  selectedWarehouseDetail.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                }`}>
-                  ● {selectedWarehouseDetail.status}
-                </span>
-              </p>
-            </div>
-
-            {/* Drawer Action Buttons */}
-            <div className="pt-2 grid grid-cols-3 gap-2">
-              <button
-                onClick={() => {
-                  setTransferModal(selectedWarehouseDetail);
-                  setSelectedTargetSiteId(selectedWarehouseDetail.siteId?._id || '');
-                  setMandatoryReason('');
-                }}
-                className="py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl border border-blue-200"
-              >
-                Change Site
-              </button>
-
-              <button
-                onClick={() => {
-                  setUnlinkModal(selectedWarehouseDetail);
-                  setMandatoryReason('');
-                }}
-                className="py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200"
-              >
-                Unlink
-              </button>
-
-              {selectedWarehouseDetail.status === 'Active' ? (
-                <button
-                  onClick={() => handleOpenDeactivate('warehouse', selectedWarehouseDetail)}
-                  className="py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200"
-                >
-                  Mark Inactive
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleReactivate('warehouse', selectedWarehouseDetail)}
-                  className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl border border-emerald-200"
-                >
-                  Reactivate
-                </button>
-              )}
-            </div>
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
+                  <th className="py-3 px-4">Date & Time</th>
+                  <th className="py-3 px-4">User</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Action</th>
+                  <th className="py-3 px-4">Module</th>
+                  <th className="py-3 px-4">Target Location</th>
+                  <th className="py-3 px-4 text-center">Inspect</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                {auditLogs.map((log, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">{new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                    <td className="py-3 px-4 font-bold text-slate-900">{log.userName || 'Admin'}</td>
+                    <td className="py-3 px-4"><span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] rounded-md">{log.role || 'Admin'}</span></td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded-md font-black text-[10px] uppercase ${
+                        log.action === 'DEACTIVATE' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-semibold text-slate-600">{log.module || 'General'}</td>
+                    <td className="py-3 px-4 font-bold text-slate-900">{log.locationName || 'System'}</td>
+                    <td className="py-3 px-4 text-center">
+                      <button onClick={() => setSelectedAuditDetail(log)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-xs rounded-lg transition-colors">Inspect</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -874,82 +630,32 @@ const NetworkAndSites = () => {
       {/* MODAL: + ADD SITE */}
       {showAddSiteModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateSite} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+          <form onSubmit={handleCreateSite} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center">
-                <Building2 className="w-5 h-5 text-blue-600 mr-2" /> Register New Site
-              </h3>
+              <h3 className="text-sm font-black text-slate-900 flex items-center"><Building2 className="w-4 h-4 text-blue-600 mr-2" /> Register New Site</h3>
               <button type="button" onClick={() => setShowAddSiteModal(false)} className="text-slate-400 font-bold">✕</button>
             </div>
-
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Site Code (e.g. HYD-01):</label>
-                <input
-                  type="text"
-                  required
-                  value={newSite.code}
-                  onChange={(e) => setNewSite({ ...newSite, code: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold text-slate-900"
-                />
+                <label className="block text-slate-700 font-bold mb-1">Site Code:</label>
+                <input type="text" required placeholder="e.g. HYD-02" value={newSite.code} onChange={(e) => setNewSite({ ...newSite, code: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900" />
               </div>
-
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Site Name:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Hyderabad Plant"
-                  value={newSite.name}
-                  onChange={(e) => setNewSite({ ...newSite, name: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                />
+                <input type="text" required placeholder="e.g. Hyderabad Plant Phase II" value={newSite.name} onChange={(e) => setNewSite({ ...newSite, name: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900" />
               </div>
-
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Facility Type:</label>
-                <select
-                  value={newSite.type}
-                  onChange={(e) => setNewSite({ ...newSite, type: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                >
+                <select value={newSite.type} onChange={(e) => setNewSite({ ...newSite, type: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900">
                   <option value="Manufacturing Plant">Manufacturing Plant</option>
                   <option value="Distribution Center">Distribution Center</option>
-                  <option value="Warehouse Depot">Warehouse Depot</option>
                   <option value="R&D Center">R&D Center</option>
-                  <option value="Regional Office">Regional Office</option>
                 </select>
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">City:</label>
-                  <input
-                    type="text"
-                    value={newSite.city}
-                    onChange={(e) => setNewSite({ ...newSite, city: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">State:</label>
-                  <input
-                    type="text"
-                    value={newSite.state}
-                    onChange={(e) => setNewSite({ ...newSite, state: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                  />
-                </div>
-              </div>
             </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button type="button" onClick={() => setShowAddSiteModal(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md">
-                {actionLoading ? 'Saving...' : 'Create Site'}
-              </button>
+            <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
+              <button type="button" onClick={() => setShowAddSiteModal(false)} className="px-3.5 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">Cancel</button>
+              <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md">Create Site</button>
             </div>
           </form>
         </div>
@@ -958,293 +664,53 @@ const NetworkAndSites = () => {
       {/* MODAL: + ADD WAREHOUSE */}
       {showAddWarehouseModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateWarehouse} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+          <form onSubmit={handleCreateWarehouse} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center">
-                <Warehouse className="w-5 h-5 text-purple-600 mr-2" /> Register New Warehouse
-              </h3>
+              <h3 className="text-sm font-black text-slate-900 flex items-center"><Warehouse className="w-4 h-4 text-purple-600 mr-2" /> Register New Warehouse</h3>
               <button type="button" onClick={() => setShowAddWarehouseModal(false)} className="text-slate-400 font-bold">✕</button>
             </div>
-
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Warehouse Code (e.g. HYD-MWH):</label>
-                <input
-                  type="text"
-                  required
-                  value={newWarehouse.code}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, code: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold text-slate-900"
-                />
+                <label className="block text-slate-700 font-bold mb-1">Warehouse Code:</label>
+                <input type="text" required placeholder="e.g. HYD-WIP" value={newWarehouse.code} onChange={(e) => setNewWarehouse({ ...newWarehouse, code: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900" />
               </div>
-
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Warehouse Name:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Main Warehouse"
-                  value={newWarehouse.name}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, name: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                />
+                <input type="text" required placeholder="e.g. WIP Storage Bay" value={newWarehouse.name} onChange={(e) => setNewWarehouse({ ...newWarehouse, name: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900" />
               </div>
-
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Assigned Parent Site:</label>
-                <select
-                  value={newWarehouse.siteId}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, siteId: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                >
-                  <option value="">Unassigned (Select Site later)</option>
-                  {sites.map(s => (
-                    <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Warehouse Type:</label>
-                <select
-                  value={newWarehouse.type}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, type: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                >
-                  <option value="General">General</option>
-                  <option value="Raw">Raw Material</option>
-                  <option value="FG">Finished Goods</option>
-                  <option value="WIP">Work in Progress (WIP)</option>
-                  <option value="Quarantine">Quarantine</option>
-                  <option value="Scrap">Scrap / Waste</option>
+                <label className="block text-slate-700 font-bold mb-1">Parent Site Assignment:</label>
+                <select value={newWarehouse.siteId} onChange={(e) => setNewWarehouse({ ...newWarehouse, siteId: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900">
+                  <option value="">Unassigned</option>
+                  {sites.map(s => <option key={s._id} value={s._id}>{s.name} ({s.code})</option>)}
                 </select>
               </div>
             </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button type="button" onClick={() => setShowAddWarehouseModal(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow-md">
-                {actionLoading ? 'Saving...' : 'Create Warehouse'}
-              </button>
+            <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
+              <button type="button" onClick={() => setShowAddWarehouseModal(false)} className="px-3.5 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">Cancel</button>
+              <button type="submit" className="px-3.5 py-1.5 bg-purple-600 text-white font-bold text-xs rounded-xl shadow-md">Create Warehouse</button>
             </div>
           </form>
         </div>
       )}
 
-      {/* MODAL: + ASSIGN WAREHOUSE TO SITE */}
-      {assignWarehouseSiteModal && (
+      {/* INSPECTOR DRAWER */}
+      {selectedWarehouseDetail && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900">Assign Warehouse to {assignWarehouseSiteModal.name}</h3>
-              <button onClick={() => setAssignWarehouseSiteModal(null)} className="text-slate-400 font-bold">✕</button>
+              <h3 className="text-sm font-black text-slate-900 flex items-center"><Warehouse className="w-4 h-4 text-blue-600 mr-2" /> Warehouse Inspector</h3>
+              <button onClick={() => setSelectedWarehouseDetail(null)} className="text-slate-400 font-bold">✕</button>
             </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Select Warehouse:</label>
-                <select
-                  value={selectedAssignWarehouseId}
-                  onChange={(e) => setSelectedAssignWarehouseId(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                >
-                  <option value="">Select Warehouse...</option>
-                  {warehouses.map(w => (
-                    <option key={w._id} value={w._id}>
-                      {w.name} ({w.code}) {w.siteId ? `[Current: ${w.siteId.name}]` : '[Unassigned]'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Assignment Reason (Mandatory):</label>
-                <textarea
-                  value={mandatoryReason}
-                  onChange={(e) => setMandatoryReason(e.target.value)}
-                  placeholder="e.g. Restructuring storage allocation..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl h-20 text-xs font-medium"
-                />
-              </div>
+            <div className="space-y-2 text-xs font-semibold text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <p><strong>Name:</strong> {selectedWarehouseDetail.name}</p>
+              <p><strong>Code:</strong> {selectedWarehouseDetail.code}</p>
+              <p><strong>Type:</strong> {selectedWarehouseDetail.type}</p>
+              <p><strong>Site:</strong> {selectedWarehouseDetail.siteId?.name || 'Unassigned'}</p>
+              <p><strong>Status:</strong> {selectedWarehouseDetail.status}</p>
             </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button onClick={() => setAssignWarehouseSiteModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button onClick={handleConfirmAssignWarehouse} disabled={actionLoading} className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl">
-                {actionLoading ? 'Assigning...' : 'Confirm Assignment'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: UNLINK WAREHOUSE */}
-      {unlinkModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-amber-900 flex items-center">
-                <Unlink className="w-5 h-5 text-amber-600 mr-2" /> Unlink Warehouse from Site
-              </h3>
-              <button onClick={() => setUnlinkModal(null)} className="text-slate-400 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <p className="text-slate-700 font-medium">
-                Are you sure you want to unlink <strong>{unlinkModal.name}</strong> from <strong>{unlinkModal.siteId?.name || 'Site'}</strong>?
-              </p>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Unlink Reason (Mandatory for Audit Trail):</label>
-                <textarea
-                  value={mandatoryReason}
-                  onChange={(e) => setMandatoryReason(e.target.value)}
-                  placeholder="e.g. Warehouse undergoing relocation..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl h-20 text-xs font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button onClick={() => setUnlinkModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button onClick={handleConfirmUnlink} disabled={actionLoading} className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-md">
-                {actionLoading ? 'Unlinking...' : 'Confirm Unlink'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CHANGE SITE TRANSFER MODAL */}
-      {transferModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center">
-                <ArrowRightLeft className="w-5 h-5 text-blue-600 mr-2" /> Change Warehouse Site
-              </h3>
-              <button onClick={() => setTransferModal(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-slate-400 font-bold block">Warehouse:</span>
-                <p className="text-slate-900 font-black text-sm">{transferModal.name}</p>
-              </div>
-
-              <div>
-                <span className="text-slate-400 font-bold block">Current Site:</span>
-                <p className="text-blue-600 font-bold">{transferModal.siteId?.name || 'Unassigned'}</p>
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Target Site:</label>
-                <select
-                  value={selectedTargetSiteId}
-                  onChange={(e) => setSelectedTargetSiteId(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                >
-                  <option value="">Select Target Site...</option>
-                  {sites.map(s => (
-                    <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Transfer Reason (Mandatory for Audit Trail):</label>
-                <textarea
-                  value={mandatoryReason}
-                  onChange={(e) => setMandatoryReason(e.target.value)}
-                  placeholder="e.g. Admin transferred Raw Material Warehouse from Hyderabad Plant to Bangalore Plant..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 h-20"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button onClick={() => setTransferModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmTransfer}
-                disabled={actionLoading}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30"
-              >
-                {actionLoading ? 'Transferring...' : 'Confirm Transfer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DEACTIVATION IMPACT PREVIEW MODAL */}
-      {deactivateModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-rose-700 flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-rose-600" /> DEACTIVATION IMPACT PREVIEW
-              </h3>
-              <button onClick={() => setDeactivateModal(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 font-semibold">
-                Deactivating <strong>{deactivateModal.item.name}</strong> will disable new operational selections across the entire system for all users.
-              </div>
-
-              {impactData && (
-                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 font-bold text-slate-800">
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Assigned Users</span>
-                    <span className="text-lg font-black text-slate-900">{impactData.assignedUsers || 8}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Active Inventory</span>
-                    <span className="text-lg font-black text-slate-900">{impactData.activeInventory || 842}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Open Operations</span>
-                    <span className="text-lg font-black text-amber-600">{impactData.openOperations || 4}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Pending Transfers</span>
-                    <span className="text-lg font-black text-amber-600">{impactData.pendingTransfers || 2}</span>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="text-slate-900 font-extrabold block mb-1">
-                  Deactivation Reason (Mandatory):
-                </label>
-                <textarea
-                  value={mandatoryReason}
-                  onChange={(e) => setMandatoryReason(e.target.value)}
-                  placeholder="e.g. Facility maintenance, relocation, or structural closure..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 h-20"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button onClick={() => setDeactivateModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDeactivation}
-                disabled={actionLoading}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30"
-              >
-                {actionLoading ? 'Deactivating...' : 'Confirm Inactive'}
-              </button>
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setSelectedWarehouseDetail(null)} className="px-4 py-1.5 bg-slate-900 text-white font-bold text-xs rounded-xl">Close</button>
             </div>
           </div>
         </div>

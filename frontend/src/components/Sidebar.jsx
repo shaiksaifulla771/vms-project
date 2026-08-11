@@ -19,29 +19,22 @@ import {
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
   const { user, logout } = useAuth();
 
-  // Navigation Blueprint (Network & Sites directly below Dashboard)
+  // Streamlined Navigation Blueprint (Merged Master Structure)
   const menuItems = [
-    { id: 'dashboard', name: '1. Admin Control Center', icon: LayoutDashboard },
-    { id: 'sites', name: '2. Network & Sites', icon: Building2 },
-    { id: 'users-access', name: '3. Users & Scope Access', icon: ShieldCheck },
-    { id: 'vms', name: '4. VMS Workbench', icon: ShieldCheck },
-    { id: 'masters', name: '5. Master Data', icon: Database },
-    { id: 'inventory', name: '6. Inventory', icon: Boxes },
-    { id: 'planning', name: '7. MRP & Planning', icon: Cpu },
-    { id: 'scheduling', name: '8. Scheduling', icon: CalendarClock },
-    { id: 'production', name: '9. Production', icon: Factory },
-    { id: 'purchasing', name: '10. Procurement', icon: ShoppingBag },
-    { id: 'workflows', name: '11. Workflow Engine', icon: CalendarClock },
-    { id: 'email', name: '12. Email Templates', icon: BarChart3 },
-    { id: 'plugins', name: '13. Plugins & MCP', icon: Settings },
-    { id: 'quality', name: '14. Quality Control', icon: ShieldCheck },
-    { id: 'reports', name: '15. Costing & Reports', icon: BarChart3 },
-    { id: 'settings', name: '16. Activity & Audit Trail', icon: Settings }
+    { id: 'dashboard', name: '1. Executive Dashboard', icon: LayoutDashboard },
+    { id: 'sites', name: '2. Network & Sites Governance', icon: Building2 },
+    { id: 'vms', name: '3. VMS Workbench', icon: ShieldCheck },
+    { id: 'masters', name: '4. Master Data & BOM', icon: Database },
+    { id: 'inventory', name: '5. Inventory Management', icon: Boxes },
+    { id: 'planning', name: '6. MRP & Planning', icon: Cpu },
+    { id: 'production', name: '7. Production & Operations', icon: Factory },
+    { id: 'purchasing', name: '8. Procurement & Vendors', icon: ShoppingBag },
+    { id: 'quality', name: '9. Quality Control & Reports', icon: BarChart3 },
+    { id: 'settings', name: '10. Activity & System Audit', icon: Settings }
   ];
 
   const handleSelectModule = (id) => {
     setActivePage(id);
-    // Auto-hide sidebar completely to open module in 100% Full Screen
     setIsCollapsed(true);
   };
 
@@ -75,7 +68,7 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
           <button
             onClick={() => setIsCollapsed(true)}
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700/60"
-            title="Hide Module Menu (Full Screen)"
+            title="Hide Module Menu"
           >
             <X className="h-4 w-4" />
           </button>
@@ -88,13 +81,12 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
           </p>
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activePage === item.id || (activePage === 'bom' && item.id === 'masters') || (activePage === 'warehouse' && item.id === 'sites') || (activePage === 'mrp' && item.id === 'planning');
+            const isActive = activePage === item.id || (activePage === 'users-access' && item.id === 'sites') || (activePage === 'bom' && item.id === 'masters') || (activePage === 'warehouse' && item.id === 'sites') || (activePage === 'mrp' && item.id === 'planning');
 
             return (
               <button
                 key={item.id}
                 onClick={() => handleSelectModule(item.id)}
-                onDoubleClick={() => handleSelectModule(item.id)}
                 className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all group ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 font-extrabold'
