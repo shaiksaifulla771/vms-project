@@ -66,10 +66,24 @@ class MRPEngineService {
 
       // Fetch Open PO Supplies (Purchases on order)
       const openPOs = await PurchaseOrder.find({
-        materialId: mat._id,
+        $or: [
+          { materialId: mat._id },
+          { 'materials.materialId': mat._id }
+        ],
         status: { $in: ['Approved', 'Issued', 'Partially Received'] }
       });
-      const onOrderQty = openPOs.reduce((acc, po) => acc + (po.quantity - (po.receivedQuantity || 0)), 0);
+      const onOrderQty = openPOs.reduce((acc, po) => {
+        if (po.materialId && po.materialId.toString() === mat._id.toString()) {
+          return acc + ((po.quantity || 0) - (po.receivedQuantity || 0));
+        }
+        if (po.materials && Array.isArray(po.materials)) {
+          const item = po.materials.find(m => m.materialId && m.materialId.toString() === mat._id.toString());
+          if (item) {
+            return acc + ((item.quantity || 0) - (item.receivedQuantity || 0));
+          }
+        }
+        return acc;
+      }, 0);
 
       // Net Requirement Calculation
       // Net Req = Gross Req - (Available Stock + Open POs)
