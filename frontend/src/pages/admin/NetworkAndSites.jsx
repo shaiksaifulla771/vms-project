@@ -4,7 +4,16 @@ import {
   CheckCircle2,
   RefreshCw,
   Filter,
-  Plus
+  Plus,
+  Unlink,
+  ArrowRightLeft,
+  AlertTriangle,
+  Building2,
+  Warehouse,
+  Eye,
+  Edit2,
+  ShieldAlert,
+  ChevronRight
 } from 'lucide-react';
 
 const DEFAULT_SITES = [
@@ -76,7 +85,7 @@ const DEFAULT_AUDIT_LOGS = [
 ];
 
 const NetworkAndSites = () => {
-  const [activeTab, setActiveTab] = useState('sites'); // sites | warehouses | userScope | auditLog
+  const [activeTab, setActiveTab] = useState('hierarchyTree'); // hierarchyTree | sites | warehouses | userScope | auditLog
   const [searchTerm, setSearchTerm] = useState('');
 
   const [sites, setSites] = useState(DEFAULT_SITES);
@@ -90,9 +99,15 @@ const NetworkAndSites = () => {
   const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [selectedWarehouseDetail, setSelectedWarehouseDetail] = useState(null);
+  const [assignWarehouseModal, setAssignWarehouseModal] = useState(null); // Site object
+  const [transferModal, setTransferModal] = useState(null); // Warehouse object
+  const [unlinkModal, setUnlinkModal] = useState(null); // Warehouse object
+  const [deactivateModal, setDeactivateModal] = useState(null); // Site or Warehouse
   const [editUserScopeModal, setEditUserScopeModal] = useState(null);
 
   const [mandatoryReason, setMandatoryReason] = useState('');
+  const [selectedTargetSiteId, setSelectedTargetSiteId] = useState('');
+  const [selectedWarehouseToAssign, setSelectedWarehouseToAssign] = useState('');
   const [systemNotice, setSystemNotice] = useState(null);
 
   const [selectedRole, setSelectedRole] = useState('Inventory Manager');
@@ -101,6 +116,7 @@ const NetworkAndSites = () => {
 
   const [newSite, setNewSite] = useState({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
   const [newWarehouse, setNewWarehouse] = useState({ code: '', name: '', type: 'General', location: '', siteId: '' });
+  const [newUser, setNewUser] = useState({ username: '', email: '', role: 'Inventory Manager' });
 
   const fetchData = async () => {
     try {
@@ -132,6 +148,7 @@ const NetworkAndSites = () => {
     if (!newSite.code || !newSite.name) return;
     const created = { _id: `site-${Date.now()}`, code: newSite.code, name: newSite.name, type: newSite.type, status: 'Active', description: 'Newly registered plant facility', address: { city: newSite.city, state: newSite.state, country: newSite.country }, assignedWarehouses: [] };
     setSites([...sites, created]);
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'Network & Sites', locationName: newSite.name, reason: 'Registered new site master' }, ...auditLogs]);
     setSystemNotice({ title: 'Site Created', message: `Registered ${newSite.name} (${newSite.code}) successfully.` });
     setShowAddSiteModal(false);
     setNewSite({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
@@ -143,9 +160,79 @@ const NetworkAndSites = () => {
     const targetSite = sites.find(s => s._id === newWarehouse.siteId);
     const created = { _id: `wh-${Date.now()}`, code: newWarehouse.code, name: newWarehouse.name, type: newWarehouse.type, subCategory: 'General Storage', status: 'Active', description: 'Newly assigned warehouse depot', siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null };
     setWarehouses([...warehouses, created]);
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'Network & Sites', locationName: newWarehouse.name, reason: 'Registered new warehouse depot' }, ...auditLogs]);
     setSystemNotice({ title: 'Warehouse Created', message: `Registered ${newWarehouse.name} (${newWarehouse.code}) successfully.` });
     setShowAddWarehouseModal(false);
     setNewWarehouse({ code: '', name: '', type: 'General', location: '', siteId: '' });
+  };
+
+  const handleCreateUser = (e) => {
+    e.preventDefault();
+    if (!newUser.username || !newUser.email) return;
+    const created = { _id: `usr-${Date.now()}`, username: newUser.username, email: newUser.email, role: newUser.role, siteIds: [], warehouseIds: [] };
+    setUsers([...users, created]);
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'User Scope', locationName: newUser.username, reason: 'Added new system user' }, ...auditLogs]);
+    setSystemNotice({ title: 'User Registered', message: `Added user ${newUser.username} successfully.` });
+    setShowAddUserModal(false);
+    setNewUser({ username: '', email: '', role: 'Inventory Manager' });
+  };
+
+  const handleAssignWarehouseToSite = () => {
+    if (!selectedWarehouseToAssign || !mandatoryReason.trim()) {
+      alert('Please select a warehouse and enter a mandatory reason.');
+      return;
+    }
+    const targetSite = assignWarehouseModal;
+    setWarehouses(warehouses.map(w => w._id === selectedWarehouseToAssign ? { ...w, siteId: { _id: targetSite._id, name: targetSite.name } } : w));
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'ASSIGN', module: 'Network & Sites', locationName: targetSite.name, reason: mandatoryReason }, ...auditLogs]);
+    setSystemNotice({ title: 'Warehouse Assigned', message: `Assigned warehouse to ${targetSite.name}.` });
+    setAssignWarehouseModal(null);
+    setMandatoryReason('');
+    setSelectedWarehouseToAssign('');
+  };
+
+  const handleUnlinkWarehouse = () => {
+    if (!mandatoryReason.trim()) {
+      alert('Mandatory audit reason required to unlink location.');
+      return;
+    }
+    const wh = unlinkModal;
+    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: null } : w));
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'UNLINK', module: 'Network & Sites', locationName: wh.name, reason: mandatoryReason }, ...auditLogs]);
+    setSystemNotice({ title: 'Warehouse Unlinked', message: `Detached ${wh.name} from site.` });
+    setUnlinkModal(null);
+    setMandatoryReason('');
+  };
+
+  const handleTransferSite = () => {
+    if (!selectedTargetSiteId || !mandatoryReason.trim()) {
+      alert('Target site and mandatory reason required.');
+      return;
+    }
+    const wh = transferModal;
+    const targetSite = sites.find(s => s._id === selectedTargetSiteId);
+    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null } : w));
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'TRANSFER', module: 'Network & Sites', locationName: wh.name, reason: mandatoryReason }, ...auditLogs]);
+    setSystemNotice({ title: 'Site Transferred', message: `Transferred ${wh.name} to ${targetSite?.name}.` });
+    setTransferModal(null);
+    setMandatoryReason('');
+  };
+
+  const handleDeactivateLocation = () => {
+    if (!mandatoryReason.trim()) {
+      alert('Mandatory reason required for deactivation.');
+      return;
+    }
+    const target = deactivateModal;
+    if (target.code?.startsWith('HYD') || target.code?.startsWith('BLR') || target.code?.startsWith('MAA') || target._id?.startsWith('site')) {
+      setSites(sites.map(s => s._id === target._id ? { ...s, status: 'Inactive', deactivationReason: mandatoryReason } : s));
+    } else {
+      setWarehouses(warehouses.map(w => w._id === target._id ? { ...w, status: 'Inactive', deactivationReason: mandatoryReason } : w));
+    }
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'DEACTIVATE', module: 'Network & Sites', locationName: target.name, reason: mandatoryReason }, ...auditLogs]);
+    setSystemNotice({ title: 'Location Deactivated', message: `Marked ${target.name} as inactive.` });
+    setDeactivateModal(null);
+    setMandatoryReason('');
   };
 
   const handleOpenEditScope = (u) => {
@@ -163,6 +250,7 @@ const NetworkAndSites = () => {
       siteIds: sites.filter(s => selectedSiteIds.includes(s._id)),
       warehouseIds: warehouses.filter(w => selectedWarehouseIds.includes(w._id))
     } : u));
+    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'UPDATE_SCOPE', module: 'User Access Scope', locationName: editUserScopeModal.username, reason: mandatoryReason }, ...auditLogs]);
     setSystemNotice({ title: 'Scope Updated', message: `Updated access scope for ${editUserScopeModal.username}.` });
     setEditUserScopeModal(null);
   };
@@ -179,7 +267,7 @@ const NetworkAndSites = () => {
             <span className="text-xs text-slate-500 font-medium">● Sites & Hierarchy Governance</span>
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Network & Sites Master</h1>
-          <p className="text-xs text-slate-500 font-normal">Manage Plant Sites, Warehouse Depots, and User Access Scope.</p>
+          <p className="text-xs text-slate-500 font-normal">Manage Plant Sites, Warehouse Depots, Site-Warehouse Assignments, and User Scope.</p>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -200,6 +288,16 @@ const NetworkAndSites = () => {
             >
               <i className="ti ti-plus fs-5"></i>
               <span>Add Warehouse</span>
+            </button>
+          )}
+
+          {activeTab === 'userScope' && (
+            <button
+              onClick={() => setShowAddUserModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
+            >
+              <i className="ti ti-plus fs-5"></i>
+              <span>Add User</span>
             </button>
           )}
 
@@ -226,6 +324,17 @@ const NetworkAndSites = () => {
 
       {/* INAPP TEMPLATE STYLED TOP UNDERLINE TABS WITH TABLER ICONS */}
       <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl">
+        <button
+          onClick={() => setActiveTab('hierarchyTree')}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'hierarchyTree'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <i className="ti ti-git-fork fs-5"></i>
+          <span>Site ↔ Warehouse Tree</span>
+        </button>
         <button
           onClick={() => setActiveTab('sites')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
@@ -287,43 +396,100 @@ const NetworkAndSites = () => {
         </div>
       </div>
 
+      {/* TAB 0: SITE ↔ WAREHOUSE ASSIGNMENT TREE FEATURE */}
+      {activeTab === 'hierarchyTree' && (
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl p-5 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900">Manage Site ↔ Warehouse Hierarchy</h3>
+              <p className="text-xs text-slate-500 font-normal">A warehouse belongs to a site, but the relationship is fully manageable.</p>
+            </div>
+            <button
+              onClick={() => setShowAddSiteModal(true)}
+              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs"
+            >
+              + Create Site
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {sites.map((site) => {
+              const assigned = warehouses.filter(w => w.siteId?._id === site._id || w.siteId === site._id);
+              return (
+                <div key={site._id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Building2 className="w-5 h-5 text-slate-800" />
+                      <div>
+                        <h4 className="text-xs font-extrabold text-slate-900">{site.name} ({site.code})</h4>
+                        <span className="text-[11px] text-slate-500 font-medium">{site.type} • 📍 {site.address?.city || 'Hyderabad'}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${site.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                        {site.status}
+                      </span>
+                      <button
+                        onClick={() => setAssignWarehouseModal(site)}
+                        className="px-3 py-1 bg-white border border-slate-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-slate-100 shadow-2xs"
+                      >
+                        + Assign Warehouse
+                      </button>
+                      <button
+                        onClick={() => setDeactivateModal(site)}
+                        className="px-2.5 py-1 bg-white border border-rose-200 text-rose-600 font-bold text-xs rounded-lg hover:bg-rose-50"
+                      >
+                        Deactivate
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ASSIGNED WAREHOUSES LIST */}
+                  <div className="pl-6 pt-2 border-t border-slate-200 space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Assigned Warehouses ({assigned.length})</span>
+                    {assigned.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {assigned.map((wh) => (
+                          <div key={wh._id} className="p-3 bg-white border border-slate-200 rounded-lg space-y-2 flex flex-col justify-between shadow-2xs">
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-xs text-slate-900">✓ {wh.name}</span>
+                                <span className="text-[10px] font-mono text-blue-600 font-bold">{wh.code}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-medium block">Type: {wh.type}</span>
+                            </div>
+                            <div className="flex items-center space-x-1 pt-1 border-t border-slate-100">
+                              <button onClick={() => setSelectedWarehouseDetail(wh)} className="flex-1 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[10px] rounded text-center border border-slate-200">Inspect</button>
+                              <button onClick={() => setTransferModal(wh)} className="flex-1 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[10px] rounded text-center border border-slate-200">Transfer</button>
+                              <button onClick={() => setUnlinkModal(wh)} className="py-1 px-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[10px] rounded border border-rose-200">Unlink</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-white border border-slate-200 rounded-lg text-slate-400 text-xs italic">No warehouses currently assigned to this site. Click "+ Assign Warehouse" above to connect one.</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* TAB 1: SITE MASTER TABLE */}
       {activeTab === 'sites' && (
         <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>SITE NAME</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>CODE</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>FACILITY TYPE</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>LOCATION</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
-                <th className="py-2.5 px-3.5">
-                  <div className="flex items-center justify-between">
-                    <span>STATUS</span>
-                    <Filter className="w-3 h-3 text-slate-300" />
-                  </div>
-                </th>
+                <th className="py-2.5 px-3.5">SITE NAME</th>
+                <th className="py-2.5 px-3.5">CODE</th>
+                <th className="py-2.5 px-3.5">FACILITY TYPE</th>
+                <th className="py-2.5 px-3.5">LOCATION</th>
+                <th className="py-2.5 px-3.5">STATUS</th>
                 <th className="py-2.5 px-3.5">DESCRIPTION</th>
+                <th className="py-2.5 px-3.5 text-center">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
@@ -339,6 +505,9 @@ const NetworkAndSites = () => {
                     </span>
                   </td>
                   <td className="py-2.5 px-3.5 text-slate-400 text-xs">{s.description || '-'}</td>
+                  <td className="py-2.5 px-3.5 text-center">
+                    <button onClick={() => setDeactivateModal(s)} className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 font-bold text-xs rounded-lg border border-rose-200">Deactivate</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -356,9 +525,8 @@ const NetworkAndSites = () => {
                 <th className="py-2.5 px-3.5">CODE</th>
                 <th className="py-2.5 px-3.5">PARENT SITE</th>
                 <th className="py-2.5 px-3.5">CATEGORY</th>
-                <th className="py-2.5 px-3.5">SUB-CATEGORY</th>
                 <th className="py-2.5 px-3.5">STATUS</th>
-                <th className="py-2.5 px-3.5">DESCRIPTION</th>
+                <th className="py-2.5 px-3.5 text-center">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
@@ -366,15 +534,21 @@ const NetworkAndSites = () => {
                 <tr key={wh._id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{wh.name}</td>
                   <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer" onClick={() => setSelectedWarehouseDetail(wh)}>{wh.code}</td>
-                  <td className="py-2.5 px-3.5 text-slate-600 text-xs font-semibold">{wh.siteId?.name || <span className="text-slate-400">-</span>}</td>
+                  <td className="py-2.5 px-3.5 text-slate-600 text-xs font-semibold">{wh.siteId?.name || <span className="text-slate-400">Unassigned</span>}</td>
                   <td className="py-2.5 px-3.5 text-slate-600 text-xs">{wh.type}</td>
-                  <td className="py-2.5 px-3.5 text-slate-600 text-xs">{wh.subCategory || '-'}</td>
                   <td className="py-2.5 px-3.5 text-xs">
                     <span className={`font-bold ${wh.status === 'Active' ? 'text-emerald-600' : 'text-rose-600'}`}>
                       {wh.status}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3.5 text-slate-400 text-xs">{wh.description || '-'}</td>
+                  <td className="py-2.5 px-3.5 text-center">
+                    <div className="flex items-center justify-center space-x-1.5">
+                      <button onClick={() => setSelectedWarehouseDetail(wh)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 shadow-2xs">Inspect</button>
+                      <button onClick={() => setTransferModal(wh)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 shadow-2xs">Transfer</button>
+                      <button onClick={() => setUnlinkModal(wh)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 shadow-2xs">Unlink</button>
+                      <button onClick={() => setDeactivateModal(wh)} className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-600 font-bold text-[10px] rounded-lg border border-rose-200">Deactivate</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -450,6 +624,201 @@ const NetworkAndSites = () => {
         </div>
       )}
 
+      {/* MODAL: ASSIGN WAREHOUSE TO SITE */}
+      {assignWarehouseModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Assign Warehouse to {assignWarehouseModal.name}</h3>
+              <button onClick={() => setAssignWarehouseModal(null)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Select Available Warehouse:</label>
+                <select
+                  value={selectedWarehouseToAssign}
+                  onChange={e => setSelectedWarehouseToAssign(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold"
+                >
+                  <option value="">-- Choose Warehouse --</option>
+                  {warehouses.filter(w => w.status === 'Active').map(w => (
+                    <option key={w._id} value={w._id}>{w.name} ({w.code}) - currently {w.siteId?.name || 'Unassigned'}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Mandatory Audit Reason:</label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="Reason for assigning warehouse..."
+                  value={mandatoryReason}
+                  onChange={e => setMandatoryReason(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium"
+                />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button onClick={() => setAssignWarehouseModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button onClick={handleAssignWarehouseToSite} className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Confirm Assignment</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: UNLINK WAREHOUSE */}
+      {unlinkModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Unlink Warehouse: {unlinkModal.name}</h3>
+              <button onClick={() => setUnlinkModal(null)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <p className="text-slate-600 font-medium">This will detach <strong>{unlinkModal.name}</strong> from its current site. Enter a mandatory audit reason below:</p>
+              <textarea
+                required
+                rows={2}
+                placeholder="Reason for unlinking location..."
+                value={mandatoryReason}
+                onChange={e => setMandatoryReason(e.target.value)}
+                className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium"
+              />
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button onClick={() => setUnlinkModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button onClick={handleUnlinkWarehouse} className="px-3.5 py-1.5 bg-rose-600 text-white font-bold text-xs rounded-lg shadow-sm">Confirm Unlink</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TRANSFER SITE */}
+      {transferModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Transfer Warehouse: {transferModal.name}</h3>
+              <button onClick={() => setTransferModal(null)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Target Plant / Site:</label>
+                <select
+                  value={selectedTargetSiteId}
+                  onChange={e => setSelectedTargetSiteId(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold"
+                >
+                  <option value="">-- Choose New Parent Site --</option>
+                  {sites.filter(s => s.status === 'Active').map(s => (
+                    <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Mandatory Audit Reason:</label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="Reason for transferring warehouse..."
+                  value={mandatoryReason}
+                  onChange={e => setMandatoryReason(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium"
+                />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button onClick={() => setTransferModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button onClick={handleTransferSite} className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Transfer Warehouse</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DEACTIVATE LOCATION WITH IMPACT PREVIEW */}
+      {deactivateModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center text-rose-600">
+                <ShieldAlert className="w-4 h-4 mr-1.5" /> Deactivate {deactivateModal.name}
+              </h3>
+              <button onClick={() => setDeactivateModal(null)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 font-medium">
+                <strong>Impact Preview:</strong> Deactivating <strong>{deactivateModal.name}</strong> will soft-disable this location and block new dispatches. Active users assigned to this scope will be restricted.
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Mandatory Reason:</label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="Required deactivation audit explanation..."
+                  value={mandatoryReason}
+                  onChange={e => setMandatoryReason(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium"
+                />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button onClick={() => setDeactivateModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button onClick={handleDeactivateLocation} className="px-3.5 py-1.5 bg-rose-600 text-white font-bold text-xs rounded-lg shadow-sm">Confirm Deactivation</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT USER SCOPE */}
+      {editUserScopeModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Edit User Scope: {editUserScopeModal.username}</h3>
+              <button onClick={() => setEditUserScopeModal(null)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Role:</label>
+                <select value={selectedRole} onChange={e => setSelectedRole(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold">
+                  <option>Admin</option>
+                  <option>Inventory Manager</option>
+                  <option>Production Manager</option>
+                  <option>Planner</option>
+                  <option>Viewer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Allowed Sites Scope:</label>
+                <div className="space-y-1 max-h-28 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
+                  {sites.map(s => (
+                    <label key={s._id} className="flex items-center space-x-2 font-medium">
+                      <input
+                        type="checkbox"
+                        checked={selectedSiteIds.includes(s._id)}
+                        onChange={e => {
+                          if (e.target.checked) setSelectedSiteIds([...selectedSiteIds, s._id]);
+                          else setSelectedSiteIds(selectedSiteIds.filter(id => id !== s._id));
+                        }}
+                      />
+                      <span>{s.name} ({s.code})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Mandatory Audit Reason:</label>
+                <textarea required rows={2} placeholder="Reason for scope update..." value={mandatoryReason} onChange={e => setMandatoryReason(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium" />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button onClick={() => setEditUserScopeModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button onClick={handleSaveUserScope} className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Scope</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: ADD SITE */}
       {showAddSiteModal && (
         <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -471,6 +840,67 @@ const NetworkAndSites = () => {
             <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
               <button type="button" onClick={() => setShowAddSiteModal(false)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
               <button type="submit" className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Site</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL: ADD WAREHOUSE */}
+      {showAddWarehouseModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleCreateWarehouse} className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Add Warehouse Master</h3>
+              <button type="button" onClick={() => setShowAddWarehouseModal(false)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Warehouse Code:</label>
+                <input type="text" required placeholder="HYD-RMW2" value={newWarehouse.code} onChange={e => setNewWarehouse({ ...newWarehouse, code: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold" />
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Warehouse Name:</label>
+                <input type="text" required placeholder="Raw Material Warehouse 2" value={newWarehouse.name} onChange={e => setNewWarehouse({ ...newWarehouse, name: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold" />
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Parent Site:</label>
+                <select value={newWarehouse.siteId} onChange={e => setNewWarehouse({ ...newWarehouse, siteId: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold">
+                  <option value="">-- Choose Parent Site --</option>
+                  {sites.map(s => (
+                    <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button type="button" onClick={() => setShowAddWarehouseModal(false)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button type="submit" className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Warehouse</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL: ADD USER */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleCreateUser} className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900">Register System User</h3>
+              <button type="button" onClick={() => setShowAddUserModal(false)} className="text-slate-400 font-bold">✕</button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Username:</label>
+                <input type="text" required placeholder="John Doe" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold" />
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Email:</label>
+                <input type="email" required placeholder="john@vendoros.com" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold" />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+              <button type="button" onClick={() => setShowAddUserModal(false)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
+              <button type="submit" className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Register User</button>
             </div>
           </form>
         </div>
