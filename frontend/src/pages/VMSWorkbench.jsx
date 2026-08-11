@@ -171,8 +171,8 @@ export default function VMSWorkbench() {
             <button onClick={() => setShowVisitorModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800">
               <Plus className="h-4 w-4" /> Visitor
             </button>
-            <button onClick={() => setShowAppointmentModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">
-              <Calendar className="h-4 w-4" /> Appointment
+            <button onClick={() => setShowAppointmentModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-sm font-bold text-white hover:bg-orange-700 shadow-2xs">
+              <Calendar className="h-4 w-4" /> Schedule Appointment
             </button>
             <button onClick={loadData} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -395,7 +395,7 @@ function AppointmentTable({ appointments, onApprove, onReject, onReschedule }) {
                     <button onClick={() => onReschedule(appointment._id, 10)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700">+10</button>
                     <button onClick={() => onReschedule(appointment._id, 30)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700">+30</button>
                     <button onClick={() => onReschedule(appointment._id, 60)} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700">+1h</button>
-                    <button onClick={() => onReject(appointment._id)} className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-bold text-white"><XCircle className="h-3.5 w-3.5" />Reject</button>
+                    <button onClick={() => onReject(appointment._id)} className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-bold text-white"><XCircle className="h-3.5 w-3.5" />Unschedule / Reject</button>
                   </div>
                 ) : <span className="text-xs font-semibold text-slate-400">No action</span>}
               </td>
