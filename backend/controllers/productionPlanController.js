@@ -106,18 +106,36 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
     };
   });
 
+  // Assign dates & work center if provided
+  if (req.body.startDate) plan.scheduledStartDate = new Date(req.body.startDate);
+  if (req.body.endDate) plan.scheduledEndDate = new Date(req.body.endDate);
+  if (req.body.workCenter) plan.workCenter = req.body.workCenter;
+
   const order = await ProductionOrder.create({
     prdNumber,
     planId: plan._id,
     bomId: plan.bomId,
     productId: plan.productId,
+    siteId: plan.siteId,
     sourceWarehouseId: plan.warehouseId,
     destinationWarehouseId: plan.warehouseId,
+    scheduledStartDate: req.body.startDate ? new Date(req.body.startDate) : new Date(),
+    scheduledEndDate: req.body.endDate ? new Date(req.body.endDate) : new Date(Date.now() + 86400000 * 3),
+    workCenter: req.body.workCenter || 'Main Assembly Line 1',
     targetQuantity: scheduleQty,
+    completedQuantity: 0,
+    rejectedQuantity: 0,
     batchNumber: plan.planNumber,
     status: 'Scheduled',
-    components,
+    priority: plan.priority || 'Medium',
     expectedCost,
+    actualCost: 0,
+    components,
+    history: [{
+      status: 'Scheduled',
+      changedBy: req.user ? req.user.id : null,
+      notes: `Production Order created automatically via scheduling Plan ${plan.planNumber}`
+    }],
     createdBy: req.user ? req.user.id : null,
     ipAddress: req.ip,
   });
@@ -253,6 +271,14 @@ exports.releaseProductionPlan = asyncHandler(async (req, res, next) => {
 exports.unscheduleProductionPlan = asyncHandler(async (req, res, next) => {
   const plan = await ProductionPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+  if (['Unscheduled', 'Pending', 'PLANNED'].includes(plan.status)) {
+    return res.status(200).json({
+      success: true,
+      message: 'PLAN_ALREADY_UNSCHEDULED',
+      data: plan
+    });
+  }
 
   const orders = await ProductionOrder.find({ planId: plan._id });
   for (const order of orders) {

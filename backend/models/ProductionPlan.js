@@ -66,6 +66,17 @@ const ProductionPlanSchema = new mongoose.Schema({
     enum: ['Low', 'Medium', 'High', 'Critical'],
     default: 'Medium',
   },
+  scheduledStartDate: {
+    type: Date,
+  },
+  scheduledEndDate: {
+    type: Date,
+  },
+  workCenter: {
+    type: String,
+    trim: true,
+    default: 'Main Assembly Line 1',
+  },
   reason: {
     type: String,
     default: '',

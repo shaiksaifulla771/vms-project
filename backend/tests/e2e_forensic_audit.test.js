@@ -218,6 +218,7 @@ describe('VMS ERP — End-to-End MRP → Scheduling → Production → Inventory
     // 5. DOUBLE-UNSCHEDULE SAFETY TEST (Idempotency & Non-Negative Balances)
     await productionPlanController.unscheduleProductionPlan(unscheduleReq, mockRes, () => {});
     expect(responseData.success).toBe(true);
+    expect(responseData.message).toBe('PLAN_ALREADY_UNSCHEDULED');
 
     const invItemAfterDoubleUnschedule = await InventoryItem.findOne({ materialId: rawMat._id, warehouseId: whA._id });
     expect(invItemAfterDoubleUnschedule.reserved).toBe(0);
