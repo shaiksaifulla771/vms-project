@@ -4,6 +4,7 @@ const EmailTemplate = require('../models/EmailTemplate');
 const emailTemplateService = require('./emailTemplateService');
 const auditService = require('./auditService');
 const logger = require('../utils/logger');
+const https = require('https');
 
 let nodemailer = null;
 try {
@@ -14,6 +15,9 @@ try {
 
 class EmailService {
   getProvider() {
+    if (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY) {
+      return 'brevo';
+    }
     return process.env.EMAIL_PROVIDER || 'console';
   }
 
@@ -30,7 +34,86 @@ class EmailService {
   }
 
   /**
-   * Direct email dispatch
+   * Helper to send transactional email via Brevo REST API (v3)
+   */
+  async sendViaBrevo(options) {
+    const apiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+    if (!apiKey) {
+      throw new Error('Brevo email dispatch failed: BREVO_API_KEY environment variable is missing.');
+    }
+
+    const senderEmail = process.env.EMAIL_FROM || process.env.BREVO_SENDER_EMAIL || 'no-reply@vms-erp.local';
+    const senderName = process.env.EMAIL_FROM_NAME || 'VendorOS VMS';
+
+    const payload = {
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: options.recipient }],
+      subject: options.subject,
+      htmlContent: options.htmlBody || `<p>${options.textBody || ''}</p>`,
+      textContent: options.textBody || options.htmlBody || ''
+    };
+
+    if (options.cc && Array.isArray(options.cc) && options.cc.length > 0) {
+      payload.cc = options.cc.map(e => ({ email: e }));
+    }
+    if (options.bcc && Array.isArray(options.bcc) && options.bcc.length > 0) {
+      payload.bcc = options.bcc.map(e => ({ email: e }));
+    }
+
+    if (typeof fetch === 'function') {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': apiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const responseData = await response.json();
+      if (!response.ok) {
+        throw new Error(`Brevo API Error (${response.status}): ${responseData.message || JSON.stringify(responseData)}`);
+      }
+      return responseData.messageId || `BREVO-${Date.now()}`;
+    }
+
+    // Node.js fallback using https module
+    return new Promise((resolve, reject) => {
+      const dataString = JSON.stringify(payload);
+      const req = https.request('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': apiKey,
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(dataString)
+        }
+      }, (res) => {
+        let body = '';
+        res.on('data', chunk => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(body);
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(parsed.messageId || `BREVO-${Date.now()}`);
+            } else {
+              reject(new Error(`Brevo API Error (${res.statusCode}): ${parsed.message || body}`));
+            }
+          } catch (e) {
+            reject(new Error(`Brevo response parse error: ${e.message}`));
+          }
+        });
+      });
+
+      req.on('error', err => reject(err));
+      req.write(dataString);
+      req.end();
+    });
+  }
+
+  /**
+   * Direct email dispatch (Supports Brevo API, SMTP, and Console fallback)
    */
   async sendEmail(options) {
     const { recipient, cc, bcc, subject, htmlBody, textBody, templateCode, metadata, userId } = options;
@@ -43,7 +126,10 @@ class EmailService {
     let messageId = `MSG-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     try {
-      if (provider === 'smtp') {
+      if (provider === 'brevo') {
+        messageId = await this.sendViaBrevo(options);
+        logger.info('EmailService', `Brevo Transactional Email dispatched to ${recipient} (MessageId: ${messageId})`);
+      } else if (provider === 'smtp') {
         if (!nodemailer) {
           throw new Error('SMTP email requires the nodemailer package to be installed');
         }
