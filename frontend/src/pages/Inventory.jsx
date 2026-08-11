@@ -227,7 +227,7 @@ const Inventory = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center space-x-1.5 px-4 py-2.5 text-xs font-bold transition-all border-b-2 -mb-px ${
                 isActive
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-orange-500 text-orange-600'
                   : 'border-transparent text-slate-400 hover:text-slate-600'
               }`}
             >
