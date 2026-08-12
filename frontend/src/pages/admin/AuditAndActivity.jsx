@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import {
   FileText,
   Users,
@@ -18,83 +18,13 @@ import {
   ArrowRight
 } from 'lucide-react';
 
-const DEFAULT_LOGS = [
-  {
-    _id: 'log-1',
-    timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-    userName: 'Shaik Saifulla',
-    role: 'Admin',
-    action: 'DEACTIVATE',
-    module: 'Network & Sites',
-    locationName: 'Old Storage Depot',
-    reason: 'Structure maintenance & obsolete inventory clearance',
-    previousValue: { status: 'Active' },
-    newValue: { status: 'Inactive', reason: 'Structure maintenance' }
-  },
-  {
-    _id: 'log-2',
-    timestamp: new Date(Date.now() - 55 * 60 * 1000).toISOString(),
-    userName: 'Rahul Kumar',
-    role: 'Inventory Manager',
-    action: 'UPDATE',
-    module: 'Inventory',
-    locationName: 'Raw Material Warehouse',
-    reason: 'Stock transfer for production batch #1042',
-    previousValue: { quantity: 150 },
-    newValue: { quantity: 450 }
-  },
-  {
-    _id: 'log-3',
-    timestamp: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
-    userName: 'Ahmed Khan',
-    role: 'Planner',
-    action: 'CREATE',
-    module: 'VMS',
-    locationName: 'Hyderabad Plant',
-    reason: 'Scheduled vendor dispatch appointment',
-    previousValue: null,
-    newValue: { vendor: 'Acme Materials' }
-  },
-  {
-    _id: 'log-4',
-    timestamp: new Date(Date.now() - 170 * 60 * 1000).toISOString(),
-    userName: 'Shaik Saifulla',
-    role: 'Admin',
-    action: 'ACCESS_CHANGE',
-    module: 'Users & Access',
-    locationName: 'Rahul Kumar Scope',
-    reason: 'Admin updated Rahul Kumar warehouse access scope to Main & Raw Material WH.',
-    previousValue: { scope: 'Unrestricted' },
-    newValue: { scope: 'Main & Raw Material WH' }
-  },
-  {
-    _id: 'log-5',
-    timestamp: new Date(Date.now() - 240 * 60 * 1000).toISOString(),
-    userName: 'Priya Sharma',
-    role: 'Production Manager',
-    action: 'CREATE',
-    module: 'Production',
-    locationName: 'Finished Goods Warehouse',
-    reason: 'Material assigned for PCB Assembly Batch',
-    previousValue: null,
-    newValue: { targetQty: 500 }
-  }
-];
-
-const DEFAULT_ACTIVE_USERS = [
-  { username: 'Shaik Saifulla', role: 'Admin', isOnline: true, activityStatusText: 'Active now', siteIds: [{ name: 'Global (All Sites)' }] },
-  { username: 'Rahul Kumar', role: 'Inventory Manager', isOnline: true, activityStatusText: 'Active 3 min ago', siteIds: [{ name: 'Hyderabad Plant' }] },
-  { username: 'Priya Sharma', role: 'Production Manager', isOnline: true, activityStatusText: 'Active 5 min ago', siteIds: [{ name: 'Hyderabad Plant' }] },
-  { username: 'Ahmed Khan', role: 'Planner', isOnline: false, activityStatusText: 'Active 28 min ago', siteIds: [{ name: 'Hyderabad Plant' }] },
-  { username: 'Alex Vance', role: 'QC Inspector', isOnline: false, activityStatusText: 'Offline', siteIds: [{ name: 'Chennai Distribution Center' }] }
-];
-
 const AuditAndActivity = () => {
   const [activeTab, setActiveTab] = useState('audit'); // audit | live | login | access
-  const [logs, setLogs] = useState(DEFAULT_LOGS);
-  const [activeUsers, setActiveUsers] = useState(DEFAULT_ACTIVE_USERS);
+  const [logs, setLogs] = useState([]);
+  const [activeUsers, setActiveUsers] = useState([]);
   const [loginHistory, setLoginHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Filters state
   const [filters, setFilters] = useState({
@@ -114,6 +44,7 @@ const AuditAndActivity = () => {
   const fetchAuditData = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams();
       if (filters.user) params.append('user', filters.user);
       if (filters.role) params.append('role', filters.role);
@@ -122,23 +53,22 @@ const AuditAndActivity = () => {
       if (filters.search) params.append('search', filters.search);
 
       const [auditRes, activeUsersRes] = await Promise.all([
-        axios.get(`/api/admin/audit-logs?${params.toString()}`),
-        axios.get('/api/admin/active-users')
+        api.get(`/api/admin/audit-logs?${params.toString()}`),
+        api.get('/api/admin/active-users')
       ]);
 
-      const fetchedLogs = auditRes.data.logs || [];
-      if (fetchedLogs.length > 0) setLogs(fetchedLogs);
-      else setLogs(DEFAULT_LOGS);
+      const fetchedLogs = auditRes.data?.logs || auditRes.data?.data || (Array.isArray(auditRes.data) ? auditRes.data : []);
+      setLogs(fetchedLogs);
 
-      const fetchedActive = activeUsersRes.data.activeUsers || [];
-      if (fetchedActive.length > 0) setActiveUsers(fetchedActive);
-      else setActiveUsers(DEFAULT_ACTIVE_USERS);
+      const fetchedActive = activeUsersRes.data?.activeUsers || activeUsersRes.data?.data || [];
+      setActiveUsers(fetchedActive);
 
-      setLoginHistory(activeUsersRes.data.loginHistory || []);
+      setLoginHistory(activeUsersRes.data?.loginHistory || []);
     } catch (err) {
-      console.warn('Audit data load fallback to default state:', err.message);
-      setLogs(DEFAULT_LOGS);
-      setActiveUsers(DEFAULT_ACTIVE_USERS);
+      console.error('Failed to fetch audit data:', err);
+      setError(err.response?.data?.error || 'Unable to load enterprise audit logs from server.');
+      setLogs([]);
+      setActiveUsers([]);
     } finally {
       setLoading(false);
     }

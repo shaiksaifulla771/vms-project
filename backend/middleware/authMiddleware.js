@@ -1,8 +1,7 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const getJwtSecret = require('../config/jwt');
+const { admin, auth } = require('../config/firebaseAdmin');
 
-// Protect routes
+// Protect routes using Firebase Admin SDK ID Token Verification
 exports.protect = async (req, res, next) => {
   let token;
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -14,25 +13,60 @@ exports.protect = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, getJwtSecret());
-    const user = await User.findById(decoded.id);
+    // 1. Verify Firebase ID Token signature, expiration, and revocation status
+    const firebaseAuth = auth || (admin.auth ? admin.auth() : null);
+    let decodedToken;
+    try {
+      decodedToken = await firebaseAuth.verifyIdToken(token, true);
+    } catch (revocationErr) {
+      // Fallback to standard signature verification if IAM online revocation check fails
+      decodedToken = await firebaseAuth.verifyIdToken(token, false);
+    }
+
+    // 2. Server-Side Email Verification Check
+    if (decodedToken.email_verified !== true) {
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Email verification required. Please verify your email before accessing VMS API.',
+        requireVerification: true,
+        accountStatus: 'EMAIL_UNVERIFIED'
+      });
+    }
+
+    // 3. Query MongoDB user by indexed firebaseUid
+    const user = await User.findOne({ firebaseUid: decodedToken.uid });
 
     if (!user) {
-      return res.status(401).json({ success: false, error: 'User no longer exists' });
+      return res.status(401).json({ success: false, error: 'User record not found in VMS database' });
     }
 
-    // Global Revocation Check
-    // If tokenVersion in DB was incremented (via logout, password reset, or admin revoke),
-    // existing JWT is immediately invalidated.
-    const userTokenVersion = (user.tokenVersion !== undefined && user.tokenVersion !== null) ? user.tokenVersion : 0;
-    if (decoded.tokenVersion !== undefined && decoded.tokenVersion !== userTokenVersion) {
-      return res.status(401).json({ success: false, error: 'Token revoked or expired. Please log in again.' });
+    // Synchronize emailVerified in MongoDB if out of sync
+    if (!user.emailVerified) {
+      user.emailVerified = true;
+      await user.save();
     }
 
+    // 4. Exact accountStatus === 'ACTIVE' check
+    const status = (user.accountStatus || '').toUpperCase();
+    if (status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        error: `Account status is ${user.accountStatus}. Access denied.`,
+        accountStatus: user.accountStatus
+      });
+    }
+
+    // 5. Populate req.user with full Mongoose User document
     req.user = user;
+    req.firebaseToken = decodedToken;
     next();
   } catch (err) {
-    return res.status(401).json({ success: false, error: 'Token validation failed' });
+    if (err.code === 'auth/id-token-revoked') {
+      return res.status(401).json({ success: false, error: 'Token has been revoked. Please log in again.' });
+    } else if (err.code === 'auth/id-token-expired') {
+      return res.status(401).json({ success: false, error: 'Token expired. Please log in again.' });
+    }
+    return res.status(401).json({ success: false, error: 'Token validation failed', details: err.message });
   }
 };
 

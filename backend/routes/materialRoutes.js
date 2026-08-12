@@ -12,22 +12,22 @@ const {
   getNextMaterialCode,
   peekNextMaterialCode
 } = require('../controllers/materialController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
 router.route('/batch')
-  .post(protect, createMaterialsBatch);
+  .post(protect, authorize('Admin', 'Manager', 'Inventory Manager'), createMaterialsBatch);
 
 router.route('/batch-upload')
-  .post(protect, upload.single('file'), createMaterialsBatchUpload);
+  .post(protect, authorize('Admin', 'Manager', 'Inventory Manager'), upload.single('file'), createMaterialsBatchUpload);
 
 router.route('/batch-delete-source')
-  .post(protect, deleteMaterialsBySource);
+  .post(protect, authorize('Admin'), deleteMaterialsBySource);
 
 router.route('/batch-delete')
-  .post(protect, batchDeleteMaterials);
+  .post(protect, authorize('Admin'), batchDeleteMaterials);
 
 router.route('/sequence-peek')
   .get(protect, peekNextMaterialCode);
@@ -37,11 +37,11 @@ router.route('/next-code')
 
 router.route('/')
   .get(protect, getMaterials)
-  .post(protect, createMaterial);
+  .post(protect, authorize('Admin', 'Manager', 'Inventory Manager'), createMaterial);
 
 router.route('/:id')
   .get(protect, getMaterial)
-  .put(protect, updateMaterial)
-  .delete(protect, deleteMaterial);
+  .put(protect, authorize('Admin', 'Manager', 'Inventory Manager'), updateMaterial)
+  .delete(protect, authorize('Admin', 'Manager'), deleteMaterial);
 
 module.exports = router;

@@ -6,16 +6,16 @@ const {
   updateWarehouse
 } = require('../controllers/warehouseController');
 
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 router.route('/')
   .get(protect, getWarehouses)
-  .post(protect, createWarehouse);
+  .post(protect, authorize('Admin'), createWarehouse);
 
 router.route('/:id')
   .get(protect, getWarehouse)
-  .put(protect, updateWarehouse);
+  .put(protect, authorize('Admin', 'Manager'), updateWarehouse);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { authorize } = require('../middleware/authMiddleware');
 const {
   getNetworkSummary,
   getSites,
@@ -16,6 +17,9 @@ const {
   getActiveUsersAndSessions,
   updateUserAccess
 } = require('../controllers/adminController');
+
+// All admin routes require Admin role
+router.use(authorize('Admin'));
 
 // 1. Control Center Dashboard Summary
 router.get('/network-summary', getNetworkSummary);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import {
   CheckCircle2,
   RefreshCw,
@@ -19,103 +19,17 @@ import {
   Bell
 } from 'lucide-react';
 
-const DEFAULT_SITES = [
-  {
-    _id: 'site-1',
-    code: 'HYD-01',
-    name: 'Hyderabad Plant',
-    type: 'Manufacturing Plant',
-    status: 'Active',
-    description: 'Primary manufacturing & assembly unit',
-    address: { city: 'Hyderabad', state: 'Telangana', country: 'India' },
-    assignedWarehouses: [
-      { _id: 'wh-1', name: 'Main Warehouse', code: 'HYD-MWH', type: 'General', status: 'Active' },
-      { _id: 'wh-2', name: 'Raw Material Warehouse', code: 'HYD-RMW', type: 'Raw', status: 'Active' },
-      { _id: 'wh-3', name: 'Finished Goods Warehouse', code: 'HYD-FGW', type: 'FG', status: 'Active' }
-    ]
-  },
-  {
-    _id: 'site-2',
-    code: 'BLR-01',
-    name: 'Bangalore Plant',
-    type: 'Manufacturing Plant',
-    status: 'Active',
-    description: 'Component fabrication facility',
-    address: { city: 'Bangalore', state: 'Karnataka', country: 'India' },
-    assignedWarehouses: []
-  },
-  {
-    _id: 'site-3',
-    code: 'MAA-01',
-    name: 'Chennai Distribution Center',
-    type: 'Distribution Center',
-    status: 'Active',
-    description: 'Regional logistics & distribution hub',
-    address: { city: 'Chennai', state: 'Tamil Nadu', country: 'India' },
-    assignedWarehouses: []
-  },
-  {
-    _id: 'site-4',
-    code: 'PUN-01',
-    name: 'Pune Facility',
-    type: 'R&D Center',
-    status: 'Inactive',
-    deactivationReason: 'Site restructuring and facility relocation',
-    description: 'Research & testing facility',
-    address: { city: 'Pune', state: 'Maharashtra', country: 'India' },
-    assignedWarehouses: []
-  }
-];
-
-const DEFAULT_WAREHOUSES = [
-  { _id: 'wh-1', code: 'HYD-MWH', name: 'Main Warehouse', type: 'General', subCategory: 'Main Storage', status: 'Active', description: 'Central inventory receiving depot', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
-  { _id: 'wh-2', code: 'HYD-RMW', name: 'Raw Material Warehouse', type: 'Raw Material', subCategory: 'Retail Components', status: 'Active', description: 'Raw component item sourcing bay', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
-  { _id: 'wh-3', code: 'HYD-FGW', name: 'Finished Goods Warehouse', type: 'Finished Goods', subCategory: 'Puree / Porridge', status: 'Active', description: 'Assembled finished product storage', siteId: { _id: 'site-1', name: 'Hyderabad Plant' } },
-  { _id: 'wh-4', code: 'PUN-OLD', name: 'Old Storage Depot', type: 'Scrap', subCategory: 'Maintenance', status: 'Inactive', deactivationReason: 'Structure maintenance', description: 'Legacy storage bay', siteId: { _id: 'site-4', name: 'Pune Facility' } }
-];
-
-const DEFAULT_USERS = [
-  { _id: 'usr-1', username: 'Shaik Saifulla', email: 'admin@vendoros.com', role: 'Admin', status: 'Active', siteIds: [], warehouseIds: [] },
-  { _id: 'usr-2', username: 'Rahul Kumar', email: 'rahul@vendoros.com', role: 'Inventory Manager', status: 'Active', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-1', name: 'Main Warehouse' }, { _id: 'wh-2', name: 'Raw Material Warehouse' }] },
-  { _id: 'usr-3', username: 'Priya Sharma', email: 'priya@vendoros.com', role: 'Production Manager', status: 'Active', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [{ _id: 'wh-3', name: 'Finished Goods Warehouse' }] },
-  { _id: 'usr-4', username: 'Ahmed Khan', email: 'ahmed@vendoros.com', role: 'Planner', status: 'Active', siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }], warehouseIds: [] }
-];
-
-const DEFAULT_PENDING_REGISTRATIONS = [
-  {
-    _id: 'req-101',
-    username: 'Amit Malhotra',
-    email: 'amit.m@vendoros.com',
-    requestedRole: 'Inventory Manager',
-    proposedSite: 'Hyderabad Plant',
-    registeredAt: new Date(Date.now() - 15 * 60 * 1000).toISOString()
-  },
-  {
-    _id: 'req-102',
-    username: 'Sneha Patel',
-    email: 'sneha.p@vendoros.com',
-    requestedRole: 'QC Inspector',
-    proposedSite: 'Bangalore Plant',
-    registeredAt: new Date(Date.now() - 35 * 60 * 1000).toISOString()
-  }
-];
-
-const DEFAULT_AUDIT_LOGS = [
-  { _id: 'log-1', timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'DEACTIVATE', module: 'Network & Sites', locationName: 'Old Storage Depot', reason: 'Structure maintenance' },
-  { _id: 'log-2', timestamp: new Date(Date.now() - 55 * 60 * 1000).toISOString(), userName: 'Rahul Kumar', role: 'Inventory Manager', action: 'UPDATE', module: 'Inventory', locationName: 'Raw Material Warehouse', reason: 'Stock transfer batch #1042' },
-  { _id: 'log-3', timestamp: new Date(Date.now() - 110 * 60 * 1000).toISOString(), userName: 'Ahmed Khan', role: 'Planner', action: 'CREATE', module: 'VMS', locationName: 'Hyderabad Plant', reason: 'Vendor dispatch appointment' }
-];
-
 const NetworkAndSites = () => {
-  const [activeTab, setActiveTab] = useState('pendingApprovals'); // hierarchyTree | sites | warehouses | userScope | pendingApprovals | auditLog
+  const [activeTab, setActiveTab] = useState('sites'); // hierarchyTree | sites | warehouses | userScope | pendingApprovals | auditLog
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [sites, setSites] = useState(DEFAULT_SITES);
-  const [warehouses, setWarehouses] = useState(DEFAULT_WAREHOUSES);
-  const [users, setUsers] = useState(DEFAULT_USERS);
-  const [pendingRequests, setPendingRequests] = useState(DEFAULT_PENDING_REGISTRATIONS);
-  const [auditLogs, setAuditLogs] = useState(DEFAULT_AUDIT_LOGS);
+  const [sites, setSites] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Modals & Drawers
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
@@ -145,19 +59,38 @@ const NetworkAndSites = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [sitesRes, warehousesRes, usersRes, auditRes] = await Promise.all([
-        axios.get('/api/admin/sites'),
-        axios.get('/api/admin/warehouses'),
-        axios.get('/api/admin/active-users'),
-        axios.get('/api/admin/audit-logs')
+      setError(null);
+      const [sitesRes, warehousesRes, usersRes, auditRes, allUsersRes] = await Promise.all([
+        api.get('/api/admin/sites').catch(() => ({ data: [] })),
+        api.get('/api/admin/warehouses').catch(() => ({ data: [] })),
+        api.get('/api/admin/active-users').catch(() => ({ data: {} })),
+        api.get('/api/admin/audit-logs').catch(() => ({ data: {} })),
+        api.get('/api/users').catch(() => ({ data: { data: [] } }))
       ]);
 
-      if (sitesRes.data?.length > 0) setSites(sitesRes.data);
-      if (warehousesRes.data?.length > 0) setWarehouses(warehousesRes.data);
-      if (usersRes.data?.activeUsers?.length > 0) setUsers(usersRes.data.activeUsers);
-      if (auditRes.data?.logs?.length > 0) setAuditLogs(auditRes.data.logs);
+      const fetchedSites = Array.isArray(sitesRes.data) ? sitesRes.data : sitesRes.data?.data || [];
+      setSites(fetchedSites);
+
+      const fetchedWarehouses = Array.isArray(warehousesRes.data) ? warehousesRes.data : warehousesRes.data?.data || [];
+      setWarehouses(fetchedWarehouses);
+
+      const activeUsers = usersRes.data?.activeUsers || [];
+      const allUsers = allUsersRes.data?.data || allUsersRes.data || [];
+      setUsers(activeUsers.length > 0 ? activeUsers : allUsers);
+
+      const pending = allUsers.filter(u => u.accountStatus === 'PENDING');
+      setPendingRequests(pending);
+
+      const logs = auditRes.data?.logs || auditRes.data?.data || [];
+      setAuditLogs(logs);
     } catch (err) {
-      console.warn('Using default fallback datasets:', err.message);
+      console.error('Failed to fetch network & site topology:', err);
+      setError(err.response?.data?.error || 'Unable to load network & site data from server.');
+      setSites([]);
+      setWarehouses([]);
+      setUsers([]);
+      setPendingRequests([]);
+      setAuditLogs([]);
     } finally {
       setLoading(false);
     }
@@ -167,64 +100,67 @@ const NetworkAndSites = () => {
     fetchData();
   }, []);
 
-  const handleCreateSite = (e) => {
+  const handleCreateSite = async (e) => {
     e.preventDefault();
     if (!newSite.code || !newSite.name) return;
-    const created = { _id: `site-${Date.now()}`, code: newSite.code, name: newSite.name, type: newSite.type, status: 'Active', description: 'Newly registered plant facility', address: { city: newSite.city, state: newSite.state, country: newSite.country }, assignedWarehouses: [] };
-    setSites([...sites, created]);
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'Network & Sites', locationName: newSite.name, reason: 'Registered new site master' }, ...auditLogs]);
-    setSystemNotice({ title: 'Site Created', message: `Registered ${newSite.name} (${newSite.code}) successfully.` });
-    setShowAddSiteModal(false);
-    setNewSite({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
+    try {
+      await api.post('/api/admin/sites', newSite);
+      setSystemNotice({ title: 'Site Created', message: `Registered ${newSite.name} (${newSite.code}) in MongoDB successfully.` });
+      setShowAddSiteModal(false);
+      setNewSite({ code: '', name: '', type: 'Manufacturing Plant', city: 'Hyderabad', state: 'Telangana', country: 'India' });
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to create site');
+    }
   };
 
-  const handleCreateWarehouse = (e) => {
+  const handleCreateWarehouse = async (e) => {
     e.preventDefault();
     if (!newWarehouse.code || !newWarehouse.name) return;
-    const targetSite = sites.find(s => s._id === newWarehouse.siteId);
-    const created = { _id: `wh-${Date.now()}`, code: newWarehouse.code, name: newWarehouse.name, type: newWarehouse.type, subCategory: 'General Storage', status: 'Active', description: 'Newly assigned warehouse depot', siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null };
-    setWarehouses([...warehouses, created]);
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'Network & Sites', locationName: newWarehouse.name, reason: 'Registered new warehouse depot' }, ...auditLogs]);
-    setSystemNotice({ title: 'Warehouse Created', message: `Registered ${newWarehouse.name} (${newWarehouse.code}) successfully.` });
-    setShowAddWarehouseModal(false);
-    setNewWarehouse({ code: '', name: '', type: 'General', location: '', siteId: '' });
+    try {
+      await api.post('/api/admin/warehouses', newWarehouse);
+      setSystemNotice({ title: 'Warehouse Created', message: `Registered ${newWarehouse.name} (${newWarehouse.code}) in MongoDB successfully.` });
+      setShowAddWarehouseModal(false);
+      setNewWarehouse({ code: '', name: '', type: 'General', location: '', siteId: '' });
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to create warehouse');
+    }
   };
 
   const handleCreateUser = (e) => {
     e.preventDefault();
-    if (!newUser.username || !newUser.email) return;
-    const created = { _id: `usr-${Date.now()}`, username: newUser.username, email: newUser.email, role: newUser.role, status: 'Active', siteIds: [], warehouseIds: [] };
-    setUsers([...users, created]);
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'CREATE', module: 'User Scope', locationName: newUser.username, reason: 'Added new system user' }, ...auditLogs]);
-    setSystemNotice({ title: 'User Registered', message: `Added user ${newUser.username} successfully.` });
+    alert("Users register via the Authentication portal. Admins can approve pending user requests under 'Pending Registrations'.");
     setShowAddUserModal(false);
     setNewUser({ username: '', email: '', role: 'Inventory Manager' });
   };
 
-  const handleApproveRegistration = () => {
+  const handleApproveRegistration = async () => {
     if (!approveUserModal) return;
     const req = approveUserModal;
-    const approvedUser = {
-      _id: `usr-${Date.now()}`,
-      username: req.username,
-      email: req.email,
-      role: selectedRole,
-      status: 'Active',
-      siteIds: sites.filter(s => selectedSiteIds.includes(s._id)),
-      warehouseIds: warehouses.filter(w => selectedWarehouseIds.includes(w._id))
-    };
-    setUsers([...users, approvedUser]);
-    setPendingRequests(pendingRequests.filter(r => r._id !== req._id));
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'APPROVE_USER', module: 'User Access Scope', locationName: req.username, reason: mandatoryReason || 'Registration approved by Admin' }, ...auditLogs]);
-    setSystemNotice({ title: 'User Registration Approved', message: `Activated account for ${req.username} (${selectedRole}).` });
-    setApproveUserModal(null);
-    setMandatoryReason('');
+    try {
+      await api.put(`/api/users/${req._id}/approve`, {
+        role: selectedRole,
+        siteIds: selectedSiteIds,
+        warehouseIds: selectedWarehouseIds
+      });
+      setSystemNotice({ title: 'User Access Approved', message: `Activated account for ${req.username || req.email} (${selectedRole}). Approval email sent.` });
+      setApproveUserModal(null);
+      setMandatoryReason('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to approve user registration.');
+    }
   };
 
-  const handleRejectRegistration = (req) => {
-    setPendingRequests(pendingRequests.filter(r => r._id !== req._id));
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'REJECT_USER', module: 'User Access Scope', locationName: req.username, reason: 'Registration declined by Admin' }, ...auditLogs]);
-    setSystemNotice({ title: 'User Registration Declined', message: `Rejected registration for ${req.username}.` });
+  const handleRejectRegistration = async (req) => {
+    try {
+      await api.put(`/api/users/${req._id}/reject`);
+      setSystemNotice({ title: 'User Registration Declined', message: `Rejected registration for ${req.username || req.email}.` });
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to reject user registration.');
+    }
   };
 
   const handleAssignWarehouseToSite = () => {

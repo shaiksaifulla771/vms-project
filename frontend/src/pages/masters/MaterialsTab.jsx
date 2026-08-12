@@ -1745,11 +1745,9 @@ const MaterialsTab = () => {
 
       if (isEditingDeletedRecord) {
         setDeletedMaterialsHistory(prev => {
-          const updated = prev.map(d => d._id === editingId ? { ...d, ...formattedData } : d);
-          localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
-          return updated;
+          return prev.map(d => d._id === editingId ? { ...d, ...formattedData } : d);
         });
-        showToast("Deleted material record updated locally.", "success");
+        showToast("Deleted material record updated.", "success");
         setIsModalOpen(false);
         setEditingId(null);
         setIsEditingDeletedRecord(false);
@@ -1815,9 +1813,7 @@ const MaterialsTab = () => {
     }
     if (restoredMaterialIds.length > 0) {
       setDeletedMaterialsHistory(prev => {
-        const updated = prev.filter(d => !restoredMaterialIds.includes(d._id));
-        localStorage.setItem('erp_deleted_materials_history', JSON.stringify(updated));
-        return updated;
+        return prev.filter(d => !restoredMaterialIds.includes(d._id));
       });
     }
     showToast(`Success Notification: ${restored} material(s) restored successfully!`, "success");

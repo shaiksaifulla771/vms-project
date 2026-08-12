@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import {
   Users,
   ShieldCheck,
@@ -15,54 +15,12 @@ import {
   Plus
 } from 'lucide-react';
 
-const DEFAULT_USERS = [
-  {
-    _id: 'usr-1',
-    username: 'Shaik Saifulla',
-    email: 'admin@vendoros.com',
-    role: 'Admin',
-    siteIds: [],
-    warehouseIds: []
-  },
-  {
-    _id: 'usr-2',
-    username: 'Rahul Kumar',
-    email: 'rahul@vendoros.com',
-    role: 'Inventory Manager',
-    siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }],
-    warehouseIds: [{ _id: 'wh-1', name: 'Main Warehouse' }, { _id: 'wh-2', name: 'Raw Material Warehouse' }]
-  },
-  {
-    _id: 'usr-3',
-    username: 'Priya Sharma',
-    email: 'priya@vendoros.com',
-    role: 'Production Manager',
-    siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }],
-    warehouseIds: [{ _id: 'wh-3', name: 'Finished Goods Warehouse' }]
-  },
-  {
-    _id: 'usr-4',
-    username: 'Ahmed Khan',
-    email: 'ahmed@vendoros.com',
-    role: 'Planner',
-    siteIds: [{ _id: 'site-1', name: 'Hyderabad Plant' }],
-    warehouseIds: []
-  },
-  {
-    _id: 'usr-5',
-    username: 'Alex Vance',
-    email: 'alex@vendoros.com',
-    role: 'QC Inspector',
-    siteIds: [{ _id: 'site-2', name: 'Chennai Distribution Center' }],
-    warehouseIds: []
-  }
-];
-
 const UsersAndAccessScope = () => {
-  const [users, setUsers] = useState(DEFAULT_USERS);
+  const [users, setUsers] = useState([]);
   const [sites, setSites] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [editUserModal, setEditUserModal] = useState(null);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -84,24 +42,21 @@ const UsersAndAccessScope = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setError(null);
       const [usersRes, sitesRes, warehousesRes] = await Promise.all([
-        axios.get('/api/admin/active-users'),
-        axios.get('/api/admin/sites'),
-        axios.get('/api/admin/warehouses')
+        api.get('/api/users').catch(() => ({ data: { data: [] } })),
+        api.get('/api/admin/sites').catch(() => ({ data: [] })),
+        api.get('/api/admin/warehouses').catch(() => ({ data: [] }))
       ]);
 
-      const fetchedUsers = usersRes.data.activeUsers || [];
-      if (fetchedUsers.length > 0) {
-        setUsers(fetchedUsers);
-      } else {
-        setUsers(DEFAULT_USERS);
-      }
-
-      setSites(sitesRes.data || []);
-      setWarehouses(warehousesRes.data || []);
+      const fetchedUsers = usersRes.data?.data || usersRes.data?.users || (Array.isArray(usersRes.data) ? usersRes.data : []);
+      setUsers(fetchedUsers);
+      setSites(Array.isArray(sitesRes.data) ? sitesRes.data : sitesRes.data?.data || []);
+      setWarehouses(Array.isArray(warehousesRes.data) ? warehousesRes.data : warehousesRes.data?.data || []);
     } catch (err) {
-      console.warn('User access scope fetch fallback to default state:', err.message);
-      setUsers(DEFAULT_USERS);
+      console.error('User access scope fetch error:', err);
+      setError('Unable to load users from database server.');
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -142,16 +97,14 @@ const UsersAndAccessScope = () => {
     }
     setActionLoading(true);
     try {
-      if (editUserModal._id && editUserModal._id.startsWith('usr-')) {
-        // Local update fallback
-        setUsers(users.map(u => u._id === editUserModal._id ? {
-          ...u,
+      if ((editUserModal.accountStatus || '').toUpperCase() === 'PENDING') {
+        await api.put(`/api/users/${editUserModal._id}/approve`, {
           role: selectedRole,
-          siteIds: sites.filter(s => selectedSiteIds.includes(s._id)),
-          warehouseIds: warehouses.filter(w => selectedWarehouseIds.includes(w._id))
-        } : u));
+          siteIds: selectedSiteIds,
+          warehouseIds: selectedWarehouseIds
+        });
       } else {
-        await axios.put(`/api/admin/users/${editUserModal._id}/access`, {
+        await api.put(`/api/admin/users/${editUserModal._id}/access`, {
           role: selectedRole,
           siteIds: selectedSiteIds,
           warehouseIds: selectedWarehouseIds,
@@ -161,13 +114,13 @@ const UsersAndAccessScope = () => {
 
       setSystemNotice({
         type: 'success',
-        title: 'Access Scope Updated',
-        message: `Updated access scope for ${editUserModal.username}.`
+        title: 'Access Scope Updated & Saved to MongoDB',
+        message: `Updated access scope and activated permissions for ${editUserModal.username || editUserModal.email}. Notification email dispatched.`
       });
       setEditUserModal(null);
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating access scope');
+      alert(err.response?.data?.error || err.response?.data?.message || 'Error updating access scope');
     } finally {
       setActionLoading(false);
     }

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { auth } from '../config/firebase';
 
 let memoryToken = null;
 
@@ -27,17 +28,31 @@ export const getToken = () => {
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
-  withCredentials: true // Crucial: ensures the Secure/HttpOnly refresh cookie is sent
+  withCredentials: true
 });
 
-// Request Interceptor: Attach token reliably to EVERY outgoing request
-api.interceptors.request.use(config => {
-  // Automatically sanitize double /api/ prefix if passed by legacy components
+// Request Interceptor: Attach Firebase ID Token or legacy token to outgoing requests
+api.interceptors.request.use(async (config) => {
   if (config.url && config.url.startsWith('/api/')) {
     config.url = config.url.replace(/^\/api\//, '/');
   }
-  
-  const activeToken = getToken();
+
+  let activeToken = null;
+
+  // 1. Prefer live Firebase ID Token if user is logged into Firebase Client SDK
+  if (auth && auth.currentUser) {
+    try {
+      activeToken = await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.warn('[Firebase Auth] Failed to fetch ID token:', e.message);
+    }
+  }
+
+  // 2. Fallback to memory / stored session token if available
+  if (!activeToken) {
+    activeToken = getToken();
+  }
+
   if (activeToken) {
     config.headers = config.headers || {};
     if (typeof config.headers.set === 'function') {
@@ -46,6 +61,7 @@ api.interceptors.request.use(config => {
     config.headers['Authorization'] = `Bearer ${activeToken}`;
     config.headers.Authorization = `Bearer ${activeToken}`;
   }
+
   return config;
 });
 

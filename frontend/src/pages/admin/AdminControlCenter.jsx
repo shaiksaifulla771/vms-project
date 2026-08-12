@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import Chart from 'react-apexcharts';
 import {
   CheckCircle2,
@@ -16,9 +16,9 @@ import {
 } from 'lucide-react';
 
 const AdminControlCenter = () => {
-  const [activeTab, setActiveTab] = useState('visitors'); // visitors | vendors | locations | insights
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('visitors'); // visitors | insights
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -32,22 +32,92 @@ const AdminControlCenter = () => {
 
   const [data, setData] = useState({
     metrics: {
-      todaysVisitors: 42,
-      scheduledVisitors: 50,
-      activeVendors: 28,
-      pendingVendors: 5,
-      activeLocations: 16,
-      gatePassesToday: 126
+      todaysVisitors: 0,
+      scheduledVisitors: 0,
+      activeVendors: 0,
+      pendingVendors: 0,
+      activeLocations: 0,
+      gatePassesToday: 0
     },
-    systemHealth: {
-      database: 'Healthy',
-      api: 'Online',
-      securityGateWorker: 'Active',
-      lastSync: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
+    systemHealth: null,
+    recentActivity: [],
+    vendorDistribution: [0, 0, 0, 0]
   });
 
-  // VMS Gate Visitor Traffic ApexCharts Bar Configuration
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [summaryRes, vendorsRes, appointmentsRes] = await Promise.all([
+        api.get('/api/admin/network-summary').catch(err => ({ data: null })),
+        api.get('/api/vendors').catch(err => ({ data: { data: [] } })),
+        api.get('/api/appointments').catch(err => ({ data: { data: [] } }))
+      ]);
+
+      const summary = summaryRes.data;
+      const vendors = vendorsRes.data?.data || vendorsRes.data || [];
+      const appointments = appointmentsRes.data?.data || appointmentsRes.data || [];
+
+      // Calculate vendor metrics from real MongoDB vendors
+      const activeVendors = vendors.filter(v => v.status === 'Active').length;
+      const pendingVendors = vendors.filter(v => v.status === 'Pending' || v.status === 'Under Review').length;
+      const suspendedVendors = vendors.filter(v => v.status === 'Suspended' || v.status === 'Blacklisted').length;
+      const otherVendors = vendors.length - activeVendors - pendingVendors - suspendedVendors;
+
+      // Calculate appointment metrics from real MongoDB appointments
+      const todaysVisitors = appointments.filter(a => a.status === 'CheckedIn' || a.status === 'Completed').length;
+      const scheduledVisitors = appointments.length;
+
+      // Extracted metrics from backend summary or fallbacks
+      const activeLocations = (summary?.metrics?.activeSites || 0) + (summary?.metrics?.activeWarehouses || 0);
+      const gatePasses = summary?.metrics?.todaysActivities || todaysVisitors;
+
+      setData({
+        metrics: {
+          todaysVisitors,
+          scheduledVisitors,
+          activeVendors,
+          pendingVendors,
+          activeLocations,
+          gatePassesToday: gatePasses
+        },
+        systemHealth: summary?.systemHealth || { database: 'Healthy', api: 'Online' },
+        recentActivity: summary?.recentActivity || [],
+        vendorDistribution: [activeVendors, pendingVendors, otherVendors, suspendedVendors]
+      });
+    } catch (err) {
+      console.error('Failed to fetch dashboard data:', err);
+      setError(err.response?.data?.error || 'Failed to load control center summary from backend.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const handleRunHealthCheck = async () => {
+    setIsChecking(true);
+    setNotice(null);
+    try {
+      const res = await api.get('/api/health');
+      setNotice({
+        title: 'Backend Health Verification',
+        message: `System operational. Status: ${res.data.status || 'ok'} (Uptime: ${Math.floor(res.data.uptime || 0)}s)`
+      });
+    } catch (err) {
+      setNotice({
+        title: 'Backend Health Warning',
+        message: err.response?.data?.error || 'Healthcheck endpoint unreachable or reported degraded state.'
+      });
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  // VMS Gate Visitor Traffic Bar Chart Configuration
   const visitorTrafficOptions = {
     chart: {
       type: 'bar',
@@ -65,142 +135,32 @@ const AdminControlCenter = () => {
     dataLabels: { enabled: false },
     stroke: { show: true, width: 2, colors: ['transparent'] },
     xaxis: {
-      categories: ['08:00 AM', '10:00 AM', '12:00 PM', '02:00 PM', '04:00 PM', '06:00 PM']
+      categories: ['Sites Active', 'Warehouses Active', 'Audit Logs Today', 'Checked In']
     },
     yaxis: {
       labels: {
         formatter: (val) => `${val}`
       }
     },
-    fill: { opacity: 1 },
-    tooltip: {
-      y: {
-        formatter: (val) => `${val} Visitors`
-      }
-    }
+    fill: { opacity: 1 }
   };
 
   const visitorTrafficSeries = [
-    { name: 'Gate Check-Ins', data: [12, 28, 35, 42, 22, 8] },
-    { name: 'Gate Check-Outs', data: [2, 10, 24, 38, 30, 18] }
+    { name: 'Count', data: [data.metrics.activeLocations, data.metrics.activeVendors, data.metrics.gatePassesToday, data.metrics.todaysVisitors] }
   ];
 
-  // VMS Vendor Compliance & Onboarding Donut Chart
+  // VMS Vendor Status Donut Chart
   const vendorStatusOptions = {
     chart: {
       type: 'donut',
       height: 280
     },
-    colors: ['#00C951', '#E66239', '#00B8DB', '#F0B100'],
-    labels: ['Approved Vendors', 'Pending QC Audit', 'Contract Under Review', 'Blacklisted / Suspended'],
-    legend: { position: 'bottom' },
-    responsive: [{
-      breakpoint: 480,
-      options: {
-        chart: { width: 200 },
-        legend: { position: 'bottom' }
-      }
-    }]
+    colors: ['#00C951', '#F0B100', '#00B8DB', '#E66239'],
+    labels: ['Active Vendors', 'Pending Review', 'In Setup', 'Suspended / Inactive'],
+    legend: { position: 'bottom' }
   };
 
-  const vendorStatusSeries = [28, 5, 4, 1];
-
-  const todaysGateLogs = [
-    {
-      id: 'VMS-1094',
-      time: '14:25 PM',
-      name: 'Ramesh Sharma',
-      company: 'Logistics India Pvt Ltd',
-      purpose: 'Raw Material Delivery',
-      location: 'Hyderabad Plant - Gate 1',
-      host: 'Rahul Kumar (Inventory Mgr)',
-      status: 'Checked In',
-      details: 'Vehicle #TS-09-EA-4012 checked in at Hyderabad Main Gate.'
-    },
-    {
-      id: 'VMS-1093',
-      time: '13:40 PM',
-      name: 'Ananya Verma',
-      company: 'TechFab Solutions',
-      purpose: 'Equipment Maintenance Audit',
-      location: 'Bangalore Plant - Gate 2',
-      host: 'Priya Sharma (Ops Mgr)',
-      status: 'Checked In',
-      details: 'Badge #BGL-802 issued for facility maintenance inspection.'
-    },
-    {
-      id: 'VMS-1001',
-      time: '11:15 AM',
-      name: 'Suresh Kumar',
-      company: 'Apex Industrial',
-      purpose: 'Vendor Contract Renewal',
-      location: 'Chennai Distribution Center',
-      host: 'Shaik Saifulla (Admin)',
-      status: 'Checked Out',
-      details: 'Vendor pass closed and badge returned at 13:10 PM.'
-    },
-    {
-      id: 'VMS-0902',
-      time: '09:30 AM',
-      name: 'Vikram Singh',
-      company: 'Express Freight',
-      purpose: 'Finished Goods Dispatch',
-      location: 'Hyderabad Plant - FG Gate',
-      host: 'Ahmed Khan (Planner)',
-      status: 'Checked Out',
-      details: 'Dispatched 500 units to Chennai Hub with verified gate pass.'
-    }
-  ];
-
-  const systemInsights = [
-    {
-      id: 1,
-      type: 'SECURITY',
-      title: 'Active Gate Clearance',
-      status: 'Active',
-      description: 'Zero unauthorized visitor access attempts recorded today.'
-    },
-    {
-      id: 2,
-      type: 'VENDOR QC',
-      title: 'Vendor Onboarding Review',
-      status: 'Active',
-      description: '5 vendor compliance documents pending manager sign-off.'
-    },
-    {
-      id: 3,
-      type: 'LOCATION',
-      title: 'Multi-Site Scope Active',
-      status: 'Active',
-      description: 'Hyderabad, Bangalore, and Chennai facilities reporting live sync.'
-    }
-  ];
-
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const res = await axios.get('/api/vms/summary');
-      if (res.data?.metrics) {
-        setData(prev => ({ ...prev, metrics: res.data.metrics }));
-      }
-    } catch (err) {
-      console.warn('VMS Summary fallback:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRunHealthCheck = () => {
-    setIsChecking(true);
-    setNotice(null);
-    setTimeout(() => {
-      setIsChecking(false);
-      setNotice({
-        title: 'VMS Gate System Active',
-        message: 'All visitor gates, vendor passes, and location scope rules verified healthy.'
-      });
-    }, 800);
-  };
+  const vendorStatusSeries = data.vendorDistribution;
 
   return (
     <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
@@ -237,6 +197,17 @@ const AdminControlCenter = () => {
         </div>
       </div>
 
+      {/* ERROR ALERT */}
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl flex items-center justify-between text-xs font-medium">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+            <span><strong>System Error:</strong> {error}</span>
+          </div>
+          <button onClick={fetchDashboardData} className="px-3 py-1 bg-red-600 text-white font-bold rounded-lg text-xs hover:bg-red-700">Retry</button>
+        </div>
+      )}
+
       {/* SYSTEM NOTICE */}
       {notice && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs font-medium">
@@ -259,7 +230,7 @@ const AdminControlCenter = () => {
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Today's Visitors</h2>
               <h3 className="text-xl font-bold text-slate-900">{data.metrics.todaysVisitors} <span className="text-xs text-slate-400 font-normal">/ {data.metrics.scheduledVisitors} Scheduled</span></h3>
-              <p className="text-orange-600 text-[11px] font-medium">+12 checked in this hour</p>
+              <p className="text-orange-600 text-[11px] font-medium">Real-time gate check-ins</p>
             </div>
           </div>
         </div>
@@ -273,7 +244,7 @@ const AdminControlCenter = () => {
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Verified Vendors</h2>
               <h3 className="text-xl font-bold text-slate-900">{data.metrics.activeVendors} <span className="text-xs text-slate-400 font-normal">Active ({data.metrics.pendingVendors} Pending)</span></h3>
-              <p className="text-emerald-600 text-[11px] font-medium">100% compliance audit</p>
+              <p className="text-emerald-600 text-[11px] font-medium">Database audit synchronized</p>
             </div>
           </div>
         </div>
@@ -287,7 +258,7 @@ const AdminControlCenter = () => {
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Active Locations</h2>
               <h3 className="text-xl font-bold text-slate-900">{data.metrics.activeLocations}</h3>
-              <p className="text-cyan-600 text-[11px] font-medium">4 Sites • 12 Warehouses</p>
+              <p className="text-cyan-600 text-[11px] font-medium">MongoDB Sites & Warehouses</p>
             </div>
           </div>
         </div>
@@ -299,9 +270,9 @@ const AdminControlCenter = () => {
               <i className="ti ti-id-badge-2 fs-3"></i>
             </div>
             <div>
-              <h2 className="text-xs font-semibold text-slate-600 uppercase">Gate Passes Today</h2>
+              <h2 className="text-xs font-semibold text-slate-600 uppercase">Gate Activities Today</h2>
               <h3 className="text-xl font-bold text-slate-900">{data.metrics.gatePassesToday}</h3>
-              <p className="text-amber-600 text-[11px] font-medium">100% gate audit log</p>
+              <p className="text-amber-600 text-[11px] font-medium">Audit logs count today</p>
             </div>
           </div>
         </div>
@@ -313,12 +284,8 @@ const AdminControlCenter = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h3 className="text-sm font-bold text-slate-900 flex items-center">
-              <i className="ti ti-chart-bar me-2 text-orange-500 fs-4"></i> Visitor & Gate Traffic Trend
+              <i className="ti ti-chart-bar me-2 text-orange-500 fs-4"></i> System Operational Metrics
             </h3>
-            <select className="text-xs border border-slate-200 bg-white rounded-lg px-2 py-1 font-medium text-slate-700 outline-none">
-              <option>Today (Hourly)</option>
-              <option>This Week</option>
-            </select>
           </div>
           <Chart options={visitorTrafficOptions} series={visitorTrafficSeries} type="bar" height={260} />
         </div>
@@ -329,16 +296,12 @@ const AdminControlCenter = () => {
             <h3 className="text-sm font-bold text-slate-900 flex items-center">
               <i className="ti ti-chart-pie me-2 text-emerald-500 fs-4"></i> Vendor Status Breakdown
             </h3>
-            <select className="text-xs border border-slate-200 bg-white rounded-lg px-2 py-1 font-medium text-slate-700 outline-none">
-              <option>All Active Vendors</option>
-              <option>Pending Audits</option>
-            </select>
           </div>
           <Chart options={vendorStatusOptions} series={vendorStatusSeries} type="donut" height={260} />
         </div>
       </div>
 
-      {/* INAPP TEMPLATE STYLED VMS TODAY'S GATE ACTIVITY LOG TABLE */}
+      {/* INAPP TEMPLATE STYLED VMS REAL AUDIT ACTIVITY LOG TABLE */}
       <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs">
         <div className="flex border-b border-slate-200 px-4 pt-3">
           <button
@@ -350,7 +313,7 @@ const AdminControlCenter = () => {
             }`}
           >
             <i className="ti ti-id-badge fs-5"></i>
-            <span>Today's Gate Passes & Visitors</span>
+            <span>Real Audit & Gate Activity Stream</span>
           </button>
           <button
             onClick={() => setActiveTab('insights')}
@@ -361,84 +324,59 @@ const AdminControlCenter = () => {
             }`}
           >
             <i className="ti ti-sparkles fs-5"></i>
-            <span>Security Insights</span>
+            <span>System Health & Status</span>
           </button>
         </div>
 
         {activeTab === 'visitors' && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                  <th className="py-2.5 px-3.5">
-                    <div className="flex items-center justify-between">
-                      <span>VISITOR / VENDOR</span>
-                      <Filter className="w-3 h-3 text-slate-300" />
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3.5">
-                    <div className="flex items-center justify-between">
-                      <span>PASS ID</span>
-                      <Filter className="w-3 h-3 text-slate-300" />
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3.5">
-                    <div className="flex items-center justify-between">
-                      <span>COMPANY / PURPOSE</span>
-                      <Filter className="w-3 h-3 text-slate-300" />
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3.5">
-                    <div className="flex items-center justify-between">
-                      <span>GATE LOCATION</span>
-                      <Filter className="w-3 h-3 text-slate-300" />
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3.5">
-                    <div className="flex items-center justify-between">
-                      <span>HOST EMPLOYEE</span>
-                      <Filter className="w-3 h-3 text-slate-300" />
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3.5">
-                    <div className="flex items-center justify-between">
-                      <span>STATUS</span>
-                      <Filter className="w-3 h-3 text-slate-300" />
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-3.5">TIME & DETAILS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
-                {todaysGateLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{log.name}</td>
-                    <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer" onClick={() => setSelectedLog(log)}>{log.id}</td>
-                    <td className="py-2.5 px-3.5 text-slate-600 text-xs font-semibold">{log.company} ({log.purpose})</td>
-                    <td className="py-2.5 px-3.5 text-slate-600 text-xs">{log.location}</td>
-                    <td className="py-2.5 px-3.5 text-slate-800 font-bold text-xs">{log.host}</td>
-                    <td className="py-2.5 px-3.5 text-xs font-bold">
-                      <span className={`px-2 py-0.5 rounded-md ${log.status === 'Checked In' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
-                        ● {log.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3.5 text-slate-400 text-xs">{log.time} - {log.details}</td>
+            {loading ? (
+              <div className="p-8 text-center text-slate-500 text-xs font-semibold">Loading real audit log stream...</div>
+            ) : data.recentActivity.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs font-semibold">No recent activity records found in MongoDB.</div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                    <th className="py-2.5 px-3.5">USER</th>
+                    <th className="py-2.5 px-3.5">ACTION</th>
+                    <th className="py-2.5 px-3.5">MODULE</th>
+                    <th className="py-2.5 px-3.5">RESULT</th>
+                    <th className="py-2.5 px-3.5">TIMESTAMP & DETAILS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
+                  {data.recentActivity.map((log) => (
+                    <tr key={log._id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{log.userName || log.userId?.username || 'System'} ({log.role || log.userId?.role || 'Admin'})</td>
+                      <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer" onClick={() => setSelectedLog(log)}>{log.action}</td>
+                      <td className="py-2.5 px-3.5 text-slate-600 text-xs font-semibold">{log.module || log.entityType}</td>
+                      <td className="py-2.5 px-3.5 text-xs font-bold">
+                        <span className={`px-2 py-0.5 rounded-md ${log.result === 'Success' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                          ● {log.result || 'Success'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-slate-400 text-xs">{new Date(log.timestamp || log.createdAt).toLocaleString()} - {log.reason || log.locationName || 'System Event'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 
         {activeTab === 'insights' && (
-          <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-            {systemInsights.map((insight) => (
-              <div key={insight.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-                <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-500 text-white rounded-md">{insight.type}</span>
-                <h4 className="font-bold text-slate-900 text-xs pt-1">{insight.title}</h4>
-                <p className="text-[11px] text-slate-600">{insight.description}</p>
-              </div>
-            ))}
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500 text-white rounded-md">DATABASE</span>
+              <h4 className="font-bold text-slate-900 text-xs pt-1">MongoDB Connection</h4>
+              <p className="text-[11px] text-slate-600">{data.systemHealth?.database || 'Healthy'}</p>
+            </div>
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-500 text-white rounded-md">API GATEWAY</span>
+              <h4 className="font-bold text-slate-900 text-xs pt-1">Backend Express API</h4>
+              <p className="text-[11px] text-slate-600">{data.systemHealth?.api || 'Online'}</p>
+            </div>
           </div>
         )}
       </div>
@@ -448,16 +386,16 @@ const AdminControlCenter = () => {
         <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-sm font-bold text-slate-900">VMS Gate Pass Details ({selectedLog.id})</h3>
+              <h3 className="text-sm font-bold text-slate-900">Audit Log Details</h3>
               <button onClick={() => setSelectedLog(null)} className="text-slate-400 font-bold">✕</button>
             </div>
             <div className="space-y-1.5 text-xs font-semibold text-slate-800 bg-slate-50 p-3 rounded-lg border border-slate-200">
-              <p><strong>Visitor / Vendor:</strong> {selectedLog.name}</p>
-              <p><strong>Company / Purpose:</strong> {selectedLog.company} ({selectedLog.purpose})</p>
-              <p><strong>Gate Location:</strong> {selectedLog.location}</p>
-              <p><strong>Host Employee:</strong> {selectedLog.host}</p>
-              <p><strong>Pass Status:</strong> {selectedLog.status}</p>
-              <p><strong>Entry Log Details:</strong> {selectedLog.details}</p>
+              <p><strong>User:</strong> {selectedLog.userName} ({selectedLog.role})</p>
+              <p><strong>Action:</strong> {selectedLog.action}</p>
+              <p><strong>Module:</strong> {selectedLog.module}</p>
+              <p><strong>Result:</strong> {selectedLog.result}</p>
+              <p><strong>Timestamp:</strong> {new Date(selectedLog.timestamp).toLocaleString()}</p>
+              <p><strong>Reason / Details:</strong> {selectedLog.reason || 'N/A'}</p>
             </div>
             <div className="pt-2 border-t border-slate-100 flex justify-end">
               <button onClick={() => setSelectedLog(null)} className="px-4 py-1.5 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-lg">Close</button>

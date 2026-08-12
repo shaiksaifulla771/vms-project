@@ -19,19 +19,22 @@ import {
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
   const { user, logout } = useAuth();
 
-  // Streamlined Navigation Blueprint (Merged Master Structure)
-  const menuItems = [
-    { id: 'dashboard', name: '1. Executive Dashboard', icon: LayoutDashboard },
-    { id: 'sites', name: '2. Network & Sites Governance', icon: Building2 },
-    { id: 'vms', name: '3. VMS Workbench', icon: ShieldCheck },
-    { id: 'masters', name: '4. Master Data & BOM', icon: Database },
-    { id: 'inventory', name: '5. Inventory Management', icon: Boxes },
-    { id: 'planning', name: '6. MRP & Planning', icon: Cpu },
-    { id: 'production', name: '7. Production & Operations', icon: Factory },
-    { id: 'purchasing', name: '8. Procurement & Vendors', icon: ShoppingBag },
-    { id: 'quality', name: '9. Quality Control & Reports', icon: BarChart3 },
-    { id: 'settings', name: '10. Activity & System Audit', icon: Settings }
+  // Streamlined Navigation Blueprint with strict RBAC Scoping
+  const allMenuItems = [
+    { id: 'dashboard', name: '1. Executive Dashboard', icon: LayoutDashboard, roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Viewer'] },
+    { id: 'sites', name: '2. Network & Sites Governance', icon: Building2, roles: ['Admin'] },
+    { id: 'vms', name: '3. VMS Workbench', icon: ShieldCheck, roles: ['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor'] },
+    { id: 'masters', name: '4. Master Data & BOM', icon: Database, roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Viewer'] },
+    { id: 'inventory', name: '5. Inventory Management', icon: Boxes, roles: ['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner'] },
+    { id: 'planning', name: '6. MRP & Planning', icon: Cpu, roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner'] },
+    { id: 'production', name: '7. Production & Operations', icon: Factory, roles: ['Admin', 'Production', 'Production Manager'] },
+    { id: 'purchasing', name: '8. Procurement & Vendors', icon: ShoppingBag, roles: ['Admin', 'ProcurementManager', 'Purchaser', 'Vendor'] },
+    { id: 'quality', name: '9. Quality Control & Reports', icon: BarChart3, roles: ['Admin', 'Production', 'Production Manager', 'QC Inspector'] },
+    { id: 'settings', name: '10. Activity & System Audit', icon: Settings, roles: ['Admin'] }
   ];
+
+  const userRole = user?.role || 'Viewer';
+  const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
 
   const handleSelectModule = (id) => {
     setActivePage(id);

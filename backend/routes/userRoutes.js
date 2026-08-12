@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { getUsers, approveUser, rejectUser } = require('../controllers/userController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
-// All routes require authentication
+// All user management routes require Firebase authentication
 router.use(protect);
 
-router.get('/', getUsers);
-router.put('/:id/approve', approveUser);
-router.put('/:id/reject', rejectUser);
+router.get('/', authorize('Admin'), getUsers);
+router.put('/:id/approve', authorize('Admin'), approveUser);
+router.put('/:id/reject', authorize('Admin'), rejectUser);
 
 module.exports = router;

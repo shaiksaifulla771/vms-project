@@ -12,7 +12,7 @@ const {
   deleteVendorsBySource,
   batchDeleteVendors
 } = require('../controllers/vendorController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
@@ -24,24 +24,24 @@ router.route('/next-code')
   .get(protect, getNextVendorCode);
 
 router.route('/batch')
-  .post(protect, createVendorsBatch);
+  .post(protect, authorize('Admin', 'Manager'), createVendorsBatch);
 
 router.route('/batch-upload')
-  .post(protect, upload.single('file'), createVendorsBatchUpload);
+  .post(protect, authorize('Admin', 'Manager'), upload.single('file'), createVendorsBatchUpload);
 
 router.route('/batch-delete-source')
-  .post(protect, deleteVendorsBySource);
+  .post(protect, authorize('Admin'), deleteVendorsBySource);
 
 router.route('/batch-delete')
-  .post(protect, batchDeleteVendors);
+  .post(protect, authorize('Admin'), batchDeleteVendors);
 
 router.route('/')
   .get(protect, getVendors)
-  .post(protect, createVendor);
+  .post(protect, authorize('Admin', 'Manager'), createVendor);
 
 router.route('/:id')
   .get(protect, getVendor)
-  .put(protect, updateVendor)
-  .delete(protect, deleteVendor);
+  .put(protect, authorize('Admin', 'Manager'), updateVendor)
+  .delete(protect, authorize('Admin'), deleteVendor);
 
 module.exports = router;

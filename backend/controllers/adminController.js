@@ -494,11 +494,13 @@ exports.updateUserAccess = async (req, res) => {
   try {
     const { userId } = req.params;
     const { role, siteIds, warehouseIds, reason } = req.body;
+    const emailService = require('../services/emailService');
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const prevRole = user.role;
+    const prevStatus = user.accountStatus;
     const prevSiteIds = user.siteIds || [];
     const prevWarehouseIds = user.warehouseIds || [];
 
@@ -506,19 +508,49 @@ exports.updateUserAccess = async (req, res) => {
     if (siteIds) user.siteIds = siteIds;
     if (warehouseIds) user.warehouseIds = warehouseIds;
 
+    const wasPending = (user.accountStatus || '').toUpperCase() === 'PENDING';
+    if (wasPending) {
+      user.accountStatus = 'ACTIVE';
+      user.requestedRole = null;
+    }
+
     await user.save();
 
-    const auditDesc = `Admin changed ${user.username}'s access & scope permissions. Role: ${prevRole} -> ${user.role}.`;
+    const auditDesc = `Admin changed ${user.username}'s access & scope permissions. Role: ${prevRole} -> ${user.role}. Status: ${prevStatus} -> ${user.accountStatus}.`;
 
     await createAuditRecord({
       entityType: 'User',
       entityId: user._id,
-      action: 'ACCESS_CHANGE',
+      action: wasPending ? 'ACCOUNT_APPROVED' : 'ACCESS_CHANGE',
       module: 'Users & Access',
       reason: reason || auditDesc,
-      previousValue: { role: prevRole, siteIds: prevSiteIds, warehouseIds: prevWarehouseIds },
-      newValue: { role: user.role, siteIds: user.siteIds, warehouseIds: user.warehouseIds }
+      previousValue: { role: prevRole, accountStatus: prevStatus, siteIds: prevSiteIds, warehouseIds: prevWarehouseIds },
+      newValue: { role: user.role, accountStatus: user.accountStatus, siteIds: user.siteIds, warehouseIds: user.warehouseIds }
     }, req);
+
+    if (wasPending) {
+      try {
+        await emailService.sendEmail({
+          recipient: user.email,
+          subject: 'Your VendorOS VMS access has been approved',
+          textBody: `Hello ${user.username},\n\nYour VendorOS VMS access request has been approved. You can now access VMS services.\n\nAssigned role: ${user.role}\n\nRegards,\nVendorOS VMS Administration`,
+          htmlBody: `
+            <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
+              <h2>Access approved</h2>
+              <p>Hello ${user.username},</p>
+              <p>Your VendorOS VMS access request has been approved.</p>
+              <p><strong>Assigned role:</strong> ${user.role}</p>
+              <p>You can now log in and access your VMS workspace.</p>
+              <p>Regards,<br/>VendorOS VMS Administration</p>
+            </div>
+          `,
+          templateCode: 'AUTH_ACCESS_APPROVED',
+          metadata: { userId: user._id, role: user.role }
+        });
+      } catch (emailErr) {
+        console.error('[EmailService Error]: Notification sending failed:', emailErr.message);
+      }
+    }
 
     res.json({ message: 'User permissions updated successfully', user });
   } catch (error) {

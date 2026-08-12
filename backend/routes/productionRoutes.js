@@ -12,7 +12,7 @@ const {
   getMRPPlanning
 } = require('../controllers/productionController');
 
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -22,15 +22,15 @@ router.get('/planning/mrp', protect, getMRPPlanning);
 // Core
 router.route('/')
   .get(protect, getProductionOrders)
-  .post(protect, createProductionOrder);
+  .post(protect, authorize('Admin', 'Manager', 'Planner', 'Production Manager'), createProductionOrder);
 
 router.route('/:id')
   .get(protect, getProductionOrderById);
 
 // State Machine Transitions
 router.post('/:id/submit', protect, submitForApproval);
-router.post('/:id/approve', protect, approveProductionOrder);
-router.post('/:id/allocate', protect, allocateMaterial);
+router.post('/:id/approve', protect, authorize('Admin', 'Manager'), approveProductionOrder);
+router.post('/:id/allocate', protect, authorize('Admin', 'Manager', 'Inventory Manager', 'Production Manager'), allocateMaterial);
 
 // Support both POST and PATCH for start & complete transitions
 router.post('/:id/start', protect, startProduction);

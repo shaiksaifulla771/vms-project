@@ -41,7 +41,6 @@ const ProductionOrderSchema = new mongoose.Schema({
   prdNumber: {
     type: String,
     unique: true,
-    index: true,
   },
   planId: {
     type: mongoose.Schema.Types.ObjectId,

@@ -6,16 +6,16 @@ const {
   approveOrRejectPO,
   receiveGoods
 } = require('../controllers/purchaseController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 router.route('/')
   .get(protect, getPurchaseOrders)
-  .post(protect, createPurchaseOrder);
+  .post(protect, authorize('Admin', 'Manager', 'Planner'), createPurchaseOrder);
 
 router.get('/:id', protect, getPurchaseOrder);
-router.patch('/:id/approve', protect, approveOrRejectPO);
-router.patch('/:id/receive', protect, receiveGoods);
+router.patch('/:id/approve', protect, authorize('Admin', 'Manager'), approveOrRejectPO);
+router.patch('/:id/receive', protect, authorize('Admin', 'Manager', 'Inventory Manager'), receiveGoods);
 
 module.exports = router;

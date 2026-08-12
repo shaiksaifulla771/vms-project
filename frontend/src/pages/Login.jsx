@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
-import { auth, googleProvider, isFirebaseConfigured } from '../config/firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { isFirebaseConfigured } from '../config/firebase';
 import {
   BadgeCheck,
   Building2,
@@ -47,10 +46,8 @@ const Xperte3DLogo = ({ size = "h-11 w-11" }) => (
 );
 
 const Login = () => {
-  const { login, register, verifyOtp, setUser } = useAuth();
+  const { loginWithEmailPassword, loginWithGoogle, registerWithEmailPassword, sendPasswordReset } = useAuth();
   const [activeTab, setActiveTab] = useState('signin');
-  const [verifyEmail, setVerifyEmail] = useState('');
-  const [otpCode, setOtpCode] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -69,8 +66,8 @@ const Login = () => {
     if (activeTab === 'signup' && !username.trim()) nextErrors.username = 'Full name is required';
     if (!email.trim()) nextErrors.email = 'Work email is required';
     else if (!/\S+@\S+\.\S+/.test(email)) nextErrors.email = 'Enter a valid email address';
-    if (!password) nextErrors.password = 'Password is required';
-    else if (password.length < 6) nextErrors.password = 'Password must be at least 6 characters';
+    if (activeTab !== 'forgot' && !password) nextErrors.password = 'Password is required';
+    else if (activeTab !== 'forgot' && password.length < 6) nextErrors.password = 'Password must be at least 6 characters';
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -81,19 +78,11 @@ const Login = () => {
     if (!validateCredentials()) return;
 
     setIsLoading(true);
-    const res = await login(email, password, { delaySession: true });
+    const res = await loginWithEmailPassword(email, password);
     setIsLoading(false);
 
-    if (res.success) {
-      setUser(res.user);
-      return;
-    }
-
-    if (res.requireVerification) {
-      setVerifyEmail(res.email);
-      setActiveTab('otp');
-    } else {
-      setErrors({ form: res.error });
+    if (!res.success) {
+      setErrors({ form: res.error || 'Authentication failed' });
     }
   };
 
@@ -103,16 +92,12 @@ const Login = () => {
     if (!validateCredentials()) return;
 
     setIsLoading(true);
-    const res = await register(username, email, password, role);
+    const res = await registerWithEmailPassword(username, email, password, role);
     setIsLoading(false);
 
     if (res.success) {
-      const devOtp = res.data?.devOtp;
-      setSuccessMsg(devOtp
-        ? `Development mode: use OTP ${devOtp}. It expires in 5 minutes.`
-        : 'Account created. Check your email for the 4-digit OTP. It expires in 5 minutes.');
-      setVerifyEmail(email);
-      setActiveTab('otp');
+      setSuccessMsg(res.message || 'Account created. Check your email for verification. Access request is pending administrator approval.');
+      setActiveTab('signin');
       setUsername('');
       setPassword('');
     } else {
@@ -120,60 +105,34 @@ const Login = () => {
     }
   };
 
-  const handleOtpVerifySubmit = async (event) => {
+  const handleForgotPasswordSubmit = async (event) => {
     event.preventDefault();
     resetFeedback();
-    if (!otpCode.trim() || otpCode.length !== 4) {
-      setErrors({ otp: 'Enter the 4-digit OTP code' });
+    if (!email.trim()) {
+      setErrors({ email: 'Work email is required to reset password' });
       return;
     }
 
     setIsLoading(true);
-    const res = await verifyOtp(verifyEmail, otpCode);
+    const res = await sendPasswordReset(email);
     setIsLoading(false);
 
     if (res.success) {
-      if (res.user?.accountStatus === 'Pending') {
-        setSuccessMsg('Email verified. Your access request is now pending administrator approval.');
-        setOtpCode('');
-        setActiveTab('signin');
-      } else {
-        setUser(res.user);
-      }
+      setSuccessMsg(res.message);
+      setActiveTab('signin');
     } else {
-      setErrors({ otp: res.error || 'OTP verification failed' });
+      setErrors({ form: res.error });
     }
   };
 
   const handleGoogleSignIn = async () => {
     resetFeedback();
     setIsLoading(true);
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const fbUser = result.user;
-      const res = await login(fbUser.email, 'firebase-google-sso', { delaySession: true });
+    const res = await loginWithGoogle();
+    setIsLoading(false);
 
-      if (res.success) {
-        setUser(res.user);
-      } else {
-        const regRes = await register(
-          fbUser.displayName || fbUser.email.split('@')[0],
-          fbUser.email,
-          `firebase-google-sso-${fbUser.uid.slice(0, 8)}`,
-          'Viewer'
-        );
-        if (regRes.success) {
-          setSuccessMsg('Google account registered. Administrator approval is required before access.');
-        } else {
-          setErrors({ form: regRes.error || 'Google sign-in failed.' });
-        }
-      }
-    } catch (err) {
-      if (err.code !== 'auth/popup-closed-by-user') {
-        setErrors({ form: err.message || 'Google sign-in failed.' });
-      }
-    } finally {
-      setIsLoading(false);
+    if (!res.success && res.error !== 'Sign in cancelled') {
+      setErrors({ form: res.error || 'Google sign-in failed.' });
     }
   };
 
@@ -199,14 +158,12 @@ const Login = () => {
             </div>
           </div>
 
-          {/* 2-LINE SHORT & SIMPLE PERFORMANCE DESCRIPTION */}
           <div className="relative z-10 max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wider text-blue-100">
               <ShieldCheck className="h-4 w-4 text-cyan-400" />
               Secured Access Gateway
             </div>
             
-            {/* EXACT 2 SINGLE LINES AS REQUESTED */}
             <div className="space-y-2 text-2xl lg:text-3xl font-black leading-snug tracking-tight text-white">
               <p>Unified enterprise hub to control vendors, multi-site networks, and inventory.</p>
               <p className="text-blue-300">Streamline production, location scope access, and audit approvals in real time.</p>
@@ -215,7 +172,7 @@ const Login = () => {
             <div className="mt-8 grid grid-cols-3 gap-3">
               {[
                 ['15+', 'ERP MODULES'],
-                ['JWT', 'SESSION SECURITY'],
+                ['FIREBASE', 'AUTH SECURITY'],
                 ['RBAC', 'ROLE CONTROLS']
               ].map(([value, label]) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xs">
@@ -227,7 +184,7 @@ const Login = () => {
           </div>
 
           <div className="relative z-10 grid grid-cols-3 gap-3 text-xs font-semibold text-slate-300">
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />OTP verification</span>
+            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />Email verification</span>
             <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />Admin approval</span>
             <span className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" />Audit-ready</span>
           </div>
@@ -235,7 +192,6 @@ const Login = () => {
 
         <main className="flex items-center justify-center px-5 py-10 sm:px-8">
           <div className="w-full max-w-md">
-            {/* Mobile Header with 3D Xperte Logo */}
             <div className="mb-8 flex items-center gap-3 lg:hidden">
               <Xperte3DLogo size="h-10 w-10" />
               <div>
@@ -249,8 +205,12 @@ const Login = () => {
                 <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-md">
                   {activeTab === 'signup' ? <UserPlus className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
                 </div>
-                <h2 className="text-2xl font-black tracking-tight">Secure sign in</h2>
-                <p className="mt-1 text-sm text-slate-500 font-medium">Use an approved account to enter the Xperte workspace.</p>
+                <h2 className="text-2xl font-black tracking-tight">
+                  {activeTab === 'forgot' ? 'Reset password' : activeTab === 'signup' ? 'Request access' : 'Secure sign in'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 font-medium">
+                  {activeTab === 'forgot' ? 'Enter your work email to receive a password reset link.' : 'Use an approved Firebase account to enter the Xperte workspace.'}
+                </p>
               </div>
 
               {successMsg && (
@@ -267,19 +227,22 @@ const Login = () => {
                 </div>
               )}
 
-              {activeTab === 'otp' ? (
-                <form onSubmit={handleOtpVerifySubmit} className="space-y-4">
+              {activeTab === 'forgot' ? (
+                <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Verification email</label>
-                    <input className={`${inputClass} mt-1 bg-slate-50`} value={verifyEmail} onChange={(e) => setVerifyEmail(e.target.value)} />
+                    <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Work email</label>
+                    <div className="relative mt-1">
+                      <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                      <input type="email" className={`${inputClass} pl-9`} value={email} onChange={(e) => setEmail(e.target.value)} />
+                    </div>
+                    {errors.email && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.email}</p>}
                   </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wide text-slate-600">4-digit OTP</label>
-                    <input className={`${inputClass} mt-1 text-center font-mono text-lg font-black tracking-widest`} maxLength="4" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))} />
-                    {errors.otp && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.otp}</p>}
-                  </div>
-                  <Button type="submit" isLoading={isLoading} className="w-full py-2.5">Verify account</Button>
-                  <Button type="button" variant="outline" onClick={() => switchTab('signin')} className="w-full py-2.5">Back to sign in</Button>
+                  <Button type="submit" isLoading={isLoading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold shadow-md">
+                    Send password reset link
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => switchTab('signin')} className="w-full py-2.5">
+                    Back to sign in
+                  </Button>
                 </form>
               ) : (
                 <>
@@ -305,7 +268,14 @@ const Login = () => {
                       {errors.email && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.email}</p>}
                     </div>
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Password</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Password</label>
+                        {activeTab === 'signin' && (
+                          <button type="button" onClick={() => switchTab('forgot')} className="text-xs font-bold text-blue-600 hover:underline">
+                            Forgot password?
+                          </button>
+                        )}
+                      </div>
                       <input type="password" className={`${inputClass} mt-1`} value={password} onChange={(e) => setPassword(e.target.value)} />
                       {errors.password && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.password}</p>}
                     </div>
@@ -346,7 +316,7 @@ const Login = () => {
             <div className="mt-5 grid grid-cols-2 gap-3 text-xs font-semibold text-slate-500">
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <ShieldCheck className="h-4 w-4 text-blue-600" />
-                JWT sessions
+                Firebase Auth
               </div>
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <Building2 className="h-4 w-4 text-blue-600" />

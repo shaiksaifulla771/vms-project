@@ -2,6 +2,13 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
+  firebaseUid: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+    trim: true,
+  },
   username: {
     type: String,
     required: [true, 'Please provide a username'],
@@ -18,8 +25,6 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Please provide a password'],
-    minlength: 6,
     select: false,
   },
   role: {
@@ -34,8 +39,12 @@ const UserSchema = new mongoose.Schema({
   },
   accountStatus: {
     type: String,
-    enum: ['Pending', 'Active', 'Suspended'],
-    default: 'Pending',
+    enum: ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED', 'DISABLED', 'Pending', 'Active', 'Suspended'],
+    default: 'PENDING',
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false,
   },
   isVerified: {
     type: Boolean,
@@ -50,6 +59,21 @@ const UserSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
+  },
+  userCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+    trim: true,
+  },
+  resetPasswordToken: {
+    type: String,
+    select: false,
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: false,
   },
   siteIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Site' }],
   warehouseIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }],

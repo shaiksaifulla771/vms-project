@@ -127,16 +127,7 @@ const PurchaseRequests = () => {
 
     try {
       await api.patch(`/api/requests/${id}/approve`, { status: capitalizedStatus });
-      // Update local state directly to be responsive
-      setRequests(prev => prev.map(req => 
-        req._id === id 
-          ? { 
-              ...req, 
-              status: capitalizedStatus, 
-              approvedBy: { username: user.username, email: user.email, role: user.role } 
-            } 
-          : req
-      ));
+      fetchRequests();
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.error || 'Authorization check failed. Failed to apply status action.';

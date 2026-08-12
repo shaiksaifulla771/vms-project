@@ -4,7 +4,6 @@ const ProductionPlanSchema = new mongoose.Schema({
   planNumber: {
     type: String,
     unique: true,
-    index: true,
   },
   mrpRunId: {
     type: mongoose.Schema.Types.ObjectId,
