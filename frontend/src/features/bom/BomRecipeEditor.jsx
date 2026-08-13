@@ -213,12 +213,6 @@ export default function BomRecipeEditor({
  } else if (Number(c.lossPercent) < 0 || Number(c.lossPercent) > 99) {
  newErrors[`row_${i}`] = 'Loss % must be 0-99';
  if (firstErrorIndex === -1) firstErrorIndex = i;
- } else {
- const mpn = mpns.find(m => m._id === (c.mpnId?._id || c.mpnId));
- if (mpn && (!mpn.price || mpn.price <= 0) && !c.resolvedPrice) {
- newErrors[`row_${i}`] = 'Price not available. Please update the MPN Master.';
- if (firstErrorIndex === -1) firstErrorIndex = i;
- }
  }
  });
 

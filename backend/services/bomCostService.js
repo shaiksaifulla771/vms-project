@@ -63,11 +63,7 @@ exports.calculateBomCost = async (components, effectiveDate = new Date()) => {
     // Resolve price: from history (effective date) or fallback to current mpn price
     const resolvedPrice = historyMap[mpn._id.toString()] !== undefined 
       ? historyMap[mpn._id.toString()] 
-      : mpn.price;
-
-    if (!resolvedPrice || resolvedPrice <= 0) {
-      throw new Error(`MPN '${mpn.mpnCode || mpn.manufacturerPartNumber}' has no valid price for effective date.`);
-    }
+      : (mpn.price || 0);
 
     const qty = Number(comp.qty);
     const lossPercent = Number(comp.lossPercent || 0);

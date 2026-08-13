@@ -120,6 +120,7 @@ app.use('/api/vendors', require('./routes/vendorRoutes'));
 app.use('/api/vendor-masters', require('./routes/vendorMasterRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/mpns', require('./routes/mpnRoutes'));
+app.use('/api/bom', require('./routes/bomRoutes'));
 app.use('/api/boms', require('./routes/bomRoutes'));
 app.use('/api/inventory', enforceActiveLocation, require('./routes/inventoryRoutes'));
 app.use('/api/mrp', require('./routes/mrpRoutes'));
