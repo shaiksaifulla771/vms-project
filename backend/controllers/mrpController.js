@@ -26,6 +26,51 @@ exports.executeMRPRun = async (req, res) => {
   }
 };
 
+// POST /api/mrp/calculate — Calculate MRP netting & shortage status (Section 4.1 Specification)
+exports.calculateMRP = async (req, res) => {
+  try {
+    const productId = req.body.productId;
+    const qty = req.body.qty || req.body.targetQty || 100;
+    const warehouseId = req.body.warehouseId;
+
+    if (!productId || !warehouseId) {
+      return res.status(400).json({ success: false, error: 'productId and warehouseId are required' });
+    }
+
+    const result = await MRPEngineService.runMRP({
+      productId,
+      warehouseId,
+      targetQty: qty,
+      requiredDate: req.body.requiredDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      userId: req.user ? req.user._id : null,
+    });
+
+    const hasShortage = result.summary?.hasShortage || result.requirements.some(r => r.shortageQty > 0);
+    const materials = result.requirements.map(r => ({
+      materialId: r.materialId,
+      materialCode: r.materialCode,
+      materialName: r.materialName,
+      requiredQty: r.requiredQty,
+      availableQty: r.availableQty,
+      shortageQty: r.shortageQty,
+      action: r.action,
+    }));
+
+    res.status(200).json({
+      success: true,
+      hasShortage,
+      canCreateProduction: !hasShortage,
+      productId,
+      qty,
+      warehouseId,
+      materials,
+      mrpRun: result.mrpRun,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+};
+
 // GET /api/mrp/runs — List recent MRP runs
 exports.getMRPRuns = async (req, res) => {
   try {

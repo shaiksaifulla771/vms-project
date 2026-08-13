@@ -380,20 +380,73 @@ export default function MRP() {
             <div className="p-4 space-y-4">
               {selectedRun ? (
                 <>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm">
-                        {selectedRun.runNumber} — {selectedRun.productId?.name} ({selectedRun.productId?.code})
-                      </h4>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-extrabold text-slate-900 text-sm">
+                          {selectedRun.runNumber} — {selectedRun.productId?.name} ({selectedRun.productId?.code})
+                        </h4>
+                        {metrics.shortagesCount > 0 ? (
+                          <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded text-[10px] font-extrabold uppercase animate-pulse flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" /> SHORTAGE: PRODUCTION BLOCKED
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-extrabold uppercase flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> MATERIALS READY & RESERVED
+                          </span>
+                        )}
+                      </div>
                       <p className="text-slate-500 font-normal">
-                        Warehouse Context: <strong>{selectedRun.warehouseId?.name || 'Central Warehouse'}</strong> • Scheduled Date: {selectedRun.requiredDate || 'TBD'}
+                        Warehouse: <strong>{selectedRun.warehouseId?.name || 'Central Warehouse'}</strong> • Target Output: <strong>{selectedRun.targetQty} units</strong>
                       </p>
                     </div>
 
+                    {/* STRICT BUTTON LOGIC (SECTIONS 7 & 8) */}
                     <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">
-                        Target Output: {selectedRun.targetQty} units
-                      </span>
+                      <button
+                        disabled={metrics.shortagesCount === 0}
+                        onClick={handleBulkConvertRun}
+                        className={`px-3 py-2 text-xs font-extrabold rounded-lg transition-colors flex items-center gap-1.5 ${
+                          metrics.shortagesCount === 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                            : 'bg-orange-600 hover:bg-orange-700 text-white shadow-2xs'
+                        }`}
+                        title={metrics.shortagesCount === 0 ? 'DISABLED: Inventory is sufficient. No PR required.' : 'REQUIRED: Create Purchase Requests for material shortages.'}
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                        <span>Create Purchase Request</span>
+                      </button>
+
+                      <button
+                        disabled={metrics.shortagesCount > 0}
+                        onClick={async () => {
+                          setError('');
+                          setSuccess('');
+                          try {
+                            const res = await api.post('/production/create', {
+                              mrpRunId: selectedRun._id,
+                              productId: selectedRun.productId?._id || selectedRun.productId,
+                              warehouseId: selectedRun.warehouseId?._id || selectedRun.warehouseId,
+                              qty: selectedRun.targetQty,
+                              mrpData: { hasShortage: false, materials: requirements }
+                            });
+                            if (res.data.success) {
+                              setSuccess(`Production Plan created and inventory reserved! Plan: ${res.data.data.planNumber}`);
+                            }
+                          } catch (err) {
+                            setError(err.response?.data?.error || err.message);
+                          }
+                        }}
+                        className={`px-3 py-2 text-xs font-extrabold rounded-lg transition-colors flex items-center gap-1.5 ${
+                          metrics.shortagesCount > 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
+                        }`}
+                        title={metrics.shortagesCount > 0 ? 'BLOCKED: Material Shortage Exists. Procure materials first.' : 'ALLOWED: All materials reserved and ready for production.'}
+                      >
+                        <Factory className="h-4 w-4" />
+                        <span>Create Production Plan</span>
+                      </button>
                     </div>
                   </div>
 

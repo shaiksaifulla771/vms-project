@@ -3,6 +3,7 @@ const {
   getProductionPlans,
   getProductionPlanById,
   createProductionPlan,
+  createProductionPlanStrict,
   scheduleProductionPlan,
   releaseProductionPlan,
   unscheduleProductionPlan,
@@ -20,6 +21,9 @@ router
   .route('/')
   .get(getProductionPlans)
   .post(authorize('Admin', 'Production Manager', 'Planner'), createProductionPlan);
+
+router.post('/create', authorize('Admin', 'Production Manager', 'Planner'), createProductionPlanStrict);
+router.post('/create-strict', authorize('Admin', 'Production Manager', 'Planner'), createProductionPlanStrict);
 
 router
   .route('/:id')

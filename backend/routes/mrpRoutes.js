@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   executeMRPRun,
+  calculateMRP,
   getMRPRuns,
   getMRPRunById,
   convertRequirement,
@@ -13,6 +14,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/run', authorize('Admin', 'Planner', 'Inventory Manager', 'Production Manager'), executeMRPRun);
+router.post('/calculate', authorize('Admin', 'Planner', 'Inventory Manager', 'Production Manager'), calculateMRP);
 router.get('/', getMRPRuns);
 router.get('/runs/:id', getMRPRunById);
 router.post('/runs/:id/bulk-convert', authorize('Admin', 'Planner', 'Inventory Manager'), bulkConvertRunRequirements);
