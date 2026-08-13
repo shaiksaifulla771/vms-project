@@ -202,12 +202,36 @@ class InventoryLedgerService {
               savedItem = await item.save(opts);
             } catch (saveErr) {
               if (saveErr.code === 11000) {
-                // Duplicate key error on create -> another thread created it, trigger retry
-                const err = new Error('OCC Conflict: Item created concurrently');
-                err.name = 'VersionError';
-                throw err;
+                // Concurrent item creation collision -> fetch existing item and update balances directly
+                const existingItem = await InventoryItem.findOne({ materialId, warehouseId }, null, opts);
+                if (existingItem) {
+                  existingItem.onHand += Math.max(0, delta);
+                  existingItem.available += Math.max(0, delta);
+                  existingItem.balance = existingItem.onHand;
+                  existingItem.reservedBalance = existingItem.reserved;
+                  savedItem = await InventoryItem.findOneAndUpdate(
+                    { _id: existingItem._id },
+                    {
+                      $set: {
+                        onHand: existingItem.onHand,
+                        available: existingItem.available,
+                        balance: existingItem.balance,
+                        reservedBalance: existingItem.reservedBalance
+                      },
+                      $inc: { version: 1 }
+                    },
+                    { new: true, runValidators: true, ...opts }
+                  );
+                }
+                
+                if (!savedItem) {
+                  const err = new Error('OCC Conflict: Item created concurrently');
+                  err.name = 'VersionError';
+                  throw err;
+                }
+              } else {
+                throw saveErr;
               }
-              throw saveErr;
             }
           } else {
             // Strict OCC update: atomic findOneAndUpdate requiring version === originalVersion
