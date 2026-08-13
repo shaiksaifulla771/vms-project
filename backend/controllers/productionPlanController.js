@@ -186,23 +186,39 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
   });
 
   // Assign dates & work center if provided
-  if (req.body.startDate) plan.scheduledStartDate = new Date(req.body.startDate);
-  if (req.body.endDate) plan.scheduledEndDate = new Date(req.body.endDate);
-  if (req.body.workCenter) plan.workCenter = req.body.workCenter;
+  const selectedLine = req.body.workCenter || req.body.selectedResource || plan.workCenter || 'Main Assembly Line 1';
+  const startDate = req.body.startDate ? new Date(req.body.startDate) : (req.body.schedulingDate ? new Date(req.body.schedulingDate) : new Date());
+  const durationHours = req.body.durationHours ? parseFloat(req.body.durationHours) : 6;
+  const endDate = req.body.endDate ? new Date(req.body.endDate) : new Date(startDate.getTime() + durationHours * 3600000);
+
+  // Capacity Line Overlap Check (Section 13)
+  const conflictOrder = await ProductionOrder.findOne({
+    workCenter: selectedLine,
+    status: { $in: ['Scheduled', 'Released', 'In Production'] },
+    scheduledStartDate: { $lte: endDate },
+    scheduledEndDate: { $gte: startDate },
+    planId: { $ne: plan._id }
+  });
+
+  const capacityCheckStatus = conflictOrder ? 'Overcapacity' : 'Sufficient';
+
+  if (req.body.startDate) plan.scheduledStartDate = startDate;
+  if (req.body.endDate) plan.scheduledEndDate = endDate;
+  plan.workCenter = selectedLine;
 
   plan.scheduling = {
     direction: req.body.direction || 'Forward',
-    schedulingDate: req.body.schedulingDate ? new Date(req.body.schedulingDate) : (req.body.startDate ? new Date(req.body.startDate) : new Date()),
+    schedulingDate: startDate,
     startTime: req.body.startTime || '09:00',
-    durationHours: req.body.durationHours ? parseFloat(req.body.durationHours) : 6,
-    plannedStartDateTime: req.body.startDate ? new Date(req.body.startDate) : new Date(),
-    plannedEndDateTime: req.body.endDate ? new Date(req.body.endDate) : new Date(Date.now() + 86400000 * 3),
+    durationHours,
+    plannedStartDateTime: startDate,
+    plannedEndDateTime: endDate,
     resourceGroup: req.body.resourceGroup || 'Assembly & Production',
-    selectedResource: req.body.workCenter || req.body.selectedResource || 'Main Assembly Line 1',
+    selectedResource: selectedLine,
     capacityRequired: req.body.capacityRequired ? parseFloat(req.body.capacityRequired) : 6,
     capacityAvailable: req.body.capacityAvailable ? parseFloat(req.body.capacityAvailable) : 8,
     materialCheckStatus: req.body.materialCheckStatus || 'Ready',
-    capacityCheckStatus: req.body.capacityCheckStatus || 'Sufficient',
+    capacityCheckStatus,
     operations: req.body.operations || [
       { seq: 10, name: 'Mixing', resource: 'Mixer-01', setupMins: 30, runMins: 120, startTime: '09:00', endTime: '11:30' },
       { seq: 20, name: 'Cooking / Processing', resource: 'Cooker-01', setupMins: 20, runMins: 180, startTime: '11:30', endTime: '14:50' },

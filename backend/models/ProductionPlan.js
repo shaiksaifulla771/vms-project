@@ -56,7 +56,7 @@ const ProductionPlanSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Draft', 'Pending', 'Unscheduled', 'Partially Scheduled', 'Scheduled', 'Released', 'Material Reserved', 'Allocated', 'In Production', 'Completed', 'Cancelled'],
+    enum: ['Draft', 'Pending', 'Unscheduled', 'Partially Scheduled', 'Scheduled', 'Released', 'Material Reserved', 'Allocated', 'In Production', 'Completed', 'Cancelled', 'On Hold', 'Rescheduled'],
     default: 'Unscheduled',
   },
   planSource: {
