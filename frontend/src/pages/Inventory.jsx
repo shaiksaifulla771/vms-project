@@ -747,11 +747,23 @@ const Inventory = () => {
                   className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
                 >
                   <option value="">-- Select Material --</option>
-                  {materials.map(m => <option key={m._id} value={m._id}>{m.code} - {m.name}</option>)}
+                  {materials.map(m => <option key={m._id} value={m._id}>{m.code} - {m.name} ({m.unit || 'units'})</option>)}
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Source Warehouse *</label>
+                  <select
+                    value={trfForm.fromWarehouseId || context.warehouseId || ''}
+                    onChange={(e) => setTrfForm({ ...trfForm, fromWarehouseId: e.target.value })}
+                    required
+                    className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
+                  >
+                    <option value="">-- Select Source --</option>
+                    {warehouses.map(w => <option key={w._id} value={w._id}>{w.name} ({w.code})</option>)}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Destination Warehouse *</label>
                   <select
@@ -761,36 +773,48 @@ const Inventory = () => {
                     className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
                   >
                     <option value="">-- Select Destination --</option>
-                    {warehouses.map(w => <option key={w._id} value={w._id}>{w.name} ({w.code})</option>)}
+                    {warehouses
+                      .filter(w => w._id !== (trfForm.fromWarehouseId || context.warehouseId))
+                      .map(w => <option key={w._id} value={w._id}>{w.name} ({w.code})</option>)}
                   </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Transfer Quantity *</label>
-                  <input
-                    type="number"
-                    value={trfForm.quantity}
-                    onChange={(e) => setTrfForm({ ...trfForm, quantity: parseFloat(e.target.value) || 0 })}
-                    required
-                    className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 font-mono"
-                  />
                 </div>
               </div>
 
+              {trfForm.materialId && (
+                <div className="p-2 bg-purple-50 rounded-lg border border-purple-200 text-[10px] text-purple-900 flex items-center justify-between font-mono">
+                  <span>Selected Material: <strong className="text-purple-950 font-bold">{materials.find(m => m._id === trfForm.materialId)?.name}</strong></span>
+                  <span>UOM: <strong className="font-bold">{materials.find(m => m._id === trfForm.materialId)?.unit || 'units'}</strong></span>
+                </div>
+              )}
+
               <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Reason *</label>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Transfer Quantity *</label>
+                <input
+                  type="number"
+                  value={trfForm.quantity}
+                  onChange={(e) => setTrfForm({ ...trfForm, quantity: Math.abs(parseFloat(e.target.value) || 0) })}
+                  required
+                  min="0.01"
+                  step="any"
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 font-mono text-sm font-bold text-purple-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Reason / Notes *</label>
                 <input
                   type="text"
                   value={trfForm.reason}
                   onChange={(e) => setTrfForm({ ...trfForm, reason: e.target.value })}
                   required
                   className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50"
-                  placeholder="e.g. Stock rebalancing"
+                  placeholder="e.g. Stock rebalancing across sites"
                 />
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <Button variant="outline" size="sm" type="button" onClick={() => setIsTrfModalOpen(false)}>Cancel</Button>
-                <Button size="sm" type="submit" className="bg-purple-600 text-white font-bold">Request Transfer</Button>
+                <Button size="sm" type="submit" className="bg-purple-600 hover:bg-purple-700 text-white font-bold">Request Transfer</Button>
               </div>
             </form>
           </div>

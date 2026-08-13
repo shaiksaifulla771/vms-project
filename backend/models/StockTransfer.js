@@ -10,7 +10,7 @@ const StockTransferSchema = new mongoose.Schema({
   fromSiteId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Site',
-    required: [true, 'Source site reference is required'],
+    required: false,
   },
   fromWarehouseId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -20,7 +20,7 @@ const StockTransferSchema = new mongoose.Schema({
   toSiteId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Site',
-    required: [true, 'Destination site reference is required'],
+    required: false,
   },
   toWarehouseId: {
     type: mongoose.Schema.Types.ObjectId,

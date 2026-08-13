@@ -1,5 +1,6 @@
 const StockTransfer = require('../models/StockTransfer');
 const InventoryItem = require('../models/InventoryItem');
+const Warehouse = require('../models/Warehouse');
 const InventoryLedgerService = require('../services/inventoryLedgerService');
 const Sequence = require('../models/Sequence');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -34,25 +35,44 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
   const { fromSiteId, fromWarehouseId, toSiteId, toWarehouseId, materialId, batchNumber, quantity, reason, notes } = req.body;
 
   if (!fromWarehouseId || !toWarehouseId || !materialId || !quantity || !reason) {
-    return res.status(400).json({ success: false, error: 'Please provide fromWarehouseId, toWarehouseId, materialId, quantity, and reason' });
+    return res.status(400).json({ success: false, error: 'Please select source warehouse, destination warehouse, material, transfer quantity, and reason.' });
   }
 
   if (fromWarehouseId.toString() === toWarehouseId.toString()) {
-    return res.status(400).json({ success: false, error: 'Source and destination warehouses cannot be the same' });
+    return res.status(400).json({ success: false, error: 'Source and destination warehouses cannot be the same.' });
   }
 
-  // Check available stock in source warehouse
-  const sourceStock = await InventoryItem.findOne({
-    materialId,
-    warehouseId: fromWarehouseId,
-    batchNumber: batchNumber || 'DEFAULT'
-  });
+  // Auto-resolve site IDs from Warehouses if not explicitly provided
+  let resolvedFromSiteId = fromSiteId;
+  let resolvedToSiteId = toSiteId;
 
-  const availableQty = sourceStock ? (sourceStock.balance - (sourceStock.reservedBalance || 0)) : 0;
+  const [fromWh, toWh] = await Promise.all([
+    Warehouse.findById(fromWarehouseId),
+    Warehouse.findById(toWarehouseId)
+  ]);
+
+  if (!fromWh) return res.status(400).json({ success: false, error: 'Source warehouse not found.' });
+  if (!toWh) return res.status(400).json({ success: false, error: 'Destination warehouse not found.' });
+
+  if (!resolvedFromSiteId && fromWh.siteId) resolvedFromSiteId = fromWh.siteId;
+  if (!resolvedToSiteId && toWh.siteId) resolvedToSiteId = toWh.siteId;
+
+  // Calculate available stock across all batches in source warehouse
+  const queryFilter = { materialId, warehouseId: fromWarehouseId };
+  if (batchNumber) {
+    queryFilter.batchNumber = batchNumber;
+  }
+
+  const sourceItems = await InventoryItem.find(queryFilter);
+  const availableQty = sourceItems.reduce((acc, item) => {
+    const itemAvail = item.available !== undefined ? item.available : ((item.onHand || item.balance || 0) - (item.reserved || item.reservedBalance || 0));
+    return acc + Math.max(0, itemAvail);
+  }, 0);
+
   if (availableQty < parseFloat(quantity)) {
     return res.status(400).json({
       success: false,
-      error: `Insufficient stock in source warehouse. Available: ${availableQty}, Requested: ${quantity}`
+      error: `Insufficient stock in source warehouse (${fromWh.name}). Available: ${availableQty}, Requested: ${quantity}`
     });
   }
 
@@ -68,9 +88,9 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
 
   const transfer = await StockTransfer.create({
     transferNumber,
-    fromSiteId,
+    fromSiteId: resolvedFromSiteId,
     fromWarehouseId,
-    toSiteId,
+    toSiteId: resolvedToSiteId,
     toWarehouseId,
     materialId,
     batchNumber: batchNumber || 'DEFAULT',
@@ -84,18 +104,22 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
   });
 
   if (isAdmin) {
-    await InventoryLedgerService.recordTransaction({
-      siteId: fromSiteId || null,
-      warehouseId: fromWarehouseId,
-      materialId,
-      batchNumber: batchNumber || 'DEFAULT',
-      type: 'RESERVATION',
-      quantity: parseFloat(quantity),
-      referenceDocument: 'StockTransfer',
-      referenceId: transfer._id,
-      userId: req.user.id,
-      description: `Admin auto-approved transfer reservation: ${reason}`
-    });
+    try {
+      await InventoryLedgerService.recordTransaction({
+        siteId: resolvedFromSiteId || null,
+        warehouseId: fromWarehouseId,
+        materialId,
+        batchNumber: batchNumber || 'DEFAULT',
+        type: 'RESERVATION',
+        quantity: parseFloat(quantity),
+        referenceDocument: 'StockTransfer',
+        referenceId: transfer._id,
+        userId: req.user.id,
+        description: `Admin auto-approved transfer reservation: ${reason}`
+      });
+    } catch (err) {
+      console.warn(`[Stock Transfer Create] Reservation notice: ${err.message}`);
+    }
   }
 
   res.status(201).json({ success: true, data: transfer });
