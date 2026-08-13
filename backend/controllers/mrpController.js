@@ -96,6 +96,8 @@ exports.convertRequirement = async (req, res) => {
 
       const purchaseReq = await PurchaseRequest.create({
         requestNumber,
+        title: `MRP Auto-Requisition: ${reqDoc.materialName}`,
+        amount: Math.round((reqDoc.shortageQty || reqDoc.requiredQty || 1) * 100),
         materialId: reqDoc.materialId,
         quantity: reqDoc.shortageQty || reqDoc.requiredQty,
         requiredDate: mrpRun.requiredDate,
@@ -110,6 +112,11 @@ exports.convertRequirement = async (req, res) => {
 
       return res.status(201).json({ success: true, convertedType: 'PurchaseRequest', purchaseReq, requirement: reqDoc });
     }
+// POST /api/mrp/runs/:id/bulk-convert — Bulk convert all shortages in an MRP run
+exports.bulkConvertRunShortages = async (req, res) => {
+  try {
+    const result = await MRPEngineService.bulkConvertShortages(req.params.id, req.user ? req.user._id : null);
+    res.json(result);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
