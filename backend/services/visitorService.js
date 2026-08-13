@@ -89,6 +89,32 @@ class VisitorService {
     return visitor;
   }
 
+  async bulkCheckInVisitors(visitorIds = [], userId = null) {
+    const updatedVisitors = [];
+    for (const id of visitorIds) {
+      try {
+        const v = await this.checkInVisitor(id, userId);
+        updatedVisitors.push(v);
+      } catch (err) {
+        console.warn(`Bulk check-in failed for ${id}:`, err.message);
+      }
+    }
+    return updatedVisitors;
+  }
+
+  async bulkCheckOutVisitors(visitorIds = [], userId = null) {
+    const updatedVisitors = [];
+    for (const id of visitorIds) {
+      try {
+        const v = await this.checkOutVisitor(id, userId);
+        updatedVisitors.push(v);
+      } catch (err) {
+        console.warn(`Bulk check-out failed for ${id}:`, err.message);
+      }
+    }
+    return updatedVisitors;
+  }
+
   async getVisitors(query = {}, page = 1, limit = 50) {
     const skip = (page - 1) * limit;
     const visitors = await Visitor.find(query)

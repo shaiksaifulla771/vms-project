@@ -26,3 +26,21 @@ exports.checkOutVisitor = asyncHandler(async (req, res) => {
   const visitor = await visitorService.checkOutVisitor(req.params.id, req.user ? req.user._id : null);
   res.status(200).json({ success: true, message: 'Visitor checked out successfully', data: visitor });
 });
+
+exports.bulkCheckIn = asyncHandler(async (req, res) => {
+  const { visitorIds } = req.body;
+  if (!Array.isArray(visitorIds) || visitorIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'visitorIds array required' });
+  }
+  const updated = await visitorService.bulkCheckInVisitors(visitorIds, req.user ? req.user._id : null);
+  res.status(200).json({ success: true, message: `Successfully checked in ${updated.length} visitors`, count: updated.length, data: updated });
+});
+
+exports.bulkCheckOut = asyncHandler(async (req, res) => {
+  const { visitorIds } = req.body;
+  if (!Array.isArray(visitorIds) || visitorIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'visitorIds array required' });
+  }
+  const updated = await visitorService.bulkCheckOutVisitors(visitorIds, req.user ? req.user._id : null);
+  res.status(200).json({ success: true, message: `Successfully checked out ${updated.length} visitors`, count: updated.length, data: updated });
+});
