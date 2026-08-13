@@ -3,10 +3,12 @@ node_modules/
 frontend/node_modules/
 backend/node_modules/
 
-# Environment secrets
+# Environment secrets (Ignore actual .env files, allow .env.example templates)
 .env
 frontend/.env
 backend/.env
+!*.env.example
+!**/*.env.example
 *service-account*.json
 *.pem
 
