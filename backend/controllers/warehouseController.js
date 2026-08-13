@@ -5,7 +5,13 @@ const Warehouse = require('../models/Warehouse');
 // @access  Private
 exports.getWarehouses = async (req, res, next) => {
   try {
-    const warehouses = await Warehouse.find({ isActive: true });
+    const warehouses = await Warehouse.find({
+      $or: [
+        { isActive: true },
+        { status: 'Active' },
+        { isActive: { $exists: false } }
+      ]
+    }).populate('siteId', 'name code');
     res.status(200).json({ success: true, data: warehouses });
   } catch(e) { next(e); }
 };
