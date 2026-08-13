@@ -145,7 +145,8 @@ const Inventory = () => {
         fetchInventoryData();
       }
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Adjustment failed' });
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Adjustment failed';
+      setToastMsg({ type: 'error', text: errMsg });
     }
   };
 
@@ -156,7 +157,8 @@ const Inventory = () => {
       setToastMsg({ type: 'success', text: `✓ Stock adjustment ${adjNum} approved & inventory ledger updated.` });
       fetchInventoryData();
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Approval failed' });
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Approval failed';
+      setToastMsg({ type: 'error', text: errMsg });
     } finally {
       setActionLoadingId(null);
     }
@@ -182,7 +184,8 @@ const Inventory = () => {
         fetchInventoryData();
       }
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Transfer failed' });
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Transfer failed';
+      setToastMsg({ type: 'error', text: errMsg });
     }
   };
 
@@ -193,7 +196,8 @@ const Inventory = () => {
       setToastMsg({ type: 'success', text: `✓ Transfer ${trfNum} approved & inventory soft-reserved.` });
       fetchInventoryData();
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Approval failed' });
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Approval failed';
+      setToastMsg({ type: 'error', text: errMsg });
     } finally {
       setActionLoadingId(null);
     }
@@ -206,7 +210,8 @@ const Inventory = () => {
       setToastMsg({ type: 'info', text: `🚚 Transfer ${trfNum} dispatched (In Transit).` });
       fetchInventoryData();
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Dispatch failed' });
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Dispatch failed';
+      setToastMsg({ type: 'error', text: errMsg });
     } finally {
       setActionLoadingId(null);
     }
@@ -219,7 +224,8 @@ const Inventory = () => {
       setToastMsg({ type: 'success', text: `✓ Transfer ${trfNum} received & stock added to destination!` });
       fetchInventoryData();
     } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Receipt failed' });
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Receipt failed';
+      setToastMsg({ type: 'error', text: errMsg });
     } finally {
       setActionLoadingId(null);
     }

@@ -59,6 +59,11 @@ class InventoryLedgerService {
           const opts = activeSession ? { session: activeSession } : {};
           
           let item = await InventoryItem.findOne({ materialId, warehouseId, batchNumber }, null, opts);
+          if (!item) {
+            // Fallback: lookup any existing item for this material & warehouse
+            item = await InventoryItem.findOne({ materialId, warehouseId }, null, opts);
+          }
+
           let isNewItem = false;
 
           if (!item) {
@@ -78,6 +83,14 @@ class InventoryLedgerService {
               reservedBalance: 0,
               version: 1
             });
+          }
+
+          // Auto-sync available balance if onHand exists but available was zero/uninitialized
+          if (item.available === 0 && item.onHand > 0) {
+            const calculatedAvail = item.onHand - (item.reserved || 0) - (item.allocated || 0) - (item.blocked || 0);
+            if (calculatedAvail > 0) {
+              item.available = calculatedAvail;
+            }
           }
 
           const beforeQty = item.onHand;
