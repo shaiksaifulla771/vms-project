@@ -64,6 +64,16 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
   if (!resolvedFromSiteId && fromWh.siteId) resolvedFromSiteId = cleanObjectId(fromWh.siteId);
   if (!resolvedToSiteId && toWh.siteId) resolvedToSiteId = cleanObjectId(toWh.siteId);
 
+  // Fallback: If warehouse has no siteId attached, find any active Site in system
+  const Site = require('../models/Site');
+  if (!resolvedFromSiteId || !resolvedToSiteId) {
+    const defaultSite = await Site.findOne({ status: 'Active' }) || await Site.findOne();
+    if (defaultSite) {
+      if (!resolvedFromSiteId) resolvedFromSiteId = defaultSite._id;
+      if (!resolvedToSiteId) resolvedToSiteId = defaultSite._id;
+    }
+  }
+
   // Calculate available stock across all batches in source warehouse
   const queryFilter = { materialId, warehouseId: fromWarehouseId };
   if (batchNumber) {
