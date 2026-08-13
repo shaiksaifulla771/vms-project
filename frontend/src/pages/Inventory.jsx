@@ -173,11 +173,19 @@ const Inventory = () => {
         alert('Please select both source and destination warehouses.');
         return;
       }
-      const res = await api.post('/api/transfers', {
-        ...trfForm,
+      const payload = {
+        materialId: trfForm.materialId,
         fromWarehouseId: fromWh,
-        fromSiteId: context.siteId
-      });
+        toWarehouseId: trfForm.toWarehouseId,
+        quantity: trfForm.quantity,
+        reason: trfForm.reason,
+        notes: trfForm.notes || ''
+      };
+      if (context.siteId && context.siteId !== '') payload.fromSiteId = context.siteId;
+      if (trfForm.fromSiteId && trfForm.fromSiteId !== '') payload.fromSiteId = trfForm.fromSiteId;
+      if (trfForm.toSiteId && trfForm.toSiteId !== '') payload.toSiteId = trfForm.toSiteId;
+
+      const res = await api.post('/api/transfers', payload);
       if (res.data?.success) {
         setToastMsg({ type: 'success', text: `✓ Transfer request ${res.data.data?.transferNumber || ''} created (Pending Approval).` });
         setIsTrfModalOpen(false);

@@ -28,6 +28,13 @@ exports.getStockTransfers = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, count: transfers.length, data: transfers });
 });
 
+const mongoose = require('mongoose');
+
+const cleanObjectId = (val) => {
+  if (!val || val === '' || val === 'null' || val === 'undefined') return null;
+  return mongoose.Types.ObjectId.isValid(val) ? val : null;
+};
+
 // @desc    Create stock transfer request (Pending Approval)
 // @route   POST /api/transfers
 // @access  Private
@@ -42,9 +49,9 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'Source and destination warehouses cannot be the same.' });
   }
 
-  // Auto-resolve site IDs from Warehouses if not explicitly provided
-  let resolvedFromSiteId = fromSiteId;
-  let resolvedToSiteId = toSiteId;
+  // Auto-resolve & sanitize site IDs from Warehouses if not explicitly provided
+  let resolvedFromSiteId = cleanObjectId(fromSiteId);
+  let resolvedToSiteId = cleanObjectId(toSiteId);
 
   const [fromWh, toWh] = await Promise.all([
     Warehouse.findById(fromWarehouseId),
@@ -54,8 +61,8 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
   if (!fromWh) return res.status(400).json({ success: false, error: 'Source warehouse not found.' });
   if (!toWh) return res.status(400).json({ success: false, error: 'Destination warehouse not found.' });
 
-  if (!resolvedFromSiteId && fromWh.siteId) resolvedFromSiteId = fromWh.siteId;
-  if (!resolvedToSiteId && toWh.siteId) resolvedToSiteId = toWh.siteId;
+  if (!resolvedFromSiteId && fromWh.siteId) resolvedFromSiteId = cleanObjectId(fromWh.siteId);
+  if (!resolvedToSiteId && toWh.siteId) resolvedToSiteId = cleanObjectId(toWh.siteId);
 
   // Calculate available stock across all batches in source warehouse
   const queryFilter = { materialId, warehouseId: fromWarehouseId };
@@ -88,9 +95,9 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
 
   const transfer = await StockTransfer.create({
     transferNumber,
-    fromSiteId: resolvedFromSiteId,
+    fromSiteId: cleanObjectId(resolvedFromSiteId),
     fromWarehouseId,
-    toSiteId: resolvedToSiteId,
+    toSiteId: cleanObjectId(resolvedToSiteId),
     toWarehouseId,
     materialId,
     batchNumber: batchNumber || 'DEFAULT',
