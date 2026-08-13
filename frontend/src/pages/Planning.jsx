@@ -1,38 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import planningService from '../services/planningService';
 import productionPlanService from '../services/productionPlanService';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
 import {
   Cpu, Calculator, AlertTriangle, CheckCircle, Package, ArrowRight, RefreshCw,
   FilePlus, CalendarClock, Play, Undo2, Factory, Clock, ShieldCheck, Copy, Trash2, Zap,
-  Layers, CheckCircle2, XCircle, Settings, ArrowLeftRight, Sparkles, ShoppingCart,
-  PackageCheck, Network, Layers3, AlertCircle, FileSpreadsheet, CheckSquare
+  Layers, CheckCircle2, XCircle, Settings, ArrowLeftRight
 } from 'lucide-react';
 
 const Planning = () => {
-  const [activeTab, setActiveTab] = useState('plans'); // Default to Schedule Plans Workbench ('plans', 'mrp', 'requisitions', 'explosion')
+  const [activeTab, setActiveTab] = useState('plans'); // 'mrp' or 'plans'
   const [warehouses, setWarehouses] = useState([]);
   const [products, setProducts] = useState([]);
   const [boms, setBoms] = useState([]);
   const [plans, setPlans] = useState([]);
-  const [mrpRuns, setMrpRuns] = useState([]);
-  const [selectedRun, setSelectedRun] = useState(null);
-  const [requirements, setRequirements] = useState([]);
-  const [purchaseRequests, setPurchaseRequests] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
 
   // Form inputs for MRP Calculation
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
   const [selectedProductId, setSelectedProductId] = useState('');
   const [selectedBomId, setSelectedBomId] = useState('');
   const [targetQty, setTargetQty] = useState(100);
-  const [requiredDate, setRequiredDate] = useState(new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0]);
+  const [requiredDate, setRequiredDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Loading & Feedback States
-  const [loading, setLoading] = useState(false);
+  // Loading & Result States
   const [calculating, setCalculating] = useState(false);
+  const [mrpResult, setMrpResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -45,12 +42,13 @@ const Planning = () => {
   const [plannedQty, setPlannedQty] = useState(100);
   const [manualRequiredDate, setManualRequiredDate] = useState(new Date().toISOString().split('T')[0]);
   const [planNotes, setPlanNotes] = useState('Manual Production Plan Commitment');
+  const [submittingPlan, setSubmittingPlan] = useState(false);
 
-  // Modal State for Schedule Plan
+  // Modal State for Enterprise Schedule Plan (Dynamics 365 Architecture)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [targetPlanToSchedule, setTargetPlanToSchedule] = useState(null);
   const [scheduleQty, setScheduleQty] = useState(100);
-  const [schedulingDirection, setSchedulingDirection] = useState('Forward');
+  const [schedulingDirection, setSchedulingDirection] = useState('Forward'); // 'Forward' or 'Backward'
   const [schedulingDate, setSchedulingDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState('09:00');
   const [durationHours, setDurationHours] = useState(6);
@@ -64,59 +62,54 @@ const Planning = () => {
   const [submittingSchedule, setSubmittingSchedule] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
-  // Load all master data and active records
-  const loadMasterData = async () => {
-    setLoading(true);
-    setErrorMsg('');
+  // Load dropdown master data and production plans on mount
+  const fetchPlans = async () => {
+    setLoadingPlans(true);
     try {
-      const [whRes, matRes, bomRes, plansRes, runsRes, prRes] = await Promise.all([
-        api.get('/api/warehouses').catch(() => api.get('/api/inventory/warehouses')),
-        api.get('/api/materials'),
-        api.get('/api/boms'),
-        productionPlanService.getProductionPlans(),
-        api.get('/api/mrp/runs'),
-        api.get('/api/requests').catch(() => ({ data: { requests: [] } }))
-      ]);
-
-      const whList = whRes.data.data || whRes.data.warehouses || [];
-      setWarehouses(whList);
-      if (whList.length > 0 && !selectedWarehouseId) {
-        setSelectedWarehouseId(whList[0]._id);
-        setManualWarehouseId(whList[0]._id);
-      }
-
-      const matList = matRes.data.data || matRes.data.materials || [];
-      setProducts(matList);
-      if (matList.length > 0 && !selectedProductId) {
-        setSelectedProductId(matList[0]._id);
-        setManualProductId(matList[0]._id);
-      }
-
-      const bomList = bomRes.data.data || bomRes.data.boms || [];
-      setBoms(bomList);
-      if (bomList.length > 0 && !selectedBomId) {
-        setSelectedBomId(bomList[0]._id);
-        setManualBomId(bomList[0]._id);
-      }
-
-      setPlans(plansRes.data || plansRes.plans || []);
-      const runs = runsRes.data.runs || [];
-      setMrpRuns(runs);
-      if (runs.length > 0) {
-        inspectRun(runs[0]._id);
-      }
-
-      setPurchaseRequests(prRes.data.data || prRes.data.requests || []);
+      const res = await productionPlanService.getProductionPlans();
+      setPlans(res.data || res.plans || []);
     } catch (err) {
-      console.error('Failed to load planning data:', err);
-      setErrorMsg(err.message || 'Failed to load master planning data');
+      console.error('Failed to load production plans:', err);
     } finally {
-      setLoading(false);
+      setLoadingPlans(false);
     }
   };
 
   useEffect(() => {
+    const loadMasterData = async () => {
+      try {
+        const [whRes, matRes, bomRes] = await Promise.all([
+          api.get('/api/warehouses'),
+          api.get('/api/materials'),
+          api.get('/api/boms')
+        ]);
+
+        const whList = whRes.data.data || whRes.data.warehouses || [];
+        setWarehouses(whList);
+        if (whList.length > 0) {
+          setSelectedWarehouseId(whList[0]._id);
+          setManualWarehouseId(whList[0]._id);
+        }
+
+        const matList = matRes.data.data || matRes.data.materials || [];
+        setProducts(matList);
+        if (matList.length > 0) {
+          setSelectedProductId(matList[0]._id);
+          setManualProductId(matList[0]._id);
+        }
+
+        const bomList = bomRes.data.data || bomRes.data.boms || [];
+        setBoms(bomList);
+        if (bomList.length > 0) {
+          setSelectedBomId(bomList[0]._id);
+          setManualBomId(bomList[0]._id);
+        }
+      } catch (err) {
+        console.error('Failed to load planning master data:', err);
+      }
+    };
     loadMasterData();
+    fetchPlans();
   }, []);
 
   // Sync manual BOM when product changes
@@ -127,7 +120,7 @@ const Planning = () => {
     }
   }, [manualProductId, boms]);
 
-  // Sync selected BOM when MRP product changes
+  // Update selected BOM automatically when Product changes in MRP form
   useEffect(() => {
     if (selectedProductId && boms.length > 0) {
       const matched = boms.find(b => (b.productId?._id || b.productId) === selectedProductId);
@@ -135,32 +128,21 @@ const Planning = () => {
     }
   }, [selectedProductId, boms]);
 
-  const inspectRun = async (runId) => {
-    try {
-      const res = await api.get(`/api/mrp/runs/${runId}`);
-      if (res.data.success) {
-        setSelectedRun(res.data.mrpRun);
-        setRequirements(res.data.requirements || []);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Execute MRP Calculation
+  // Handle Calculate MRP
   const handleCalculateMRP = async (e) => {
     if (e) e.preventDefault();
     if (!selectedProductId || !selectedWarehouseId || !targetQty) {
-      setErrorMsg('Please select Product, Warehouse, and enter Target Quantity.');
+      setErrorMsg('Please select a Product, Warehouse, and enter Target Quantity.');
       return;
     }
 
     setCalculating(true);
     setErrorMsg('');
     setSuccessMsg('');
+    setMrpResult(null);
 
     try {
-      const res = await api.post('/api/mrp/run', {
+      const res = await planningService.calculateMRP({
         productId: selectedProductId,
         bomId: selectedBomId,
         warehouseId: selectedWarehouseId,
@@ -168,57 +150,20 @@ const Planning = () => {
         requiredDate
       });
 
-      if (res.data.success) {
-        setSuccessMsg(`✓ MRP Calculation ${res.data.mrpRun.runNumber} completed! Netting calculated across BOM hierarchy.`);
-        await loadMasterData();
-        if (res.data.mrpRun?._id) {
-          inspectRun(res.data.mrpRun._id);
-        }
-      }
+      setMrpResult(res);
+      setPlannedQty(targetQty);
     } catch (err) {
       console.error('MRP Calculation Error:', err);
-      setErrorMsg(err.response?.data?.error || err.message || 'Failed to execute MRP calculation');
+      setErrorMsg(err.response?.data?.error || 'Failed to calculate MRP requirements.');
     } finally {
       setCalculating(false);
     }
   };
 
-  // Convert single requirement
-  const handleConvertRequirement = async (reqId, actionType) => {
-    try {
-      const res = await api.post(`/api/mrp/requirements/${reqId}/convert`, { targetAction: actionType });
-      if (res.data.success) {
-        setSuccessMsg(`✓ Successfully converted requirement to ${res.data.convertedType}!`);
-        await loadMasterData();
-        if (selectedRun) inspectRun(selectedRun._id);
-      }
-    } catch (err) {
-      setErrorMsg(err.response?.data?.error || err.message);
-    }
-  };
-
-  // Bulk convert all shortages in selected run
-  const handleBulkConvertShortages = async () => {
-    if (!selectedRun) return;
-    setActionLoadingId('bulk-convert');
-    try {
-      const res = await api.post(`/api/mrp/runs/${selectedRun._id}/bulk-convert`);
-      if (res.data.success) {
-        setSuccessMsg(`✓ Released All Shortages! Created ${res.data.count} automated Purchase Requests & Production Plans.`);
-        await loadMasterData();
-        inspectRun(selectedRun._id);
-      }
-    } catch (err) {
-      setErrorMsg(err.response?.data?.error || err.message);
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  // Create Manual Production Plan
+  // Handle Create Production Plan Submission (Manual Plan Options)
   const handleConfirmCreatePlan = async () => {
     if (!plannedQty || plannedQty <= 0) return;
-    setActionLoadingId('create-plan');
+    setSubmittingPlan(true);
     setErrorMsg('');
 
     try {
@@ -234,19 +179,21 @@ const Planning = () => {
       });
 
       if (res.success || res.data) {
-        setSuccessMsg(`✓ Production Plan ${res.data?.planNumber || ''} created in UNSCHEDULED state!`);
+        const createdPlan = res.data;
+        setSuccessMsg(`✓ Production Plan ${createdPlan.planNumber || 'PLAN-001'} created successfully in UNSCHEDULED state!`);
         setIsCreateModalOpen(false);
-        await loadMasterData();
+        await fetchPlans();
         setActiveTab('plans');
       }
     } catch (err) {
+      console.error('Create Plan Error:', err);
       setErrorMsg(err.response?.data?.error || 'Failed to create Production Plan.');
     } finally {
-      setActionLoadingId(null);
+      setSubmittingPlan(false);
     }
   };
 
-  // Open Schedule Modal with Material Readiness Evaluation
+  // Open Schedule Modal for a selected plan & evaluate material readiness
   const handleOpenScheduleModal = async (plan) => {
     setTargetPlanToSchedule(plan);
     const initialQty = plan.remainingQuantity !== undefined ? plan.remainingQuantity : plan.quantity;
@@ -254,6 +201,7 @@ const Planning = () => {
     setSelectedResource(plan.workCenter || 'Main Assembly Line 1');
     setIsScheduleModalOpen(true);
 
+    // Fetch real-time material readiness for this plan
     setCheckingReadiness(true);
     try {
       const productId = plan.productId?._id || plan.productId;
@@ -261,14 +209,14 @@ const Planning = () => {
       const warehouseId = plan.warehouseId?._id || plan.warehouseId;
 
       if (productId && warehouseId) {
-        const res = await api.post('/api/mrp/run', {
+        const res = await planningService.calculateMRP({
           productId,
           bomId,
           warehouseId,
           targetQty: parseFloat(initialQty),
           requiredDate: plan.requiredDate ? new Date(plan.requiredDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
         });
-        setMaterialReadinessList(res.data.requirements || []);
+        setMaterialReadinessList(res.requirements || []);
       }
     } catch (err) {
       console.warn('Readiness check warning:', err.message);
@@ -277,7 +225,7 @@ const Planning = () => {
     }
   };
 
-  // Confirm Capacity Schedule Plan
+  // Confirm Schedule Plan (Validates inventory, soft-reserves stock, creates ProductionOrder)
   const handleConfirmSchedulePlan = async () => {
     if (!targetPlanToSchedule) return;
     setSubmittingSchedule(true);
@@ -305,41 +253,44 @@ const Planning = () => {
       if (res.success || res.data) {
         setSuccessMsg(`✓ Plan ${targetPlanToSchedule.planNumber} scheduled! Production Order created and materials soft-reserved.`);
         setIsScheduleModalOpen(false);
-        await loadMasterData();
+        await fetchPlans();
       }
     } catch (err) {
+      console.error('Schedule Plan Error:', err);
       setErrorMsg(err.response?.data?.error || 'Failed to schedule Production Plan.');
     } finally {
       setSubmittingSchedule(false);
     }
   };
 
-  // Unschedule Plan
+  // Handle Unschedule Plan (Releases soft-reservation, cancels order, returns to Unscheduled)
   const handleUnschedulePlan = async (plan) => {
     setActionLoadingId(plan._id);
     setErrorMsg('');
     setSuccessMsg('');
+
     try {
       const res = await productionPlanService.unschedulePlan(plan._id);
       if (res.success || res.data) {
-        setSuccessMsg(`✓ Plan ${plan.planNumber} unscheduled safely. Material reservations released.`);
-        await loadMasterData();
+        setSuccessMsg(`✓ Plan ${plan.planNumber} unscheduled safely. Reservation released and stock returned to Available.`);
+        await fetchPlans();
       }
     } catch (err) {
+      console.error('Unschedule Plan Error:', err);
       setErrorMsg(err.response?.data?.error || 'Failed to unschedule Production Plan.');
     } finally {
       setActionLoadingId(null);
     }
   };
 
-  // Copy / Duplicate Plan
+  // 1-Click Copy Plan
   const handleCopyPlan = async (plan) => {
     setActionLoadingId(plan._id);
     try {
       const res = await productionPlanService.copyPlan(plan._id);
       if (res.success || res.data) {
         setSuccessMsg(`✓ Duplicate Plan ${res.data?.planNumber || 'PLAN-COPY'} created!`);
-        await loadMasterData();
+        await fetchPlans();
       }
     } catch (err) {
       setErrorMsg(err.response?.data?.error || 'Failed to copy Production Plan.');
@@ -350,10 +301,9 @@ const Planning = () => {
 
   const selectedProductObj = products.find(p => p._id === selectedProductId);
   const selectedWarehouseObj = warehouses.find(w => w._id === selectedWarehouseId);
-  const selectedBomObj = boms.find(b => (b.productId?._id || b.productId) === selectedProductId || b._id === selectedBomId);
+  const selectedBomObj = boms.find(b => b._id === selectedBomId);
 
-  const pendingShortageCount = requirements.filter(r => r.shortageQty > 0 && r.status === 'Pending').length;
-
+  // Computed End Date/Time string
   const calculatedEndTimeStr = () => {
     try {
       const [h, m] = startTime.split(':').map(Number);
@@ -365,423 +315,373 @@ const Planning = () => {
     }
   };
 
+  const hasMaterialShortage = materialReadinessList.some(m => (m.shortageQty || 0) > 0);
+
   return (
-    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
-      {/* EXECUTIVE TOPBAR */}
-      <section className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center space-x-3.5">
+          <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-blue-600">
+            <Cpu className="h-6 w-6" />
+          </div>
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-blue-600 text-white rounded-md flex items-center gap-1">
-                <Cpu className="h-3.5 w-3.5" /> Enterprise MRP Engine & Production Planning
-              </span>
-              <span className="text-xs text-slate-500 font-medium">● Deterministic Netting & Finite Capacity Allocation</span>
-            </div>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Material Requirements Planning & Schedule Workbench</h1>
-            <p className="text-xs text-slate-500 font-normal">
-              Explode multi-level BOM recipes, calculate inventory net shortages, and automate procurement requisitions to production orders.
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">MRP Planning & Production Scheduling Workbench</h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Decision layer connecting MRP proposals to Production Orders with finite material availability and resource capacity checks
             </p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
-            >
-              <FilePlus className="h-4 w-4" />
-              <span>+ Create Production Plan</span>
-            </button>
-
-            <button
-              onClick={loadMasterData}
-              className="p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-lg shadow-2xs transition-colors"
-              title="Refresh Engine Data"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
         </div>
-      </section>
 
-      {/* FEEDBACK TOASTS */}
-      {errorMsg && (
-        <div className="flex items-center justify-between p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold shadow-2xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-rose-600" />
-            <span>{errorMsg}</span>
-          </div>
-          <button onClick={() => setErrorMsg('')} className="text-rose-900 font-extrabold underline">Dismiss</button>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="flex items-center justify-between p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-bold shadow-2xs">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+        {successMsg && (
+          <div className="px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold flex items-center space-x-2">
+            <CheckCircle className="h-4 w-4 text-emerald-600" />
             <span>{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg('')} className="text-emerald-900 font-extrabold underline">Dismiss</button>
-        </div>
-      )}
-
-      {/* KPI METRIC TILES */}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Production Plans</span>
-          <p className="text-2xl font-black text-slate-900">{plans.length}</p>
-          <p className="text-[11px] text-slate-500 font-medium">Proposals Active in Pipeline</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Active Shortages</span>
-          <p className="text-2xl font-black text-amber-600">{pendingShortageCount}</p>
-          <p className="text-[11px] text-slate-500 font-medium">Component Stock Shortages</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <span className="text-[10px] font-extrabold uppercase text-blue-700 tracking-wider">MRP Runs Executed</span>
-          <p className="text-2xl font-black text-blue-600">{mrpRuns.length}</p>
-          <p className="text-[11px] text-slate-500 font-medium">Historical Runs Logged</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Purchase Requisitions</span>
-          <p className="text-2xl font-black text-emerald-600">{purchaseRequests.length}</p>
-          <p className="text-[11px] text-slate-500 font-medium">Auto-Dispatched Procurement</p>
-        </div>
+        )}
       </div>
 
-      {/* WORKBENCH TAB NAVIGATION */}
-      <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-4 pt-2 overflow-x-auto">
-        {[
-          ['plans', `Schedule Plans (${plans.length})`, CalendarClock],
-          ['mrp', 'MRP Netting Engine', Calculator],
-          ['requisitions', `Purchase Requisitions (${purchaseRequests.length})`, ShoppingCart],
-          ['explosion', 'BOM Tree Visualizer', Layers3]
-        ].map(([id, label, Icon]) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`px-4 py-2.5 font-extrabold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-              activeTab === id
-                ? 'border-blue-600 text-blue-700'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            <span>{label}</span>
-          </button>
-        ))}
+      {/* Navigation Tabs: 1. Production Plans Workbench | 2. MRP Engine */}
+      <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 pt-1">
+        <button
+          onClick={() => setActiveTab('plans')}
+          className={`flex items-center space-x-2 px-5 py-3 text-xs font-bold transition-all border-b-2 -mb-px ${
+            activeTab === 'plans'
+              ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <CalendarClock className="h-4 w-4" />
+          <span>1. Schedule Plans Workbench ({plans.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('mrp')}
+          className={`flex items-center space-x-2 px-5 py-3 text-xs font-bold transition-all border-b-2 -mb-px ${
+            activeTab === 'mrp'
+              ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Calculator className="h-4 w-4" />
+          <span>2. MRP Calculation & Netting Engine</span>
+        </button>
       </div>
 
-      {/* TAB 1: PRODUCTION SCHEDULE PLANS WORKBENCH */}
+      {/* TAB 1: PRODUCTION PLANS & SCHEDULING WORKBENCH */}
       {activeTab === 'plans' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl p-5 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900">Master Production Schedule (MPS Proposals)</h3>
-              <p className="text-xs text-slate-500 font-normal">Review production plan commitments, schedule capacity on assembly lines, and generate work orders.</p>
+        <div className="space-y-6">
+          {/* Action Bar */}
+          <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
+              <Package className="h-4 w-4 text-blue-600" />
+              <span>Production Plans Lifecycle (DRAFT ➔ UNSCHEDULED ➔ SCHEDULED ➔ RELEASED)</span>
             </div>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1"
-            >
-              <FilePlus className="h-4 w-4" /> + Create Plan
-            </button>
+            <div className="flex items-center space-x-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchPlans}
+                isLoading={loadingPlans}
+                className="text-xs font-bold text-slate-700 border-slate-300 flex items-center space-x-1"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Refresh Plans</span>
+              </Button>
+              <Button
+                onClick={() => {
+                  setPlannedQty(100);
+                  setIsCreateModalOpen(true);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-sm flex items-center space-x-1.5"
+              >
+                <FilePlus className="h-4 w-4" />
+                <span>+ Create Manual Production Plan</span>
+              </Button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto border border-slate-200 rounded-lg">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="p-3">Plan Code</th>
-                  <th className="p-3">Target Product</th>
-                  <th className="p-3">Priority</th>
-                  <th className="p-3">Target Warehouse</th>
-                  <th className="p-3 text-right">Target Qty</th>
-                  <th className="p-3 text-right">Scheduled Qty</th>
-                  <th className="p-3 text-right">Remaining Qty</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-center">Decision Controls</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
-                {plans.length === 0 ? (
-                  <tr><td colSpan="9" className="p-8 text-center text-slate-400 italic">No production plans active. Click "+ Create Plan" or run MRP calculation in Tab 2.</td></tr>
-                ) : (
-                  plans.map((plan) => {
-                    const isScheduled = plan.status === 'Scheduled' || plan.status === 'Partially Scheduled';
-                    return (
-                      <tr key={plan._id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="p-3 font-mono font-extrabold text-blue-600">{plan.planNumber}</td>
-                        <td className="p-3 font-bold text-slate-900">
-                          {plan.productId?.name || 'Finished Good'}
-                          {plan.productId?.code && <span className="block text-[10px] text-slate-400 font-mono font-normal">{plan.productId.code}</span>}
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            plan.priority === 'High' || plan.priority === 'Critical' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {plan.priority || 'Medium'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-slate-600 font-semibold">{plan.warehouseId?.name || 'Main Warehouse'}</td>
-                        <td className="p-3 text-right font-mono font-bold text-slate-900">{plan.originalQuantity || plan.quantity}</td>
-                        <td className="p-3 text-right font-mono font-bold text-blue-600">{plan.scheduledQuantity || 0}</td>
-                        <td className="p-3 text-right font-mono font-bold text-amber-600">
-                          {plan.remainingQuantity !== undefined ? plan.remainingQuantity : (plan.quantity - (plan.scheduledQuantity || 0))}
-                        </td>
-                        <td className="p-3 text-center">
-                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold ${
-                            isScheduled ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                          }`}>
-                            {plan.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleCopyPlan(plan)}
-                              title="Copy / Duplicate Plan"
-                              className="p-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 font-bold text-[10px] rounded-lg shadow-2xs"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </button>
-
-                            {isScheduled ? (
-                              <button
-                                onClick={() => handleUnschedulePlan(plan)}
-                                className="px-2.5 py-1 bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 font-bold text-[10px] rounded-lg shadow-2xs"
-                              >
-                                Unschedule
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleOpenScheduleModal(plan)}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs"
-                              >
-                                Schedule Capacity
-                              </button>
-                            )}
-                          </div>
+          {/* Production Plans Table */}
+          <Card className="bg-white border-slate-200 shadow-sm">
+            <CardHeader className="border-b border-slate-100 pb-4">
+              <CardTitle className="text-xs font-bold text-slate-900 flex items-center justify-between uppercase tracking-wider">
+                <span>SCHEDULE PLANS WORKBENCH (DECISION LAYER)</span>
+                <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px]">
+                  {plans.length} Total Proposals
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="p-4">Plan ID</th>
+                      <th className="p-4">Product Name</th>
+                      <th className="p-4">Priority</th>
+                      <th className="p-4">Target Warehouse</th>
+                      <th className="p-4">Target Qty</th>
+                      <th className="p-4">Scheduled Qty</th>
+                      <th className="p-4">Remaining Qty</th>
+                      <th className="p-4 text-center">Status</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {plans.length === 0 ? (
+                      <tr>
+                        <td colSpan="9" className="p-8 text-center text-slate-400 text-xs">
+                          No production plans generated yet. Click <strong>+ Create Manual Production Plan</strong> or run MRP in Tab 2.
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                    ) : (
+                      plans.map((plan) => {
+                        const isScheduled = plan.status === 'Scheduled' || plan.status === 'Partially Scheduled';
+                        const canUnschedule = isScheduled;
+
+                        return (
+                          <tr key={plan._id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-4 font-mono font-bold text-indigo-600">
+                              {plan.planNumber}
+                            </td>
+                            <td className="p-4 font-bold text-slate-900">
+                              {plan.productId?.name || 'Finished Goods'}
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                plan.priority === 'High' || plan.priority === 'Critical'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {plan.priority || 'Medium'}
+                              </span>
+                            </td>
+                            <td className="p-4 text-slate-700">
+                              {plan.warehouseId?.name || 'Main Warehouse'}
+                            </td>
+                            <td className="p-4 font-mono font-bold text-slate-900">
+                              {plan.originalQuantity || plan.quantity}
+                            </td>
+                            <td className="p-4 font-mono font-bold text-blue-600">
+                              {plan.scheduledQuantity || 0}
+                            </td>
+                            <td className="p-4 font-mono font-bold text-amber-600">
+                              {plan.remainingQuantity !== undefined ? plan.remainingQuantity : (plan.quantity - (plan.scheduledQuantity || 0))}
+                            </td>
+                            <td className="p-4 text-center">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                                isScheduled
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
+                                {plan.status}
+                              </span>
+                            </td>
+                            <td className="p-4 text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                title="Copy Plan"
+                                onClick={() => handleCopyPlan(plan)}
+                                className="text-slate-600 border-slate-200 hover:bg-slate-100 p-1.5 rounded-lg"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+
+                              {canUnschedule ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  isLoading={actionLoadingId === plan._id}
+                                  onClick={() => handleUnschedulePlan(plan)}
+                                  className="text-rose-600 border-rose-200 hover:bg-rose-50 font-bold text-[11px] px-3 py-1.5 rounded-lg"
+                                >
+                                  <Undo2 className="h-3.5 w-3.5 mr-1" />
+                                  Unschedule
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleOpenScheduleModal(plan)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3.5 py-1.5 rounded-lg shadow-xs"
+                                >
+                                  <CalendarClock className="h-3.5 w-3.5 mr-1" />
+                                  Schedule
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {/* TAB 2: MRP ENGINE & NETTING CALCULATION */}
+      {/* TAB 2: MRP ENGINE & MATERIAL NETTING */}
       {activeTab === 'mrp' && (
-        <div className="space-y-4">
-          <div className="bg-white p-5 rounded-b-xl border border-slate-200 border-t-0 shadow-2xs space-y-4">
-            <div className="border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <Calculator className="h-4 w-4 text-blue-600" /> Execute Deterministic MRP Calculation Run
-              </h3>
-              <p className="text-xs text-slate-500 font-normal">Select finished product, target warehouse, and demand quantity to perform multi-level BOM explosion and netting.</p>
-            </div>
+        <div className="space-y-6">
+          <Card className="bg-white border-slate-200 shadow-sm">
+            <CardHeader className="border-b border-slate-100 pb-4">
+              <CardTitle className="text-xs font-bold text-slate-900 flex items-center space-x-2 uppercase tracking-wider">
+                <Calculator className="h-4 w-4 text-blue-600" />
+                <span>MRP CALCULATION PARAMETERS</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <form onSubmit={handleCalculateMRP} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5 uppercase tracking-wider">Site / Warehouse *</label>
+                  <select
+                    value={selectedWarehouseId}
+                    onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                    required
+                  >
+                    {warehouses.map(w => (
+                      <option key={w._id} value={w._id}>{w.name} ({w.code || 'WH-01'})</option>
+                    ))}
+                  </select>
+                </div>
 
-            <form onSubmit={handleCalculateMRP} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-medium">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Target Product *</label>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
-                  required
-                >
-                  {products.map(p => (
-                    <option key={p._id} value={p._id}>{p.name} ({p.code})</option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5 uppercase tracking-wider">Finished Product *</label>
+                  <select
+                    value={selectedProductId}
+                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                    required
+                  >
+                    {products.map(p => (
+                      <option key={p._id} value={p._id}>{p.name} [{p.code}]</option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Target Warehouse *</label>
-                <select
-                  value={selectedWarehouseId}
-                  onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
-                  required
-                >
-                  {warehouses.map(w => (
-                    <option key={w._id} value={w._id}>{w.name} ({w.code})</option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5 uppercase tracking-wider">Required Quantity *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={targetQty}
+                    onChange={(e) => setTargetQty(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                    placeholder="100"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Required Quantity *</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={targetQty}
-                  onChange={(e) => setTargetQty(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
-                  required
-                />
-              </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5 uppercase tracking-wider">Required Date *</label>
+                  <input
+                    type="date"
+                    value={requiredDate}
+                    onChange={(e) => setRequiredDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Required Date *</label>
-                <input
-                  type="date"
-                  value={requiredDate}
-                  onChange={(e) => setRequiredDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
-                  required
-                />
-              </div>
+                <div className="md:col-span-4 flex justify-end pt-2">
+                  <Button
+                    type="submit"
+                    isLoading={calculating}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-md flex items-center space-x-2"
+                  >
+                    <Calculator className="h-4 w-4" />
+                    <span>Calculate MRP</span>
+                  </Button>
+                </div>
+              </form>
 
-              <div className="md:col-span-4 flex justify-end pt-2">
-                <button
-                  type="submit"
-                  disabled={calculating}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-2"
-                >
-                  <Play className={`h-4 w-4 ${calculating ? 'animate-spin' : ''}`} />
-                  <span>{calculating ? 'Calculating Explosion...' : 'Run MRP Netting Calculation'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
+              {errorMsg && (
+                <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center space-x-2">
+                  <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-          {/* MRP RUN RESULTS & MULTI-LEVEL NETTING TABLE */}
-          <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
-            {/* HISTORICAL MRP RUNS SIDEBAR */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
-              <h4 className="text-xs font-extrabold uppercase text-slate-900 tracking-wider flex items-center justify-between">
-                <span>Recent Executions</span>
-                <span className="text-[10px] text-blue-600 font-mono">{mrpRuns.length}</span>
-              </h4>
-
-              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
-                {mrpRuns.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic p-3 text-center bg-slate-50 rounded-lg">No runs logged yet.</p>
-                ) : (
-                  mrpRuns.map((r) => (
-                    <div
-                      key={r._id}
-                      onClick={() => inspectRun(r._id)}
-                      className={`p-3 rounded-lg border text-xs cursor-pointer transition-all space-y-1 ${
-                        selectedRun && selectedRun._id === r._id ? 'border-blue-500 bg-blue-50/50 shadow-2xs' : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex justify-between font-extrabold text-slate-900">
-                        <span className="font-mono text-blue-600">{r.runNumber}</span>
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${r.summary?.hasShortage ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                          {r.summary?.hasShortage ? 'Shortage' : 'Balanced'}
-                        </span>
-                      </div>
-                      <p className="text-slate-700 font-bold truncate">{r.productId?.name || 'Assembly Product'}</p>
-                      <div className="flex justify-between text-[10px] text-slate-400 font-mono pt-1">
-                        <span>Target: {r.targetQty} pcs</span>
-                        <span>{new Date(r.createdAt).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* SELECTED RUN DETAILS */}
-            <div className="space-y-4">
-              {selectedRun ? (
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                    <div>
-                      <span className="text-[10px] font-mono font-bold text-blue-600">{selectedRun.runNumber}</span>
-                      <h3 className="text-sm font-extrabold text-slate-900">
-                        {selectedRun.productId?.name} — Multi-Level BOM Netting Calculation
-                      </h3>
-                      <p className="text-xs text-slate-500 font-normal">
-                        Warehouse: {selectedRun.warehouseId?.name} • Target Quantity: <strong>{selectedRun.targetQty} units</strong>
-                      </p>
-                    </div>
-
-                    {pendingShortageCount > 0 && (
-                      <button
-                        onClick={handleBulkConvertShortages}
-                        disabled={actionLoadingId === 'bulk-convert'}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
-                      >
-                        <Zap className="h-4 w-4" />
-                        <span>Release All Shortages ({pendingShortageCount})</span>
-                      </button>
-                    )}
+          {mrpResult && (
+            <div className="space-y-6">
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">MRP RESULT SUMMARY</span>
+                  <h3 className="text-base font-black text-slate-900 mt-0.5">
+                    Product: <span className="text-blue-600">{selectedProductObj?.name || 'Product A'}</span>
+                  </h3>
+                </div>
+                <div className="flex items-center space-x-6 text-xs">
+                  <div>
+                    <span className="text-slate-500 block font-medium">Required Qty:</span>
+                    <span className="text-slate-900 font-black font-mono text-sm">{mrpResult.mrpRun?.targetQty || targetQty} {selectedProductObj?.unit || 'Pcs'}</span>
                   </div>
+                  <div>
+                    <span className="text-slate-500 block font-medium">Target Warehouse:</span>
+                    <span className="text-slate-900 font-bold">{selectedWarehouseObj?.name || 'WH-01'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block font-medium">BOM Reference:</span>
+                    <span className="text-indigo-600 font-bold">{selectedBomObj?.bomNumber || 'BOM-001'}</span>
+                  </div>
+                </div>
+              </div>
 
-                  {/* AI RATIONALE BOX */}
-                  {selectedRun.summary?.aiExplanation && (
-                    <div className="p-3 bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-xl flex items-start gap-3 text-xs shadow-xs">
-                      <Sparkles className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-extrabold text-indigo-300 uppercase tracking-wider text-[10px]">AI Executive Bottleneck Commentary</p>
-                        <p className="text-slate-200 mt-0.5 leading-relaxed">{selectedRun.summary.aiExplanation}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* REQUIREMENTS NETTING TABLE */}
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
+              <Card className="bg-white border-slate-200 shadow-sm">
+                <CardHeader className="border-b border-slate-100 pb-4">
+                  <CardTitle className="text-xs font-bold text-slate-900 flex items-center justify-between uppercase tracking-wider">
+                    <span>MATERIAL REQUIREMENTS & SHORTAGES</span>
+                    <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px]">
+                      {(mrpResult.requirements || []).length} Components Evaluated
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-700">
+                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                         <tr>
-                          <th className="p-3">BOM Level</th>
-                          <th className="p-3">Component Material</th>
-                          <th className="p-3 text-right">Gross Req</th>
-                          <th className="p-3 text-right">Available Stock</th>
-                          <th className="p-3 text-right">Open PO Supplies</th>
-                          <th className="p-3 text-right">Net Shortage</th>
-                          <th className="p-3 text-center">Action Plan</th>
-                          <th className="p-3 text-center">Convert Action</th>
+                          <th className="p-4">Material Name</th>
+                          <th className="p-4">Required Qty</th>
+                          <th className="p-4">Available Stock</th>
+                          <th className="p-4">Shortage Qty</th>
+                          <th className="p-4 text-center">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
-                        {requirements.map((req) => {
-                          const isShortage = req.shortageQty > 0;
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {(mrpResult.requirements || []).map((req, idx) => {
+                          const shortage = req.shortageQty || Math.max(0, (req.requiredQty || 0) - (req.availableQty || 0));
+                          const isShort = shortage > 0;
                           return (
-                            <tr key={req._id} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="p-3 text-center">
-                                <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 rounded font-mono font-bold text-[10px]">
-                                  L{req.bomLevel || 1}
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4 font-bold text-slate-900">
+                                {req.materialName || req.materialId?.name || 'Raw Material'}
+                              </td>
+                              <td className="p-4 font-mono font-bold text-slate-900">
+                                {req.requiredQty} {req.unit || 'KG'}
+                              </td>
+                              <td className="p-4 font-mono font-bold text-emerald-600">
+                                {req.availableQty} {req.unit || 'KG'}
+                              </td>
+                              <td className="p-4 font-mono font-bold">
+                                <span className={isShort ? "text-rose-600" : "text-slate-400"}>
+                                  {shortage} {req.unit || 'KG'}
                                 </span>
                               </td>
-                              <td className="p-3">
-                                <p className="font-extrabold text-slate-900">{req.materialName}</p>
-                                <span className="text-[10px] text-slate-400 font-mono">{req.materialCode}</span>
-                              </td>
-                              <td className="p-3 text-right font-mono font-bold text-slate-900">{req.requiredQty} {req.unit}</td>
-                              <td className="p-3 text-right font-mono font-bold text-emerald-600">{req.availableQty} {req.unit}</td>
-                              <td className="p-3 text-right font-mono font-bold text-blue-600">{req.onOrderQty || 0} {req.unit}</td>
-                              <td className={`p-3 text-right font-mono font-extrabold ${isShortage ? 'text-rose-600' : 'text-slate-400'}`}>
-                                {req.shortageQty} {req.unit}
-                              </td>
-                              <td className="p-3 text-center">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
-                                  isShortage ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-emerald-100 text-emerald-800'
-                                }`}>
-                                  {req.action}
-                                </span>
-                              </td>
-                              <td className="p-3 text-center">
-                                {req.status !== 'Pending' ? (
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase">{req.status}</span>
-                                ) : isShortage ? (
-                                  <button
-                                    onClick={() => handleConvertRequirement(req._id, req.action === 'Produce' ? 'ProductionPlan' : 'PurchaseRequest')}
-                                    className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold text-[10px] rounded-md shadow-2xs flex items-center gap-1 mx-auto"
-                                  >
-                                    {req.action === 'Produce' ? <PackageCheck className="h-3 w-3 text-blue-600" /> : <ShoppingCart className="h-3 w-3 text-amber-600" />}
-                                    <span>Create {req.action === 'Produce' ? 'Plan' : 'PR'}</span>
-                                  </button>
+                              <td className="p-4 text-center">
+                                {isShort ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                    Shortage ({shortage})
+                                  </span>
                                 ) : (
-                                  <span className="text-[10px] text-emerald-600 font-extrabold">✓ Ready</span>
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    Fully Stocked
+                                  </span>
                                 )}
                               </td>
                             </tr>
@@ -790,307 +690,505 @@ const Planning = () => {
                       </tbody>
                     </table>
                   </div>
+                </CardContent>
+              </Card>
+
+              <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 rounded-xl text-white shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block">STEP 2: CREATE PRODUCTION COMMITMENT</span>
+                  <h3 className="text-base font-bold text-white mt-0.5">
+                    Ready to commit {targetQty} {selectedProductObj?.unit || 'Pcs'} of {selectedProductObj?.name}?
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Creates a <strong>Production Plan (Status: Unscheduled)</strong>. Physical inventory remains unchanged until Scheduled.
+                  </p>
                 </div>
-              ) : (
-                <div className="bg-white p-12 rounded-xl border border-slate-200 text-center text-slate-400 text-xs italic">
-                  Select or execute an MRP run above to inspect netting calculation.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: AUTO-GENERATED PURCHASE REQUISITIONS */}
-      {activeTab === 'requisitions' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl p-5 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900">Auto-Dispatched Procurement Requisitions (Purchase Requests)</h3>
-              <p className="text-xs text-slate-500 font-normal">Requisitions automatically created from MRP shortage calculations awaiting PO release.</p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto border border-slate-200 rounded-lg">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="p-3">Request Title / Code</th>
-                  <th className="p-3">Material Name</th>
-                  <th className="p-3 text-right">Requested Qty</th>
-                  <th className="p-3 text-right">Estimated Amount</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-center">Creation Source</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
-                {purchaseRequests.length === 0 ? (
-                  <tr><td colSpan="6" className="p-8 text-center text-slate-400 italic">No purchase requisitions recorded. Execute MRP calculation to release material shortages.</td></tr>
-                ) : (
-                  purchaseRequests.map((pr) => (
-                    <tr key={pr._id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3">
-                        <p className="font-extrabold text-slate-900">{pr.title || pr.requestNumber}</p>
-                        <span className="text-[10px] text-slate-400 font-mono">{pr.requestNumber}</span>
-                      </td>
-                      <td className="p-3 font-bold text-slate-800">{pr.materialId?.name || 'Raw Material Component'}</td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-900">{pr.quantity || 1} pcs</td>
-                      <td className="p-3 text-right font-mono font-bold text-emerald-600">₹{(pr.amount || 0).toLocaleString()}</td>
-                      <td className="p-3 text-center">
-                        <span className="px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
-                          {pr.status || 'Pending'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold">
-                          MRP Engine Auto
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: BOM EXPLOSION TREE VISUALIZER */}
-      {activeTab === 'explosion' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl p-5 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900">Multi-Level BOM Hierarchy Visualizer</h3>
-              <p className="text-xs text-slate-500 font-normal">Inspect how finished products break down into sub-assemblies and raw component materials.</p>
-            </div>
-
-            <select
-              value={selectedBomId}
-              onChange={(e) => setSelectedBomId(e.target.value)}
-              className="rounded-lg border border-slate-300 bg-white p-2 font-bold text-xs text-slate-900 shadow-2xs outline-none"
-            >
-              {boms.map(b => (
-                <option key={b._id} value={b._id}>{b.name || b.bomNumber || 'BOM Recipe'}</option>
-              ))}
-            </select>
-          </div>
-
-          {selectedBomObj ? (
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm border-b border-slate-200 pb-2">
-                <Package className="h-5 w-5 text-blue-600" />
-                <span>Finished Product: {selectedBomObj.productId?.name || selectedBomObj.name} ({selectedBomObj.bomNumber})</span>
-              </div>
-
-              <div className="pl-4 space-y-2">
-                <span className="text-[11px] font-extrabold uppercase text-slate-500 tracking-wider">Level 1 Components ({selectedBomObj.components?.length || 0})</span>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {(selectedBomObj.components || []).map((c, i) => (
-                    <div key={i} className="p-3 bg-white border border-slate-200 rounded-lg space-y-1 shadow-2xs">
-                      <div className="flex justify-between items-start">
-                        <p className="font-extrabold text-xs text-slate-900">{c.materialId?.name || 'Component'}</p>
-                        <span className="text-[10px] font-mono text-blue-600 font-bold">Qty: {c.quantity} {c.uom || 'pcs'}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 font-medium">Scrap / Loss: {c.lossPercentage || 0}%</p>
-                    </div>
-                  ))}
-                </div>
+                <Button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-3 rounded-xl shadow-md flex items-center space-x-2 shrink-0"
+                >
+                  <FilePlus className="h-4.5 w-4.5" />
+                  <span>Create Production Plan</span>
+                </Button>
               </div>
             </div>
-          ) : (
-            <div className="p-8 text-center text-slate-400 text-xs italic">Select a BOM recipe above to visualize component explosion.</div>
           )}
         </div>
       )}
 
       {/* Modal: CREATE MANUAL PRODUCTION PLAN */}
-      {isCreateModalOpen && (
-        <Dialog isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Create Production Plan Commitment">
-          <div className="space-y-3 text-xs">
+      <Dialog
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title="CREATE MANUAL PRODUCTION PLAN"
+        className="!max-w-xl bg-white border border-slate-200 text-slate-900 rounded-xl p-6 shadow-xl"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Select Finished Product *</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Product *</label>
               <select
                 value={manualProductId}
                 onChange={(e) => setManualProductId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
               >
-                {products.map(p => <option key={p._id} value={p._id}>{p.name} ({p.code})</option>)}
+                {products.map(p => (
+                  <option key={p._id} value={p._id}>{p.name} [{p.code}]</option>
+                ))}
               </select>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">BOM Recipe *</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">BOM Recipe *</label>
               <select
                 value={manualBomId}
                 onChange={(e) => setManualBomId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
               >
-                {boms.map(b => <option key={b._id} value={b._id}>{b.name || b.bomNumber || 'BOM-001'}</option>)}
+                {boms.map(b => (
+                  <option key={b._id} value={b._id}>{b.name || b.bomNumber || 'BOM-001'}</option>
+                ))}
               </select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Target Warehouse *</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Target Warehouse *</label>
               <select
                 value={manualWarehouseId}
                 onChange={(e) => setManualWarehouseId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
               >
-                {warehouses.map(w => <option key={w._id} value={w._id}>{w.name} ({w.code})</option>)}
+                {warehouses.map(w => (
+                  <option key={w._id} value={w._id}>{w.name} ({w.code})</option>
+                ))}
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Priority *</label>
-                <select
-                  value={manualPriority}
-                  onChange={(e) => setManualPriority(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none"
-                >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Priority *</label>
+              <select
+                value={manualPriority}
+                onChange={(e) => setManualPriority(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+              </select>
+            </div>
+          </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Target Quantity *</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={plannedQty}
-                  onChange={(e) => setPlannedQty(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
-                />
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Planned Quantity *</label>
+              <input
+                type="number"
+                min="1"
+                value={plannedQty}
+                onChange={(e) => setPlannedQty(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
+                required
+              />
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Required Completion Date *</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Required Date *</label>
               <input
                 type="date"
                 value={manualRequiredDate}
                 onChange={(e) => setManualRequiredDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                required
               />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">Commitment Notes / Purpose</label>
-              <textarea
-                value={planNotes}
-                onChange={(e) => setPlanNotes(e.target.value)}
-                placeholder="Notes for production line manager..."
-                className="w-full rounded-lg border border-slate-300 p-2 font-medium text-slate-900 shadow-2xs outline-none h-16 resize-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-              <button type="button" onClick={() => setIsCreateModalOpen(false)} className="rounded-lg border border-slate-300 px-3 py-1.5 font-bold text-slate-600">Cancel</button>
-              <button type="button" onClick={handleConfirmCreatePlan} className="rounded-lg bg-blue-600 px-4 py-1.5 font-bold text-white shadow-2xs">Commit Production Plan</button>
             </div>
           </div>
-        </Dialog>
-      )}
 
-      {/* Modal: ENTERPRISE CAPACITY SCHEDULE PLAN */}
-      {isScheduleModalOpen && targetPlanToSchedule && (
-        <Dialog isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title={`Schedule Capacity: ${targetPlanToSchedule.planNumber}`}>
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-900 text-white rounded-xl space-y-1 font-mono">
-              <div className="flex justify-between text-blue-400 font-extrabold">
-                <span>Plan: {targetPlanToSchedule.planNumber}</span>
-                <span>Product: {targetPlanToSchedule.productId?.name || 'Assembly'}</span>
-              </div>
-              <div className="flex justify-between text-[11px] text-slate-300">
-                <span>Total Target: {targetPlanToSchedule.originalQuantity || targetPlanToSchedule.quantity} pcs</span>
-                <span>Remaining: <strong className="text-amber-400">{targetPlanToSchedule.remainingQuantity !== undefined ? targetPlanToSchedule.remainingQuantity : targetPlanToSchedule.quantity} pcs</strong></span>
-              </div>
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Planning Notes / Reason</label>
+            <textarea
+              rows={2}
+              value={planNotes}
+              onChange={(e) => setPlanNotes(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Manual production commitment rationale..."
+            />
+          </div>
+
+          <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-[11px] font-medium leading-relaxed">
+            💡 <strong>Commitment Rule</strong>: Creating a plan saves the proposal as <strong>UNSCHEDULED</strong>. Physical inventory remains unchanged until Scheduled.
+          </div>
+
+          <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-100">
+            <Button variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)} className="text-slate-700 border-slate-300">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmCreatePlan}
+              isLoading={submittingPlan}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-xl shadow-md"
+            >
+              Create Manual Plan
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Modal: ENTERPRISE SCHEDULE PLAN DECISION WORKBENCH (Dynamics 365 Architecture) */}
+      <Dialog
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        title={`SCHEDULE PLAN: ${targetPlanToSchedule?.planNumber || 'PLAN-001'}`}
+        className="!max-w-3xl bg-white border border-slate-200 text-slate-900 rounded-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
+        <div className="space-y-6">
+
+          {/* SECTION 1: READ-ONLY PLAN INFORMATION */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <span className="font-bold text-slate-500 uppercase text-[10px] tracking-wider">SECTION 1 — PLAN INFORMATION</span>
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-mono font-bold">
+                {targetPlanToSchedule?.planNumber}
+              </Badge>
             </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">Schedule Quantity (Split Scheduling Allowed) *</label>
-              <input
-                type="number"
-                min="1"
-                max={targetPlanToSchedule.remainingQuantity !== undefined ? targetPlanToSchedule.remainingQuantity : targetPlanToSchedule.quantity}
-                value={scheduleQty}
-                onChange={(e) => setScheduleQty(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 p-2 font-extrabold text-slate-900 shadow-2xs outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-slate-700">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Scheduling Method *</label>
-                <select value={schedulingDirection} onChange={(e) => setSchedulingDirection(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs">
-                  <option value="Forward">Forward Scheduling</option>
-                  <option value="Backward">Backward Scheduling</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Assembly Work Center *</label>
-                <select value={selectedResource} onChange={(e) => setSelectedResource(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs">
-                  <option value="Main Assembly Line 1">Main Assembly Line 1</option>
-                  <option value="SMT Electronics Line 2">SMT Electronics Line 2</option>
-                  <option value="CNC Machining Cell 3">CNC Machining Cell 3</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Start Date *</label>
-                <input type="date" value={schedulingDate} onChange={(e) => setSchedulingDate(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs" />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Start Time *</label>
-                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs" />
+                <span className="text-slate-400 block font-medium">Product:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.productId?.name || 'Product'}</strong>
               </div>
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Duration (Hours) *</label>
-                <input type="number" min="1" value={durationHours} onChange={(e) => setDurationHours(parseFloat(e.target.value))} className="w-full rounded-lg border border-slate-300 p-2 font-bold text-slate-900 shadow-2xs" />
+                <span className="text-slate-400 block font-medium">BOM Reference:</span>
+                <strong className="text-indigo-600 font-mono">{targetPlanToSchedule?.bomId?.bomNumber || 'BOM-001'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Warehouse:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.warehouseId?.name || 'Main Warehouse'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Priority:</span>
+                <span className="font-bold text-rose-600">{targetPlanToSchedule?.priority || 'Medium'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Demand Quantity:</span>
+                <strong className="text-slate-900 font-mono">{targetPlanToSchedule?.originalQuantity || targetPlanToSchedule?.quantity} Pcs</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Remaining to Schedule:</span>
+                <strong className="text-amber-700 font-mono font-bold">{targetPlanToSchedule?.remainingQuantity !== undefined ? targetPlanToSchedule?.remainingQuantity : targetPlanToSchedule?.quantity} Pcs</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Required Date:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.requiredDate ? new Date(targetPlanToSchedule.requiredDate).toLocaleDateString() : '-'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Plan Source:</span>
+                <strong className="text-slate-900">{targetPlanToSchedule?.planSource || 'Manual'}</strong>
               </div>
             </div>
+          </div>
 
-            <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 font-mono text-[11px] flex items-center justify-between">
-              <span>Calculated Production Finish:</span>
-              <strong className="text-blue-700">{calculatedEndTimeStr()}</strong>
-            </div>
+          {/* SECTION 2: SCHEDULING INPUTS (DIRECTION & TIMING) */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+              <CalendarClock className="h-4 w-4 text-blue-600" />
+              <span>SECTION 2 — SCHEDULING INPUTS & DIRECTION</span>
+            </h4>
 
-            {/* MATERIAL READINESS VERIFICATION */}
-            <div className="border-t border-slate-200 pt-2 space-y-2">
-              <span className="block font-extrabold uppercase text-[10px] tracking-wider text-slate-500">Material Component Pre-Flight Readiness</span>
-              {checkingReadiness ? (
-                <p className="text-slate-400 italic">Verifying component inventory...</p>
-              ) : materialReadinessList.length > 0 ? (
-                <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                  {materialReadinessList.map((m, i) => (
-                    <div key={i} className="flex justify-between items-center p-1.5 bg-slate-50 border border-slate-200 rounded text-[11px]">
-                      <span className="font-bold text-slate-800">{m.materialName}</span>
-                      <span className={`font-bold ${m.shortageQty > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                        {m.shortageQty > 0 ? `⚠️ Shortage (${m.shortageQty})` : '✓ Stock Ready'}
-                      </span>
-                    </div>
-                  ))}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Scheduling Quantity *</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={targetPlanToSchedule?.remainingQuantity || targetPlanToSchedule?.quantity}
+                  value={scheduleQty}
+                  onChange={(e) => setScheduleQty(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Scheduling Direction *</label>
+                <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-xl border border-slate-200 h-10">
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingDirection('Forward')}
+                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all ${
+                      schedulingDirection === 'Forward'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Forward ➔
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSchedulingDirection('Backward')}
+                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all ${
+                      schedulingDirection === 'Backward'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    ← Backward
+                  </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Scheduling Date *</label>
+                <input
+                  type="date"
+                  value={schedulingDate}
+                  onChange={(e) => setSchedulingDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Start Time *</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Calculated Duration (Hrs)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={durationHours}
+                  onChange={(e) => setDurationHours(parseFloat(e.target.value) || 1)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Calculated Completion Time</label>
+                <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 h-10 flex items-center">
+                  {calculatedEndTimeStr()}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 3: RESOURCE GROUP & CAPACITY */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+              <Factory className="h-4 w-4 text-blue-600" />
+              <span>SECTION 3 — RESOURCE GROUP & WORK CENTER CAPACITY</span>
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Resource Group *</label>
+                <select
+                  value={resourceGroup}
+                  onChange={(e) => setResourceGroup(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                >
+                  <option value="Assembly & Production">Assembly & Production</option>
+                  <option value="Mixing & Blending">Mixing & Blending</option>
+                  <option value="Cooking & Processing">Cooking & Processing</option>
+                  <option value="Packaging & QC">Packaging & QC</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Selected Resource Line *</label>
+                <select
+                  value={selectedResource}
+                  onChange={(e) => setSelectedResource(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                >
+                  <option value="Main Assembly Line 1">Main Assembly Line 1</option>
+                  <option value="Line 2 - High Speed">Line 2 - High Speed</option>
+                  <option value="Mixer-01 Heavy Duty">Mixer-01 Heavy Duty</option>
+                  <option value="Cooker Bay A">Cooker Bay A</option>
+                  <option value="Pack Station 01">Pack Station 01</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wider">Capacity Status</label>
+                <div className="w-full px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold h-10 flex items-center justify-between">
+                  <span>Req: {durationHours}h / Avail: {capacityAvailable}h</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-600 text-white uppercase font-black">
+                    {durationHours <= capacityAvailable ? '✅ SUFFICIENT' : '⚠ OVERCAPACITY'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: COMPONENT MATERIAL READINESS CHECK TABLE */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+                <ShieldCheck className="h-4 w-4 text-blue-600" />
+                <span>SECTION 4 — COMPONENT MATERIAL READINESS CHECK</span>
+              </h4>
+
+              {hasMaterialShortage ? (
+                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] font-bold">
+                  ❌ MATERIAL SHORTAGE DETECTED
+                </Badge>
               ) : (
-                <p className="text-slate-500 font-medium">No material shortage detected.</p>
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">
+                  ✅ ALL MATERIALS READY FOR RESERVATION
+                </Badge>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-              <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="rounded-lg border border-slate-300 px-3 py-1.5 font-bold text-slate-600">Cancel</button>
-              <button type="button" onClick={handleConfirmSchedulePlan} disabled={submittingSchedule} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-1.5 shadow-2xs flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" /> Confirm & Issue Work Order
-              </button>
+            <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Component Material</th>
+                    <th className="p-3">Required</th>
+                    <th className="p-3">Available Stock</th>
+                    <th className="p-3">Reserved</th>
+                    <th className="p-3">Shortage</th>
+                    <th className="p-3 text-center">Readiness Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {checkingReadiness ? (
+                    <tr><td colSpan="6" className="p-4 text-center text-slate-400">Evaluating warehouse inventory...</td></tr>
+                  ) : materialReadinessList.length === 0 ? (
+                    <tr><td colSpan="6" className="p-4 text-center text-slate-400">No BOM components required or BOM is empty.</td></tr>
+                  ) : (
+                    materialReadinessList.map((m, idx) => {
+                      const isShort = (m.shortageQty || 0) > 0;
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-3 font-bold text-slate-900">{m.materialName}</td>
+                          <td className="p-3 font-mono text-slate-900">{m.requiredQty} {m.unit}</td>
+                          <td className="p-3 font-mono text-emerald-600 font-bold">{m.availableQty} {m.unit}</td>
+                          <td className="p-3 font-mono text-slate-500">{m.reservedQty || 0} {m.unit}</td>
+                          <td className="p-3 font-mono font-bold text-rose-600">{m.shortageQty || 0} {m.unit}</td>
+                          <td className="p-3 text-center">
+                            {isShort ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                ❌ Shortage
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                ✅ Ready
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-        </Dialog>
-      )}
+
+          {/* SECTION 5: OPERATION ROUTE SCHEDULE */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
+              <Layers className="h-4 w-4 text-blue-600" />
+              <span>SECTION 5 — MANUFACTURING OPERATION ROUTE SCHEDULE</span>
+            </h4>
+
+            <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+              <table className="w-full text-left">
+                <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Seq</th>
+                    <th className="p-3">Operation Name</th>
+                    <th className="p-3">Work Resource</th>
+                    <th className="p-3">Setup</th>
+                    <th className="p-3">Run Time</th>
+                    <th className="p-3">Scheduled Start - End</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  <tr className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-blue-600">10</td>
+                    <td className="p-3 font-bold text-slate-900">Component Preparation & Mixing</td>
+                    <td className="p-3 text-slate-600">Mixer-01 Heavy Duty</td>
+                    <td className="p-3 font-mono">30 mins</td>
+                    <td className="p-3 font-mono">2.0 hrs</td>
+                    <td className="p-3 font-mono text-slate-900 font-bold">09:00 AM - 11:30 AM</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-blue-600">20</td>
+                    <td className="p-3 font-bold text-slate-900">Main Assembly & Cooking</td>
+                    <td className="p-3 text-slate-600">Cooker Bay A / Line 1</td>
+                    <td className="p-3 font-mono">20 mins</td>
+                    <td className="p-3 font-mono">3.0 hrs</td>
+                    <td className="p-3 font-mono text-slate-900 font-bold">11:30 AM - 02:50 PM</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-blue-600">30</td>
+                    <td className="p-3 font-bold text-slate-900">Packaging & Quality Inspection</td>
+                    <td className="p-3 text-slate-600">Pack Station 01</td>
+                    <td className="p-3 font-mono">15 mins</td>
+                    <td className="p-3 font-mono">1.0 hr</td>
+                    <td className="p-3 font-mono text-slate-900 font-bold">02:50 PM - 04:05 PM</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* SECTION 6: SCHEDULING CONFIRMATION SUMMARY */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 rounded-xl text-white shadow-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+              <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">SCHEDULE CONFIRMATION SUMMARY</span>
+              <span className="text-xs font-mono font-bold text-emerald-400">ORDER PREVIEW: PRD-GENERATED</span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Product:</span>
+                <strong className="text-white font-bold">{targetPlanToSchedule?.productId?.name || 'Product'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Schedule Qty:</span>
+                <strong className="text-emerald-400 font-mono font-black text-sm">{scheduleQty} Pcs</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Resource Line:</span>
+                <strong className="text-blue-300">{selectedResource}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Material Status:</span>
+                <strong className={hasMaterialShortage ? "text-rose-400" : "text-emerald-400"}>
+                  {hasMaterialShortage ? '⚠ SHORTAGE DETECTED' : '✅ ALL READY'}
+                </strong>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-700/80 flex items-center justify-end space-x-3">
+              <Button variant="outline" size="sm" onClick={() => setIsScheduleModalOpen(false)} className="text-slate-300 border-slate-600 hover:bg-slate-800">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmSchedulePlan}
+                isLoading={submittingSchedule}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-lg flex items-center space-x-2"
+              >
+                <CalendarClock className="h-4 w-4" />
+                <span>Confirm & Schedule Plan</span>
+              </Button>
+            </div>
+          </div>
+
+        </div>
+      </Dialog>
     </div>
   );
 };

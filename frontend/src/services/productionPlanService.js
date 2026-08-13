@@ -20,9 +20,10 @@ export const productionPlanService = {
   },
 
   // Schedule production plan (Validates BOM/Warehouse/Inventory, soft-reserves stock, creates linked ProductionOrder)
-  schedulePlan: async (id, scheduleData) => {
-    const payload = typeof scheduleData === 'number' ? { quantity: scheduleData } : scheduleData;
-    const response = await api.post(`/api/production-plans/${id}/schedule`, payload);
+  schedulePlan: async (id, scheduleQty) => {
+    const response = await api.post(`/api/production-plans/${id}/schedule`, {
+      quantity: scheduleQty
+    });
     return response.data;
   },
 

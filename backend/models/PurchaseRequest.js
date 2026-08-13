@@ -5,48 +5,25 @@ const PurchaseRequestSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  requestNumber: {
-    type: String,
-    trim: true,
-  },
   title: {
     type: String,
-    default: 'MRP Auto-Generated Requisition',
+    required: [true, 'Please provide purchase request title'],
     trim: true,
   },
   vendorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vendor',
-    required: false,
-  },
-  materialId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Material',
-  },
-  quantity: {
-    type: Number,
-    default: 1,
-  },
-  requiredDate: {
-    type: Date,
-  },
-  warehouseId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Warehouse',
+    required: [true, 'Request must be assigned to a vendor'],
   },
   amount: {
     type: Number,
-    default: 0,
+    required: [true, 'Please provide request amount'],
     min: [0, 'Purchase request amount cannot be negative'],
   },
   status: {
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Deleted', 'Converted To PO'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Deleted'],
     default: 'Pending',
-  },
-  notes: {
-    type: String,
-    trim: true,
   },
   description: {
     type: String,
@@ -55,7 +32,7 @@ const PurchaseRequestSchema = new mongoose.Schema({
   requestedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: false,
+    required: true,
   },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,

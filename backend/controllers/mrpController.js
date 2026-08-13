@@ -96,8 +96,6 @@ exports.convertRequirement = async (req, res) => {
 
       const purchaseReq = await PurchaseRequest.create({
         requestNumber,
-        title: `MRP Auto-Requisition: ${reqDoc.materialName}`,
-        amount: Math.round((reqDoc.shortageQty || reqDoc.requiredQty || 1) * 100),
         materialId: reqDoc.materialId,
         quantity: reqDoc.shortageQty || reqDoc.requiredQty,
         requiredDate: mrpRun.requiredDate,
@@ -112,12 +110,71 @@ exports.convertRequirement = async (req, res) => {
 
       return res.status(201).json({ success: true, convertedType: 'PurchaseRequest', purchaseReq, requirement: reqDoc });
     }
-// POST /api/mrp/runs/:id/bulk-convert — Bulk convert all shortages in an MRP run
-exports.bulkConvertRunShortages = async (req, res) => {
-  try {
-    const result = await MRPEngineService.bulkConvertShortages(req.params.id, req.user ? req.user._id : null);
-    res.json(result);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+};
+
+// POST /api/mrp/runs/:id/bulk-convert — Convert all pending shortages in an MRP run at once
+exports.bulkConvertRunRequirements = async (req, res) => {
+  try {
+    const mrpRun = await MRPRun.findById(req.params.id);
+    if (!mrpRun) return res.status(404).json({ success: false, error: 'MRP Run not found' });
+
+    const requirements = await PlanningRequirement.find({ mrpRunId: mrpRun._id, status: 'Pending', shortageQty: { $gt: 0 } });
+    if (requirements.length === 0) {
+      return res.status(400).json({ success: false, error: 'No pending shortages found for conversion in this run' });
+    }
+
+    const convertedPRs = [];
+    const convertedPlans = [];
+
+    for (const reqDoc of requirements) {
+      if (reqDoc.action === 'Produce') {
+        const planCount = await ProductionPlan.countDocuments();
+        const planNumber = `PLAN-${Date.now()}-${planCount + 1}`;
+        const plan = await ProductionPlan.create({
+          planNumber,
+          productId: reqDoc.materialId,
+          bomId: mrpRun.bomId,
+          warehouseId: mrpRun.warehouseId,
+          quantity: reqDoc.shortageQty || reqDoc.requiredQty,
+          requiredDate: mrpRun.requiredDate,
+          status: 'Unscheduled',
+          createdBy: req.user ? req.user._id : mrpRun.executedBy,
+        });
+        reqDoc.status = 'Converted To Plan';
+        await reqDoc.save();
+        convertedPlans.push(plan);
+      } else {
+        const prCount = await PurchaseRequest.countDocuments();
+        const requestNumber = `PR-${Date.now()}-${prCount + 1}`;
+        const purchaseReq = await PurchaseRequest.create({
+          requestNumber,
+          materialId: reqDoc.materialId,
+          quantity: reqDoc.shortageQty || reqDoc.requiredQty,
+          requiredDate: mrpRun.requiredDate,
+          warehouseId: mrpRun.warehouseId,
+          status: 'Pending',
+          requestedBy: req.user ? req.user._id : mrpRun.executedBy,
+          notes: `Auto-generated from MRP Run ${mrpRun.runNumber} for ${reqDoc.materialName}`,
+        });
+        reqDoc.status = 'Converted To PO';
+        await reqDoc.save();
+        convertedPRs.push(purchaseReq);
+      }
+    }
+
+    mrpRun.status = 'Converted';
+    await mrpRun.save();
+
+    res.json({
+      success: true,
+      message: `Successfully converted ${convertedPRs.length} PRs and ${convertedPlans.length} Work Orders.`,
+      convertedPRsCount: convertedPRs.length,
+      convertedPlansCount: convertedPlans.length,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 };
