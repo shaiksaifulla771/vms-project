@@ -21,27 +21,16 @@ const validateBOMComponents = async (productId, components, currentBomId = null)
     throw err;
   }
 
-  // 2. Validate component types
+  // 2. Extract proposed component material IDs for cycle validation
   const mpnIds = components.map(c => c.mpnId).filter(Boolean);
   const mpns = await mongoose.model('MPN').find({ _id: { $in: mpnIds } }).populate('materialId');
   
-  const invalidTypeMaterials = [];
   const proposedComponentMaterialIds = [];
 
   for (const mpn of mpns) {
     if (!mpn.materialId) continue;
     const mat = mpn.materialId;
     proposedComponentMaterialIds.push(mat._id.toString());
-    
-    if (mat.type === 'Finished' || mat.type === 'Finished Goods') {
-      invalidTypeMaterials.push(mat.name || mat.code);
-    }
-  }
-
-  if (invalidTypeMaterials.length > 0) {
-    const err = new Error(`Invalid component material type: Finished goods (${invalidTypeMaterials.join(', ')}) cannot be used as components in a BOM.`);
-    err.status = 400;
-    throw err;
   }
 
   // 3. Multi-level cycle detection

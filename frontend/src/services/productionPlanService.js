@@ -13,9 +13,9 @@ export const productionPlanService = {
     return response.data;
   },
 
-  // Create manual production plan (Status: Pending / Unscheduled)
+  // Create manual production plan (Enforces strict MRP shortage check & inventory reservation)
   createProductionPlan: async (planData) => {
-    const response = await api.post('/api/production-plans', planData);
+    const response = await api.post('/api/production/create', planData);
     return response.data;
   },
 
