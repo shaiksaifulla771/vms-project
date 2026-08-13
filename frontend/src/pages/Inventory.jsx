@@ -27,6 +27,10 @@ const Inventory = () => {
   const [warehouses, setWarehouses] = useState([]);
   const [sites, setSites] = useState([]);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
@@ -56,6 +60,34 @@ const Inventory = () => {
     reason: 'Stock balancing across sites',
     notes: '',
   });
+
+  const exportLedgerCSV = () => {
+    if (!transactions.length) {
+      alert('No ledger transactions available to export.');
+      return;
+    }
+    const headers = ['Date,Txn Type,Material Code,Material Name,Warehouse,Quantity,Ref Doc,Created By,Approved By'];
+    const rows = transactions.map(tx => [
+      `"${new Date(tx.createdAt).toLocaleString()}"`,
+      `"${tx.type}"`,
+      `"${tx.materialId?.code || ''}"`,
+      `"${tx.materialId?.name || ''}"`,
+      `"${tx.warehouseId?.name || 'Warehouse'}"`,
+      tx.quantity,
+      `"${tx.referenceId || tx.sourceDocType || ''}"`,
+      `"${tx.userId?.username || 'System'}"`,
+      `"${tx.approvedBy?.username || ''}"`
+    ].join(','));
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Inventory_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const fetchInventoryData = async () => {
     setLoading(true);
@@ -217,37 +249,83 @@ const Inventory = () => {
       )}
 
       {/* TAB BAR */}
-      <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 pt-1">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-1.5 px-4 py-2.5 text-xs font-bold transition-all border-b-2 -mb-px ${
-                isActive
-                  ? 'border-orange-500 text-orange-600'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
+      <div className="flex flex-wrap items-center justify-between border-b border-slate-200 bg-white rounded-t-xl px-2 pt-1 gap-2">
+        <div className="flex border-b border-transparent">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-1.5 px-4 py-2.5 text-xs font-bold transition-all border-b-2 -mb-px ${
+                  isActive
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center space-x-2 pb-1 pr-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={fetchInventoryData}
+            isLoading={loading}
+            className="text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />
+            Refresh Data
+          </Button>
+          {activeTab === 'ledger' && (
+            <Button
+              size="sm"
+              onClick={exportLedgerCSV}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
             >
-              <Icon className="h-3.5 w-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+              Export Ledger CSV
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* TAB 1: STOCK OVERVIEW */}
       {activeTab === 'overview' && (
         <Card className="bg-white border-slate-200 shadow-sm">
           <CardHeader className="border-b border-slate-100 pb-4">
-            <CardTitle className="text-xs font-bold text-slate-900 flex items-center justify-between uppercase tracking-wider">
-              <span>PHYSICAL STOCK OVERVIEW</span>
-              <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px]">
-                {balances.length} Stock Balances
-              </Badge>
-            </CardTitle>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <CardTitle className="text-xs font-bold text-slate-900 flex items-center space-x-2 uppercase tracking-wider">
+                <span>PHYSICAL STOCK OVERVIEW</span>
+                <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px]">
+                  {balances.length} Stock Balances
+                </Badge>
+              </CardTitle>
+
+              {/* SEARCH & FILTER CONTROLS */}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search code or material..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="p-1.5 px-3 border border-slate-200 rounded-lg text-xs bg-slate-50 w-48 font-medium"
+                />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="p-1.5 px-2 border border-slate-200 rounded-lg text-xs bg-slate-50 font-semibold text-slate-700"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="IN_STOCK">In Stock</option>
+                  <option value="OUT_OF_STOCK">Out of Stock</option>
+                </select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -263,14 +341,32 @@ const Inventory = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {balances.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="p-8 text-center text-slate-400 text-xs">
-                        No stock records found for this warehouse context.
-                      </td>
-                    </tr>
-                  ) : (
-                    balances.map((item) => {
+                  {(() => {
+                    const filteredBalances = balances.filter(item => {
+                      const matCode = item.materialId?.code?.toLowerCase() || '';
+                      const matName = item.materialId?.name?.toLowerCase() || '';
+                      const q = searchQuery.toLowerCase();
+                      const matchesSearch = matCode.includes(q) || matName.includes(q);
+                      const avail = (item.balance || item.onHand || 0) - (item.reservedBalance || item.reserved || 0);
+                      const matchesStatus =
+                        statusFilter === 'ALL' ? true :
+                        statusFilter === 'IN_STOCK' ? avail > 0 :
+                        statusFilter === 'OUT_OF_STOCK' ? avail <= 0 : true;
+
+                      return matchesSearch && matchesStatus;
+                    });
+
+                    if (filteredBalances.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="6" className="p-8 text-center text-slate-400 text-xs">
+                            No matching stock records found.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filteredBalances.map((item) => {
                       const avail = (item.balance || item.onHand || 0) - (item.reservedBalance || item.reserved || 0);
                       return (
                         <tr key={item._id} className="hover:bg-slate-50">
@@ -291,8 +387,8 @@ const Inventory = () => {
                           </td>
                         </tr>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
