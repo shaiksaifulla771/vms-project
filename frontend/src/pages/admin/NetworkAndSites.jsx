@@ -554,14 +554,14 @@ const NetworkAndSites = () => {
                 <th className="py-2.5 px-3.5">LOCATION</th>
                 <th className="py-2.5 px-3.5">STATUS</th>
                 <th className="py-2.5 px-3.5">DESCRIPTION</th>
-                <th className="py-2.5 px-3.5 text-center">ACTIONS</th>
+                <th className="py-2.5 px-3.5 text-center">LOCATION VIEW</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
               {sites.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.code.toLowerCase().includes(searchTerm.toLowerCase())).map((s) => (
                 <tr key={s._id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{s.name}</td>
-                  <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer">{s.code}</td>
+                  <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs cursor-pointer hover:underline" onClick={() => setActiveTab('hierarchyTree')}>{s.code}</td>
                   <td className="py-2.5 px-3.5 text-slate-600 text-xs">{s.type}</td>
                   <td className="py-2.5 px-3.5 text-slate-600 text-xs">{s.address?.city || 'Hyderabad'}, {s.address?.state || 'Telangana'}</td>
                   <td className="py-2.5 px-3.5 text-xs">
@@ -571,7 +571,12 @@ const NetworkAndSites = () => {
                   </td>
                   <td className="py-2.5 px-3.5 text-slate-400 text-xs">{s.description || '-'}</td>
                   <td className="py-2.5 px-3.5 text-center">
-                    <button onClick={() => setDeactivateModal(s)} className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 font-bold text-xs rounded-lg border border-rose-200">Deactivate</button>
+                    <button
+                      onClick={() => setActiveTab('hierarchyTree')}
+                      className="px-3 py-1 bg-white hover:bg-slate-100 text-blue-600 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs flex items-center justify-center gap-1 mx-auto"
+                    >
+                      <i className="ti ti-git-fork fs-5"></i> Manage in Tree
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -591,14 +596,14 @@ const NetworkAndSites = () => {
                 <th className="py-2.5 px-3.5">PARENT SITE</th>
                 <th className="py-2.5 px-3.5">CATEGORY</th>
                 <th className="py-2.5 px-3.5">STATUS</th>
-                <th className="py-2.5 px-3.5 text-center">ACTIONS</th>
+                <th className="py-2.5 px-3.5 text-center">HIERARCHY VIEW</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 font-medium text-slate-700">
               {warehouses.filter(w => w.name.toLowerCase().includes(searchTerm.toLowerCase()) || w.code.toLowerCase().includes(searchTerm.toLowerCase())).map((wh) => (
                 <tr key={wh._id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{wh.name}</td>
-                  <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs hover:underline cursor-pointer" onClick={() => setSelectedWarehouseDetail(wh)}>{wh.code}</td>
+                  <td className="py-2.5 px-3.5 font-bold text-blue-600 text-xs cursor-pointer hover:underline" onClick={() => setSelectedWarehouseDetail(wh)}>{wh.code}</td>
                   <td className="py-2.5 px-3.5 text-slate-600 text-xs font-semibold">{wh.siteId?.name || <span className="text-slate-400">Unassigned</span>}</td>
                   <td className="py-2.5 px-3.5 text-slate-600 text-xs">{wh.type}</td>
                   <td className="py-2.5 px-3.5 text-xs">
@@ -607,12 +612,12 @@ const NetworkAndSites = () => {
                     </span>
                   </td>
                   <td className="py-2.5 px-3.5 text-center">
-                    <div className="flex items-center justify-center space-x-1.5">
-                      <button onClick={() => setSelectedWarehouseDetail(wh)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 shadow-2xs">Inspect</button>
-                      <button onClick={() => setTransferModal(wh)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 shadow-2xs">Transfer</button>
-                      <button onClick={() => setUnlinkModal(wh)} className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 shadow-2xs">Unlink</button>
-                      <button onClick={() => setDeactivateModal(wh)} className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-600 font-bold text-[10px] rounded-lg border border-rose-200">Deactivate</button>
-                    </div>
+                    <button
+                      onClick={() => setActiveTab('hierarchyTree')}
+                      className="px-3 py-1 bg-white hover:bg-slate-100 text-blue-600 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs flex items-center justify-center gap-1 mx-auto"
+                    >
+                      <i className="ti ti-git-fork fs-5"></i> Manage in Tree
+                    </button>
                   </td>
                 </tr>
               ))}
