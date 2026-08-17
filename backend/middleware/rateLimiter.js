@@ -2,7 +2,6 @@ const rateLimit = require('express-rate-limit');
 
 const defaultMessage = { success: false, error: 'Too many requests. Please try again later.' };
 
-// Rate limiting is always active but with higher thresholds in development
 const isProd = process.env.NODE_ENV === 'production';
 
 const createLimiter = (options) => {
@@ -12,6 +11,40 @@ const createLimiter = (options) => {
     legacyHeaders: false,
     message: defaultMessage
   });
+};
+
+// Known malicious / bot User-Agent signatures
+const BLOCKED_BOT_PATTERNS = [
+  /sqlmap/i,
+  /nikto/i,
+  /nmap/i,
+  /masscan/i,
+  /zgrab/i,
+  /gobuster/i,
+  /dirbuster/i,
+  /wpscan/i,
+  /eval-at/i,
+  /python-requests\/0/i,
+];
+
+// Bot Protection Middleware: Blocks known malicious scanners & empty user agents in production
+exports.botProtection = (req, res, next) => {
+  const ua = req.headers['user-agent'] || '';
+
+  // Block empty user agents in production on state-modifying / auth routes
+  if (isProd && !ua.trim() && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    return res.status(403).json({ success: false, error: 'Access denied.' });
+  }
+
+  // Block malicious scanner user agents
+  for (const pattern of BLOCKED_BOT_PATTERNS) {
+    if (pattern.test(ua)) {
+      console.warn(`[BOT PROTECTION] Blocked malicious scanner UA: "${ua}" from IP: ${req.ip}`);
+      return res.status(403).json({ success: false, error: 'Access denied.' });
+    }
+  }
+
+  next();
 };
 
 // Auth-specific limiters (tight in production, generous in dev)

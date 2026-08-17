@@ -57,18 +57,23 @@ exports.createProductionPlan = asyncHandler(async (req, res, next) => {
   res.status(201).json({ success: true, data: plan });
 });
 
-// @desc    Create Production Plan with strict shortage validation & atomic inventory reservation (Section 4.3 Specification)
+// @desc    Create Production Plan with strict shortage validation & atomic inventory reservation
 // @route   POST /api/production-plans/create-strict (and POST /api/production/create)
 // @access  Private
 exports.createProductionPlanStrict = asyncHandler(async (req, res, next) => {
-  const { mrpData, productId, quantity, qty, warehouseId, bomId } = req.body;
+  const { mrpData, productId, quantity, qty, warehouseId, bomId, mrpRunId } = req.body;
 
   const targetProductId = productId || mrpData?.productId;
   const targetQty = quantity || qty || mrpData?.qty || mrpData?.targetQty || 100;
   const targetWarehouseId = warehouseId || mrpData?.warehouseId;
+  const targetMrpRunId = mrpRunId || mrpData?.mrpRunId || null;
   const hasShortage = mrpData?.hasShortage ?? (mrpData?.materials?.some(m => m.shortageQty > 0));
 
-  // 🔒 STRICT RULE 1 & 2: If shortage exists -> BLOCK production
+  if (!targetProductId || !targetWarehouseId) {
+    return res.status(400).json({ success: false, error: 'productId and warehouseId are required' });
+  }
+
+  // STRICT: If shortage exists → BLOCK production
   if (hasShortage) {
     return res.status(400).json({
       success: false,
@@ -79,8 +84,13 @@ exports.createProductionPlanStrict = asyncHandler(async (req, res, next) => {
 
   let activeBomId = bomId || mrpData?.bomId;
   if (!activeBomId && targetProductId) {
-    const activeBom = await BOM.findOne({ productId: targetProductId });
+    const activeBom = await BOM.findOne({ productId: targetProductId, status: 'Active' }) ||
+                      await BOM.findOne({ productId: targetProductId, status: { $ne: 'Deleted' } });
     if (activeBom) activeBomId = activeBom._id;
+  }
+
+  if (!activeBomId) {
+    return res.status(400).json({ success: false, error: 'No active BOM found for this product. Configure a BOM first.' });
   }
 
   let seqDoc = await Sequence.findById('productionPlan');
@@ -93,6 +103,7 @@ exports.createProductionPlanStrict = asyncHandler(async (req, res, next) => {
   const planNumber = `PLAN-${seqDoc.seq}`;
   const plan = await ProductionPlan.create({
     planNumber,
+    mrpRunId: targetMrpRunId,
     productId: targetProductId,
     bomId: activeBomId,
     warehouseId: targetWarehouseId,
@@ -101,29 +112,32 @@ exports.createProductionPlanStrict = asyncHandler(async (req, res, next) => {
     remainingQuantity: targetQty,
     requiredDate: req.body.requiredDate || mrpData?.requiredDate || new Date(Date.now() + 7 * 86400000),
     status: 'Unscheduled',
+    planSource: 'MRP',
     createdBy: req.user ? req.user.id : null,
-    notes: req.body.notes || 'Created via MRP calculation with zero shortages',
+    notes: req.body.notes || `Created via MRP with zero shortages`,
   });
 
-  // 🔒 5. INVENTORY RESERVATION (LOCK THIS)
-  const InventoryItem = require('../models/InventoryItem');
-  if (activeBomId) {
-    const bomDoc = await BOM.findById(activeBomId);
-    if (bomDoc && bomDoc.components) {
-      for (const comp of bomDoc.components) {
-        const matId = comp.materialId;
-        const requiredQty = (comp.quantity || comp.qty || 1) * targetQty;
-
-        await InventoryItem.updateOne(
-          { materialId: matId, warehouseId: targetWarehouseId },
-          {
-            $inc: {
-              available: -requiredQty,
-              reserved: requiredQty,
-              reservedBalance: requiredQty,
-            },
-          }
-        );
+  // Atomic inventory reservation via InventoryLedgerService (OCC + audit trail)
+  const bomDoc = await BOM.findById(activeBomId).populate('components.materialId');
+  if (bomDoc && bomDoc.components) {
+    for (const comp of bomDoc.components) {
+      if (!comp.materialId) continue;
+      const matId = comp.materialId._id || comp.materialId;
+      const requiredQty = (comp.quantity || 1) * targetQty;
+      try {
+        await InventoryLedgerService.recordTransaction({
+          materialId: matId,
+          warehouseId: targetWarehouseId,
+          quantity: requiredQty,
+          type: 'Reservation',
+          referenceId: plan.planNumber,
+          sourceDocType: 'ProductionPlan',
+          sourceDocId: plan._id.toString(),
+          reason: `MRP-driven material reservation for Plan ${plan.planNumber}`,
+          userId: req.user ? req.user.id : null,
+        });
+      } catch (reserveErr) {
+        console.warn(`[CreatePlanStrict] Reservation warning for material ${matId}: ${reserveErr.message}`);
       }
     }
   }

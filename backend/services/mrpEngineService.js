@@ -4,12 +4,12 @@ const BOM = require('../models/BOM');
 const Material = require('../models/Material');
 const InventoryItem = require('../models/InventoryItem');
 const PurchaseOrder = require('../models/PurchaseOrder');
-const ProductionOrder = require('../models/ProductionOrder');
 const llmService = require('./llmService');
 
 class MRPEngineService {
   /**
    * Run deterministic MRP calculation for a product target quantity.
+   * Performs single-level BOM explosion with batched DB queries for performance.
    */
   static async runMRP(params) {
     const {
@@ -35,58 +35,92 @@ class MRPEngineService {
     if (bomId) {
       activeBom = await BOM.findById(bomId).populate('components.materialId');
     } else {
-      activeBom = await BOM.findOne({ productId }).populate('components.materialId');
+      activeBom = await BOM.findOne({ productId, status: 'Active' }).populate('components.materialId');
+      if (!activeBom) {
+        // Fallback to any non-deleted BOM
+        activeBom = await BOM.findOne({ productId, status: { $ne: 'Deleted' } }).populate('components.materialId');
+      }
     }
 
     if (!activeBom || !activeBom.components || activeBom.components.length === 0) {
       throw new Error(`No active BOM components found for product ${product.name} (${product.code})`);
     }
 
-    // 2. Generate unique run number
-    const runNumber = `MRP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // 2. Collect all component material IDs for batch queries
+    const validComponents = activeBom.components.filter(c => c.materialId);
+    if (validComponents.length === 0) {
+      throw new Error(`BOM has no valid material components for product ${product.name}`);
+    }
+    const materialIds = validComponents.map(c => c.materialId._id);
 
+    // 3. Batch fetch inventory for ALL components at once (N queries → 1)
+    const inventoryItems = await InventoryItem.find({
+      materialId: { $in: materialIds },
+      warehouseId,
+    });
+
+    // Index inventory by materialId string for O(1) lookup
+    const inventoryMap = {};
+    for (const item of inventoryItems) {
+      const key = item.materialId.toString();
+      if (!inventoryMap[key]) {
+        inventoryMap[key] = { available: 0, reserved: 0 };
+      }
+      inventoryMap[key].available += item.available || 0;
+      inventoryMap[key].reserved += item.reserved || 0;
+    }
+
+    // 4. Batch fetch open POs for ALL components at once (N queries → 1)
+    const openPOs = await PurchaseOrder.find({
+      $or: [
+        { materialId: { $in: materialIds }, status: { $in: ['Approved', 'Issued', 'Partially Received'] } },
+        { 'materials.materialId': { $in: materialIds }, status: { $in: ['Approved', 'Issued', 'Partially Received'] } },
+      ],
+    });
+
+    // Build on-order quantity map from POs
+    const onOrderMap = {};
+    for (const materialId of materialIds) {
+      onOrderMap[materialId.toString()] = 0;
+    }
+    for (const po of openPOs) {
+      if (po.materialId) {
+        const key = po.materialId.toString();
+        if (onOrderMap[key] !== undefined) {
+          onOrderMap[key] += (po.quantity || 0) - (po.receivedQuantity || 0);
+        }
+      }
+      if (po.materials && Array.isArray(po.materials)) {
+        for (const item of po.materials) {
+          if (!item.materialId) continue;
+          const key = item.materialId.toString();
+          if (onOrderMap[key] !== undefined) {
+            onOrderMap[key] += (item.quantity || 0) - (item.receivedQuantity || 0);
+          }
+        }
+      }
+    }
+
+    // 5. Process all BOM components (now pure in-memory, no per-component queries)
+    const runNumber = `MRP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const requirements = [];
     let totalShortages = 0;
     let hasShortage = false;
 
-    // 3. Process BOM Components (BOM Explosion)
-    for (const comp of activeBom.components) {
+    for (const comp of validComponents) {
       const mat = comp.materialId;
-      if (!mat) continue;
 
       const compQtyPerUnit = comp.quantity || 0;
       const lossPct = comp.lossPercentage || 0;
-      // Gross Requirement adjusted for scrap/loss percentage
       const grossQty = targetQty * compQtyPerUnit * (1 + lossPct / 100);
 
-      // On-Hand & Stock Netting for this component at target warehouse
-      const invItems = await InventoryItem.find({ materialId: mat._id, warehouseId });
-      const availableStock = invItems.reduce((acc, i) => acc + (i.available || 0), 0);
-      const reservedStock = invItems.reduce((acc, i) => acc + (i.reserved || 0), 0);
+      const matKey = mat._id.toString();
+      const stockInfo = inventoryMap[matKey] || { available: 0, reserved: 0 };
+      const availableStock = stockInfo.available;
+      const reservedStock = stockInfo.reserved;
+      const onOrderQty = Math.max(0, onOrderMap[matKey] || 0);
 
-      // Fetch Open PO Supplies (Purchases on order)
-      const openPOs = await PurchaseOrder.find({
-        $or: [
-          { materialId: mat._id },
-          { 'materials.materialId': mat._id }
-        ],
-        status: { $in: ['Approved', 'Issued', 'Partially Received'] }
-      });
-      const onOrderQty = openPOs.reduce((acc, po) => {
-        if (po.materialId && po.materialId.toString() === mat._id.toString()) {
-          return acc + ((po.quantity || 0) - (po.receivedQuantity || 0));
-        }
-        if (po.materials && Array.isArray(po.materials)) {
-          const item = po.materials.find(m => m.materialId && m.materialId.toString() === mat._id.toString());
-          if (item) {
-            return acc + ((item.quantity || 0) - (item.receivedQuantity || 0));
-          }
-        }
-        return acc;
-      }, 0);
-
-      // Net Requirement Calculation
-      // Net Req = Gross Req - (Available Stock + Open POs)
+      // Net Requirement = Gross Req - (Available Stock + On-Order Supply)
       const netQty = Math.max(0, grossQty - (availableStock + onOrderQty));
       const shortageQty = netQty;
 
@@ -94,10 +128,11 @@ class MRPEngineService {
       if (shortageQty > 0) {
         hasShortage = true;
         totalShortages++;
-        if (mat.type === 'Raw Material') {
-          action = availableStock > 0 ? 'Partial Stock' : 'Procure';
-        } else {
-          action = availableStock > 0 ? 'Partial Stock' : 'Produce';
+        // Raw Material and Packaged Material → procure; everything else (Semi-Finished, Finished, Assembly) → produce
+        const isProcurable = mat.type === 'Raw Material' || mat.type === 'Packaged Material';
+        action = isProcurable ? 'Procure' : 'Produce';
+        if (availableStock > 0 && availableStock < grossQty) {
+          action = 'Partial Stock';
         }
       }
 
@@ -109,25 +144,25 @@ class MRPEngineService {
         requiredQty: Math.round(grossQty * 10000) / 10000,
         availableQty: availableStock,
         reservedQty: reservedStock,
-        onOrderQty,
+        onOrderQty: Math.round(onOrderQty * 10000) / 10000,
         netQty: Math.round(netQty * 10000) / 10000,
         shortageQty: Math.round(shortageQty * 10000) / 10000,
-        suggestedLeadTimeDays: mat.type === 'Raw Material' ? 7 : 3,
+        suggestedLeadTimeDays: mat.type === 'Raw Material' || mat.type === 'Packaged Material' ? 7 : 3,
         action,
         status: 'Pending',
       });
     }
 
-    // 4. Create Persistent MRP Run Document
+    // 6. Create Persistent MRP Run Document
     const mrpRun = new MRPRun({
       runNumber,
       productId: product._id,
       bomId: activeBom._id,
-      bomVersion,
+      bomVersion: activeBom.version || bomVersion,
       siteId,
       warehouseId,
       targetQty,
-      requiredDate,
+      requiredDate: requiredDate || new Date(Date.now() + 7 * 86400000),
       status: 'Completed',
       summary: {
         totalComponents: requirements.length,
@@ -139,29 +174,33 @@ class MRPEngineService {
 
     await mrpRun.save();
 
-    // 5. Persist Planning Requirements idempotently using sourceKey
-    const planningDocs = [];
-    for (const req of requirements) {
-      const sourceKey = `${mrpRun._id}_${req.materialId.toString()}`;
-      const doc = await PlanningRequirement.findOneAndUpdate(
-        { sourceKey },
-        {
-          mrpRunId: mrpRun._id,
-          sourceKey,
-          ...req,
+    // 7. Persist Planning Requirements idempotently using sourceKey
+    const planningOps = requirements.map(req => ({
+      updateOne: {
+        filter: { sourceKey: `${mrpRun._id}_${req.materialId.toString()}` },
+        update: {
+          $set: {
+            mrpRunId: mrpRun._id,
+            sourceKey: `${mrpRun._id}_${req.materialId.toString()}`,
+            ...req,
+          },
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      planningDocs.push(doc);
-    }
+        upsert: true,
+      },
+    }));
+    await PlanningRequirement.bulkWrite(planningOps);
 
-    // 6. Non-mutating AI Explanation Commentary (Optional)
-    let aiExplanation = '';
+    const planningDocs = await PlanningRequirement.find({ mrpRunId: mrpRun._id });
+
+    // 8. Non-mutating AI Commentary (optional — does not affect calculation correctness)
     try {
       if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
-        const promptText = `Summarize the manufacturing MRP run for ${product.name} (Qty: ${targetQty}). Total components: ${requirements.length}, Shortages: ${totalShortages}. Key shortage materials: ${requirements.filter(r => r.shortageQty > 0).map(r => r.materialName).join(', ') || 'None'}. Provide a concise 2-sentence executive summary for the production manager.`;
-        aiExplanation = await llmService.generateText(promptText);
-        mrpRun.summary.aiExplanation = aiExplanation;
+        const shortageList = requirements
+          .filter(r => r.shortageQty > 0)
+          .map(r => r.materialName)
+          .join(', ') || 'None';
+        const promptText = `Summarize the manufacturing MRP run for ${product.name} (Qty: ${targetQty}). Total components: ${requirements.length}, Shortages: ${totalShortages}. Shortage materials: ${shortageList}. Provide a concise 2-sentence executive summary for the production manager.`;
+        mrpRun.summary.aiExplanation = await llmService.generateText(promptText);
         await mrpRun.save();
       }
     } catch (err) {

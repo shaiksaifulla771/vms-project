@@ -52,9 +52,11 @@ const UserSchema = new mongoose.Schema({
   },
   otp: {
     type: String,
+    select: false,
   },
   otpExpires: {
     type: Date,
+    select: false,
   },
   createdAt: {
     type: Date,
@@ -87,6 +89,41 @@ const UserSchema = new mongoose.Schema({
   lastActivityAt: { type: Date, default: Date.now },
   lastActivityIp: String,
   lastActivityUserAgent: String,
+}, {
+  toJSON: {
+    transform: function (doc, ret) {
+      delete ret.password;
+      delete ret.otp;
+      delete ret.otpExpires;
+      delete ret.resetPasswordToken;
+      delete ret.resetPasswordExpires;
+      delete ret.refreshTokenHash;
+      delete ret.mfaSecret;
+      delete ret.__v;
+      return ret;
+    }
+  },
+  toObject: {
+    transform: function (doc, ret) {
+      delete ret.password;
+      delete ret.otp;
+      delete ret.otpExpires;
+      delete ret.resetPasswordToken;
+      delete ret.resetPasswordExpires;
+      delete ret.refreshTokenHash;
+      delete ret.mfaSecret;
+      delete ret.__v;
+      return ret;
+    }
+  }
+});
+
+// Normalize accountStatus to UPPERCASE before saving
+UserSchema.pre('save', function (next) {
+  if (this.accountStatus) {
+    this.accountStatus = this.accountStatus.toUpperCase();
+  }
+  next();
 });
 
 // Encrypt password before saving

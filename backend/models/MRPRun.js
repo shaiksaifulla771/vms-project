@@ -5,7 +5,6 @@ const MRPRunSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    index: true,
   },
   productId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -41,7 +40,7 @@ const MRPRunSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Completed', 'Failed'],
+    enum: ['In Progress', 'Completed', 'Failed', 'Converted'],
     default: 'Completed',
   },
   summary: {
@@ -60,7 +59,8 @@ const MRPRunSchema = new mongoose.Schema({
   },
 });
 
-MRPRunSchema.index({ runNumber: 1 });
 MRPRunSchema.index({ createdAt: -1 });
+MRPRunSchema.index({ productId: 1, createdAt: -1 });
+MRPRunSchema.index({ warehouseId: 1 });
 
 module.exports = mongoose.model('MRPRun', MRPRunSchema);

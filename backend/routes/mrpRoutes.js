@@ -1,7 +1,6 @@
 const express = require('express');
 const {
   executeMRPRun,
-  calculateMRP,
   getMRPRuns,
   getMRPRunById,
   convertRequirement,
@@ -13,11 +12,19 @@ const router = express.Router();
 
 router.use(protect);
 
+// Execute a new MRP calculation run
 router.post('/run', authorize('Admin', 'Planner', 'Inventory Manager', 'Production Manager'), executeMRPRun);
-router.post('/calculate', authorize('Admin', 'Planner', 'Inventory Manager', 'Production Manager'), calculateMRP);
+
+// List all MRP runs (paginated via ?page=1&limit=50)
 router.get('/', getMRPRuns);
+
+// Get details of a specific run + its planning requirements
 router.get('/runs/:id', getMRPRunById);
+
+// Bulk-convert all pending shortages in a run to PRs/Work Orders
 router.post('/runs/:id/bulk-convert', authorize('Admin', 'Planner', 'Inventory Manager'), bulkConvertRunRequirements);
+
+// Convert a single planning requirement
 router.post('/requirements/:id/convert', authorize('Admin', 'Planner', 'Inventory Manager'), convertRequirement);
 
 module.exports = router;
