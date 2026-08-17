@@ -9,11 +9,29 @@ const InventoryTransaction = require('../models/InventoryTransaction');
 // @access  Private
 exports.getPurchaseOrders = async (req, res, next) => {
   try {
-    const { status } = req.query;
+    const { status, siteId, warehouseId } = req.query;
     const query = { isDeleted: { $ne: true } };
 
     if (status) {
       query.status = status;
+    }
+
+    if (siteId && siteId !== 'ALL' && siteId !== '') {
+      const Warehouse = require('../models/Warehouse');
+      const siteWhs = await Warehouse.find({ siteId }).select('_id');
+      const whIds = siteWhs.map(w => w._id);
+      query.$or = [
+        { siteId },
+        { destinationWarehouseId: { $in: whIds } },
+        { warehouseId: { $in: whIds } }
+      ];
+    }
+
+    if (warehouseId && warehouseId !== 'ALL' && warehouseId !== 'all') {
+      query.$or = [
+        { warehouseId },
+        { destinationWarehouseId: warehouseId }
+      ];
     }
 
     const pos = await PurchaseOrder.find(query)

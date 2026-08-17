@@ -83,5 +83,9 @@ const MPNSchema = new mongoose.Schema({
 });
 
 MPNSchema.index({ vendorId: 1, manufacturerName: 1, manufacturerPartNumber: 1 }, { unique: false });
+MPNSchema.index({ materialId: 1, status: 1 });
+MPNSchema.index({ vendorId: 1, status: 1 });
+MPNSchema.index({ status: 1, createdAt: -1 });
+MPNSchema.index({ manufacturerPartNumber: 'text', mpnName: 'text', manufacturerName: 'text' });
 
 module.exports = mongoose.model('MPN', MPNSchema);

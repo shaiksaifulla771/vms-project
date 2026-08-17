@@ -99,18 +99,26 @@ export default function SearchableSelect({
               filteredOptions.map((opt) => (
                 <div
                   key={opt.value}
-                  className={`flex flex-col p-2 text-xs rounded-sm cursor-pointer mb-0.5 ${
-                    opt.value === value
-                      ? 'bg-blue-50 text-blue-700 font-semibold'
-                      : 'hover:bg-slate-100 text-slate-700'
+                  className={`flex flex-col p-2 text-xs rounded-sm mb-0.5 ${
+                    opt.disabled
+                      ? 'bg-slate-100/70 text-slate-400 cursor-not-allowed opacity-60'
+                      : opt.value === value
+                      ? 'bg-blue-50 text-blue-700 font-semibold cursor-pointer'
+                      : 'hover:bg-slate-100 text-slate-700 cursor-pointer'
                   }`}
-                  onClick={() => handleSelect(opt.value)}
+                  onClick={() => {
+                    if (!opt.disabled) handleSelect(opt.value);
+                  }}
                 >
                   <div className="flex justify-between items-center">
-                    <span>{opt.label}</span>
+                    <span className={opt.disabled ? 'line-through text-slate-400' : ''}>{opt.label}</span>
                     {opt.value === value && <Check className="w-3.5 h-3.5 text-blue-600" />}
                   </div>
-                  {opt.subLabel && <span className="text-[10px] text-slate-500 mt-0.5">{opt.subLabel}</span>}
+                  {opt.subLabel && (
+                    <span className={`text-[10px] mt-0.5 ${opt.disabled ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
+                      {opt.subLabel}
+                    </span>
+                  )}
                 </div>
               ))
             )}

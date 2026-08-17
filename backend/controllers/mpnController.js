@@ -45,17 +45,28 @@ const buildMpnQuery = (queryParams) => {
   return filter;
 };
 
-// @desc    Get non-deleted MPNs (accepts 4 filters: search, status, materialId, vendorId)
+const cacheService = require('../services/cacheService');
+
+// @desc    Get non-deleted MPNs (accepts 4 filters: search, status, materialId, vendorId, page, limit)
 // @route   GET /api/mpns
 exports.getMPNs = async (req, res, next) => {
   try {
-    const { search } = req.query;
+    const { search, materialId, vendorId, status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = parseInt(req.query.limit, 10) || 0;
     const filter = buildMpnQuery(req.query);
+
+    const cacheKey = `mpns:list:${materialId || 'all'}:${vendorId || 'all'}:${status || 'all'}:${search || 'none'}:${page}:${limit}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
 
     let mpns = await MPN.find(filter)
       .populate('materialId', 'name code unit')
       .populate('vendorId', 'name company vendorId gstin')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     if (search && search.trim()) {
       const term = search.trim().toLowerCase();
@@ -82,7 +93,26 @@ exports.getMPNs = async (req, res, next) => {
       });
     }
 
-    res.status(200).json({ success: true, count: mpns.length, data: mpns });
+    const total = mpns.length;
+    let paginatedData = mpns;
+    if (limit > 0) {
+      paginatedData = mpns.slice((page - 1) * limit, page * limit);
+    }
+
+    const responsePayload = {
+      success: true,
+      count: paginatedData.length,
+      total,
+      page: limit > 0 ? page : 1,
+      limit: limit > 0 ? limit : total,
+      totalPages: limit > 0 ? Math.ceil(total / limit) : 1,
+      pagination: { total, page: limit > 0 ? page : 1, pages: limit > 0 ? Math.ceil(total / limit) : 1, limit: limit > 0 ? limit : total },
+      data: paginatedData,
+      items: paginatedData
+    };
+
+    await cacheService.set(cacheKey, responsePayload, 300);
+    res.status(200).json(responsePayload);
   } catch (err) {
     next(err);
   }
@@ -177,6 +207,7 @@ exports.createMPN = async (req, res, next) => {
       { path: 'vendorId', select: 'name company vendorId gstin' },
     ]);
 
+    await cacheService.invalidatePattern('mpns:*');
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
     if (err.message && (err.message.includes('Validation Error') || err.message.includes('Duplicate Error'))) {
@@ -269,6 +300,7 @@ exports.updateMPN = async (req, res, next) => {
       .populate('materialId', 'name code unit')
       .populate('vendorId', 'name company vendorId gstin');
 
+    await cacheService.invalidatePattern('mpns:*');
     res.status(200).json({ success: true, data: mpn });
   } catch (err) {
     next(err);
@@ -288,6 +320,7 @@ exports.deleteMPN = async (req, res, next) => {
     mpn.status = 'Deleted';
     await mpn.save();
 
+    await cacheService.invalidatePattern('mpns:*');
     res.status(200).json({ success: true, message: 'MPN record moved to deleted history' });
   } catch (err) {
     next(err);
@@ -311,6 +344,7 @@ exports.restoreMPN = async (req, res, next) => {
       { path: 'vendorId', select: 'name company vendorId' },
     ]);
 
+    await cacheService.invalidatePattern('mpns:*');
     res.status(200).json({ success: true, message: 'MPN record restored successfully', data: populated });
   } catch (err) {
     next(err);
@@ -333,6 +367,7 @@ exports.batchDeleteMPNs = async (req, res, next) => {
       await item.save();
     }
 
+    await cacheService.invalidatePattern('mpns:*');
     res.status(200).json({ success: true, message: `Soft-deleted ${items.length} MPN record(s)` });
   } catch (err) {
     next(err);

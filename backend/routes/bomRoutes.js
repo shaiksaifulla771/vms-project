@@ -7,7 +7,8 @@ const {
   deleteBOM,
   restoreBOM,
   duplicateBOM,
-  getBOMHistory
+  getBOMHistory,
+  getBOMExplosion
 } = require('../controllers/bomController');
 const { protect } = require('../middleware/authMiddleware');
 const { validateBomRecipe } = require('../validators/bomValidator');
@@ -26,5 +27,6 @@ router.route('/:id')
 router.post('/:id/duplicate', protect, duplicateBOM);
 router.put('/:id/restore', protect, restoreBOM);
 router.get('/:id/history', protect, getBOMHistory);
+router.get('/:id/explosion', protect, getBOMExplosion);
 
 module.exports = router;

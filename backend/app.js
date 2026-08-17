@@ -100,8 +100,8 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Request-Id', 'Idempotency-Key', 'idempotency-key'],
-  exposedHeaders: ['X-Correlation-Id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Request-Id', 'Idempotency-Key', 'idempotency-key', 'X-Site-Id', 'x-site-id', 'X-Warehouse-Id', 'x-warehouse-id'],
+  exposedHeaders: ['X-Correlation-Id', 'X-Site-Id', 'X-Warehouse-Id'],
   credentials: true,
 }));
 
@@ -119,7 +119,15 @@ app.get('/health', (req, res) => {
 // 6. Body parser (keep small — DoS protection)
 // ─────────────────────────────────────────────────────────────────────────────
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
 const correlationMiddleware = require('./middleware/correlationMiddleware');
+const queryPerformanceLogger = require('./middleware/queryPerformanceLogger');
+
+// Response Gzip Compression for High-Throughput Performance
+app.use(compression());
+
+// Performance Telemetry: Slow Query Logger (>200ms)
+app.use(queryPerformanceLogger);
 
 // Tight body size limits: 100kb for JSON (prevents memory DoS attacks)
 app.use(express.json({ limit: '100kb' }));

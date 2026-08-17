@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const BOM = require('../models/BOM');
 const Material = require('../models/Material');
 
@@ -9,13 +10,16 @@ const Material = require('../models/Material');
  * @returns {Promise<{ hasCycle: boolean, cyclePath: string[]|null, cycleNames: string[]|null }>}
  */
 const detectCycle = async (targetProductId, proposedComponentMaterialIds, currentBomId = null) => {
-  const targetIdStr = targetProductId.toString();
+  const targetIdStr = targetProductId ? targetProductId.toString() : '';
 
   // 1. Direct self-reference check
   for (const compMatId of proposedComponentMaterialIds) {
-    if (compMatId === targetIdStr) {
-      const targetMat = await Material.findById(targetProductId);
-      const name = targetMat ? targetMat.name : targetIdStr;
+    if (compMatId && compMatId.toString() === targetIdStr) {
+      let name = targetIdStr;
+      if (mongoose.Types.ObjectId.isValid(targetProductId)) {
+        const targetMat = await Material.findById(targetProductId);
+        if (targetMat) name = targetMat.name || targetMat.code || targetIdStr;
+      }
       return {
         hasCycle: true,
         cyclePath: [targetIdStr, targetIdStr],
@@ -30,11 +34,15 @@ const detectCycle = async (targetProductId, proposedComponentMaterialIds, curren
   const dfs = async (currentIdStr, path) => {
     visited.add(currentIdStr);
 
+    if (!mongoose.Types.ObjectId.isValid(currentIdStr)) {
+      return null;
+    }
+
     const query = {
       productId: currentIdStr,
       status: { $ne: 'Deleted' }
     };
-    if (currentBomId) {
+    if (currentBomId && mongoose.Types.ObjectId.isValid(currentBomId)) {
       query._id = { $ne: currentBomId };
     }
 
@@ -66,11 +74,13 @@ const detectCycle = async (targetProductId, proposedComponentMaterialIds, curren
   };
 
   for (const startIdStr of proposedComponentMaterialIds) {
-    const cyclePath = await dfs(startIdStr, [targetIdStr, startIdStr]);
+    if (!startIdStr) continue;
+    const cyclePath = await dfs(startIdStr.toString(), [targetIdStr, startIdStr.toString()]);
 
     if (cyclePath) {
       // Resolve material names for human-readable error output
-      const materials = await Material.find({ _id: { $in: cyclePath } });
+      const validIds = cyclePath.filter(id => mongoose.Types.ObjectId.isValid(id));
+      const materials = validIds.length > 0 ? await Material.find({ _id: { $in: validIds } }) : [];
       const matMap = new Map(materials.map(m => [m._id.toString(), m.name || m.code || m._id.toString()]));
       const cycleNames = cyclePath.map(id => matMap.get(id) || id);
 

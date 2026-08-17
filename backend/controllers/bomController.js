@@ -7,13 +7,37 @@ const bomCostService = require('../services/bomCostService');
 const { writeAuditLog } = require('../services/auditService');
 
 const bomService = require('../services/bomService');
+const bomExplosionService = require('../services/bomExplosionService');
 
 // @desc    Get all BOMs
 // @route   GET /api/bom
 exports.getBOMs = async (req, res, next) => {
   try {
     const result = await bomService.getBOMs(req.query);
-    res.status(200).json({ success: true, count: result.count, data: result.data });
+    res.status(200).json({
+      success: true,
+      count: result.count,
+      total: result.total !== undefined ? result.total : result.count,
+      page: result.page || 1,
+      limit: result.limit || result.count,
+      totalPages: result.totalPages || 1,
+      data: result.data,
+      items: result.data
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get precalculated or cached multi-level BOM explosion
+// @route   GET /api/bom/:id/explosion
+exports.getBOMExplosion = async (req, res, next) => {
+  try {
+    const explosion = await bomExplosionService.getExplosion(req.params.id);
+    if (!explosion) {
+      return res.status(404).json({ success: false, error: 'BOM explosion not found' });
+    }
+    res.status(200).json({ success: true, data: explosion });
   } catch (err) {
     next(err);
   }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SiteProvider } from './context/SiteContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Login from './pages/Login';
@@ -187,7 +188,7 @@ const AppContent = () => {
           <div className="w-full h-full">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" />} />
-              <Route path="/dashboard/*" element={<AdminControlCenter />} />
+              <Route path="/dashboard/*" element={<Dashboard />} />
               <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
               <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
               <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
@@ -195,7 +196,7 @@ const AppContent = () => {
               <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
               <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator']}><Warehouse /></ProtectedRoute>} />
               <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
-              <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><Planning /></ProtectedRoute>} />
+              <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
               <Route path="/bom/*" element={<BOMRoutes />} />
               <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
               <Route path="/scheduling/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'Planner']}><Scheduling /></ProtectedRoute>} />
@@ -234,7 +235,9 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <AppContent />
+          <SiteProvider>
+            <AppContent />
+          </SiteProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

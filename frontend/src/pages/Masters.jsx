@@ -9,51 +9,51 @@ const Masters = () => {
 
   return (
     <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
-      {/* INAPP TEMPLATE HORIZONTAL UNDERLINE TABS */}
-      <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl">
+      {/* TABS */}
+      <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl overflow-x-auto">
         <button
           onClick={() => setActiveTab('materials')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+          className={`px-4 py-2.5 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'materials'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-box-seam fs-5"></i>
-          <span>Material Master</span>
+          <span>Materials</span>
         </button>
         <button
           onClick={() => setActiveTab('vendors')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+          className={`px-4 py-2.5 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'vendors'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-building-store fs-5"></i>
-          <span>Vendor Master</span>
+          <span>Vendors</span>
         </button>
         <button
           onClick={() => setActiveTab('mpns')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+          className={`px-4 py-2.5 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'mpns'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-barcode fs-5"></i>
-          <span>MPN Master</span>
+          <span>MPN Catalog</span>
         </button>
         <button
           onClick={() => setActiveTab('boms')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+          className={`px-4 py-2.5 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'boms'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-receipt fs-5"></i>
-          <span>BOM / Recipes</span>
+          <span>Bills of Materials (BOM)</span>
         </button>
       </div>
 

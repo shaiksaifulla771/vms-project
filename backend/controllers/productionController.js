@@ -82,9 +82,33 @@ exports.getProductionOrders = asyncHandler(async (req, res, next) => {
   if (req.query.status) query.status = req.query.status;
   if (req.query.isPerformanceTest) query.isPerformanceTest = req.query.isPerformanceTest === 'true';
 
+  if (req.query.siteId && req.query.siteId !== 'ALL' && req.query.siteId !== '') {
+    const Warehouse = require('../models/Warehouse');
+    const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+    const whIds = siteWhs.map(w => w._id);
+    query.$or = [
+      { siteId: req.query.siteId },
+      { warehouseId: { $in: whIds } },
+      { sourceWarehouseId: { $in: whIds } },
+      { targetWarehouseId: { $in: whIds } }
+    ];
+  }
+
+  if (req.query.warehouseId && req.query.warehouseId !== 'ALL' && req.query.warehouseId !== 'all' && req.query.warehouseId !== '') {
+    query.$or = [
+      { warehouseId: req.query.warehouseId },
+      { sourceWarehouseId: req.query.warehouseId },
+      { targetWarehouseId: req.query.warehouseId }
+    ];
+  }
+
   const orders = await ProductionOrder.find(query)
     .populate('bomId', 'name version')
-    .populate('productId', 'name code')
+    .populate('productId', 'name code unit')
+    .populate('siteId', 'name code')
+    .populate('warehouseId', 'name code')
+    .populate('sourceWarehouseId', 'name code')
+    .populate('targetWarehouseId', 'name code')
     .sort('-createdAt');
     
   res.status(200).json({ success: true, count: orders.length, data: orders });

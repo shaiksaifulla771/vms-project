@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const MRPEngineService = require('../services/mrpEngineService');
 const MRPRun = require('../models/MRPRun');
 const PlanningRequirement = require('../models/PlanningRequirement');
+const PurchaseRequirement = require('../models/PurchaseRequirement');
 const ProductionPlan = require('../models/ProductionPlan');
 const PurchaseRequest = require('../models/PurchaseRequest');
 const Sequence = require('../models/Sequence');
@@ -20,7 +21,7 @@ async function nextSeqNumber(key, prefix) {
 // POST /api/mrp/run — Trigger a new MRP calculation run
 exports.executeMRPRun = async (req, res) => {
   try {
-    const { productId, bomId, bomVersion, siteId, warehouseId, targetQty, requiredDate } = req.body;
+    const { productId, bomId, bomVersion, siteId, warehouseId, warehouseScope, targetQty, requiredDate, horizonDays, demandIds } = req.body;
 
     const result = await MRPEngineService.runMRP({
       productId,
@@ -28,8 +29,11 @@ exports.executeMRPRun = async (req, res) => {
       bomVersion,
       siteId,
       warehouseId,
+      warehouseScope,
       targetQty,
       requiredDate,
+      horizonDays,
+      demandIds,
       userId: req.user ? req.user._id : null,
     });
 
@@ -39,22 +43,38 @@ exports.executeMRPRun = async (req, res) => {
   }
 };
 
-// GET /api/mrp — List recent MRP runs (paginated)
+// GET /api/mrp or GET /api/mrp/history — List recent MRP runs (paginated)
 exports.getMRPRuns = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const skip = (page - 1) * limit;
 
+    const filter = {};
+    if (req.query.siteId && req.query.siteId !== 'ALL' && req.query.siteId !== '') {
+      const Warehouse = require('../models/Warehouse');
+      const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+      const whIds = siteWhs.map(w => w._id);
+      filter.$or = [
+        { siteId: req.query.siteId },
+        { warehouseId: { $in: whIds } }
+      ];
+    }
+    if (req.query.warehouseId && req.query.warehouseId !== 'ALL' && req.query.warehouseId !== 'all' && req.query.warehouseId !== '') {
+      filter.warehouseId = req.query.warehouseId;
+    }
+
     const [runs, total] = await Promise.all([
-      MRPRun.find()
-        .populate('productId', 'name code unit')
+      MRPRun.find(filter)
+        .populate('productId', 'name code unit type')
         .populate('bomId', 'bomNumber version batchSize')
         .populate('warehouseId', 'name code')
+        .populate('siteId', 'name code')
+        .populate('executedBy', 'username email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      MRPRun.countDocuments(),
+      MRPRun.countDocuments(filter),
     ]);
 
     res.json({ success: true, count: runs.length, total, page, limit, runs });
@@ -63,23 +83,53 @@ exports.getMRPRuns = async (req, res) => {
   }
 };
 
-// GET /api/mrp/runs/:id — Get details of a specific MRP run and its requirements
+exports.getMRPHistory = exports.getMRPRuns;
+
+// GET /api/mrp/result/:runId or GET /api/mrp/runs/:id — Get details of a specific MRP run
 exports.getMRPRunById = async (req, res) => {
   try {
-    const mrpRun = await MRPRun.findById(req.params.id)
-      .populate('productId')
-      .populate('bomId')
-      .populate('warehouseId');
+    const id = req.params.runId || req.params.id;
+    let mrpRun = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      mrpRun = await MRPRun.findById(id)
+        .populate('productId')
+        .populate('bomId')
+        .populate('warehouseId')
+        .populate('siteId', 'name code type')
+        .populate('executedBy', 'username email');
+    }
+    if (!mrpRun) {
+      mrpRun = await MRPRun.findOne({ runNumber: id })
+        .populate('productId')
+        .populate('bomId')
+        .populate('warehouseId')
+        .populate('siteId', 'name code type')
+        .populate('executedBy', 'username email');
+    }
 
     if (!mrpRun) return res.status(404).json({ success: false, error: 'MRP Run not found' });
 
-    const requirements = await PlanningRequirement.find({ mrpRunId: mrpRun._id }).sort({ shortageQty: -1 });
+    const [requirements, productionPlans, purchaseRequirements] = await Promise.all([
+      PlanningRequirement.find({ mrpRunId: mrpRun._id }).sort({ shortageQty: -1 }),
+      ProductionPlan.find({ mrpRunId: mrpRun._id }).populate('productId bomId warehouseId'),
+      PurchaseRequirement.find({ mrpRunId: mrpRun._id }).populate('materialId warehouseId suggestedVendor'),
+    ]);
 
-    res.json({ success: true, mrpRun, requirements });
+    res.json({
+      success: true,
+      mrpRun,
+      requirements,
+      productionPlans,
+      purchaseRequirements,
+      summary: mrpRun.summary,
+      exceptions: mrpRun.exceptions || [],
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+exports.getMRPResult = exports.getMRPRunById;
 
 // POST /api/mrp/requirements/:id/convert — Convert a single requirement into a Production Plan or Purchase Request
 exports.convertRequirement = async (req, res) => {
@@ -94,7 +144,7 @@ exports.convertRequirement = async (req, res) => {
     const mrpRun = await MRPRun.findById(reqDoc.mrpRunId);
     if (!mrpRun) return res.status(404).json({ success: false, error: 'Associated MRP Run not found' });
 
-    const { targetAction } = req.body; // 'ProductionPlan' or 'PurchaseRequest'
+    const { targetAction } = req.body;
     const shouldProduce = targetAction === 'ProductionPlan' || reqDoc.action === 'Produce';
 
     if (shouldProduce) {
@@ -103,40 +153,59 @@ exports.convertRequirement = async (req, res) => {
         planNumber,
         mrpRunId: mrpRun._id,
         productId: reqDoc.materialId,
+        product: reqDoc.materialId,
+        productCode: reqDoc.materialCode,
+        productName: reqDoc.materialName,
         bomId: mrpRun.bomId,
+        bom: mrpRun.bomId,
         warehouseId: mrpRun.warehouseId,
         quantity: reqDoc.shortageQty || reqDoc.requiredQty,
         originalQuantity: reqDoc.shortageQty || reqDoc.requiredQty,
         remainingQuantity: reqDoc.shortageQty || reqDoc.requiredQty,
         requiredDate: mrpRun.requiredDate,
-        status: 'Unscheduled',
+        requiredByDate: mrpRun.requiredDate,
+        status: 'UNSCHEDULED',
         planSource: 'MRP',
+        source: 'MRP',
+        sourceReference: mrpRun._id,
+        sourceRefModel: 'MRPRun',
+        priority: 'MEDIUM',
         createdBy: req.user ? req.user._id : mrpRun.executedBy,
-        notes: `Auto-generated from MRP Run ${mrpRun.runNumber}`,
+        notes: `Generated from MRP Run ${mrpRun.runNumber} for requirement ${reqDoc.materialName}`,
+        auditHistory: [
+          {
+            action: 'CONVERT_REQUIREMENT_TO_PLAN',
+            user: req.user ? req.user._id : null,
+            timestamp: new Date(),
+            details: `Requirement ${reqDoc._id} converted to ProductionPlan ${planNumber}`,
+          }
+        ]
       });
 
       reqDoc.status = 'Converted To Plan';
       await reqDoc.save();
       return res.status(201).json({ success: true, convertedType: 'ProductionPlan', plan, requirement: reqDoc });
     } else {
-      // Convert to Purchase Request
-      const requestNumber = await nextSeqNumber('purchaseRequest', 'PR');
-      const purchaseReq = await PurchaseRequest.create({
-        requestNumber,
+      const reqNum = await nextSeqNumber('purchaseRequirement', 'PR-REQ');
+      const purchaseReq = await PurchaseRequirement.create({
+        requirementNumber: reqNum,
         materialId: reqDoc.materialId,
+        materialCode: reqDoc.materialCode,
+        materialName: reqDoc.materialName,
         quantity: reqDoc.shortageQty || reqDoc.requiredQty,
+        unit: reqDoc.unit,
         requiredDate: mrpRun.requiredDate,
         warehouseId: mrpRun.warehouseId,
+        siteId: mrpRun.siteId,
         mrpRunId: mrpRun._id,
-        status: 'Pending',
-        source: 'MRP',
-        requestedBy: req.user ? req.user._id : mrpRun.executedBy,
-        notes: `Auto-generated from MRP Run ${mrpRun.runNumber} for ${reqDoc.materialName}`,
+        status: 'OPEN',
+        notes: `Converted from MRP Run ${mrpRun.runNumber} for ${reqDoc.materialName}`,
+        createdBy: req.user ? req.user._id : mrpRun.executedBy,
       });
 
       reqDoc.status = 'Converted To PO';
       await reqDoc.save();
-      return res.status(201).json({ success: true, convertedType: 'PurchaseRequest', purchaseReq, requirement: reqDoc });
+      return res.status(201).json({ success: true, convertedType: 'PurchaseRequirement', purchaseReq, requirement: reqDoc });
     }
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -178,32 +247,44 @@ exports.bulkConvertRunRequirements = async (req, res) => {
             planNumber,
             mrpRunId: mrpRun._id,
             productId: reqDoc.materialId,
+            product: reqDoc.materialId,
+            productCode: reqDoc.materialCode,
+            productName: reqDoc.materialName,
             bomId: mrpRun.bomId,
+            bom: mrpRun.bomId,
             warehouseId: mrpRun.warehouseId,
             quantity: reqDoc.shortageQty || reqDoc.requiredQty,
             originalQuantity: reqDoc.shortageQty || reqDoc.requiredQty,
             remainingQuantity: reqDoc.shortageQty || reqDoc.requiredQty,
             requiredDate: mrpRun.requiredDate,
-            status: 'Unscheduled',
+            requiredByDate: mrpRun.requiredDate,
+            status: 'UNSCHEDULED',
             planSource: 'MRP',
+            source: 'MRP',
+            sourceReference: mrpRun._id,
+            sourceRefModel: 'MRPRun',
+            priority: 'MEDIUM',
             createdBy: req.user ? req.user._id : mrpRun.executedBy,
             notes: `Auto-generated from MRP Run ${mrpRun.runNumber} for ${reqDoc.materialName}`,
           }], opts);
           reqDoc.status = 'Converted To Plan';
           convertedPlans.push(plan);
         } else {
-          const requestNumber = await nextSeqNumber('purchaseRequest', 'PR');
-          const [purchaseReq] = await PurchaseRequest.create([{
-            requestNumber,
+          const reqNum = await nextSeqNumber('purchaseRequirement', 'PR-REQ');
+          const [purchaseReq] = await PurchaseRequirement.create([{
+            requirementNumber: reqNum,
             materialId: reqDoc.materialId,
+            materialCode: reqDoc.materialCode,
+            materialName: reqDoc.materialName,
             quantity: reqDoc.shortageQty || reqDoc.requiredQty,
+            unit: reqDoc.unit,
             requiredDate: mrpRun.requiredDate,
             warehouseId: mrpRun.warehouseId,
+            siteId: mrpRun.siteId,
             mrpRunId: mrpRun._id,
-            status: 'Pending',
-            source: 'MRP',
-            requestedBy: req.user ? req.user._id : mrpRun.executedBy,
+            status: 'OPEN',
             notes: `Auto-generated from MRP Run ${mrpRun.runNumber} for ${reqDoc.materialName}`,
+            createdBy: req.user ? req.user._id : mrpRun.executedBy,
           }], opts);
           reqDoc.status = 'Converted To PO';
           convertedPRs.push(purchaseReq);
@@ -221,7 +302,6 @@ exports.bulkConvertRunRequirements = async (req, res) => {
           await executeConversions(session);
         });
       } catch (txErr) {
-        // Fallback if replica set unavailable
         if (txErr.message && txErr.message.includes('Transaction numbers are only allowed')) {
           convertedPRs.length = 0;
           convertedPlans.length = 0;
@@ -238,7 +318,7 @@ exports.bulkConvertRunRequirements = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully converted ${convertedPRs.length} Purchase Requests and ${convertedPlans.length} Work Orders.`,
+      message: `Successfully converted ${convertedPRs.length} Purchase Requirements and ${convertedPlans.length} Production Plans.`,
       convertedPRsCount: convertedPRs.length,
       convertedPlansCount: convertedPlans.length,
     });
@@ -247,3 +327,4 @@ exports.bulkConvertRunRequirements = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+

@@ -62,6 +62,19 @@ api.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${activeToken}`;
   }
 
+  // Attach active operating location headers if present in storage
+  try {
+    const activeSiteId = sessionStorage.getItem('vms_active_site_id') || localStorage.getItem('vms_active_site_id');
+    const activeWhId = sessionStorage.getItem('vms_active_warehouse_id') || localStorage.getItem('vms_active_warehouse_id');
+    config.headers = config.headers || {};
+    if (activeSiteId) {
+      config.headers['X-Site-Id'] = activeSiteId;
+    }
+    if (activeWhId && activeWhId !== 'all') {
+      config.headers['X-Warehouse-Id'] = activeWhId;
+    }
+  } catch (e) {}
+
   return config;
 });
 

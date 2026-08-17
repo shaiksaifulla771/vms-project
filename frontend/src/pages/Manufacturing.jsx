@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import productionService from '../services/productionService';
-import SiteWarehouseSelector, { getStoredContext } from '../components/SiteWarehouseSelector';
+import { useSiteContext } from '../context/SiteContext';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -10,26 +10,26 @@ import {
 } from 'lucide-react';
 
 const TABS = [
-  { id: 'orders', label: '1. Production Orders', icon: Clock },
-  { id: 'shopfloor', label: '2. Shop Floor Execution', icon: Factory },
-  { id: 'completed', label: '3. Completed Orders', icon: CheckCircle },
+  { id: 'orders', label: 'Production Orders', icon: Clock },
+  { id: 'shopfloor', label: 'Shop Floor Execution', icon: Factory },
+  { id: 'completed', label: 'Completed Orders', icon: CheckCircle },
 ];
 
 const Manufacturing = () => {
+  const { activeSiteId, activeWarehouseId } = useSiteContext();
   const [activeTab, setActiveTab] = useState('orders');
-  const [context, setContext] = useState(getStoredContext());
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
   // Fetch production orders filtered by operational context
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       const query = {};
-      if (context.siteId) query.siteId = context.siteId;
-      if (context.warehouseId) query.warehouseId = context.warehouseId;
+      if (activeSiteId) query.siteId = activeSiteId;
+      if (activeWarehouseId && activeWarehouseId !== 'all') query.warehouseId = activeWarehouseId;
 
       const res = await productionService.getProductionOrders(query);
       setOrders(res.data || res.orders || []);
@@ -38,11 +38,11 @@ const Manufacturing = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeSiteId, activeWarehouseId]);
 
   useEffect(() => {
     fetchOrders();
-  }, [context.siteId, context.warehouseId]);
+  }, [fetchOrders]);
 
   // Handle Start Production: Scheduled -> In Production
   const handleStartProduction = async (id, prdNumber) => {
@@ -92,11 +92,6 @@ const Manufacturing = () => {
 
   return (
     <div className="space-y-6">
-      {/* Site / Warehouse Context Selector */}
-      <SiteWarehouseSelector onContextChange={setContext} />
-
-
-
       {/* Toast Feedback */}
       {toastMsg && (
         <div className={`p-4 rounded-xl text-xs font-bold border flex items-center justify-between shadow-sm ${

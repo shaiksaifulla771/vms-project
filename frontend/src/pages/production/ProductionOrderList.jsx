@@ -18,25 +18,32 @@ const getStatusBadge = (status) => {
   return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles['Draft']}`}>{status}</span>;
 };
 
+import { useSiteContext } from '../../context/SiteContext';
+
 export default function ProductionOrderList() {
+  const { activeSiteId, activeWarehouseId } = useSiteContext();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
   const fetchOrders = async () => {
     try {
-      const res = await api.get('/api/productions');
-      setOrders(res.data.data);
+      const query = {};
+      if (activeSiteId) query.siteId = activeSiteId;
+      if (activeWarehouseId && activeWarehouseId !== 'all') query.warehouseId = activeWarehouseId;
+
+      const res = await api.get('/api/productions', { params: query });
+      setOrders(res.data.data || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchOrders();
+  }, [activeSiteId, activeWarehouseId]);
 
   const filteredOrders = orders.filter(o => 
     o.prdNumber.toLowerCase().includes(searchTerm.toLowerCase()) || 

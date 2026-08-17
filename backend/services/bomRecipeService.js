@@ -6,6 +6,8 @@ const Sequence = require('../models/Sequence');
 const bomCostService = require('./bomCostService');
 const { writeAuditLog } = require('./auditService');
 const { detectCycle } = require('../utils/bomGraph');
+const cacheService = require('./cacheService');
+const bomExplosionService = require('./bomExplosionService');
 
 const validateBOMComponents = async (productId, components, currentBomId = null) => {
   // 1. Verify product exists and is of valid type
@@ -36,8 +38,13 @@ const validateBOMComponents = async (productId, components, currentBomId = null)
   // 3. Multi-level cycle detection
   const cycleResult = await detectCycle(productId, proposedComponentMaterialIds, currentBomId);
   if (cycleResult.hasCycle) {
+    const isSelf = cycleResult.cyclePath && cycleResult.cyclePath.length === 2 && cycleResult.cyclePath[0] === cycleResult.cyclePath[1];
     const pathStr = cycleResult.cycleNames.join(' → ');
-    const err = new Error(`Cannot save BOM: Component '${cycleResult.cycleNames[1]}' would create a circular dependency (${pathStr}).`);
+    const componentName = cycleResult.cycleNames[1] || cycleResult.cycleNames[0];
+    const message = isSelf
+      ? `Cannot save BOM: Component '${componentName}' cannot be an ingredient of itself (Direct Circular Dependency).`
+      : `Cannot save BOM: Component '${componentName}' would create a circular dependency (${pathStr}).`;
+    const err = new Error(message);
     err.status = 400;
     throw err;
   }
@@ -55,9 +62,12 @@ exports.createBOM = async (data, userContext) => {
     const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
 
     const cleanComponents = componentsWithCost.map(c => ({
+      materialId: c.materialId || (c.mpnId?.materialId) || undefined,
       mpnId: c.mpnId,
       qty: c.qty,
-      lossPercent: c.lossPercent
+      quantity: c.qty,
+      lossPercent: c.lossPercent,
+      lossPercentage: c.lossPercent
     }));
 
     let seqDoc = await Sequence.findById('bomOrder').session(session);
@@ -110,6 +120,11 @@ exports.createBOM = async (data, userContext) => {
     await writeAuditLog(session, 'BOM', newBom._id, 'CREATE', null, newBom, userContext.id);
 
     await commitSafeTransaction(session);
+
+    // Sync precomputed FlatBOM & invalidate Redis cache (async background)
+    bomExplosionService.syncFlatBOM(newBom._id).catch(e => console.warn('[BOM] Flat sync failed:', e.message));
+    cacheService.invalidatePattern('boms:*').catch(() => {});
+
     return newBom;
   } catch (err) {
     await abortSafeTransaction(session);
@@ -154,6 +169,7 @@ exports.updateBOM = async (id, data, userContext) => {
       }], { session });
 
       await commitSafeTransaction(session);
+      cacheService.invalidatePattern('boms:*').catch(() => {});
       return { ...bom.toObject(), ...updateFields, _isPartialUpdate: true };
     }
 
@@ -169,9 +185,12 @@ exports.updateBOM = async (id, data, userContext) => {
     const eDate = effectiveDate ? new Date(effectiveDate) : bom.effectiveDate;
     const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
     const cleanComponents = componentsWithCost.map(c => ({
+      materialId: c.materialId || (c.mpnId?.materialId) || undefined,
       mpnId: c.mpnId,
       qty: c.qty,
-      lossPercent: c.lossPercent
+      quantity: c.qty,
+      lossPercent: c.lossPercent,
+      lossPercentage: c.lossPercent
     }));
 
     const oldDoc = bom.toObject();
@@ -222,6 +241,11 @@ exports.updateBOM = async (id, data, userContext) => {
     await writeAuditLog(session, 'BOM', newBomData._id, 'UPDATE', oldDoc, newBomData, userContext.id);
 
     await commitSafeTransaction(session);
+
+    // Sync FlatBOM & invalidate cache
+    bomExplosionService.syncFlatBOM(newBomData._id).catch(e => console.warn('[BOM] Flat sync failed:', e.message));
+    cacheService.invalidatePattern('boms:*').catch(() => {});
+
     return newBomData;
   } catch (err) {
     await abortSafeTransaction(session);

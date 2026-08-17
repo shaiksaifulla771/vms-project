@@ -17,4 +17,24 @@ describe('BOM Sub-Assembly & Component Validation (Apple Puree Fix)', () => {
     expect(invalidTypeMaterials.length).toBe(0);
     expect(proposedComponents.some(c => c.materialId === 'prod-puree-01')).toBe(true);
   });
+
+  test('Rejects direct self-dependency where product is used in its own BOM', async () => {
+    const { detectCycle } = require('../../utils/bomGraph');
+    const productId = 'prod-banana-01';
+    const proposedComponentMaterialIds = ['prod-banana-01', 'mat-sugar-01'];
+
+    const result = await detectCycle(productId, proposedComponentMaterialIds);
+    expect(result.hasCycle).toBe(true);
+    expect(result.cyclePath).toEqual(['prod-banana-01', 'prod-banana-01']);
+  });
+
+  test('Allows valid distinct raw materials without cycle', async () => {
+    const { detectCycle } = require('../../utils/bomGraph');
+    const productId = 'prod-banana-01';
+    const proposedComponentMaterialIds = ['rm-banana-spray-01', 'rm-cardamom-01'];
+
+    const result = await detectCycle(productId, proposedComponentMaterialIds);
+    expect(result.hasCycle).toBe(false);
+    expect(result.cyclePath).toBeNull();
+  });
 });

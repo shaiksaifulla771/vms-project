@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSiteContext } from '../context/SiteContext';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Button } from '../components/ui/Button';
@@ -11,6 +12,7 @@ import { Plus, ShieldCheck, Heart, User, CheckCircle, XCircle } from 'lucide-rea
 
 const Quality = () => {
   const { user } = useAuth();
+  const { activeSiteId, activeWarehouseId } = useSiteContext();
 
   const [records, setRecords] = useState([]);
   const [completedOrders, setCompletedOrders] = useState([]);
@@ -31,15 +33,19 @@ const Quality = () => {
     setLoading(true);
     setError(null);
     try {
+      const query = {};
+      if (activeSiteId) query.siteId = activeSiteId;
+      if (activeWarehouseId && activeWarehouseId !== 'all') query.warehouseId = activeWarehouseId;
+
       const [resRecords, resOrders] = await Promise.all([
-        api.get('/api/quality'),
-        api.get('/api/productions')
+        api.get('/api/quality', { params: query }),
+        api.get('/api/productions', { params: query })
       ]);
 
       if (resRecords.data.success) setRecords(resRecords.data.data);
       if (resOrders.data.success) {
         // Only show Completed orders that haven't been QC Checked yet
-        const completedOnly = resOrders.data.data.filter(ord => ord.status === 'Completed');
+        const completedOnly = (resOrders.data.data || []).filter(ord => ord.status === 'Completed');
         setCompletedOrders(completedOnly);
       }
     } catch (err) {
@@ -52,7 +58,7 @@ const Quality = () => {
 
   useEffect(() => {
     fetchQualityData();
-  }, []);
+  }, [activeSiteId, activeWarehouseId]);
 
   const handleOpenModal = () => {
     setFormData({ productionOrderId: '', status: 'Passed', notes: '' });
@@ -98,9 +104,30 @@ const Quality = () => {
   const passRate = totalChecked > 0 ? ((passedCount / totalChecked) * 100).toFixed(1) : '100.0';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div>
+          <div className="flex items-center space-x-2 mb-1">
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-md flex items-center gap-1">
+              <ShieldCheck className="h-3.5 w-3.5" /> Quality Assurance
+            </span>
+            <span className="text-xs text-slate-500 font-medium">● Lot Inspection & Compliance</span>
+          </div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Quality & QC</h1>
+          <p className="text-xs text-slate-500 font-normal">Record batch inspections, monitor overall pass rates, and audit finished goods compliance.</p>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Button onClick={handleOpenModal} className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">
+            <Plus className="h-4 w-4" />
+            <span>Audit Lot</span>
+          </Button>
+        </div>
+      </div>
+
       {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">

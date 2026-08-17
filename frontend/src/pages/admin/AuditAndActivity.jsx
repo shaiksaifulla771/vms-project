@@ -92,26 +92,29 @@ const AuditAndActivity = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl text-white">
+    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div>
-          <div className="flex items-center space-x-3 mb-1">
-            <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg">
-              Governance & Compliance
+          <div className="flex items-center space-x-2 mb-1">
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-md">
+              System Audit
             </span>
-            <span className="text-xs text-slate-400">Enterprise Audit & Session Security</span>
+            <span className="text-xs text-slate-500 font-medium">● Security & Event Logging</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight">Activity & Audit Center</h1>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">System & Audit Logs</h1>
+          <p className="text-xs text-slate-500 font-normal">Review immutable system transactions, active user sessions, and access scope change history.</p>
         </div>
 
-        <button
-          onClick={fetchAuditData}
-          className="flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all shadow-lg shadow-blue-600/30"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh Logs</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={fetchAuditData}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs rounded-lg shadow-2xs transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Logs</span>
+          </button>
+        </div>
       </div>
 
       {/* SUB NAVIGATION TABS */}

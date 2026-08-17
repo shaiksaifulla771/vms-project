@@ -9,13 +9,16 @@ const { syncExcelToMongoDB } = require('../utils/dbSync');
 const { escapeRegex } = require('../utils/security');
 const mongoose = require('mongoose');
 const { writeAuditLog } = require('../services/auditService');
+const cacheService = require('../services/cacheService');
 
-// @desc    Get all materials
+// @desc    Get all materials with pagination, search, select & Redis caching
 // @route   GET /api/materials
 // @access  Private
 exports.getMaterials = async (req, res, next) => {
   try {
     const { type, search } = req.query;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = parseInt(req.query.limit) || 0; // 0 means no pagination limit for backward compatibility
     const query = {};
 
     if (type === 'Deleted') {
@@ -27,33 +30,67 @@ exports.getMaterials = async (req, res, next) => {
       }
     }
 
-    if (search) {
-      const safeSearch = escapeRegex(search);
+    if (search && search.trim() !== '') {
+      const safeSearch = escapeRegex(search.trim());
       query.$or = [
         { name: { $regex: safeSearch, $options: 'i' } },
-        { code: { $regex: safeSearch, $options: 'i' } }
+        { code: { $regex: safeSearch, $options: 'i' } },
+        { subcategory: { $regex: safeSearch, $options: 'i' } }
       ];
     }
 
-    const materials = await Material.find(query).sort({ createdAt: -1 });
+    // Check Redis cache
+    const cacheKey = `materials:list:${type || 'all'}:${search || 'none'}:${page}:${limit}`;
+    const cachedResponse = await cacheService.get(cacheKey);
+    if (cachedResponse) {
+      return res.status(200).json(cachedResponse);
+    }
+
+    const totalCount = await Material.countDocuments(query);
+    let materialQuery = Material.find(query)
+      .select('name code unit basePrice type subcategory status description importSource manufacturer createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (limit > 0) {
+      materialQuery = materialQuery.skip((page - 1) * limit).limit(limit);
+    }
+
+    const materials = await materialQuery;
 
     // Augment with hasValidPrice flag for frontend BOM warnings
-    const mpns = await MPN.find({ status: 'Active' }).select('materialId unitPrice');
+    const mpns = await MPN.find({ status: 'Active' }).select('materialId unitPrice price').lean();
     const mpnMap = {};
     mpns.forEach(m => {
-      if (m.materialId && typeof m.unitPrice === 'number' && m.unitPrice > 0) {
+      const price = m.unitPrice !== undefined ? m.unitPrice : m.price;
+      if (m.materialId && typeof price === 'number' && price > 0) {
         mpnMap[m.materialId.toString()] = true;
       }
     });
 
     const augmentedMaterials = materials.map(mat => {
-      const doc = mat.toObject();
-      const hasBasePrice = typeof doc.basePrice === 'number' && doc.basePrice > 0;
-      doc.hasValidPrice = hasBasePrice || !!mpnMap[mat._id.toString()];
-      return doc;
+      const hasBasePrice = typeof mat.basePrice === 'number' && mat.basePrice > 0;
+      return {
+        ...mat,
+        hasValidPrice: hasBasePrice || !!mpnMap[mat._id.toString()]
+      };
     });
 
-    res.status(200).json({ success: true, count: augmentedMaterials.length, data: augmentedMaterials });
+    const responsePayload = {
+      success: true,
+      count: augmentedMaterials.length,
+      total: totalCount,
+      page: limit > 0 ? page : 1,
+      limit: limit > 0 ? limit : totalCount,
+      totalPages: limit > 0 ? Math.ceil(totalCount / limit) : 1,
+      data: augmentedMaterials,
+      items: augmentedMaterials
+    };
+
+    // Cache in Redis for 5 minutes
+    await cacheService.set(cacheKey, responsePayload, 300);
+
+    res.status(200).json(responsePayload);
   } catch (err) {
     next(err);
   }
@@ -64,10 +101,15 @@ exports.getMaterials = async (req, res, next) => {
 // @access  Private
 exports.getMaterial = async (req, res, next) => {
   try {
-    const material = await Material.findById(req.params.id);
+    const cacheKey = `materials:item:${req.params.id}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) return res.status(200).json({ success: true, data: cached });
+
+    const material = await Material.findById(req.params.id).lean();
     if (!material) {
       return res.status(404).json({ success: false, error: 'Material not found' });
     }
+    await cacheService.set(cacheKey, material, 300);
     res.status(200).json({ success: true, data: material });
   } catch (err) {
     next(err);
@@ -83,6 +125,7 @@ exports.createMaterial = async (req, res, next) => {
   try {
     const userId = req.user ? req.user.id : null;
     const material = await MaterialService.createMaterial(req.body, userId);
+    await cacheService.invalidatePattern('materials:*');
     res.status(201).json({ success: true, data: material });
   } catch (err) {
     if (err.message.startsWith('VALIDATION_ERROR:') || err.message.startsWith('DUPLICATE_ERROR:')) {
@@ -99,6 +142,8 @@ exports.updateMaterial = async (req, res, next) => {
   try {
     const userId = req.user ? req.user.id : null;
     const material = await MaterialService.updateMaterial(req.params.id, req.body, userId);
+    await cacheService.del(`materials:item:${req.params.id}`);
+    await cacheService.invalidatePattern('materials:*');
     res.status(200).json({ success: true, data: material });
   } catch (err) {
     if (err.message.startsWith('NOT_FOUND:')) {
@@ -118,6 +163,8 @@ exports.deleteMaterial = async (req, res, next) => {
   try {
     const userId = req.user ? req.user.id : null;
     await MaterialService.deleteMaterial(req.params.id, userId);
+    await cacheService.del(`materials:item:${req.params.id}`);
+    await cacheService.invalidatePattern('materials:*');
     res.status(200).json({ success: true, message: 'Material moved to deleted history successfully', data: {} });
   } catch (err) {
     if (err.message.startsWith('NOT_FOUND:')) {
@@ -139,6 +186,7 @@ exports.createMaterialsBatch = async (req, res, next) => {
   try {
     const { items, importSource } = req.body;
     const result = await MaterialBulkService.createMaterialsBatch(items, importSource);
+    await cacheService.invalidatePattern('materials:*');
     res.status(200).json(result);
   } catch (err) {
     if (err.message && err.message.startsWith('VALIDATION_ERROR:')) {
@@ -158,6 +206,7 @@ exports.createMaterialsBatchUpload = async (req, res, next) => {
     const { importSource, isAutoEntry } = req.body;
     
     const result = await MaterialBulkService.createMaterialsBatchUpload(fileBuffer, importSource, isAutoEntry, originalName);
+    await cacheService.invalidatePattern('materials:*');
     res.status(200).json(result);
   } catch (err) {
     if (err.message && err.message.startsWith('VALIDATION_ERROR:')) {
@@ -174,6 +223,7 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
   try {
     const { source } = req.body;
     const result = await MaterialBulkService.deleteMaterialsBySource(source);
+    await cacheService.invalidatePattern('materials:*');
     res.status(200).json(result);
   } catch (err) {
     if (err.message && err.message.startsWith('VALIDATION_ERROR:')) {
@@ -193,6 +243,7 @@ exports.batchDeleteMaterials = async (req, res, next) => {
   try {
     const { ids } = req.body;
     const result = await MaterialBulkService.batchDeleteMaterials(ids);
+    await cacheService.invalidatePattern('materials:*');
     res.status(200).json(result);
   } catch (err) {
     if (err.message && err.message.startsWith('VALIDATION_ERROR:')) {
@@ -201,7 +252,6 @@ exports.batchDeleteMaterials = async (req, res, next) => {
     next(err);
   }
 };
-
 
 // @desc    Peek next available material code without incrementing
 // @route   GET /api/materials/sequence-peek
@@ -212,7 +262,7 @@ exports.peekNextMaterialCode = async (req, res, next) => {
     const activeMaterials = await Material.find(
       { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
-    );
+    ).lean();
 
     let maxNum = 1000;
     activeMaterials.forEach(m => {
@@ -227,7 +277,7 @@ exports.peekNextMaterialCode = async (req, res, next) => {
       }
     });
 
-    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] });
+    const seqDoc = await Sequence.findOne({ $or: [{ name: /materialCode/i }, { _id: 'materialCode' }] }).lean();
     const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
     const finalMax = Math.max(maxNum, seqNum);
 
@@ -246,7 +296,7 @@ exports.getNextMaterialCode = async (req, res, next) => {
     const activeMaterials = await Material.find(
       { code: /^M\d+$/i, status: { $ne: 'Deleted' } },
       { code: 1 }
-    );
+    ).lean();
 
     let maxNum = 1000;
     activeMaterials.forEach(m => {
@@ -261,7 +311,7 @@ exports.getNextMaterialCode = async (req, res, next) => {
       }
     });
 
-    const seqDoc = await Sequence.findById('materialCode');
+    const seqDoc = await Sequence.findById('materialCode').lean();
     const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
     const nextNum = Math.max(maxNum, seqNum) + 1;
 

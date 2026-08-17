@@ -231,20 +231,15 @@ export default function VMSWorkbench() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-orange-600 text-white rounded-md flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5" /> Security & Gate Operations Control Center
+              <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-md">
+                Visitor Gate Pass
               </span>
-              {lockdownMode && (
-                <span className="px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-rose-600 text-white rounded-md animate-pulse flex items-center gap-1">
-                  <ShieldAlert className="h-3.5 w-3.5" /> SECURITY LOCKDOWN ACTIVE
-                </span>
-              )}
             </div>
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              VMS Security Workbench & Visitor Command
+              Visitor Management
             </h1>
             <p className="text-xs text-slate-500 font-normal">
-              Admin decision dashboard for real-time gate pass generation, automated approvals, and simultaneous batch check-ins.
+              Register visitors, schedule appointments, issue digital gate passes, and manage on-site security check-ins.
             </p>
           </div>
 

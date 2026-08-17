@@ -243,24 +243,24 @@ const NetworkAndSites = () => {
 
   return (
     <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
-      {/* INAPP TOPBAR & PAGE TITLE */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div>
           <div className="flex items-center space-x-2 mb-1">
-            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-orange-500 text-white rounded-md">
-              InApp Master Network
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-md">
+              Enterprise Facilities
             </span>
-            <span className="text-xs text-slate-500 font-medium">● User Approvals & Scope Governance</span>
+            <span className="text-xs text-slate-500 font-medium">● Network & Access Governance</span>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Network & User Scope Master</h1>
-          <p className="text-xs text-slate-500 font-normal">Approve user registration requests, manage multi-site scopes, and inspect location hierarchy.</p>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Sites & Facilities</h1>
+          <p className="text-xs text-slate-500 font-normal">Manage manufacturing sites, physical warehouses, user access scopes, and facility hierarchy.</p>
         </div>
 
         <div className="flex items-center space-x-2">
           {activeTab === 'sites' && (
             <button
               onClick={() => setShowAddSiteModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
               <i className="ti ti-plus fs-5"></i>
               <span>Add Site</span>
@@ -270,7 +270,7 @@ const NetworkAndSites = () => {
           {activeTab === 'warehouses' && (
             <button
               onClick={() => setShowAddWarehouseModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
               <i className="ti ti-plus fs-5"></i>
               <span>Add Warehouse</span>
@@ -280,7 +280,7 @@ const NetworkAndSites = () => {
           {activeTab === 'userScope' && (
             <button
               onClick={() => setShowAddUserModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
               <i className="ti ti-plus fs-5"></i>
               <span>Add User</span>
@@ -308,18 +308,18 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* INAPP TEMPLATE STYLED TOP UNDERLINE TABS WITH PENDING APPROVALS BADGE */}
+      {/* CLEAN TABS */}
       <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl overflow-x-auto">
         <button
           onClick={() => setActiveTab('pendingApprovals')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'pendingApprovals'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <UserCheck className="w-4 h-4" />
-          <span>Pending User Approvals</span>
+          <span>Pending Approvals</span>
           {pendingRequests.length > 0 && (
             <span className="ml-1 px-2 py-0.5 text-[10px] font-black bg-rose-600 text-white rounded-full">
               {pendingRequests.length}
@@ -331,60 +331,60 @@ const NetworkAndSites = () => {
           onClick={() => setActiveTab('hierarchyTree')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'hierarchyTree'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-git-fork fs-5"></i>
-          <span>Site ↔ Warehouse Tree</span>
+          <span>Facility Hierarchy</span>
         </button>
 
         <button
           onClick={() => setActiveTab('sites')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'sites'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-building fs-5"></i>
-          <span>Site Master</span>
+          <span>Sites</span>
         </button>
 
         <button
           onClick={() => setActiveTab('warehouses')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'warehouses'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-home-2 fs-5"></i>
-          <span>Warehouse Master</span>
+          <span>Warehouses</span>
         </button>
 
         <button
           onClick={() => setActiveTab('userScope')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'userScope'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-user-check fs-5"></i>
-          <span>Active Users & Scope</span>
+          <span>User Access Scopes</span>
         </button>
 
         <button
           onClick={() => setActiveTab('auditLog')}
           className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
             activeTab === 'auditLog'
-              ? 'border-orange-500 text-orange-600'
+              ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
           <i className="ti ti-history fs-5"></i>
-          <span>Activity & Audit Log</span>
+          <span>Audit Logs</span>
         </button>
       </div>
 

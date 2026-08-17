@@ -15,6 +15,10 @@ export default function BomList() {
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('Active');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   
   // Inline edit state for Batch Code
   const [editBatchCodeId, setEditBatchCodeId] = useState(null);
@@ -23,14 +27,18 @@ export default function BomList() {
 
   const [openDropdownId, setOpenDropdownId] = useState(null);
 
-  const fetchBoms = async () => {
+  const fetchBoms = async (pageNum = page, searchStr = search) => {
     setLoading(true);
     try {
       const res = await api.get('/api/boms', {
-        params: { status: statusFilter, search, mainOnly: true }
+        params: { status: statusFilter, search: searchStr, mainOnly: true, page: pageNum, limit }
       });
       if (res.data.success) {
         setBoms(res.data.data);
+        if (res.data.total !== undefined) {
+          setTotalCount(res.data.total);
+          setTotalPages(res.data.totalPages || Math.ceil(res.data.total / limit) || 1);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch BOMs:', err);
@@ -40,8 +48,18 @@ export default function BomList() {
   };
 
   useEffect(() => {
-    fetchBoms();
-  }, [statusFilter, search]);
+    const timer = setTimeout(() => {
+      setPage(1);
+      fetchBoms(1, search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search, statusFilter]);
+
+  const handlePageChange = (newPage) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setPage(newPage);
+    fetchBoms(newPage, search);
+  };
 
   const handleDelete = async (bom) => {
     if (!window.confirm(`Are you sure you want to delete BOM for ${bom.productId?.name}?`)) return;
@@ -314,6 +332,38 @@ export default function BomList() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600">
+              <div>
+                Showing {(page - 1) * limit + 1} to {Math.min(page * limit, totalCount)} of {totalCount} BOMs
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page <= 1 || loading}
+                  onClick={() => handlePageChange(page - 1)}
+                  className="h-7 px-2.5 bg-white font-bold"
+                >
+                  Previous
+                </Button>
+                <span className="px-2 font-mono font-bold text-slate-800">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page >= totalPages || loading}
+                  onClick={() => handlePageChange(page + 1)}
+                  className="h-7 px-2.5 bg-white font-bold"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </BomPageWrapper>

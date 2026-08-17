@@ -112,17 +112,22 @@ const ProductionOrderSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: [
-      'Draft', 
+      'Draft',
+      'DRAFT',
       'Scheduled',
+      'SCHEDULED',
       'Pending Approval', 
       'Approved', 
       'Material Allocated', 
       'In Production',
       'In Progress',
+      'IN_PROGRESS',
       'Quality Check', 
-      'Completed', 
+      'Completed',
+      'COMPLETED',
       'Closed',
-      'Cancelled'
+      'Cancelled',
+      'CANCELLED'
     ],
     default: 'Scheduled',
   },

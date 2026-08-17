@@ -36,3 +36,4 @@ npm-debug.log*
 !backend/**/*.js
 !frontend/**/*.js
 Masters_old.jsx
+dynamo/

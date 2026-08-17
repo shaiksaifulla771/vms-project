@@ -55,4 +55,10 @@ const MaterialSchema = new mongoose.Schema({
   },
 });
 
+// Performance Indexes for Fast Lookups, Search, and Filtering
+MaterialSchema.index({ type: 1, status: 1 });
+MaterialSchema.index({ name: 1, status: 1 });
+MaterialSchema.index({ status: 1, createdAt: -1 });
+MaterialSchema.index({ name: 'text', code: 'text', description: 'text' });
+
 module.exports = mongoose.model('Material', MaterialSchema);

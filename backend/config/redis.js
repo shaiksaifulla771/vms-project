@@ -50,7 +50,10 @@ const getClient = () => {
   return redisClient;
 };
 
-const getRedisStatus = () => isRedisAvailable;
+const getRedisStatus = () => {
+  if (!redisClient) initRedis();
+  return isRedisAvailable;
+};
 
 const closeRedis = async () => {
   if (redisClient) {

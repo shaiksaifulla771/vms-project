@@ -2,6 +2,8 @@ const express = require('express');
 const {
   getInventoryBalances,
   getInventoryTransactions,
+  getInventorySummary,
+  syncMissingSiteReferences,
   createAdjustment
 } = require('../controllers/inventoryController');
 
@@ -19,6 +21,8 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/', getInventoryBalances);
+router.get('/summary', getInventorySummary);
+router.post('/sync-sites', syncMissingSiteReferences);
 router.get('/transactions', getInventoryTransactions);
 router.get('/ledger', getInventoryTransactions);
 router.post('/adjustment', createAdjustment);

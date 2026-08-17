@@ -23,7 +23,12 @@ const connectDB = async () => {
     } else {
       connStr = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
     }
-    const conn = await mongoose.connect(connStr);
+    const conn = await mongoose.connect(connStr, {
+      maxPoolSize: 50,
+      minPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
 
     // Polyfill for Standalone MongoDB Transaction Support

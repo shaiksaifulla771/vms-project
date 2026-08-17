@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const InventoryItem = require('../models/InventoryItem');
 const InventoryTransaction = require('../models/InventoryTransaction');
+const Warehouse = require('../models/Warehouse');
 const auditService = require('./auditService');
 
 /**
@@ -68,10 +69,18 @@ class InventoryLedgerService {
 
           if (!item) {
             isNewItem = true;
+            let resolvedSiteId = siteId;
+            if (warehouseId) {
+              const whDoc = await Warehouse.findById(warehouseId).lean().catch(() => null);
+              if (whDoc && whDoc.siteId) {
+                resolvedSiteId = whDoc.siteId;
+              }
+            }
+
             item = new InventoryItem({
               materialId,
               warehouseId,
-              siteId,
+              siteId: resolvedSiteId,
               batchNumber,
               lotNumber,
               onHand: 0,
@@ -266,7 +275,7 @@ class InventoryLedgerService {
             idempotencyKey,
             materialId,
             warehouseId,
-            siteId,
+            siteId: siteId || savedItem.siteId,
             batchNumber,
             lotNumber,
             quantity,

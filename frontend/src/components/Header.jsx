@@ -1,9 +1,21 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Menu, RefreshCw, Bell, UserCheck, CheckCircle2, XCircle, ChevronRight, ShieldAlert } from 'lucide-react';
+import { useSiteContext } from '../context/SiteContext';
+import { Menu, RefreshCw, Bell, UserCheck, CheckCircle2, XCircle, ChevronRight, ShieldAlert, Building2, MapPin, Boxes } from 'lucide-react';
 
 const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToPage }) => {
   const { user } = useAuth();
+  const {
+    sites,
+    warehouses,
+    filteredWarehouses,
+    activeSiteId,
+    activeWarehouseId,
+    setActiveSiteId,
+    setActiveWarehouseId,
+    loading: locationsLoading
+  } = useSiteContext();
+
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingUserRequests, setPendingUserRequests] = useState([
     {
@@ -28,19 +40,26 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToP
   const getPageTitle = () => {
     switch (activePage) {
       case 'dashboard': return 'Dashboard';
-      case 'sites': return 'Network & Sites Governance';
+      case 'sites': return 'Sites & Warehouses';
       case 'masters': return 'Master Data';
-      case 'boms': return 'BOM Recipes';
-      case 'planning': return 'MRP & Planning';
-      case 'inventory': return 'Inventory Ledger';
+      case 'bom':
+      case 'boms': return 'Bills of Materials';
+      case 'planning':
+      case 'mrp': return 'MRP & Planning';
+      case 'inventory': return 'Inventory';
       case 'purchasing': return 'Procurement';
-      case 'production': return 'Production Operations';
-      case 'manufacturing': return 'Production Operations';
-      case 'scheduling': return 'Scheduling Workbench';
-      case 'quality': return 'Quality Control';
-      case 'reports': return 'Reports';
-      case 'settings': return 'Settings';
-      default: return 'VendorOS ERP';
+      case 'production':
+      case 'manufacturing': return 'Production';
+      case 'scheduling': return 'Scheduling';
+      case 'quality': return 'Quality & QC';
+      case 'reports': return 'Reports & Analytics';
+      case 'vms': return 'Visitor Management';
+      case 'users-access': return 'Users & Access';
+      case 'workflows': return 'Workflows';
+      case 'email': return 'Email Templates';
+      case 'plugins': return 'Plugins';
+      case 'settings': return 'System & Audit Logs';
+      default: return 'ERP Platform';
     }
   };
 
@@ -61,7 +80,7 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToP
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-5 fixed left-0 right-0 top-0 z-30 shadow-xs">
+    <header className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 sm:px-5 fixed left-0 right-0 top-0 z-30 shadow-xs">
       <div className="flex items-center space-x-3">
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -73,11 +92,57 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToP
         </button>
 
         <div className="flex items-center space-x-2 border-l border-slate-200 pl-3">
-          <h2 className="text-sm font-bold text-slate-800">{getPageTitle()}</h2>
+          <h2 className="text-sm font-bold text-slate-800 hidden sm:block">{getPageTitle()}</h2>
         </div>
       </div>
 
-      <div className="flex items-center space-x-3 text-xs relative">
+      {/* GLOBAL ENTERPRISE SITE & WAREHOUSE SELECTOR */}
+      <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-100/90 border border-slate-200/80 p-1 sm:p-1.5 rounded-xl text-xs">
+        <div className="flex items-center gap-1.5 px-2 py-0.5 text-slate-600 font-semibold text-[11px] hidden md:flex">
+          <Building2 className="w-3.5 h-3.5 text-blue-600" />
+          <span className="text-slate-400 uppercase text-[9px] font-black tracking-wider">Site:</span>
+        </div>
+
+        {/* Site Picker */}
+        <select
+          value={activeSiteId}
+          onChange={(e) => setActiveSiteId(e.target.value)}
+          disabled={locationsLoading}
+          className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs max-w-[140px] sm:max-w-[200px]"
+          title="Switch Active Operating Site / Plant"
+        >
+          <option value="">🌐 All Plants (Enterprise)</option>
+          {sites.map((s) => (
+            <option key={s._id} value={s._id}>{s.name} ({s.code || 'SITE'})</option>
+          ))}
+        </select>
+
+        <span className="text-slate-300 font-bold hidden sm:inline">/</span>
+
+        {/* Warehouse Scope Picker */}
+        <div className="flex items-center gap-1">
+          <select
+            value={activeWarehouseId || 'all'}
+            onChange={(e) => setActiveWarehouseId(e.target.value === 'all' ? '' : e.target.value)}
+            disabled={locationsLoading}
+            className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs max-w-[130px] sm:max-w-[180px]"
+            title="Switch Active Warehouse Scope"
+          >
+            <option value="all">All Warehouses</option>
+            {filteredWarehouses.map((w) => (
+              <option key={w._id} value={w._id}>{w.name} ({w.type})</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Live Operational Status Indicator */}
+        <div className="px-1.5 hidden lg:flex items-center gap-1" title="Operational Scope Active">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span className="text-[9px] font-bold uppercase text-emerald-700">Live</span>
+        </div>
+      </div>
+
+      <div className="flex items-center space-x-2 sm:space-x-3 text-xs relative">
         {/* NOTIFICATION BELL WITH LIVE BADGE */}
         <button
           onClick={() => setShowNotifications(!showNotifications)}

@@ -160,115 +160,144 @@ export default function BomRecipeEditor({
  setIsDirty(true);
  };
 
- const updateRow = async (index, field, value) => {
- const newComps = [...components];
- 
- if (field === 'mpnId') {
- const exists = components.findIndex((c, i) => i !== index && (c.mpnId?._id || c.mpnId) === value);
- if (exists >= 0) {
- alert('This MPN is already in the recipe.');
- return;
- }
+  const updateRow = async (index, field, value) => {
+    const newComps = [...components];
+    
+    if (field === 'mpnId') {
+      const exists = components.findIndex((c, i) => i !== index && (c.mpnId?._id || c.mpnId) === value);
+      if (exists >= 0) {
+        alert('This MPN is already in the recipe.');
+        return;
+      }
 
- // Simulate loading state for micro-interaction
- setLoadingPrice(index);
- 
- // Artificial short delay to show"Loading Price... ✓ Price Loaded"
- await new Promise(r => setTimeout(r, 400));
- setLoadingPrice(null);
- 
- // Since MPNs are pre-loaded, we can immediately assign
- newComps[index] = { ...newComps[index], [field]: value, resolvedPrice: null }; // clear resolvedPrice to force live fallback
- } else {
- newComps[index] = { ...newComps[index], [field]: value };
- }
- 
- setComponents(newComps);
- setIsDirty(true);
- setErrors(prev => ({ ...prev, [`row_${index}`]: null }));
- };
+      // Check self-reference circular dependency immediately
+      const selectedMpn = mpns.find(m => m._id === value);
+      const compMatId = selectedMpn?.materialId?._id || selectedMpn?.materialId;
+      if (productId && compMatId && compMatId.toString() === productId.toString()) {
+        alert(`Cannot select "${selectedMpn?.materialId?.name || 'this product'}": An assembly product cannot be an ingredient of itself.`);
+        return;
+      }
 
- const handleSave = () => {
- // Validate
- const newErrors = {};
- if (!productId) newErrors.productId = 'Product is required';
- if (!batchSize || Number(batchSize) <= 0) newErrors.batchSize = 'Batch size must be > 0';
- if (!batchUOM) newErrors.batchUOM = 'UOM is required';
- 
- if (batchUOM.toLowerCase().includes('pack') && !Number.isInteger(Number(batchSize))) {
- newErrors.batchSize = 'Packs cannot contain decimals';
- }
+      // Simulate loading state for micro-interaction
+      setLoadingPrice(index);
+      
+      // Artificial short delay to show "Loading Price... ✓ Price Loaded"
+      await new Promise(r => setTimeout(r, 400));
+      setLoadingPrice(null);
+      
+      // Since MPNs are pre-loaded, we can immediately assign
+      newComps[index] = { ...newComps[index], [field]: value, resolvedPrice: null }; // clear resolvedPrice to force live fallback
+    } else {
+      newComps[index] = { ...newComps[index], [field]: value };
+    }
+    
+    setComponents(newComps);
+    setIsDirty(true);
+    setErrors(prev => ({ ...prev, [`row_${index}`]: null }));
+  };
 
- if (components.length === 0) newErrors.general = 'At least one component is required';
+  const handleSave = () => {
+    // Validate
+    const newErrors = {};
+    if (!productId) newErrors.productId = 'Product is required';
+    if (!batchSize || Number(batchSize) <= 0) newErrors.batchSize = 'Batch size must be > 0';
+    if (!batchUOM) newErrors.batchUOM = 'UOM is required';
+    
+    if (batchUOM.toLowerCase().includes('pack') && !Number.isInteger(Number(batchSize))) {
+      newErrors.batchSize = 'Packs cannot contain decimals';
+    }
 
- let firstErrorIndex = -1;
+    if (components.length === 0) newErrors.general = 'At least one component is required';
 
- components.forEach((c, i) => {
- if (!c.mpnId) {
- newErrors[`row_${i}`] = 'MPN is required';
- if (firstErrorIndex === -1) firstErrorIndex = i;
- } else if (!c.qty || Number(c.qty) <= 0) {
- newErrors[`row_${i}`] = 'Quantity must be > 0';
- if (firstErrorIndex === -1) firstErrorIndex = i;
- } else if (Number(c.lossPercent) < 0 || Number(c.lossPercent) > 99) {
- newErrors[`row_${i}`] = 'Loss % must be 0-99';
- if (firstErrorIndex === -1) firstErrorIndex = i;
- }
- });
+    let firstErrorIndex = -1;
 
- if (Object.keys(newErrors).length > 0) {
- setErrors(newErrors);
- if (firstErrorIndex !== -1) {
- document.getElementById(`row-${firstErrorIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
- }
- return;
- }
+    components.forEach((c, i) => {
+      const mpnIdStr = c.mpnId?._id || c.mpnId;
+      const mpn = mpns.find(m => m._id === mpnIdStr);
+      const compMatId = mpn?.materialId?._id || mpn?.materialId;
 
- setErrors({});
- setIsDirty(false);
- const payload = {
- productId,
- batchSize: Number(batchSize),
- batchUOM,
- effectiveDate,
- components: components.map(c => ({
- mpnId: c.mpnId?._id || c.mpnId,
- qty: Number(c.qty),
- lossPercent: Number(c.lossPercent)
- })),
- packagingCost: Number(packagingCost),
- processingCost: Number(processingCost),
- overheadCost: Number(overheadCost),
- batchCode: batchCode?.trim() || '',
- manufacturer: manufacturer?.trim() || '',
- updateMasterManufacturer: false // Default to false
- };
- 
- // Check if manufacturer was modified and is not empty initially
- if (manufacturer?.trim() !== originalManufacturer?.trim() && originalManufacturer?.trim() !== '') {
- setPendingSavePayload(payload);
- setShowSaveModal(true);
- return;
- }
+      if (productId && compMatId && compMatId.toString() === productId.toString()) {
+        newErrors[`row_${i}`] = `Circular Dependency: "${mpn?.materialId?.name || 'Component'}" cannot be an ingredient of itself.`;
+        if (firstErrorIndex === -1) firstErrorIndex = i;
+      } else if (!c.mpnId) {
+        newErrors[`row_${i}`] = 'MPN is required';
+        if (firstErrorIndex === -1) firstErrorIndex = i;
+      } else if (!c.qty || Number(c.qty) <= 0) {
+        newErrors[`row_${i}`] = 'Quantity must be > 0';
+        if (firstErrorIndex === -1) firstErrorIndex = i;
+      } else if (Number(c.lossPercent) < 0 || Number(c.lossPercent) > 99) {
+        newErrors[`row_${i}`] = 'Loss % must be 0-99';
+        if (firstErrorIndex === -1) firstErrorIndex = i;
+      }
+    });
 
- console.log('Outgoing BOM Payload:', payload);
- onSave(payload);
- };
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      if (firstErrorIndex !== -1) {
+        document.getElementById(`row-${firstErrorIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
 
- const handleConfirmSave = (updateMaster) => {
- const finalPayload = { ...pendingSavePayload, updateMasterManufacturer: updateMaster };
- setShowSaveModal(false);
- setPendingSavePayload(null);
- console.log('Outgoing BOM Payload:', finalPayload);
- onSave(finalPayload);
- };
+    setErrors({});
+    setIsDirty(false);
+    const payload = {
+      productId,
+      batchSize: Number(batchSize),
+      batchUOM,
+      effectiveDate,
+      components: components.map(c => ({
+        mpnId: c.mpnId?._id || c.mpnId,
+        qty: Number(c.qty),
+        lossPercent: Number(c.lossPercent)
+      })),
+      packagingCost: Number(packagingCost),
+      processingCost: Number(processingCost),
+      overheadCost: Number(overheadCost),
+      batchCode: batchCode?.trim() || '',
+      manufacturer: manufacturer?.trim() || '',
+      updateMasterManufacturer: false // Default to false
+    };
+    
+    // Check if manufacturer was modified and is not empty initially
+    if (manufacturer?.trim() !== originalManufacturer?.trim() && originalManufacturer?.trim() !== '') {
+      setPendingSavePayload(payload);
+      setShowSaveModal(true);
+      return;
+    }
 
- // Prepare options for SearchableSelect
- const mpnOptions = mpns.filter(m => m.status !== 'Deleted').map(m => ({
- value: m._id,
- label: `${m.mpnCode} - ${m.manufacturerName}`,
- subLabel: `Vendor: ${m.vendorId?.name || 'Unknown'} | Price: ₹${m.price || 0}`
- }));
+    console.log('Outgoing BOM Payload:', payload);
+    onSave(payload);
+  };
+
+  const handleConfirmSave = (updateMaster) => {
+    const finalPayload = { ...pendingSavePayload, updateMasterManufacturer: updateMaster };
+    setShowSaveModal(false);
+    setPendingSavePayload(null);
+    console.log('Outgoing BOM Payload:', finalPayload);
+    onSave(finalPayload);
+  };
+
+  // Prepare options for SearchableSelect with clear Material names and self-dependency guard
+  const mpnOptions = useMemo(() => {
+    return mpns
+      .filter(m => m.status !== 'Deleted')
+      .map(m => {
+        const matId = m.materialId?._id || m.materialId;
+        const isSelf = Boolean(productId && matId && matId.toString() === productId.toString());
+        const matName = m.materialId?.name || m.mpnName || 'Unnamed Material';
+        const matCode = m.materialId?.code ? ` (${m.materialId.code})` : '';
+        const vendorName = m.vendorId?.name || 'Unknown Vendor';
+        return {
+          value: m._id,
+          label: `${matName}${matCode} — [${m.mpnCode}]`,
+          subLabel: isSelf
+            ? '⚠️ SELF-REFERENCE: This is the Assembly Product itself (Cannot be an ingredient)'
+            : `Vendor: ${vendorName} | Mfr: ${m.manufacturerName || 'N/A'} | Price: ₹${m.price || 0}`,
+          disabled: isSelf
+        };
+      });
+  }, [mpns, productId]);
 
  return (
  <div className="space-y-6">
@@ -303,6 +332,19 @@ export default function BomRecipeEditor({
  setBatchUOM(selectedMat.unit);
  }
  }
+
+ // Check if any existing component row conflicts with new product
+ components.forEach((c, idx) => {
+   const mpnIdStr = c.mpnId?._id || c.mpnId;
+   const mpn = mpns.find(m => m._id === mpnIdStr);
+   const compMatId = mpn?.materialId?._id || mpn?.materialId;
+   if (compMatId && compMatId.toString() === v.toString()) {
+     setErrors(prev => ({
+       ...prev,
+       [`row_${idx}`]: `Circular Dependency: "${mpn?.materialId?.name || 'Component'}" cannot be an ingredient of itself.`
+     }));
+   }
+ });
  }} 
  className="w-full shadow-sm rounded-lg text-sm"
  placeholder="Search Product..."

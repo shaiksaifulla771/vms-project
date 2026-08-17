@@ -156,4 +156,9 @@ const VendorSchema = new mongoose.Schema({
   },
 });
 
+// Performance Indexes for Fast Lookups and Search
+VendorSchema.index({ status: 1, createdAt: -1 });
+VendorSchema.index({ name: 1, status: 1 });
+VendorSchema.index({ name: 'text', company: 'text', email: 'text' });
+
 module.exports = mongoose.model('Vendor', VendorSchema);

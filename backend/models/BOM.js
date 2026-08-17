@@ -7,13 +7,11 @@ const BOMComponentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Material',
     required: false,
-    index: true,
   },
   mpnId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'MPN',
     required: false,
-    index: true,
   },
   // Canonical quantity field — populated in pre-save from qty/quantity aliases
   quantity: {
@@ -150,10 +148,21 @@ const BOMSchema = new mongoose.Schema({
   optimisticConcurrency: true
 });
 
-// Pre-save: normalize qty→quantity and lossPercent→lossPercentage for all components
-BOMSchema.pre('save', function(next) {
+// Pre-save: normalize qty→quantity, lossPercent→lossPercentage, and auto-resolve materialId from mpnId
+BOMSchema.pre('save', async function(next) {
   if (this.components && Array.isArray(this.components)) {
-    this.components.forEach(comp => {
+    for (const comp of this.components) {
+      if (!comp.materialId && comp.mpnId) {
+        try {
+          const MPN = mongoose.model('MPN');
+          const mpnDoc = await MPN.findById(comp.mpnId).select('materialId').lean();
+          if (mpnDoc && mpnDoc.materialId) {
+            comp.materialId = mpnDoc.materialId;
+          }
+        } catch (e) {
+          // Ignore lookup failure in pre-save
+        }
+      }
       // qty is the canonical API-level input; quantity is the stored canonical name
       if (comp.qty !== undefined && comp.qty !== null) {
         if (!comp.quantity || comp.quantity === 0) {
@@ -161,7 +170,6 @@ BOMSchema.pre('save', function(next) {
         }
       }
       if (!comp.quantity || comp.quantity === 0) {
-        // At least one must be set
         if (comp.qty) comp.quantity = comp.qty;
       }
       // lossPercent is the canonical API-level input
@@ -170,14 +178,15 @@ BOMSchema.pre('save', function(next) {
           comp.lossPercentage = comp.lossPercent;
         }
       }
-    });
+    }
   }
-  next();
+  if (typeof next === 'function') next();
 });
 
 // Indexes for performance
-BOMSchema.index({ productId: 1 });
-BOMSchema.index({ status: 1 });
+BOMSchema.index({ productId: 1, status: 1 });
+BOMSchema.index({ status: 1, createdAt: -1 });
+BOMSchema.index({ 'components.materialId': 1 });
 BOMSchema.index({ bomNumber: 1, version: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('BOM', BOMSchema);

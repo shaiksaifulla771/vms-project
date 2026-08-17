@@ -80,7 +80,32 @@ const Reports = () => {
   const { summary, insights } = reportData;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div>
+          <div className="flex items-center space-x-2 mb-1">
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-md flex items-center gap-1">
+              <FileBarChart className="h-3.5 w-3.5" /> Analytics & Reports
+            </span>
+            <span className="text-xs text-slate-500 font-medium">● Executive Intelligence & Compliance</span>
+          </div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Reports & Analytics</h1>
+          <p className="text-xs text-slate-500 font-normal">Generate executive summaries, review inventory throughput, and export compliance audit reports.</p>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Button
+            onClick={handleDownloadPDF}
+            isLoading={downloading}
+            className="bg-blue-600 hover:bg-blue-700 text-white flex items-center space-x-2 text-xs font-bold px-3 py-1.5 rounded-lg"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export PDF Report</span>
+          </Button>
+        </div>
+      </div>
+
       {/* PDF Download banner */}
       <Card className="bg-slate-900 text-white border-none relative overflow-hidden">
         <CardContent className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

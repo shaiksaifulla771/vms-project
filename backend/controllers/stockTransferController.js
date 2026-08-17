@@ -10,9 +10,38 @@ const asyncHandler = require('../middleware/asyncHandler');
 // @access  Private
 exports.getStockTransfers = asyncHandler(async (req, res) => {
   const query = {};
+  const andConditions = [];
+
   if (req.query.status) query.status = req.query.status;
+
+  if (req.query.siteId && req.query.siteId !== 'ALL' && req.query.siteId !== '') {
+    const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+    const whIds = siteWhs.map(w => w._id);
+    andConditions.push({
+      $or: [
+        { fromSiteId: req.query.siteId },
+        { toSiteId: req.query.siteId },
+        { fromWarehouseId: { $in: whIds } },
+        { toWarehouseId: { $in: whIds } }
+      ]
+    });
+  }
+
+  if (req.query.warehouseId && req.query.warehouseId !== 'ALL' && req.query.warehouseId !== 'all') {
+    andConditions.push({
+      $or: [
+        { fromWarehouseId: req.query.warehouseId },
+        { toWarehouseId: req.query.warehouseId }
+      ]
+    });
+  }
+
   if (req.query.fromWarehouseId) query.fromWarehouseId = req.query.fromWarehouseId;
   if (req.query.toWarehouseId) query.toWarehouseId = req.query.toWarehouseId;
+
+  if (andConditions.length > 0) {
+    query.$and = andConditions;
+  }
 
   const transfers = await StockTransfer.find(query)
     .populate('materialId', 'name code unit type')

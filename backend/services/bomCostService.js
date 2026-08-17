@@ -81,9 +81,12 @@ exports.calculateBomCost = async (components, effectiveDate = new Date()) => {
     const lineCost = (qty * resolvedPrice) / lossFactor;
 
     componentsWithCost.push({
+      materialId: mpn.materialId?._id || mpn.materialId || comp.materialId,
       mpnId: comp.mpnId,
       qty,
+      quantity: qty,
       lossPercent,
+      lossPercentage: lossPercent,
       lineCost,
       resolvedPrice // Send back what price was used
     });

@@ -1,6 +1,7 @@
 const StockAdjustment = require('../models/StockAdjustment');
 const InventoryItem = require('../models/InventoryItem');
 const Material = require('../models/Material');
+const Warehouse = require('../models/Warehouse');
 const Sequence = require('../models/Sequence');
 const InventoryLedgerService = require('../services/inventoryLedgerService');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -10,9 +11,30 @@ const asyncHandler = require('../middleware/asyncHandler');
 // @access  Private
 exports.getAdjustments = asyncHandler(async (req, res) => {
   const query = {};
+  const andConditions = [];
+
   if (req.query.status) query.status = req.query.status;
-  if (req.query.warehouseId) query.warehouseId = req.query.warehouseId;
+
+  if (req.query.siteId && req.query.siteId !== 'ALL' && req.query.siteId !== '') {
+    const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+    const whIds = siteWhs.map(w => w._id);
+    andConditions.push({
+      $or: [
+        { siteId: req.query.siteId },
+        { warehouseId: { $in: whIds } }
+      ]
+    });
+  }
+
+  if (req.query.warehouseId && req.query.warehouseId !== 'ALL' && req.query.warehouseId !== 'all' && req.query.warehouseId !== '') {
+    query.warehouseId = req.query.warehouseId;
+  }
+
   if (req.query.materialId) query.materialId = req.query.materialId;
+
+  if (andConditions.length > 0) {
+    query.$and = andConditions;
+  }
 
   const adjustments = await StockAdjustment.find(query)
     .populate('materialId', 'name code unit type')

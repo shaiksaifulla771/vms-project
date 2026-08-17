@@ -8,18 +8,24 @@ const mongoose = require('mongoose');
 const { writeAuditLog } = require('../services/auditService');
 const VendorService = require('../services/vendorService');
 
+const cacheService = require('../services/cacheService');
+
 exports.getVendors = async (req, res, next) => {
   try {
-    const { category, search, status, page = 1, limit = 50 } = req.query;
+    const { category, search, status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = parseInt(req.query.limit, 10) || 50;
     const query = {};
+
     if (category) query.category = category;
     if (status) {
       query.status = status;
     } else {
       query.status = { $ne: 'Deleted' };
     }
-    if (search) {
-      const safeSearch = escapeRegex(search);
+
+    if (search && search.trim() !== '') {
+      const safeSearch = escapeRegex(search.trim());
       query.$or = [
         { name: { $regex: safeSearch, $options: 'i' } },
         { email: { $regex: safeSearch, $options: 'i' } },
@@ -27,12 +33,36 @@ exports.getVendors = async (req, res, next) => {
         { vendorId: { $regex: safeSearch, $options: 'i' } }
       ];
     }
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
-    const startIndex = (pageNum - 1) * limitNum;
+
+    const cacheKey = `vendors:list:${category || 'all'}:${status || 'active'}:${search || 'none'}:${page}:${limit}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    const startIndex = (page - 1) * limit;
     const total = await Vendor.countDocuments(query);
-    const vendors = await Vendor.find(query).select('-bankAccountNumber -ifscCode').sort({ createdAt: -1 }).skip(startIndex).limit(limitNum);
-    res.status(200).json({ success: true, count: vendors.length, pagination: { total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum }, data: vendors });
+    const vendors = await Vendor.find(query)
+      .select('-bankAccountNumber -ifscCode')
+      .sort({ createdAt: -1 })
+      .skip(startIndex)
+      .limit(limit)
+      .lean();
+
+    const responsePayload = {
+      success: true,
+      count: vendors.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      pagination: { total, page, pages: Math.ceil(total / limit), limit },
+      data: vendors,
+      items: vendors
+    };
+
+    await cacheService.set(cacheKey, responsePayload, 300);
+    res.status(200).json(responsePayload);
   } catch (err) {
     next(err);
   }
@@ -54,6 +84,7 @@ exports.createVendor = async (req, res, next) => {
   try {
     const vendor = await VendorService.createVendor(req.body, req.user, session);
     await commitSafeTransaction(session);
+    await cacheService.invalidatePattern('vendors:*');
     res.status(201).json({ success: true, data: vendor });
   } catch (err) {
     await abortSafeTransaction(session);
@@ -96,6 +127,7 @@ exports.updateVendor = async (req, res, next) => {
     await writeAuditLog(session, 'Vendor', vendor._id, 'UPDATE', oldDoc, vendor, req.user ? req.user.id : null);
 
     await commitSafeTransaction(session);
+    await cacheService.invalidatePattern('vendors:*');
     res.status(200).json({ success: true, data: vendor });
   } catch (err) {
     await abortSafeTransaction(session);
@@ -123,6 +155,7 @@ exports.deleteVendor = async (req, res, next) => {
     await writeAuditLog(session, 'Vendor', vendor._id, 'DELETE', oldDoc, vendor, req.user ? req.user.id : null);
 
     await commitSafeTransaction(session);
+    await cacheService.invalidatePattern('vendors:*');
     res.status(200).json({ success: true, message: 'Vendor moved to deleted history successfully', data: {} });
   } catch (err) {
     await abortSafeTransaction(session);

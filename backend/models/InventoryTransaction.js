@@ -131,5 +131,9 @@ const InventoryTransactionSchema = new mongoose.Schema({
 });
 
 InventoryTransactionSchema.index({ materialId: 1, warehouseId: 1, createdAt: -1 });
+InventoryTransactionSchema.index({ siteId: 1, createdAt: -1 });
+InventoryTransactionSchema.index({ type: 1, createdAt: -1 });
+InventoryTransactionSchema.index({ createdAt: -1 });
+InventoryTransactionSchema.index({ sourceDocId: 1 });
 
 module.exports = mongoose.model('InventoryTransaction', InventoryTransactionSchema);

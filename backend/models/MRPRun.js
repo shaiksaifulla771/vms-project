@@ -29,6 +29,10 @@ const MRPRunSchema = new mongoose.Schema({
     ref: 'Warehouse',
     required: true,
   },
+  warehouses: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+  }],
   targetQty: {
     type: Number,
     required: true,
@@ -37,6 +41,16 @@ const MRPRunSchema = new mongoose.Schema({
   requiredDate: {
     type: Date,
     required: true,
+  },
+  horizonDays: {
+    type: Number,
+    default: 30,
+  },
+  parameters: {
+    demandIds: [String],
+    includeSafetyStock: { type: Boolean, default: true },
+    applyLotSizing: { type: Boolean, default: true },
+    multiLevel: { type: Boolean, default: true },
   },
   status: {
     type: String,
@@ -47,8 +61,19 @@ const MRPRunSchema = new mongoose.Schema({
     totalComponents: Number,
     totalShortages: Number,
     hasShortage: Boolean,
+    totalProductionPlans: Number,
+    totalPurchaseRequirements: Number,
     aiExplanation: String,
   },
+  exceptions: [
+    {
+      code: String,
+      materialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material' },
+      materialName: String,
+      message: String,
+      severity: { type: String, enum: ['INFO', 'WARNING', 'ERROR'], default: 'WARNING' },
+    }
+  ],
   executedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -64,3 +89,4 @@ MRPRunSchema.index({ productId: 1, createdAt: -1 });
 MRPRunSchema.index({ warehouseId: 1 });
 
 module.exports = mongoose.model('MRPRun', MRPRunSchema);
+

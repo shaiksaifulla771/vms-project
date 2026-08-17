@@ -9,7 +9,32 @@ const InventoryTransaction = require('../models/InventoryTransaction');
 // @access  Private
 exports.getQualityRecords = async (req, res, next) => {
   try {
-    const records = await QualityRecord.find()
+    let orderFilter = {};
+    if (req.query.siteId && req.query.siteId !== 'ALL' && req.query.siteId !== '') {
+      const Warehouse = require('../models/Warehouse');
+      const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+      const whIds = siteWhs.map(w => w._id);
+      orderFilter.$or = [
+        { siteId: req.query.siteId },
+        { warehouseId: { $in: whIds } },
+        { targetWarehouseId: { $in: whIds } }
+      ];
+    }
+    if (req.query.warehouseId && req.query.warehouseId !== 'ALL' && req.query.warehouseId !== 'all') {
+      orderFilter.$or = [
+        { warehouseId: req.query.warehouseId },
+        { targetWarehouseId: req.query.warehouseId }
+      ];
+    }
+
+    const query = {};
+    if (Object.keys(orderFilter).length > 0) {
+      const orders = await ProductionOrder.find(orderFilter).select('_id');
+      const matchingOrderIds = orders.map(o => o._id);
+      query.productionOrderId = { $in: matchingOrderIds };
+    }
+
+    const records = await QualityRecord.find(query)
       .populate({
         path: 'productionOrderId',
         populate: {

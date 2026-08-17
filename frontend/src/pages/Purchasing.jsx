@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSiteContext } from '../context/SiteContext';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Button } from '../components/ui/Button';
@@ -11,6 +12,7 @@ import { Plus, Check, X, ShieldCheck, ShoppingBag, Trash2 } from 'lucide-react';
 
 const Purchasing = () => {
   const { user } = useAuth();
+  const { activeSiteId, activeWarehouseId } = useSiteContext();
 
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -35,7 +37,9 @@ const Purchasing = () => {
     setError(null);
     try {
       const params = {
-        ...(selectedStatus && { status: selectedStatus })
+        ...(selectedStatus && { status: selectedStatus }),
+        ...(activeSiteId && { siteId: activeSiteId }),
+        ...(activeWarehouseId && activeWarehouseId !== 'all' && { warehouseId: activeWarehouseId })
       };
       
       const [resPos, resVendors, resMaterials] = await Promise.all([
@@ -62,7 +66,7 @@ const Purchasing = () => {
 
   useEffect(() => {
     fetchPurchasingData();
-  }, [selectedStatus]);
+  }, [selectedStatus, activeSiteId, activeWarehouseId]);
 
   const handleOpenModal = () => {
     setSelectedVendorId('');
@@ -183,29 +187,45 @@ const Purchasing = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen p-2">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div>
+          <div className="flex items-center space-x-2 mb-1">
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-md flex items-center gap-1">
+              <ShoppingBag className="h-3.5 w-3.5" /> Procurement
+            </span>
+            <span className="text-xs text-slate-500 font-medium">● Vendor Purchase Orders & Inbound Goods</span>
+          </div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Procurement & Vendors</h1>
+          <p className="text-xs text-slate-500 font-normal">Create purchase orders, track vendor deliveries, manage order authorizations, and receive stock.</p>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Button onClick={handleOpenModal} className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">
+            <Plus className="h-4 w-4" />
+            <span>Draft PO</span>
+          </Button>
+        </div>
+      </div>
+
       {/* Filters Bar */}
-      <Card>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <span className="text-xs font-semibold text-slate-400 uppercase">Filter Status:</span>
+      <Card className="bg-white border-slate-200 shadow-2xs">
+        <CardContent className="p-3 flex items-center justify-between">
+          <div className="flex items-center space-x-3 text-xs">
+            <span className="text-xs font-bold text-slate-500 uppercase">Filter Status:</span>
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
             >
               <option value="">All Orders</option>
-              <option value="Pending">Pending</option>
+              <option value="Pending">Pending Approval</option>
               <option value="Approved">Approved</option>
               <option value="Rejected">Rejected</option>
               <option value="Received">Received (GRN)</option>
             </select>
           </div>
-
-          <Button onClick={handleOpenModal} className="flex items-center space-x-1">
-            <Plus className="h-4 w-4" />
-            <span>Draft PO</span>
-          </Button>
         </CardContent>
       </Card>
 

@@ -4,9 +4,12 @@ const BOM = require('../models/BOM');
 const BOMAuditLog = require('../models/BOMAuditLog');
 const bomCostService = require('./bomCostService');
 const { writeAuditLog } = require('./auditService');
+const cacheService = require('./cacheService');
 
 exports.getBOMs = async (query) => {
   const { search, status, mainOnly, duplicatedFrom, clonesOnly } = query;
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = parseInt(query.limit, 10) || 0;
   const filter = {};
 
   if (status && status !== 'All') {
@@ -31,6 +34,12 @@ exports.getBOMs = async (query) => {
     filter.duplicatedFrom = duplicatedFrom; // Only clones of a specific BOM
   }
 
+  const cacheKey = `boms:list:${status || 'all'}:${search || 'none'}:${page}:${limit}:${mainOnly || 'f'}:${clonesOnly || 'f'}`;
+  const cached = await cacheService.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   let boms = await BOM.find(filter)
     .populate('productId', 'name code unit manufacturer')
     .populate('components.mpnId')
@@ -47,7 +56,8 @@ exports.getBOMs = async (query) => {
     boms = boms.filter((b) => {
       const prodName = b.productId?.name || '';
       const prodCode = b.productId?.code || '';
-      return prodName.toLowerCase().includes(term) || prodCode.toLowerCase().includes(term);
+      const bomNum = b.bomNumber || '';
+      return prodName.toLowerCase().includes(term) || prodCode.toLowerCase().includes(term) || bomNum.toLowerCase().includes(term);
     });
   }
 
@@ -69,23 +79,43 @@ exports.getBOMs = async (query) => {
     const MPN = mongoose.model('MPN');
     const mpns = await MPN.find({ materialId: { $in: productIds } }).select('materialId manufacturerName').lean();
     mpns.forEach(m => {
-      // Just take the first MPN's manufacturer if multiple exist
       if (!mpnMap[m.materialId.toString()]) {
         mpnMap[m.materialId.toString()] = m.manufacturerName;
       }
     });
   }
 
-  boms = boms.map(b => ({ 
+  const enrichedBoms = boms.map(b => ({ 
     ...b, 
     cloneCount: cloneCountMap[b._id.toString()] || 0,
     mpnManufacturer: b.productId ? mpnMap[b.productId._id?.toString()] : null
   }));
 
-  return { count: boms.length, data: boms };
+  const total = enrichedBoms.length;
+  let paginatedBoms = enrichedBoms;
+  if (limit > 0) {
+    paginatedBoms = enrichedBoms.slice((page - 1) * limit, page * limit);
+  }
+
+  const result = {
+    count: paginatedBoms.length,
+    total,
+    page: limit > 0 ? page : 1,
+    limit: limit > 0 ? limit : total,
+    totalPages: limit > 0 ? Math.ceil(total / limit) : 1,
+    data: paginatedBoms,
+    items: paginatedBoms
+  };
+
+  await cacheService.set(cacheKey, result, 300);
+  return result;
 };
 
 exports.getBOM = async (id) => {
+  const cacheKey = `boms:detail:${id}`;
+  const cached = await cacheService.get(cacheKey);
+  if (cached) return cached;
+
   let bom = await BOM.findById(id)
     .populate('productId', 'name code unit manufacturer')
     .populate({
@@ -115,6 +145,7 @@ exports.getBOM = async (id) => {
   const cloneCount = await BOM.countDocuments({ duplicatedFrom: bom._id });
   bom.cloneCount = cloneCount;
 
+  await cacheService.set(cacheKey, bom, 300);
   return bom;
 };
 
@@ -157,6 +188,7 @@ exports.deleteBOM = async (id, userContext) => {
     await writeAuditLog(session, 'BOM', bom._id, 'DELETE', oldDoc, bom, userContext.id);
 
     await commitSafeTransaction(session);
+    await cacheService.invalidatePattern('boms:*');
     return;
   } catch (err) {
     await abortSafeTransaction(session);
@@ -204,6 +236,7 @@ exports.restoreBOM = async (id, userContext) => {
     await writeAuditLog(session, 'BOM', bom._id, 'UPDATE', oldDoc, bom, userContext.id);
 
     await commitSafeTransaction(session);
+    await cacheService.invalidatePattern('boms:*');
     return bom;
   } catch (err) {
     await abortSafeTransaction(session);
