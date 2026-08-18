@@ -80,14 +80,23 @@ const InventoryItemSchema = new mongoose.Schema({
   },
 });
 
-// Sync balance with onHand automatically
+// Sync balance, onHand, and available automatically
 InventoryItemSchema.pre('save', function (next) {
   if (this.onHand !== undefined) {
     this.balance = this.onHand;
+  } else if (this.balance !== undefined) {
+    this.onHand = this.balance;
   }
   if (this.reserved !== undefined) {
     this.reservedBalance = this.reserved;
+  } else if (this.reservedBalance !== undefined) {
+    this.reserved = this.reservedBalance;
   }
+  const onHand = this.onHand || this.balance || 0;
+  const reserved = this.reserved || this.reservedBalance || 0;
+  const allocated = this.allocated || 0;
+  const blocked = this.blocked || 0;
+  this.available = Math.max(0, onHand - reserved - allocated - blocked);
   this.updatedAt = Date.now();
   next();
 });

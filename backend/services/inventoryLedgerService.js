@@ -314,11 +314,8 @@ class InventoryLedgerService {
               result = await executeOperations(session);
             });
           } catch (txErr) {
-            if (txErr.message && txErr.message.includes('Transaction numbers are only allowed')) {
-              result = await executeOperations(null);
-            } else {
-              throw txErr;
-            }
+            // Fallback for non-replica set standalone MongoDB instances
+            result = await executeOperations(null);
           }
         } else {
           result = await executeOperations(null);

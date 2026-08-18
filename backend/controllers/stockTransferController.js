@@ -111,7 +111,13 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
 
   const sourceItems = await InventoryItem.find(queryFilter);
   const availableQty = sourceItems.reduce((acc, item) => {
-    const itemAvail = item.available !== undefined ? item.available : ((item.onHand || item.balance || 0) - (item.reserved || item.reservedBalance || 0));
+    const onHand = Number(item.onHand !== undefined ? item.onHand : (item.balance || 0));
+    const reserved = Number(item.reserved !== undefined ? item.reserved : (item.reservedBalance || 0));
+    const allocated = Number(item.allocated || 0);
+    const blocked = Number(item.blocked || 0);
+    const itemAvail = item.available !== undefined && item.available > 0
+      ? Number(item.available)
+      : Math.max(0, onHand - reserved - allocated - blocked);
     return acc + Math.max(0, itemAvail);
   }, 0);
 

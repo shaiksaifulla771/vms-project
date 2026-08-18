@@ -34,6 +34,14 @@ const POComponentSchema = new mongoose.Schema({
   actualCost: {
     type: Number,
     default: 0,
+  },
+  varianceQuantity: {
+    type: Number,
+    default: 0,
+  },
+  scrapQuantity: {
+    type: Number,
+    default: 0,
   }
 }, { _id: false });
 
@@ -46,6 +54,18 @@ const ProductionOrderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ProductionPlan',
   },
+  sourcePlanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionPlan',
+  },
+  sourcePlanNumber: {
+    type: String,
+    trim: true,
+  },
+  sourceMrpRunId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MRPRun',
+  },
   bomId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'BOM',
@@ -56,6 +76,16 @@ const ProductionOrderSchema = new mongoose.Schema({
     ref: 'Material',
     required: [true, 'Product (Material) reference is required'],
   },
+  siteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+    required: false,
+  },
+  warehouseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+    required: false,
+  },
   sourceWarehouseId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Warehouse',
@@ -64,7 +94,12 @@ const ProductionOrderSchema = new mongoose.Schema({
   destinationWarehouseId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Warehouse',
-    required: [true, 'Destination warehouse is required'],
+    required: false,
+  },
+  targetWarehouseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+    required: false,
   },
   targetQuantity: {
     type: Number,

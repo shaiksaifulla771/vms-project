@@ -17,6 +17,7 @@ const {
   completeProductionPlan,
   unscheduleProductionPlan,
   copyProductionPlan,
+  splitProductionPlan,
 } = require('../controllers/productionPlanController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -49,6 +50,7 @@ router.post('/:id/hold', authorize('Admin', 'Production Manager', 'Planner'), ho
 router.post('/:id/cancel', authorize('Admin', 'Production Manager', 'Planner'), cancelProductionPlan);
 router.post('/:id/complete', authorize('Admin', 'Production Manager', 'Planner'), completeProductionPlan);
 router.post('/:id/copy', authorize('Admin', 'Production Manager', 'Planner'), copyProductionPlan);
+router.post('/:id/split', authorize('Admin', 'Production Manager', 'Planner'), splitProductionPlan);
 router.post('/:id/unschedule', authorize('Admin', 'Production Manager', 'Planner'), unscheduleProductionPlan);
 
 module.exports = router;

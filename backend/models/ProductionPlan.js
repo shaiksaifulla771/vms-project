@@ -259,6 +259,24 @@ const ProductionPlanSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ProductionOrder',
   },
+  parentPlanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionPlan',
+  },
+  parentPlanNumber: {
+    type: String,
+    trim: true,
+  },
+  splitHistory: [
+    {
+      splitPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductionPlan' },
+      planNumber: String,
+      quantity: Number,
+      requiredDate: Date,
+      splitAt: { type: Date, default: Date.now },
+      splitBy: { type: mongoose.Schema.Types.Mixed },
+    }
+  ],
   auditHistory: [
     {
       action: String,

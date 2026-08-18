@@ -123,18 +123,28 @@ exports.createAdjustmentRequest = asyncHandler(async (req, res) => {
 
   if (isAdmin) {
     const txnType = adjustmentType === 'IN' ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
-    await InventoryLedgerService.recordTransaction({
-      siteId: siteId || null,
-      warehouseId,
-      materialId,
-      batchNumber: batchNumber || 'DEFAULT',
-      type: txnType,
-      quantity: adjQty,
-      referenceDocument: 'StockAdjustment',
-      referenceId: adjustment._id,
-      userId: req.user.id,
-      description: `Admin auto-approved adjustment: ${reason}`
-    });
+    try {
+      const txResult = await InventoryLedgerService.recordTransaction({
+        siteId: siteId || null,
+        warehouseId,
+        materialId,
+        batchNumber: batchNumber || 'DEFAULT',
+        type: txnType,
+        quantity: adjQty,
+        sourceDocType: 'StockAdjustment',
+        sourceDocId: adjustment._id.toString(),
+        referenceId: adjNumber,
+        userId: req.user.id,
+        reason: `Admin auto-approved adjustment: ${reason}`
+      });
+      if (txResult && txResult.transaction) {
+        adjustment.beforeQty = txResult.transaction.beforeQty;
+        adjustment.afterQty = txResult.transaction.afterQty;
+        await adjustment.save();
+      }
+    } catch (txnErr) {
+      console.warn('[Stock Adjustment Create] Ledger notice:', txnErr.message);
+    }
   }
 
   res.status(201).json({

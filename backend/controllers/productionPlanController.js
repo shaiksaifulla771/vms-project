@@ -232,7 +232,11 @@ exports.createManualPlan = asyncHandler(async (req, res, next) => {
 
     // Check stock for manual ingredients
     const matIds = finalIngredients.map(i => i.material);
-    const invItems = await InventoryItem.find({ materialId: { $in: matIds }, warehouseId: targetWarehouseId });
+    const invQuery = { materialId: { $in: matIds } };
+    if (targetWarehouseId && targetWarehouseId !== 'all' && targetWarehouseId !== 'ALL' && mongoose.Types.ObjectId.isValid(targetWarehouseId)) {
+      invQuery.warehouseId = targetWarehouseId;
+    }
+    const invItems = await InventoryItem.find(invQuery);
     const stockMap = {};
     for (const item of invItems) {
       stockMap[item.materialId.toString()] = Math.max(0, (item.onHand || 0) - (item.reserved || 0));
@@ -599,6 +603,8 @@ exports.useProductionPlan = asyncHandler(async (req, res, next) => {
     orderNumber: prdNumber,
     planId: plan._id,
     sourcePlanId: plan._id,
+    sourcePlanNumber: plan.planNumber,
+    sourceMrpRunId: plan.mrpRunId || null,
     productId: plan.productId,
     bomId: plan.bomId,
     siteId: plan.siteId,
@@ -870,5 +876,129 @@ exports.unscheduleProductionPlan = asyncHandler(async (req, res, next) => {
   await plan.save();
 
   res.status(200).json({ success: true, data: plan, message: `Plan ${plan.planNumber} unscheduled.` });
+});
+
+// @desc    Split a Production Plan into multiple smaller requirements
+// @route   POST /api/production-plans/:id/split
+// @access  Private (Planner/Admin)
+exports.splitProductionPlan = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Production plan not found' });
+
+  const { splits } = req.body; // Array of { quantity, requiredDate, lineId }
+  if (!splits || !Array.isArray(splits) || splits.length < 2) {
+    return res.status(400).json({ success: false, error: 'Please provide at least 2 split quantities.' });
+  }
+
+  const totalSplitQty = splits.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+  const originalQty = plan.totalPlans || plan.quantity;
+  if (totalSplitQty !== originalQty) {
+    return res.status(400).json({
+      success: false,
+      error: `Sum of split quantities (${totalSplitQty}) must equal original plan quantity (${originalQty}).`
+    });
+  }
+
+  const childPlans = [];
+  const splitHistoryEntries = [];
+
+  for (let i = 0; i < splits.length; i++) {
+    const s = splits[i];
+    const childPlanNumber = `${plan.planNumber}-${String.fromCharCode(65 + i)}`;
+    const splitQty = Number(s.quantity);
+    const splitDate = s.requiredDate ? new Date(s.requiredDate) : plan.requiredDate;
+
+    // Recalculate ingredient quantities for the split batch
+    const splitIngredients = (plan.ingredients || []).map(ing => {
+      const qtyPerPlan = ing.quantityPerPlan || 1;
+      const lossMultiplier = 1 + ((ing.lossPercentage || 0) / 100);
+      return {
+        material: ing.material || ing.materialId,
+        materialId: ing.materialId || ing.material,
+        materialCode: ing.materialCode,
+        materialName: ing.materialName,
+        quantityPerPlan: qtyPerPlan,
+        totalQuantity: Math.round((splitQty * qtyPerPlan * lossMultiplier) * 10000) / 10000,
+        uom: ing.uom || 'pcs',
+        warehouse: ing.warehouse || plan.warehouseId,
+        warehouseId: ing.warehouseId || plan.warehouseId,
+        lossPercentage: ing.lossPercentage || 0,
+      };
+    });
+
+    const childPlan = await ProductionPlan.create({
+      planNumber: childPlanNumber,
+      planName: `${plan.planName} (Split ${String.fromCharCode(65 + i)})`,
+      mrpRunId: plan.mrpRunId,
+      productId: plan.productId,
+      product: plan.product || plan.productId,
+      productCode: plan.productCode,
+      productName: plan.productName,
+      bomId: plan.bomId,
+      bom: plan.bom,
+      bomVersion: plan.bomVersion,
+      siteId: plan.siteId,
+      warehouseId: plan.warehouseId,
+      totalPlans: splitQty,
+      availablePlans: splitQty,
+      releasedPlans: 0,
+      reservedPlans: 0,
+      completedPlans: 0,
+      cancelledPlans: 0,
+      ingredients: splitIngredients,
+      quantity: splitQty,
+      originalQuantity: splitQty,
+      remainingQuantity: splitQty,
+      requiredDate: splitDate,
+      requiredByDate: splitDate,
+      status: 'UNSCHEDULED',
+      planSource: plan.planSource || 'MRP',
+      source: plan.source || 'MRP',
+      sourceReference: plan.sourceReference,
+      sourceRefModel: plan.sourceRefModel,
+      priority: plan.priority || 'MEDIUM',
+      workCenter: s.lineId || plan.workCenter || 'Main Assembly Line 1',
+      parentPlanId: plan._id,
+      parentPlanNumber: plan.planNumber,
+      createdBy: req.user ? req.user.id : null,
+      notes: `Split from parent plan ${plan.planNumber}`,
+      auditHistory: [{
+        action: 'SPLIT_FROM_PARENT',
+        user: req.user ? req.user.id : null,
+        timestamp: new Date(),
+        details: `Created as part of ${splitQty} unit split from ${plan.planNumber}`
+      }]
+    });
+
+    childPlans.push(childPlan);
+    splitHistoryEntries.push({
+      splitPlanId: childPlan._id,
+      planNumber: childPlan.planNumber,
+      quantity: splitQty,
+      requiredDate: splitDate,
+      splitAt: new Date(),
+      splitBy: req.user ? req.user.id : null,
+    });
+  }
+
+  // Update parent plan status to CANCELLED and store history
+  plan.status = 'CANCELLED';
+  plan.splitHistory = splitHistoryEntries;
+  plan.notes = `Split into ${childPlans.map(c => c.planNumber).join(', ')}`;
+  plan.auditHistory.push({
+    action: 'SPLIT_PLAN',
+    user: req.user ? req.user.id : null,
+    timestamp: new Date(),
+    details: `Plan split into ${childPlans.length} child plans: ${childPlans.map(c => `${c.planNumber} (${c.quantity} units)`).join(', ')}`
+  });
+
+  await plan.save();
+
+  res.status(201).json({
+    success: true,
+    message: `Plan ${plan.planNumber} successfully split into ${childPlans.length} child plans.`,
+    parentPlan: plan,
+    childPlans
+  });
 });
 

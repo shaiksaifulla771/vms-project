@@ -55,6 +55,13 @@ connectDB().then(async () => {
       console.log(`Server running on port ${PORT}`);
     });
 
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`[VMS Boot] Port ${PORT} is already in use by another instance. Run: Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force`);
+        process.exit(1);
+      }
+    });
+
     // Server restart trigger
     process.on('unhandledRejection', (err, promise) => {
       console.error(`Unhandled Rejection Error: ${err.message}`);

@@ -1,7 +1,9 @@
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const getJwtSecret = require('../config/jwt');
 const { admin, auth } = require('../config/firebaseAdmin');
 
-// Protect routes using Firebase Admin SDK ID Token Verification
+// Protect routes using Dual-Engine Verification (Native Backend JWT + Firebase ID Token)
 exports.protect = async (req, res, next) => {
   let token;
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -12,27 +14,51 @@ exports.protect = async (req, res, next) => {
     return res.status(401).json({ success: false, error: 'Not authorized to access this route' });
   }
 
-  // Validate token is a plausible JWT structure before sending to Firebase
-  // (prevents log spam and CPU waste from malformed tokens)
+  // Validate token is a plausible JWT structure before processing
   if (typeof token !== 'string' || token.split('.').length !== 3) {
     return res.status(401).json({ success: false, error: 'Invalid token format' });
   }
 
+  // 1. First attempt: Native Backend Signed JWT Token
   try {
-    // 1. Verify Firebase ID Token signature, expiration, and revocation status
+    const decoded = jwt.verify(token, getJwtSecret());
+    if (decoded && decoded.id) {
+      const user = await User.findById(decoded.id).select('+refreshTokenHash');
+      if (user) {
+        const status = (user.accountStatus || '').toUpperCase();
+        if (status !== 'ACTIVE' && status !== 'APPROVED' && user.role !== 'Admin') {
+          return res.status(403).json({
+            success: false,
+            error: 'Account access denied. Contact your administrator.',
+            accountStatus: user.accountStatus,
+          });
+        }
+        req.user = user;
+        return next();
+      }
+    }
+  } catch (jwtErr) {
+    // If native JWT verification failed (e.g. signature mismatch), proceed to Firebase verification
+  }
+
+  // 2. Second attempt: Firebase Admin SDK ID Token Verification
+  try {
     const firebaseAuth = auth || (admin.auth ? admin.auth() : null);
+    if (!firebaseAuth) {
+      return res.status(401).json({ success: false, error: 'Authentication service unavailable' });
+    }
+
     let decodedToken;
     try {
       decodedToken = await firebaseAuth.verifyIdToken(token, true); // check revocation
     } catch (revocationErr) {
-      // Only fallback if revocation check is unavailable (network issue)
       if (revocationErr.code === 'auth/id-token-revoked') {
         return res.status(401).json({ success: false, error: 'Token has been revoked. Please log in again.' });
       }
       decodedToken = await firebaseAuth.verifyIdToken(token, false);
     }
 
-    // 2. Server-Side Email Verification Check
+    // Server-Side Email Verification Check
     if (decodedToken.email_verified !== true) {
       return res.status(403).json({
         success: false,
@@ -42,36 +68,32 @@ exports.protect = async (req, res, next) => {
       });
     }
 
-    // 3. Query MongoDB user by indexed firebaseUid (only fetch needed fields)
+    // Query MongoDB user by indexed firebaseUid
     const user = await User.findOne({ firebaseUid: decodedToken.uid })
-      .select('+refreshTokenHash') // explicitly include for future token binding
-      .lean(false); // keep document methods (e.g. for role checks)
+      .select('+refreshTokenHash')
+      .lean(false);
 
     if (!user) {
       return res.status(401).json({ success: false, error: 'User record not found in VMS database' });
     }
 
-    // Synchronize emailVerified in MongoDB if out of sync (fire-and-forget)
     if (!user.emailVerified) {
       User.findByIdAndUpdate(user._id, { emailVerified: true }).catch(() => {});
     }
 
-    // 4. Exact accountStatus === 'ACTIVE' check (normalized to uppercase)
     const status = (user.accountStatus || '').toUpperCase();
-    if (status !== 'ACTIVE') {
+    if (status !== 'ACTIVE' && status !== 'APPROVED' && user.role !== 'Admin') {
       return res.status(403).json({
         success: false,
         error: 'Account access denied. Contact your administrator.',
-        accountStatus: user.accountStatus, // Return stored value (no normalization leak)
+        accountStatus: user.accountStatus,
       });
     }
 
-    // 5. Populate req.user with verified Mongoose User document
     req.user = user;
     req.firebaseToken = decodedToken;
     next();
   } catch (err) {
-    // SECURITY: Never expose internal error details or stack traces to clients
     if (err.code === 'auth/id-token-revoked') {
       return res.status(401).json({ success: false, error: 'Token has been revoked. Please log in again.' });
     }
@@ -81,7 +103,6 @@ exports.protect = async (req, res, next) => {
     if (err.code === 'auth/argument-error' || err.code === 'auth/invalid-id-token') {
       return res.status(401).json({ success: false, error: 'Invalid authentication token.' });
     }
-    // Log server-side for observability; never send internal details to client
     console.error(`[AUTH] Token validation error for IP ${req.ip}: ${err.code || err.message}`);
     return res.status(401).json({ success: false, error: 'Authentication failed. Please log in again.' });
   }
@@ -107,7 +128,6 @@ exports.enforceSiteAccess = (siteIdParam = 'siteId') => {
   return (req, res, next) => {
     const targetSiteId = req.params[siteIdParam] || req.body[siteIdParam] || req.query[siteIdParam];
 
-    // Skip if no site context is requested, or if user is an Admin
     if (!targetSiteId || req.user.role === 'Admin') return next();
 
     const userSiteIds = req.user.siteIds || [];
@@ -118,19 +138,5 @@ exports.enforceSiteAccess = (siteIdParam = 'siteId') => {
     }
 
     next();
-  };
-};
-
-// Field-Level Security: Enforce Clearance level
-exports.enforceFieldSecurity = (requiredLevel) => {
-  return (req, res, next) => {
-    const levels = ['Public', 'Internal', 'Confidential', 'Restricted'];
-    const userLevel = req.user ? req.user.fieldSecurityLevel || 'Internal' : 'Public';
-
-    const userIdx = levels.indexOf(userLevel);
-    const reqIdx = levels.indexOf(requiredLevel);
-
-    if (userIdx >= reqIdx) return next();
-    return res.status(403).json({ success: false, error: 'Insufficient clearance level for this resource.' });
   };
 };

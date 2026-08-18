@@ -342,7 +342,9 @@ exports.createAdjustment = async (req, res, next) => {
     }
     const adjNumber = `ADJ-${seqDoc.seq}`;
 
-    // Create pending approval stock adjustment record
+    const isAdmin = req.user && req.user.role === 'Admin';
+
+    // Create stock adjustment record
     const adjustment = await StockAdjustment.create({
       adjNumber,
       warehouseId: targetWarehouseId,
@@ -351,13 +353,35 @@ exports.createAdjustment = async (req, res, next) => {
       quantity: absQty,
       reason: reason || notes || 'Manual warehouse stock adjustment',
       description: notes || '',
-      status: 'Pending Approval',
+      status: isAdmin ? 'Approved' : 'Pending Approval',
+      approvedBy: isAdmin ? req.user.id : null,
+      approvedAt: isAdmin ? new Date() : null,
       createdBy: req.user ? req.user.id : null,
     });
 
+    if (isAdmin) {
+      const InventoryLedgerService = require('../services/inventoryLedgerService');
+      const txnType = adjustmentType === 'IN' ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
+      try {
+        await InventoryLedgerService.recordTransaction({
+          warehouseId: targetWarehouseId,
+          materialId,
+          type: txnType,
+          quantity: absQty,
+          sourceDocType: 'StockAdjustment',
+          sourceDocId: adjustment._id.toString(),
+          referenceId: adjNumber,
+          userId: req.user ? req.user.id : null,
+          reason: `Admin adjustment: ${reason || notes || 'Manual adjustment'}`
+        });
+      } catch (txnErr) {
+        console.warn('[Inventory createAdjustment] Ledger notice:', txnErr.message);
+      }
+    }
+
     res.status(201).json({
       success: true,
-      message: `Stock adjustment request ${adjNumber} submitted for approval (Created By: ${req.user ? req.user.username : 'User'})`,
+      message: isAdmin ? `Stock adjustment ${adjNumber} approved & inventory ledger updated` : `Stock adjustment request ${adjNumber} submitted for approval (Created By: ${req.user ? req.user.username : 'User'})`,
       data: adjustment
     });
   } catch (err) {

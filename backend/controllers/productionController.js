@@ -103,12 +103,16 @@ exports.getProductionOrders = asyncHandler(async (req, res, next) => {
   }
 
   const orders = await ProductionOrder.find(query)
-    .populate('bomId', 'name version')
+    .populate('bomId', 'name version bomNumber')
     .populate('productId', 'name code unit')
     .populate('siteId', 'name code')
     .populate('warehouseId', 'name code')
     .populate('sourceWarehouseId', 'name code')
+    .populate('destinationWarehouseId', 'name code')
     .populate('targetWarehouseId', 'name code')
+    .populate('planId', 'planNumber requiredDate status priority')
+    .populate('sourcePlanId', 'planNumber requiredDate status priority')
+    .populate('components.materialId', 'name code unit')
     .sort('-createdAt');
     
   res.status(200).json({ success: true, count: orders.length, data: orders });
@@ -123,7 +127,10 @@ exports.getProductionOrderById = asyncHandler(async (req, res, next) => {
     .populate('productId')
     .populate('sourceWarehouseId')
     .populate('destinationWarehouseId')
-    .populate('components.mpnId');
+    .populate('planId')
+    .populate('sourcePlanId')
+    .populate('components.mpnId')
+    .populate('components.materialId');
 
   if (!order) return res.status(404).json({ success: false, error: 'Production order not found' });
   res.status(200).json({ success: true, data: order });
@@ -264,7 +271,9 @@ exports.allocateMaterial = asyncHandler(async (req, res, next) => {
 exports.startProduction = asyncHandler(async (req, res, next) => {
   const order = await ProductionOrder.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
-  if (!['Scheduled', 'Approved', 'Material Allocated', 'Draft', 'Pending Approval'].includes(order.status)) {
+  const statusUpper = (order.status || '').toUpperCase();
+  const allowedStart = ['SCHEDULED', 'APPROVED', 'MATERIAL ALLOCATED', 'DRAFT', 'PENDING APPROVAL', 'PLANNED', 'RELEASED'];
+  if (!allowedStart.includes(statusUpper)) {
     return res.status(400).json({ success: false, error: `Order in status ${order.status} cannot be started` });
   }
 
@@ -286,7 +295,9 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
     if (!order) throw new Error('Order not found');
-    if (!['In Production', 'In Progress'].includes(order.status)) throw new Error('Order must be in production');
+    const statusUpper = (order.status || '').toUpperCase();
+    const allowedQC = ['IN PRODUCTION', 'IN PROGRESS', 'IN_PROGRESS', 'SCHEDULED', 'APPROVED', 'MATERIAL ALLOCATED', 'DRAFT', 'RELEASED'];
+    if (!allowedQC.includes(statusUpper)) throw new Error(`Order in status ${order.status} must be in production to submit QC`);
 
     order.actualQuantity = actualQuantity;
     order.scrapQuantity = scrapQuantity || 0;
@@ -298,15 +309,19 @@ exports.sendToQC = asyncHandler(async (req, res, next) => {
         const comp = order.components.find(c => (c.mpnId && c.mpnId.toString() === actual.mpnId?.toString()) || (c.materialId && c.materialId.toString() === actual.materialId?.toString()));
         if (comp) {
           comp.actualQuantity = actual.actualQuantity;
-          const effectivePrice = comp.expectedCost / (comp.expectedQuantity || 1); 
+          comp.consumedQuantity = actual.actualQuantity;
+          comp.varianceQuantity = Number(actual.actualQuantity) - Number(comp.expectedQuantity || 0);
+          comp.scrapQuantity = Number(actual.scrapQuantity || 0);
+          const effectivePrice = (comp.expectedCost || 0) / (comp.expectedQuantity || 1); 
           comp.actualCost = comp.actualQuantity * effectivePrice;
         }
       });
     }
 
     order.actualCost = order.components.reduce((sum, c) => sum + (c.actualCost || 0), 0);
-    order.costVariance = order.expectedCost - order.actualCost;
-    order.yieldPercent = (order.actualQuantity / order.targetQuantity) * 100;
+    order.costVariance = (order.expectedCost || 0) - (order.actualCost || 0);
+    order.materialVariance = order.components.reduce((sum, c) => sum + (c.varianceQuantity || 0), 0);
+    order.yieldPercent = (order.actualQuantity / (order.targetQuantity || 1)) * 100;
 
     order.status = 'Quality Check';
     await order.save({ session });
@@ -339,7 +354,9 @@ exports.completeProduction = asyncHandler(async (req, res, next) => {
   try {
     const order = await ProductionOrder.findById(req.params.id).session(session);
     if (!order) throw new Error('Order not found');
-    if (!['In Production', 'In Progress', 'Quality Check', 'Scheduled', 'Approved', 'Material Allocated'].includes(order.status)) {
+    const statusUpper = (order.status || '').toUpperCase();
+    const allowedComplete = ['IN PRODUCTION', 'IN PROGRESS', 'IN_PROGRESS', 'QUALITY CHECK', 'SCHEDULED', 'APPROVED', 'MATERIAL ALLOCATED', 'DRAFT', 'RELEASED'];
+    if (!allowedComplete.includes(statusUpper)) {
       throw new Error(`Order in status ${order.status} cannot be completed`);
     }
 

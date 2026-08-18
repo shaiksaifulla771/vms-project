@@ -73,7 +73,6 @@ const WarehouseSchema = new mongoose.Schema({
 });
 
 // Optimize queries
-WarehouseSchema.index({ code: 1 });
 WarehouseSchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('Warehouse', WarehouseSchema);
