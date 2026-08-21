@@ -306,22 +306,20 @@ const AdminControlCenter = () => {
         <div className="flex border-b border-slate-200 px-4 pt-3">
           <button
             onClick={() => setActiveTab('visitors')}
-            className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-              activeTab === 'visitors'
+            className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'visitors'
                 ? 'border-orange-500 text-orange-600'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
+              }`}
           >
             <i className="ti ti-id-badge fs-5"></i>
             <span>Real Audit & Gate Activity Stream</span>
           </button>
           <button
             onClick={() => setActiveTab('insights')}
-            className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-              activeTab === 'insights'
+            className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'insights'
                 ? 'border-orange-500 text-orange-600'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
+              }`}
           >
             <i className="ti ti-sparkles fs-5"></i>
             <span>System Health & Status</span>

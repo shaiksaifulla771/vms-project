@@ -28,7 +28,7 @@ const detectCycle = async (targetProductId, proposedComponentMaterialIds, curren
     }
   }
 
-  // 2. Multi-level Graph Traversal (DFS)
+  // 2. Multi-level Graph Traversal (DFS with visited set)
   const visited = new Set();
 
   const dfs = async (currentIdStr, path) => {
@@ -46,26 +46,34 @@ const detectCycle = async (targetProductId, proposedComponentMaterialIds, curren
       query._id = { $ne: currentBomId };
     }
 
-    // In V2, BOM components reference mpnId. We need to populate to get materialId.
-    const bomDoc = await BOM.findOne(query).populate({
-      path: 'components.mpnId',
-      select: 'materialId'
-    });
+    // Populate both direct materialId and mpnId.materialId
+    const bomDoc = await BOM.findOne(query)
+      .populate('components.materialId')
+      .populate({
+        path: 'components.mpnId',
+        select: 'materialId'
+      });
 
     if (!bomDoc || !Array.isArray(bomDoc.components)) {
       return null;
     }
 
     for (const childComp of bomDoc.components) {
-      if (!childComp.mpnId || !childComp.mpnId.materialId) continue;
-      const childIdStr = childComp.mpnId.materialId.toString();
-
-      if (childIdStr === targetIdStr) {
-        return [...path, childIdStr];
+      let childMatId = null;
+      if (childComp.materialId) {
+        childMatId = childComp.materialId._id ? childComp.materialId._id.toString() : childComp.materialId.toString();
+      } else if (childComp.mpnId && childComp.mpnId.materialId) {
+        childMatId = childComp.mpnId.materialId.toString();
       }
 
-      if (!visited.has(childIdStr)) {
-        const result = await dfs(childIdStr, [...path, childIdStr]);
+      if (!childMatId) continue;
+
+      if (childMatId === targetIdStr) {
+        return [...path, childMatId];
+      }
+
+      if (!visited.has(childMatId)) {
+        const result = await dfs(childMatId, [...path, childMatId]);
         if (result) return result;
       }
     }

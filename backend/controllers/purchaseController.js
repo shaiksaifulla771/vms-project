@@ -3,6 +3,8 @@ const Vendor = require('../models/Vendor');
 const Material = require('../models/Material');
 const InventoryItem = require('../models/InventoryItem');
 const InventoryTransaction = require('../models/InventoryTransaction');
+const { eventBus, EVENTS } = require('../events/eventBus');
+const SequenceService = require('../services/sequenceService');
 
 // @desc    Get all purchase orders
 // @route   GET /api/purchases
@@ -73,7 +75,17 @@ exports.getPurchaseOrder = async (req, res, next) => {
 // @access  Private
 exports.createPurchaseOrder = async (req, res, next) => {
   try {
-    const { vendorId, materials } = req.body;
+    const {
+      vendorId,
+      materials,
+      siteId,
+      destinationWarehouseId,
+      warehouseId,
+      expectedDeliveryDate,
+      sourceType,
+      sourceRequirementIds,
+      notes,
+    } = req.body;
 
     if (!vendorId || !materials || !Array.isArray(materials) || materials.length === 0) {
       return res.status(400).json({ success: false, error: 'Please provide vendorId and materials list' });
@@ -88,6 +100,15 @@ exports.createPurchaseOrder = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Cannot create purchase orders for an Inactive vendor' });
     }
 
+    // Resolve target warehouse & site
+    const targetWhId = destinationWarehouseId || warehouseId || null;
+    let targetSiteId = siteId || null;
+    if (targetWhId && !targetSiteId) {
+      const Warehouse = require('../models/Warehouse');
+      const whDoc = await Warehouse.findById(targetWhId).select('siteId').lean();
+      if (whDoc && whDoc.siteId) targetSiteId = whDoc.siteId;
+    }
+
     // Compute totalAmount and validate components
     let totalAmount = 0;
     const validatedMaterials = [];
@@ -99,57 +120,39 @@ exports.createPurchaseOrder = async (req, res, next) => {
       }
       
       const qty = parseFloat(item.quantity);
-      const price = parseFloat(item.unitPrice);
+      const price = parseFloat(item.unitPrice !== undefined ? item.unitPrice : mat.basePrice);
 
       if (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
         return res.status(400).json({ success: false, error: 'Material quantity and price must be valid positive numbers' });
       }
 
-      totalAmount += qty * price;
+      totalAmount += Math.round((qty * price) * 100) / 100;
       validatedMaterials.push({
         materialId: item.materialId,
         quantity: qty,
-        unitPrice: price
+        unitPrice: price,
+        receivedQuantity: 0,
+        rejectedQuantity: 0,
+        lineStatus: 'OPEN',
+        notes: item.notes || notes || '',
       });
     }
 
-    // Sequence Generator logic for PO Number
-    const Sequence = require('../models/Sequence');
-    const activePOs = await PurchaseOrder.find(
-      { poNumber: /^PO-\d+$/i, isDeleted: { $ne: true } },
-      { poNumber: 1 }
-    );
-
-    let maxNum = 1000;
-    activePOs.forEach(p => {
-      if (p.poNumber) {
-        const match = p.poNumber.toString().match(/\d+/);
-        if (match) {
-          const num = parseInt(match[0], 10);
-          if (!isNaN(num) && num > maxNum) {
-            maxNum = num;
-          }
-        }
-      }
-    });
-
-    const seqDoc = await Sequence.findById('purchaseOrder');
-    const seqNum = (seqDoc && typeof seqDoc.seq === 'number') ? seqDoc.seq : 1000;
-    const nextNum = Math.max(maxNum, seqNum) + 1;
-
-    await Sequence.findByIdAndUpdate(
-      'purchaseOrder',
-      { $set: { seq: nextNum } },
-      { upsert: true, new: true }
-    );
-
-    const poNumber = `PO-${nextNum}`;
+    const { nextSeqNumber } = require('../services/sequenceService');
+    const poNumber = await nextSeqNumber('purchaseOrder', 'PO');
 
     const po = await PurchaseOrder.create({
       poNumber,
       vendorId,
+      siteId: targetSiteId,
+      destinationWarehouseId: targetWhId,
+      warehouseId: targetWhId,
       materials: validatedMaterials,
       totalAmount,
+      expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : new Date(Date.now() + 7 * 86400000),
+      orderDate: new Date(),
+      sourceType: sourceType || 'MANUAL',
+      sourceRequirementIds: Array.isArray(sourceRequirementIds) ? sourceRequirementIds : [],
       requestedBy: req.user._id,
       status: 'Pending'
     });
@@ -157,7 +160,9 @@ exports.createPurchaseOrder = async (req, res, next) => {
     const populated = await PurchaseOrder.findById(po._id)
       .populate('vendorId', 'name company email')
       .populate('materials.materialId', 'name code unit')
-      .populate('requestedBy', 'username email');
+      .populate('requestedBy', 'username email')
+      .populate('destinationWarehouseId', 'name code')
+      .populate('siteId', 'name code');
 
     const auditService = require('../services/auditService');
     await auditService.writeAuditLog(
@@ -166,12 +171,23 @@ exports.createPurchaseOrder = async (req, res, next) => {
       po._id,
       'CREATE',
       null,
-      { poNumber, vendorId, totalAmount },
+      { poNumber, vendorId, totalAmount, siteId: targetSiteId, warehouseId: targetWhId },
       req.user ? req.user._id : null,
       req.correlationId,
       req.ip,
       req.headers['user-agent']
     );
+
+    // Emit domain event for PO creation
+    eventBus.emit(EVENTS.PO_CREATED, {
+      poId: po._id,
+      poNumber,
+      vendorId,
+      materials: validatedMaterials,
+      totalAmount,
+      requestedBy: req.user ? req.user._id : null,
+      correlationId: req.correlationId
+    });
 
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
@@ -196,10 +212,10 @@ exports.approveOrRejectPO = async (req, res, next) => {
     }
 
     // Strict state transition guard
-    if (po.status !== 'Pending') {
+    if (po.status !== 'Pending' && po.status !== 'Draft') {
       return res.status(400).json({
         success: false,
-        error: `Invalid transition. Purchase order is already marked as ${po.status} and cannot be modified.`
+        error: `Invalid transition. Purchase order is currently ${po.status} and cannot be approved/rejected.`
       });
     }
 
@@ -213,85 +229,76 @@ exports.approveOrRejectPO = async (req, res, next) => {
       .populate('requestedBy', 'username email')
       .populate('approvedBy', 'username email');
 
+    // Emit domain event
+    if (status === 'Approved') {
+      eventBus.emit(EVENTS.PO_APPROVED, {
+        poId: po._id,
+        poNumber: po.poNumber,
+        vendorId: po.vendorId,
+        approvedBy: req.user._id,
+        correlationId: req.correlationId
+      });
+    }
+
     res.status(200).json({ success: true, data: populated });
   } catch (err) {
     next(err);
   }
 };
 
-// @desc    Receive Goods (GRN - Stock-in)
+// @desc    Receive Goods (GRN - Stock-in with partial receiving and warehouse scoping)
 // @route   PATCH /api/purchases/:id/receive
 // @access  Private
 exports.receiveGoods = async (req, res, next) => {
   try {
+    const ProcurementAutomationService = require('../services/procurementAutomationService');
+
     const po = await PurchaseOrder.findById(req.params.id);
     if (!po) {
       return res.status(404).json({ success: false, error: 'Purchase Order not found' });
     }
 
-    // State validation: can only receive Approved orders
-    if (po.status !== 'Approved') {
-      return res.status(400).json({
-        success: false,
-        error: `Cannot receive goods: Purchase Order status is currently '${po.status}'. Only 'Approved' orders can be received.`
-      });
+    const targetWarehouseId = req.body.warehouseId || po.destinationWarehouseId || po.warehouseId;
+    if (!targetWarehouseId) {
+      return res.status(400).json({ success: false, error: 'Destination warehouse is required for Goods Receipt.' });
     }
 
-    // Process Stock-In for each material in the PO
-    for (let item of po.materials) {
-      // Find or initialize inventory item
-      let stockItem = await InventoryItem.findOne({ materialId: item.materialId });
-      if (!stockItem) {
-        stockItem = await InventoryItem.create({
-          materialId: item.materialId,
-          warehouseId: req.body.warehouseId,
-          balance: 0,
-          onHand: 0,
-          available: 0
-        });
-      }
-
-      // Add to inventory
-      stockItem.onHand = (stockItem.onHand || 0) + item.quantity;
-      stockItem.available = (stockItem.available || 0) + item.quantity;
-      stockItem.updatedAt = Date.now();
-      await stockItem.save();
-
-      // Log stock transaction
-      await InventoryTransaction.create({
-        materialId: item.materialId,
-        warehouseId: req.body.warehouseId,
-        quantity: item.quantity,
-        type: 'purchase',
-        referenceId: po._id.toString(),
-        notes: `Received items from PO #${po._id.toString().slice(-6).toUpperCase()}`
-      });
+    // Default to receiving all remaining items if items array is not explicitly provided
+    let itemsToReceive = req.body.items;
+    if (!itemsToReceive || !Array.isArray(itemsToReceive) || itemsToReceive.length === 0) {
+      itemsToReceive = po.materials.map(m => ({
+        materialId: m.materialId,
+        receivedQuantity: Math.max(0, m.quantity - (m.receivedQuantity || 0)),
+        rejectedQuantity: 0,
+        lotNumber: req.body.lotNumber || '',
+        batchNumber: req.body.batchNumber || '',
+        locationBin: req.body.locationBin || '',
+      }));
     }
 
-    const auditService = require('../services/auditService');
-    await auditService.writeAuditLog(
-      null,
-      'PurchaseOrder',
-      po._id,
-      'UPDATE',
-      { status: po.status },
-      { status: 'Received' },
-      req.user ? req.user._id : null,
-      req.correlationId,
-      req.ip,
-      req.headers['user-agent']
-    );
-
-    po.status = 'Received';
-    await po.save();
+    const grnResult = await ProcurementAutomationService.recordGoodsReceipt({
+      poId: po._id,
+      warehouseId: targetWarehouseId,
+      siteId: req.body.siteId || po.siteId,
+      items: itemsToReceive,
+      receivedBy: req.user ? req.user._id : null,
+      notes: req.body.notes || 'Goods receipt via purchasing terminal',
+      correlationId: req.correlationId,
+    });
 
     const populated = await PurchaseOrder.findById(po._id)
       .populate('vendorId', 'name company email')
       .populate('materials.materialId', 'name code unit')
       .populate('requestedBy', 'username email')
-      .populate('approvedBy', 'username email');
+      .populate('approvedBy', 'username email')
+      .populate('destinationWarehouseId', 'name code');
 
-    res.status(200).json({ success: true, data: populated });
+    res.status(200).json({
+      success: true,
+      message: `Goods Receipt ${grnResult.grnNumber} processed successfully. Status: ${grnResult.status}`,
+      grnNumber: grnResult.grnNumber,
+      data: populated,
+    });
   } catch (err) {
     next(err);
   }

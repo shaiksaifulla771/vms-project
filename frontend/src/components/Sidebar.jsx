@@ -7,6 +7,7 @@ import {
   Boxes,
   Cpu,
   Factory,
+  CalendarClock,
   ShoppingBag,
   ShieldCheck,
   BarChart3,

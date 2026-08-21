@@ -164,10 +164,14 @@ async function runEndToEndVerification() {
   }
   console.log(`✓ BOM Recipe created for ${fgMat.name}: 1 Bottle requires 0.2L Raw Material`);
 
-  // 4. Inventory Stock Adjustment Approval Workflow
-  const adjNum = `ADJ-TEST-${Date.now()}`;
+  // Reset inventory items for clean deterministic test run
+  await InventoryItem.deleteMany({ warehouseId: warehouse._id, materialId: { $in: [rawMat._id, fgMat._id] } });
+
+  // 4. Initial Stock Intake (Stock Adjustment Request -> Approval Flow)
+  const initialStockQty = 500; // 500 Liters
+  const adjSeq = `ADJ-TEST-${Date.now()}`;
   const stockAdj = await StockAdjustment.create({
-    adjNumber: adjNum,
+    adjNumber: adjSeq,
     siteId: site._id,
     warehouseId: warehouse._id,
     materialId: rawMat._id,

@@ -74,12 +74,12 @@ describe('Session 7 — Auth Integration Test Suite (JWT 15m, Refresh Cookie, Re
 
     expect(otpRes.status).toBe(200);
     expect(otpRes.body.token).toBeUndefined();
-    expect(otpRes.body.user.accountStatus).toBe('Pending');
+    expect(otpRes.body.user.accountStatus.toUpperCase()).toBe('PENDING');
 
     let userInDb = await User.findOne({ email: 'testuser@vms.com' });
     expect(userInDb).toBeDefined();
     expect(userInDb.isVerified).toBe(true);
-    expect(userInDb.accountStatus).toBe('Pending');
+    expect(userInDb.accountStatus.toUpperCase()).toBe('PENDING');
 
     // 3. Login is blocked until Admin approval
     const blockedLoginRes = await request(app)

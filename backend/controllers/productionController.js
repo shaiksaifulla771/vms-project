@@ -8,50 +8,14 @@ const QualityRecord = require('../models/QualityRecord');
 const Sequence = require('../models/Sequence');
 const asyncHandler = require('../middleware/asyncHandler');
 const InventoryLedgerService = require('../services/inventoryLedgerService');
-
-// Helper: Calculate stock availability (MRP planning core)
-const performMRPCheck = async (bomId, targetQuantity) => {
-  const bom = await BOM.findById(bomId).populate('components.materialId');
-  if (!bom) {
-    throw new Error('Bill of Materials (BOM) recipe not found');
-  }
-
-  const details = [];
-  let canProduce = true;
-
-  for (let comp of bom.components) {
-    const rawMaterial = comp.materialId;
-    const required = comp.quantity * targetQuantity;
-
-    // Aggregate warehouse stock balances
-    const stocks = await InventoryItem.find({ materialId: rawMaterial._id });
-    const available = stocks.reduce((acc, stock) => acc + (stock.balance - (stock.reservedBalance || 0)), 0);
-    const shortfall = Math.max(0, required - available);
-
-    if (shortfall > 0) {
-      canProduce = false;
-    }
-
-    details.push({
-      materialId: rawMaterial._id,
-      name: rawMaterial.name,
-      code: rawMaterial.code,
-      unit: rawMaterial.unit,
-      required,
-      available,
-      shortfall,
-      status: shortfall > 0 ? 'Deficit' : 'In Stock'
-    });
-  }
-
-  return { canProduce, details };
-};
+const MRPEngineService = require('../services/mrpEngineService');
+const { eventBus, EVENTS } = require('../events/eventBus');
 
 // @desc    Calculate MRP requirements (Stock availability planner)
 // @route   GET /api/productions/planning/mrp
 // @access  Private
 exports.getMRPPlanning = asyncHandler(async (req, res, next) => {
-  const { productId, quantity } = req.query;
+  const { productId, quantity, warehouseId, siteId } = req.query;
 
   if (!productId || !quantity) {
     return res.status(400).json({ success: false, error: 'Please provide productId and target quantity' });
@@ -70,8 +34,23 @@ exports.getMRPPlanning = asyncHandler(async (req, res, next) => {
     });
   }
 
-  const mrp = await performMRPCheck(bom._id, targetQty);
-  res.status(200).json({ success: true, data: mrp });
+  // Delegate to the canonical MRPEngineService (single source of truth for material checks)
+  const result = await MRPEngineService.checkMaterialAvailability(bom._id, targetQty, warehouseId || null, siteId || null);
+  
+  // Map to legacy response format for backward compatibility
+  const canProduce = result.status === 'READY';
+  const details = result.components.map(c => ({
+    materialId: c.materialId,
+    name: c.materialName,
+    code: c.materialCode,
+    unit: c.unit,
+    required: c.requiredQty,
+    available: c.availableQty,
+    shortfall: c.shortageQty,
+    status: c.shortageQty > 0 ? 'Deficit' : 'In Stock'
+  }));
+
+  res.status(200).json({ success: true, data: { canProduce, details } });
 });
 
 // @desc    Get all production orders

@@ -1,40 +1,42 @@
-const { connection: redis } = require('../config/queue');
+const IdempotencyKey = require('../models/IdempotencyKey');
 
 /**
- * Idempotency Middleware — Enforces request deduplication across distributed instances using Redis.
- * Caches HTTP response bodies for matching Idempotency-Key headers with a 5-minute TTL.
+ * Idempotency Middleware — Enforces request deduplication and replay protection.
+ * Replays cached response bodies for matching Idempotency-Key headers.
  */
 const idempotencyMiddleware = async (req, res, next) => {
-  const idempotencyKey = req.headers['idempotency-key'];
-  if (!idempotencyKey || !['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+  const key = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  if (!key || !['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     return next();
   }
 
-  req.idempotencyKey = idempotencyKey;
-  const redisKey = `idempotency:${idempotencyKey}`;
+  req.idempotencyKey = key.trim();
 
   try {
-    const cachedResponse = await redis.get(redisKey);
-    if (cachedResponse) {
-      const parsed = JSON.parse(cachedResponse);
-      return res.status(parsed.status).json(parsed.body);
+    const existing = await IdempotencyKey.findOne({ key: req.idempotencyKey });
+    if (existing && existing.response) {
+      return res.status(existing.statusCode || 200).json(existing.response);
     }
   } catch (err) {
-    console.warn('Idempotency Redis read failed, proceeding without cache:', err.message);
+    console.warn('[Idempotency] Lookup warning:', err.message);
   }
 
-  // Intercept response methods to cache result on success
+  // Intercept response to record on success
   const originalJson = res.json;
   res.json = function (body) {
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      try {
-        const payload = JSON.stringify({ status: res.statusCode, body });
-        redis.setex(redisKey, 300, payload).catch(e => {
-          console.warn('Idempotency Redis setex failed:', e.message);
-        });
-      } catch (e) {
-        console.warn('Idempotency payload serialization failed:', e.message);
-      }
+      IdempotencyKey.create({
+        key: req.idempotencyKey,
+        method: req.method,
+        path: req.originalUrl || req.url,
+        statusCode: res.statusCode,
+        response: body,
+      }).catch(err => {
+        // Ignore duplicate key collision on simultaneous race
+        if (err.code !== 11000) {
+          console.warn('[Idempotency] Record creation warning:', err.message);
+        }
+      });
     }
     return originalJson.call(this, body);
   };

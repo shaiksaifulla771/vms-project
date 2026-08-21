@@ -6,7 +6,10 @@ const BOM = require('../../models/BOM');
 const Warehouse = require('../../models/Warehouse');
 const Sequence = require('../../models/Sequence');
 const MRPEngineService = require('../../services/mrpEngineService');
+const ProductionPlanningEngine = require('../../services/productionPlanningEngine');
 const productionPlanController = require('../../controllers/productionPlanController');
+
+jest.setTimeout(60000);
 
 describe('Production Plan - Plan Quantity & Multi-Ingredient Unit Tests', () => {
   let warehouse;
@@ -51,6 +54,7 @@ describe('Production Plan - Plan Quantity & Multi-Ingredient Unit Tests', () => 
     // Mock Sequence model to prevent DB timeouts
     jest.spyOn(Sequence, 'findById').mockResolvedValue({ _id: 'productionOrder', seq: 1001 });
     jest.spyOn(Sequence, 'findByIdAndUpdate').mockResolvedValue({ _id: 'productionOrder', seq: 1002 });
+    jest.spyOn(ProductionPlanningEngine, 'canExecute').mockResolvedValue({ allowed: true });
   });
 
   afterAll(() => {

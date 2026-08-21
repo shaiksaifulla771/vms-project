@@ -65,7 +65,7 @@ export default function ChatPanel({ isOpen, onClose }) {
       if (match.index > lastIndex) {
         parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
       }
-      
+
       // Parse JSON
       try {
         const payload = JSON.parse(match[1]);
@@ -77,7 +77,7 @@ export default function ChatPanel({ isOpen, onClose }) {
       } catch (err) {
         parts.push({ type: 'text', content: match[0] }); // Failed to parse, show as text
       }
-      
+
       lastIndex = jsonBlockRegex.lastIndex;
     }
 
@@ -140,7 +140,7 @@ export default function ChatPanel({ isOpen, onClose }) {
                     <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-blue-100 text-blue-600 ml-2' : 'bg-indigo-100 text-indigo-600 mr-2'}`}>
                       {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                     </div>
-                    
+
                     <div className={`rounded-xl p-3 text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
                       {msg.role === 'user' ? (
                         <p className="whitespace-pre-wrap">{msg.text}</p>
@@ -157,11 +157,11 @@ export default function ChatPanel({ isOpen, onClose }) {
                                     Drafted Recipe Payload
                                   </div>
                                   <div className="text-xs text-slate-600 bg-white p-2 border border-slate-100 rounded font-mono">
-                                    Batch: {part.payload.batchSize} {part.payload.batchUOM}<br/>
+                                    Batch: {part.payload.batchSize} {part.payload.batchUOM}<br />
                                     Components: {part.payload.components?.length || 0}
                                   </div>
-                                  <Button 
-                                    size="sm" 
+                                  <Button
+                                    size="sm"
                                     onClick={() => handleApplyDraft(part.payload)}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-8 text-xs flex items-center justify-center"
                                   >
@@ -184,7 +184,7 @@ export default function ChatPanel({ isOpen, onClose }) {
                   </div>
                 </div>
               ))}
-              
+
               {loading && (
                 <div className="flex justify-start w-full">
                   <div className="flex max-w-[85%] flex-row">

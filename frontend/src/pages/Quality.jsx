@@ -251,9 +251,8 @@ const Quality = () => {
                       <h5 className="font-bold text-xs text-slate-800">
                         Lot #{rec.productionOrderId?._id.slice(-6).toUpperCase() || 'LOT'}
                       </h5>
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase ${
-                        rec.status === 'Passed' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                      }`}>{rec.status}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase ${rec.status === 'Passed' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                        }`}>{rec.status}</span>
                     </div>
 
                     <p className="text-xs text-slate-600 italic">

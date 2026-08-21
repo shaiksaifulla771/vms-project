@@ -113,10 +113,13 @@ export default function BomDetail() {
 
       <div className="flex flex-col gap-4 mb-6">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">{bom.productId?.name}</h1>
-        <div className="flex gap-4 text-sm text-slate-500 font-medium">
+        <div className="flex flex-wrap gap-3 text-sm text-slate-500 font-medium">
           <Badge variant="outline" className="bg-white font-mono font-semibold">Batch Size: {bom.batchSize}</Badge>
           <Badge variant="outline" className="bg-white font-mono font-semibold uppercase">UOM: {bom.batchUOM || '—'}</Badge>
           <Badge variant="outline" className="bg-white">Batch Code: {bom.batchCode || '—'}</Badge>
+          <Badge variant="outline" className="bg-blue-50/60 border-blue-200 text-blue-800 font-medium">
+            Manufacturer: {bom.manufacturer || bom.productId?.manufacturer || 'Standard'}
+          </Badge>
           <Badge variant="outline" className="bg-white">Effective: {eDate}</Badge>
           <span className={`font-bold uppercase tracking-wider ${(bom.status === 'Obsolete' || bom.status === 'Deleted') ? 'text-red-600' : 'text-emerald-600'}`}>
             {bom.status === 'Obsolete' ? 'Deleted' : bom.status}
@@ -158,14 +161,14 @@ export default function BomDetail() {
           </span>
         </CardHeader>
         <CardContent className="p-0 overflow-visible">
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse">
+          <div className="w-full overflow-x-auto custom-scrollbar">
+            <table className="w-full text-xs text-left border-collapse min-w-[850px]">
               <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-tight border-b border-slate-300 select-none">
                 <tr>
                   <th className="w-10 px-2 py-2 text-center font-mono border-r border-slate-200">#</th>
-                  <th className="px-2.5 py-2 w-32 border-r border-slate-200">MPN Code</th>
+                  <th className="px-2.5 py-2 w-32 border-r border-slate-200">MPN / Code</th>
                   <th className="px-2.5 py-2 min-w-[180px] border-r border-slate-200">Material Name</th>
-                  <th className="px-2.5 py-2 min-w-[180px] border-r border-slate-200">Vendor Name</th>
+                  <th className="px-2.5 py-2 min-w-[180px] border-r border-slate-200">Vendor / Mfr</th>
                   <th className="px-2.5 py-2 w-28 text-right border-r border-slate-200">Unit Price (₹)</th>
                   <th className="px-2.5 py-2 w-24 text-right border-r border-slate-200">Quantity</th>
                   <th className="px-2.5 py-2 w-16 text-center border-r border-slate-200">UOM</th>
@@ -176,10 +179,15 @@ export default function BomDetail() {
               <tbody className="divide-y divide-slate-200 bg-white">
                 {bom.components?.map((c, i) => {
                   const mpnObj = c.mpnId;
-                  const qty = Number(c.qty) || 0;
-                  const loss = Number(c.lossPercent) || 0;
-                  const price = c.resolvedPrice || 0;
-                  const finalCost = c.liveLineCost || (qty * price * (1 + loss / 100));
+                  const matObj = c.materialId;
+                  const qty = Number(c.quantity !== undefined ? c.quantity : (c.qty || 0));
+                  const loss = Number(c.lossPercentage !== undefined ? c.lossPercentage : (c.lossPercent || 0));
+                  const price = c.resolvedPrice || mpnObj?.price || matObj?.basePrice || 0;
+                  const finalCost = c.liveLineCost || (loss > 0 && loss < 100 ? (qty * price) / (1 - loss / 100) : qty * price);
+
+                  const displayName = mpnObj?.materialId?.name || matObj?.name || '—';
+                  const displayVendor = mpnObj?.vendorId?.name || matObj?.defaultVendorId?.name || matObj?.manufacturer || 'Standard';
+                  const displayUom = mpnObj?.priceUOM || mpnObj?.materialId?.unit || matObj?.unit || 'pcs';
 
                   return (
                     <tr key={i} className="hover:bg-slate-50/80 transition-colors border-b border-slate-200">
@@ -187,13 +195,13 @@ export default function BomDetail() {
                         {i + 1}
                       </td>
                       <td className="px-2.5 py-1.5 font-mono text-xs font-bold text-blue-700 border-r border-slate-200">
-                        {mpnObj?.mpnCode || '—'}
+                        {mpnObj?.mpnCode || (matObj?.code ? `MAT-${matObj.code}` : 'DIRECT-MAT')}
                       </td>
-                      <td className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 border-r border-slate-200 truncate max-w-[200px]" title={mpnObj?.materialId?.name}>
-                        {mpnObj?.materialId?.name || '—'}
+                      <td className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 border-r border-slate-200 truncate max-w-[200px]" title={displayName}>
+                        {displayName}
                       </td>
-                      <td className="px-2.5 py-1.5 text-xs text-slate-700 border-r border-slate-200 truncate max-w-[200px]" title={mpnObj?.vendorId?.name}>
-                        {mpnObj?.vendorId?.name || '—'}
+                      <td className="px-2.5 py-1.5 text-xs text-slate-700 border-r border-slate-200 truncate max-w-[200px]" title={displayVendor}>
+                        {displayVendor}
                       </td>
                       <td className="px-2.5 py-1.5 text-right font-mono text-slate-800 border-r border-slate-200">
                         ₹{price.toFixed(2)}
@@ -202,7 +210,7 @@ export default function BomDetail() {
                         {qty}
                       </td>
                       <td className="px-2.5 py-1.5 text-center text-[11px] font-semibold text-slate-500 uppercase border-r border-slate-200">
-                        {mpnObj?.materialId?.unit || 'pcs'}
+                        {displayUom}
                       </td>
                       <td className="px-2.5 py-1.5 text-right font-mono font-semibold text-amber-700 border-r border-slate-200">
                         {loss}%

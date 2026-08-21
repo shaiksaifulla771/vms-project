@@ -2,7 +2,8 @@ const StockTransfer = require('../models/StockTransfer');
 const InventoryItem = require('../models/InventoryItem');
 const Warehouse = require('../models/Warehouse');
 const InventoryLedgerService = require('../services/inventoryLedgerService');
-const Sequence = require('../models/Sequence');
+const { nextSeqNumber } = require('../services/sequenceService');
+const { eventBus, EVENTS } = require('../events/eventBus');
 const asyncHandler = require('../middleware/asyncHandler');
 
 // @desc    Get all stock transfers with filters
@@ -128,13 +129,7 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
     });
   }
 
-  let seqDoc = await Sequence.findById('stockTransfer');
-  if (!seqDoc) {
-    seqDoc = await Sequence.create({ _id: 'stockTransfer', seq: 1000 });
-  } else {
-    seqDoc = await Sequence.findByIdAndUpdate('stockTransfer', { $inc: { seq: 1 } }, { new: true });
-  }
-  const transferNumber = `TRF-${seqDoc.seq}`;
+  const transferNumber = await nextSeqNumber('stockTransfer', 'TRF');
 
   const isAdmin = req.user && req.user.role === 'Admin';
 
@@ -173,6 +168,18 @@ exports.createStockTransfer = asyncHandler(async (req, res) => {
       console.warn(`[Stock Transfer Create] Reservation notice: ${err.message}`);
     }
   }
+
+  // Emit domain event
+  eventBus.emit(EVENTS.STOCK_TRANSFER_CREATED, {
+    transferId: transfer._id,
+    transferNumber,
+    materialId,
+    quantity: parseFloat(quantity),
+    fromWarehouseId,
+    toWarehouseId,
+    status: transfer.status,
+    correlationId: req.correlationId
+  });
 
   res.status(201).json({ success: true, data: transfer });
 });
@@ -286,6 +293,19 @@ exports.receiveStockTransfer = asyncHandler(async (req, res) => {
   transfer.receivedBy = req.user ? req.user.id : null;
   transfer.receivedAt = Date.now();
   await transfer.save();
+
+  // Emit domain event to trigger plan material recheck
+  eventBus.emit(EVENTS.STOCK_TRANSFER_COMPLETED, {
+    transferId: transfer._id,
+    transferNumber: transfer.transferNumber,
+    materialId: transfer.materialId,
+    materialIds: [transfer.materialId],
+    quantity: transfer.quantity,
+    fromWarehouseId: transfer.fromWarehouseId,
+    toWarehouseId: transfer.toWarehouseId,
+    receivedBy: req.user ? req.user.id : null,
+    correlationId: req.correlationId
+  });
 
   res.status(200).json({ success: true, message: 'Transfer received and completed successfully', data: transfer });
 });

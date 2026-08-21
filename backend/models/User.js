@@ -39,8 +39,27 @@ const UserSchema = new mongoose.Schema({
   },
   accountStatus: {
     type: String,
-    enum: ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED', 'DISABLED', 'Pending', 'Active', 'Suspended'],
+    enum: ['PENDING', 'ACTIVE', 'REJECTED', 'SUSPENDED', 'DISABLED', 'DEACTIVATED', 'Pending', 'Active', 'Suspended', 'Deactivated'],
     default: 'PENDING',
+  },
+  approvalStatus: {
+    type: String,
+    enum: ['PENDING', 'APPROVED', 'REJECTED', 'Pending', 'Approved', 'Rejected'],
+    default: 'PENDING',
+  },
+  approvedAt: {
+    type: Date,
+    default: null,
+  },
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  rejectionReason: {
+    type: String,
+    trim: true,
+    default: null,
   },
   emailVerified: {
     type: Boolean,
@@ -79,6 +98,9 @@ const UserSchema = new mongoose.Schema({
   },
   siteIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Site' }],
   warehouseIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }],
+  scopeAssignedBy: { type: String, default: 'System Admin' },
+  scopeAssignedAt: { type: Date, default: Date.now },
+  scopeReason: { type: String, default: '' },
   fieldSecurityLevel: { type: String, enum: ['Public', 'Internal', 'Confidential', 'Restricted'], default: 'Internal' },
   refreshTokenHash: { type: String, select: false },
   tokenVersion: { type: Number, default: 0 },

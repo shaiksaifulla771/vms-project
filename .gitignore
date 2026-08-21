@@ -34,6 +34,7 @@ npm-debug.log*
 *.txt
 *.js
 !backend/**/*.js
+!backend/**/*.py
 !frontend/**/*.js
 Masters_old.jsx
 dynamo/

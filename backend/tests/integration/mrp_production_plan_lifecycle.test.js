@@ -3,6 +3,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const Material = require('../../models/Material');
 const BOM = require('../../models/BOM');
 const Warehouse = require('../../models/Warehouse');
+const InventoryItem = require('../../models/InventoryItem');
 const ProductionPlan = require('../../models/ProductionPlan');
 const ProductionOrder = require('../../models/ProductionOrder');
 const {
@@ -19,7 +20,7 @@ const {
 
 describe('Production Plan Lifecycle Integration Tests', () => {
   let mongoServer;
-  let warehouse, product, bom;
+  let warehouse, product, bom, rawMat;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -42,7 +43,7 @@ describe('Production Plan Lifecycle Integration Tests', () => {
       isActive: true,
     });
 
-    const rawMat = await Material.create({
+    rawMat = await Material.create({
       code: 'RM-01',
       name: 'Base Compound',
       type: 'Raw Material',
@@ -67,6 +68,14 @@ describe('Production Plan Lifecycle Integration Tests', () => {
       components: [
         { materialId: rawMat._id, quantity: 2, uom: 'kg' }
       ]
+    });
+
+    await InventoryItem.create({
+      materialId: rawMat._id,
+      warehouseId: warehouse._id,
+      balance: 1000,
+      onHand: 1000,
+      reserved: 0,
     });
   });
 

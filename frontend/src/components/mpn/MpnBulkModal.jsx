@@ -55,20 +55,21 @@ export default function MpnBulkModal({ isOpen, onClose, vendors = [], materials 
   useEffect(() => {
     if (!isOpen) return;
 
-    // Fetch next code sequence number for live preview
-    api
-      .get('/api/mpns/sequence-peek')
-      .then((res) => {
+    // Fetch next code sequence number for live preview using async/await
+    const fetchNextSequence = async () => {
+      try {
+        const res = await api.get('/api/mpns/sequence-peek');
         if (res.data && res.data.nextCode) {
           const match = res.data.nextCode.match(/\d+/);
           if (match) {
             setBaseSeqNum(parseInt(match[0], 10));
           }
         }
-      })
-      .catch((err) => {
-        console.warn('Failed to peek next MPN sequence code', err);
-      });
+      } catch (err) {
+        console.warn('Failed to peek next MPN sequence code:', err.message);
+      }
+    };
+    fetchNextSequence();
 
     try {
       const stored = localStorage.getItem(DRAFT_STORAGE_KEY);

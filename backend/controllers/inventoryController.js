@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const InventoryItem = require('../models/InventoryItem');
 const InventoryTransaction = require('../models/InventoryTransaction');
 const Material = require('../models/Material');
@@ -5,6 +6,81 @@ const Warehouse = require('../models/Warehouse');
 const Site = require('../models/Site');
 const StockAdjustment = require('../models/StockAdjustment');
 const Sequence = require('../models/Sequence');
+const BOM = require('../models/BOM');
+const MPN = require('../models/MPN');
+
+/**
+ * Resolves BOM Unit Costs & Pricing for an array of materials.
+ * For items with an Active or Draft BOM, calculates:
+ * BOM Unit Cost = (Sum of Component Costs + Packaging + Processing + Overhead) / Batch Size
+ */
+async function resolveMaterialPricesAndBomCosts(materialIds) {
+  if (!materialIds || !materialIds.length) return { bomMap: {}, mpnMap: {} };
+  if (mongoose.connection.readyState === 0) return { bomMap: {}, mpnMap: {} };
+
+  try {
+    const [boms, mpns] = await Promise.all([
+      BOM.find({ productId: { $in: materialIds }, status: { $ne: 'Deleted' } })
+        .populate('components.materialId', 'basePrice unitPrice standardCost cost name code')
+        .populate('components.mpnId', 'price name partNumber')
+        .sort({ status: 1, updatedAt: -1 })
+        .lean(),
+      MPN.find({ materialId: { $in: materialIds }, status: 'Active' })
+        .sort({ price: 1 })
+        .lean()
+    ]);
+
+    const bomMap = {};
+    for (const bom of boms) {
+      const prodIdStr = bom.productId ? (bom.productId._id || bom.productId).toString() : null;
+      if (!prodIdStr || (bomMap[prodIdStr] && bomMap[prodIdStr].status === 'Active' && bom.status !== 'Active')) {
+        continue;
+      }
+
+      let compTotal = 0;
+      if (bom.components && Array.isArray(bom.components)) {
+        for (const comp of bom.components) {
+          const qty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty || 0));
+          const lossPercent = Number(comp.lossPercentage !== undefined ? comp.lossPercentage : (comp.lossPercent || 0));
+          const lossFactor = lossPercent > 0 && lossPercent < 100 ? (1 - lossPercent / 100) : 1;
+          const price = Number(comp.mpnId?.price || comp.materialId?.basePrice || comp.materialId?.unitPrice || comp.materialId?.standardCost || comp.materialId?.cost || 0);
+          const lineCost = lossFactor > 0 ? (qty * price) / lossFactor : (qty * price);
+          compTotal += lineCost;
+        }
+      }
+
+      const packagingCost = Number(bom.packagingCost || 0);
+      const processingCost = Number(bom.processingCost || 0);
+      const overheadCost = Number(bom.overheadCost || 0);
+      const totalBomCost = compTotal + packagingCost + processingCost + overheadCost;
+      const batchSize = Number(bom.batchSize || 1) > 0 ? Number(bom.batchSize) : 1;
+      const unitCost = Math.round((totalBomCost / batchSize) * 100) / 100;
+
+      bomMap[prodIdStr] = {
+        bomId: bom._id,
+        bomNumber: bom.bomNumber || 'BOM',
+        status: bom.status,
+        batchSize,
+        totalCost: Math.round(totalBomCost * 100) / 100,
+        unitCost,
+        hasBom: true
+      };
+    }
+
+    const mpnMap = {};
+    for (const mpn of mpns) {
+      const matIdStr = mpn.materialId ? (mpn.materialId._id || mpn.materialId).toString() : null;
+      if (matIdStr && (!mpnMap[matIdStr] || mpn.price > 0)) {
+        mpnMap[matIdStr] = mpn.price;
+      }
+    }
+
+    return { bomMap, mpnMap };
+  } catch (err) {
+    console.error('[Inventory] Error resolving BOM costs:', err.message);
+    return { bomMap: {}, mpnMap: {} };
+  }
+}
 
 // Helper: Auto-sync missing site references on InventoryItems from their parent warehouses
 async function autoSyncSiteReferences() {
@@ -101,7 +177,7 @@ exports.getInventoryBalances = async (req, res, next) => {
 
     // Execute query with .lean() for zero-overhead performance
     const balances = await InventoryItem.find(filter)
-      .populate('materialId', 'name code unit type subcategory description basePrice standardCost safetyStock reorderLevel')
+      .populate('materialId', 'name code unit type subcategory description basePrice unitPrice standardCost cost purchasePrice price safetyStock reorderLevel')
       .populate('warehouseId', 'name code type siteId')
       .populate('siteId', 'name code')
       .sort({ updatedAt: -1 })
@@ -109,6 +185,10 @@ exports.getInventoryBalances = async (req, res, next) => {
 
     // Filter out orphaned records if any
     const validBalances = balances.filter(b => b.materialId && b.warehouseId);
+
+    // Extract unique material IDs to fetch BOM costs & MPN prices
+    const uniqueMatIds = [...new Set(validBalances.map(b => (b.materialId._id || b.materialId).toString()))];
+    const { bomMap, mpnMap } = await resolveMaterialPricesAndBomCosts(uniqueMatIds);
 
     // Compute live summary statistics
     let totalOnHandUnits = 0;
@@ -123,7 +203,53 @@ exports.getInventoryBalances = async (req, res, next) => {
       const onHand = item.balance !== undefined ? item.balance : (item.onHand || 0);
       const reserved = item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0);
       const available = Math.max(0, onHand - reserved);
-      const unitPrice = Number(item.materialId?.basePrice || item.materialId?.standardCost || item.materialId?.cost || 0);
+
+      const matIdStr = (item.materialId._id || item.materialId).toString();
+      const bomInfo = bomMap[matIdStr];
+      const mpnPrice = mpnMap[matIdStr];
+
+      // Priority:
+      // 1. BOM Unit Cost (if item has an active/draft BOM recipe)
+      // 2. Material Master basePrice / unitPrice / standardCost / cost
+      // 3. MPN Price
+      // 4. Stored InventoryItem.unitPrice
+      let unitPrice = 0;
+      let priceSource = 'Default';
+
+      if (bomInfo && bomInfo.unitCost > 0) {
+        unitPrice = bomInfo.unitCost;
+        priceSource = `BOM (${bomInfo.bomNumber})`;
+        item.hasBom = true;
+        item.bomNumber = bomInfo.bomNumber;
+        item.bomUnitCost = bomInfo.unitCost;
+      } else if (item.materialId?.basePrice > 0) {
+        unitPrice = Number(item.materialId.basePrice);
+        priceSource = 'Material Master';
+      } else if (item.materialId?.unitPrice > 0) {
+        unitPrice = Number(item.materialId.unitPrice);
+        priceSource = 'Material Master';
+      } else if (item.materialId?.standardCost > 0) {
+        unitPrice = Number(item.materialId.standardCost);
+        priceSource = 'Standard Cost';
+      } else if (item.materialId?.cost > 0) {
+        unitPrice = Number(item.materialId.cost);
+        priceSource = 'Cost';
+      } else if (mpnPrice > 0) {
+        unitPrice = Number(mpnPrice);
+        priceSource = 'MPN';
+      } else if (item.unitPrice > 0) {
+        unitPrice = Number(item.unitPrice);
+        priceSource = 'Inventory Item';
+      } else if (bomInfo && bomInfo.hasBom) {
+        unitPrice = bomInfo.unitCost || 0;
+        priceSource = 'BOM';
+        item.hasBom = true;
+        item.bomNumber = bomInfo.bomNumber;
+      }
+
+      item.unitPrice = Math.round(unitPrice * 100) / 100;
+      item.totalValue = Math.round(onHand * unitPrice * 100) / 100;
+      item.priceSource = priceSource;
 
       totalOnHandUnits += onHand;
       totalAvailableUnits += available;
@@ -173,6 +299,7 @@ exports.getInventoryBalances = async (req, res, next) => {
       data: results
     });
   } catch (err) {
+    console.error('[Inventory ERROR]:', err);
     next(err);
   }
 };
@@ -183,12 +310,14 @@ exports.getInventoryBalances = async (req, res, next) => {
 exports.getInventorySummary = async (req, res, next) => {
   try {
     const items = await InventoryItem.find()
-      .populate('materialId', 'name code unit type basePrice safetyStock reorderLevel')
+      .populate('materialId', 'name code unit type basePrice unitPrice standardCost cost safetyStock reorderLevel')
       .populate('warehouseId', 'name code siteId')
       .populate('siteId', 'name code')
       .lean();
 
     const validItems = items.filter(i => i.materialId && i.warehouseId);
+    const uniqueMatIds = [...new Set(validItems.map(b => (b.materialId._id || b.materialId).toString()))];
+    const { bomMap, mpnMap } = await resolveMaterialPricesAndBomCosts(uniqueMatIds);
 
     let totalOnHandUnits = 0;
     let totalAvailableUnits = 0;
@@ -202,7 +331,27 @@ exports.getInventorySummary = async (req, res, next) => {
       const onHand = item.balance !== undefined ? item.balance : (item.onHand || 0);
       const reserved = item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0);
       const available = Math.max(0, onHand - reserved);
-      const unitPrice = item.materialId?.basePrice || 0;
+
+      const matIdStr = (item.materialId._id || item.materialId).toString();
+      const bomInfo = bomMap[matIdStr];
+      const mpnPrice = mpnMap[matIdStr];
+
+      let unitPrice = 0;
+      if (bomInfo && bomInfo.unitCost > 0) {
+        unitPrice = bomInfo.unitCost;
+      } else if (item.materialId?.basePrice > 0) {
+        unitPrice = Number(item.materialId.basePrice);
+      } else if (item.materialId?.unitPrice > 0) {
+        unitPrice = Number(item.materialId.unitPrice);
+      } else if (item.materialId?.standardCost > 0) {
+        unitPrice = Number(item.materialId.standardCost);
+      } else if (item.materialId?.cost > 0) {
+        unitPrice = Number(item.materialId.cost);
+      } else if (mpnPrice > 0) {
+        unitPrice = Number(mpnPrice);
+      } else if (item.unitPrice > 0) {
+        unitPrice = Number(item.unitPrice);
+      }
 
       totalOnHandUnits += onHand;
       totalAvailableUnits += available;

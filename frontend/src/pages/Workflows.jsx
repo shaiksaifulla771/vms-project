@@ -122,8 +122,8 @@ export default function Workflows() {
 
       {/* Executions List */}
       {activeTab === 'executions' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <table className="w-full text-left border-collapse text-sm">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse text-sm min-w-[700px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase">
                 <th className="p-4">Trigger Event</th>

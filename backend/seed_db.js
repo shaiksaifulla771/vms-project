@@ -80,8 +80,9 @@ function determineSubcategory(name, type, vendor) {
   }
 }
 
-connectDB().then(async () => {
+async function seedDatabase() {
   try {
+    await connectDB();
     console.log('Clearing existing ERP collections for clean database seeding...');
     await Promise.all([
       User.deleteMany({}),
@@ -324,4 +325,6 @@ connectDB().then(async () => {
     console.error(err);
     process.exit(1);
   }
-});
+}
+
+seedDatabase();

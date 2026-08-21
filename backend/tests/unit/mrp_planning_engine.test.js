@@ -17,14 +17,17 @@ describe('MRP Planning Module Unit Tests', () => {
   let subBom, rootBom;
 
   beforeAll(async () => {
+    jest.setTimeout(60000);
     mongoServer = await MongoMemoryServer.create();
     const uri = mongoServer.getUri();
     await mongoose.connect(uri);
-  });
+  }, 60000);
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongoServer.stop();
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
   });
 
   beforeEach(async () => {
@@ -169,13 +172,13 @@ describe('MRP Planning Module Unit Tests', () => {
   });
 
   test('runMRP generates UNSCHEDULED ProductionPlan and PurchaseRequirements with lot sizing', async () => {
-    // Inventory: 10 units Steel available, 0 Bolts
+    // Inventory: 20 units Steel on-hand (10 protected safety stock = 10 usable available)
     await InventoryItem.create({
       materialId: rawMat1._id,
       warehouseId: warehouse._id,
-      onHand: 10,
+      onHand: 20,
       reserved: 0,
-      available: 10,
+      available: 20,
     });
 
     const result = await MRPEngineService.runMRP({

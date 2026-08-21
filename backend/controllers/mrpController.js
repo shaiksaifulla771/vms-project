@@ -5,23 +5,102 @@ const PlanningRequirement = require('../models/PlanningRequirement');
 const PurchaseRequirement = require('../models/PurchaseRequirement');
 const ProductionPlan = require('../models/ProductionPlan');
 const PurchaseRequest = require('../models/PurchaseRequest');
-const Sequence = require('../models/Sequence');
+const { nextSeqNumber } = require('../services/sequenceService');
+const { eventBus, EVENTS } = require('../events/eventBus');
 
-// Helper: Generate next sequential number for a given counter key
-async function nextSeqNumber(key, prefix) {
-  let seqDoc = await Sequence.findById(key);
-  if (!seqDoc) {
-    seqDoc = await Sequence.create({ _id: key, seq: 1000 });
-  } else {
-    seqDoc = await Sequence.findByIdAndUpdate(key, { $inc: { seq: 1 } }, { new: true });
-  }
-  return `${prefix}-${seqDoc.seq}`;
-}
-
-// POST /api/mrp/run — Trigger a new MRP calculation run
-exports.executeMRPRun = async (req, res) => {
+// POST /api/mrp/preview — Dry-run calculate candidate MRP proposal without persistence
+exports.previewMRP = async (req, res) => {
   try {
     const { productId, bomId, bomVersion, siteId, warehouseId, warehouseScope, targetQty, requiredDate, horizonDays, demandIds } = req.body;
+
+    const proposal = await MRPEngineService.calculateMRPProposal({
+      productId,
+      bomId,
+      bomVersion,
+      siteId,
+      warehouseId,
+      warehouseScope,
+      targetQty,
+      requiredDate,
+      horizonDays,
+      demandIds,
+    });
+
+    res.json({
+      success: true,
+      proposal,
+      summary: proposal.summary,
+      requirements: proposal.requirements,
+      exceptions: proposal.exceptions,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+};
+
+// POST /api/mrp/run — Trigger and commit a new MRP calculation run (supports async 202 Accepted mode)
+exports.executeMRPRun = async (req, res) => {
+  try {
+    const { productId, bomId, bomVersion, siteId, warehouseId, warehouseScope, targetQty, requiredDate, horizonDays, demandIds, idempotencyKey } = req.body;
+    const isAsync = req.query.async === 'true' || req.body.async === true;
+
+    if (isAsync) {
+      const runNumber = await nextSeqNumber('mrpRun', 'MRP');
+      const queuedRun = await MRPRun.create({
+        runNumber,
+        status: 'QUEUED',
+        productId,
+        targetQuantity: targetQty,
+        requiredDate: requiredDate || new Date(),
+        horizonDays: horizonDays || 30,
+        createdBy: req.user ? req.user._id : null,
+      });
+
+      // Execute calculation asynchronously in background
+      setImmediate(async () => {
+        try {
+          const result = await MRPEngineService.runMRP({
+            productId,
+            bomId,
+            bomVersion,
+            siteId,
+            warehouseId,
+            warehouseScope,
+            targetQty,
+            requiredDate,
+            horizonDays,
+            demandIds,
+            idempotencyKey: idempotencyKey || req.headers['x-idempotency-key'],
+            userId: req.user ? req.user._id : null,
+            existingRunId: queuedRun._id,
+          });
+
+          if (result && result.mrpRun && !result.isDuplicate) {
+            eventBus.emit(EVENTS.MRP_RUN_COMPLETED, {
+              runId: result.mrpRun._id,
+              runNumber: result.mrpRun.runNumber,
+              productId,
+              targetQty,
+              totalShortages: result.summary?.totalShortages || 0,
+              hasShortage: result.summary?.hasShortage || false,
+              correlationId: req.correlationId
+            });
+          }
+        } catch (bgErr) {
+          console.error('[MRP-Async] Background calculation error:', bgErr.message);
+          await MRPRun.findByIdAndUpdate(queuedRun._id, { status: 'FAILED', errorReason: bgErr.message });
+        }
+      });
+
+      return res.status(202).json({
+        success: true,
+        status: 'QUEUED',
+        runId: queuedRun._id,
+        runNumber,
+        message: 'MRP calculation accepted and processing asynchronously in background.',
+        pollUrl: `/api/mrp/runs/${queuedRun._id}`,
+      });
+    }
 
     const result = await MRPEngineService.runMRP({
       productId,
@@ -34,14 +113,28 @@ exports.executeMRPRun = async (req, res) => {
       requiredDate,
       horizonDays,
       demandIds,
+      idempotencyKey: idempotencyKey || req.headers['x-idempotency-key'],
       userId: req.user ? req.user._id : null,
     });
 
-    res.status(201).json(result);
+    if (result && result.mrpRun && !result.isDuplicate) {
+      eventBus.emit(EVENTS.MRP_RUN_COMPLETED, {
+        runId: result.mrpRun._id,
+        runNumber: result.mrpRun.runNumber,
+        productId,
+        targetQty,
+        totalShortages: result.summary?.totalShortages || 0,
+        hasShortage: result.summary?.hasShortage || false,
+        correlationId: req.correlationId
+      });
+    }
+
+    res.status(result.isDuplicate ? 200 : 201).json(result);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 };
+
 
 // GET /api/mrp or GET /api/mrp/history — List recent MRP runs (paginated)
 exports.getMRPRuns = async (req, res) => {
@@ -498,4 +591,106 @@ exports.getPlanningExceptions = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// POST /api/mrp/purchase-requirements/:id/convert-to-po — Convert a Purchase Requirement to an actual Purchase Order
+exports.convertPurchaseRequirementToPO = async (req, res) => {
+  try {
+    const PurchaseOrder = require('../models/PurchaseOrder');
+    const Vendor = require('../models/Vendor');
+    const Material = require('../models/Material');
+
+    const prDoc = await PurchaseRequirement.findById(req.params.id);
+    if (!prDoc) {
+      return res.status(404).json({ success: false, error: 'Purchase requirement not found' });
+    }
+
+    if (prDoc.status === 'CONVERTED_TO_PO') {
+      return res.status(400).json({
+        success: false,
+        error: 'This requirement has already been converted to a Purchase Order',
+        purchaseOrderId: prDoc.convertedPurchaseOrderId
+      });
+    }
+
+    // Resolve vendor
+    let vendorId = req.body.vendorId || prDoc.suggestedVendor;
+    if (!vendorId) {
+      const mat = await Material.findById(prDoc.materialId);
+      if (mat && mat.defaultVendorId) {
+        vendorId = mat.defaultVendorId;
+      } else {
+        const defaultVendor = await Vendor.findOne({ status: 'Active' });
+        if (defaultVendor) vendorId = defaultVendor._id;
+      }
+    }
+
+    if (!vendorId) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active vendor found. Please specify vendorId in request body.'
+      });
+    }
+
+    // Calculate price
+    const unitPrice = Number(req.body.unitPrice || prDoc.estimatedUnitPrice || 10);
+    const quantity = Number(prDoc.quantity);
+    const totalAmount = quantity * unitPrice;
+
+    const poNumber = await nextSeqNumber('purchaseOrder', 'PO');
+
+    const po = await PurchaseOrder.create({
+      poNumber,
+      vendorId,
+      materials: [
+        {
+          materialId: prDoc.materialId,
+          quantity,
+          unitPrice
+        }
+      ],
+      totalAmount,
+      requestedBy: req.user ? req.user._id : (prDoc.createdBy || null),
+      status: 'Pending'
+    });
+
+    prDoc.status = 'CONVERTED_TO_PO';
+    prDoc.convertedPurchaseOrderId = po._id;
+    await prDoc.save();
+
+    // Emit domain events
+    eventBus.emit(EVENTS.PO_CREATED, {
+      poId: po._id,
+      poNumber: po.poNumber,
+      vendorId,
+      materials: po.materials,
+      totalAmount,
+      requestedBy: req.user ? req.user._id : null,
+      sourceRequirementId: prDoc._id,
+      correlationId: req.correlationId
+    });
+
+    eventBus.emit(EVENTS.PURCHASE_REQUIREMENT_CONVERTED, {
+      requirementId: prDoc._id,
+      poId: po._id,
+      poNumber: po.poNumber,
+      materialId: prDoc.materialId,
+      correlationId: req.correlationId
+    });
+
+    const populatedPO = await PurchaseOrder.findById(po._id)
+      .populate('vendorId', 'name company email')
+      .populate('materials.materialId', 'name code unit')
+      .populate('requestedBy', 'username email');
+
+    res.status(201).json({
+      success: true,
+      message: `Purchase Requirement ${prDoc.requirementNumber} converted to Purchase Order ${poNumber}`,
+      purchaseOrder: populatedPO,
+      requirement: prDoc
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 

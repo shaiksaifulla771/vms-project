@@ -37,13 +37,13 @@ const Reports = () => {
       const res = await api.get('/api/reports/pdf', { responseType: 'blob' });
       const file = new Blob([res.data], { type: 'application/pdf' });
       const fileURL = URL.createObjectURL(file);
-      
+
       const pdfLink = document.createElement('a');
       pdfLink.href = fileURL;
       pdfLink.setAttribute('download', `ERP_Executive_Report_${Date.now()}.pdf`);
       document.body.appendChild(pdfLink);
       pdfLink.click();
-      
+
       document.body.removeChild(pdfLink);
       URL.revokeObjectURL(fileURL);
     } catch (err) {
@@ -181,19 +181,18 @@ const Reports = () => {
         <CardContent className="p-0 border-t border-slate-100 divide-y divide-slate-100">
           {insights.map((insight, idx) => {
             const isWarning = insight.title.toLowerCase().includes('deficit') || insight.title.toLowerCase().includes('shortage') || insight.title.toLowerCase().includes('risk');
-            
+
             return (
               <div key={idx} className="p-5 flex items-start space-x-4 hover:bg-slate-50/50 transition-colors">
-                <div className={`p-2.5 rounded-xl shrink-0 ${
-                  isWarning ? 'bg-rose-50 text-rose-600' : 'bg-blue-50/80 text-blue-600'
-                }`}>
+                <div className={`p-2.5 rounded-xl shrink-0 ${isWarning ? 'bg-rose-50 text-rose-600' : 'bg-blue-50/80 text-blue-600'
+                  }`}>
                   {isWarning ? (
                     <AlertTriangle className="h-5 w-5" />
                   ) : (
                     <Lightbulb className="h-5 w-5" />
                   )}
                 </div>
-                
+
                 <div className="space-y-1">
                   <h4 className="text-sm font-bold text-slate-800 flex items-center space-x-2">
                     <span>{insight.title}</span>

@@ -4,7 +4,7 @@ const AuditLogSchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: true,
-    enum: ['Vendor', 'Material', 'BOM', 'InventoryItem', 'PurchaseOrder', 'PurchaseRequest', 'ProductionOrder', 'ProductionPlan', 'MRPRun', 'QualityRecord', 'User', 'ApprovalRequest', 'Contract', 'MPN', 'Warehouse', 'Site', 'VendorMaster', 'ImportJob', 'System', 'Visitor', 'Appointment', 'EmailTemplate', 'EmailQueue', 'Workflow', 'WorkflowExecution', 'Plugin', 'MCPTool']
+    enum: ['Vendor', 'Material', 'BOM', 'InventoryItem', 'PurchaseOrder', 'PurchaseRequest', 'ProductionOrder', 'ProductionPlan', 'MRPRun', 'QualityRecord', 'User', 'ApprovalRequest', 'Contract', 'MPN', 'Warehouse', 'Site', 'VendorMaster', 'ImportJob', 'System', 'Visitor', 'Appointment', 'EmailTemplate', 'EmailQueue', 'Workflow', 'WorkflowExecution', 'Plugin', 'MCPTool', 'UserAccessAssignment']
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -13,7 +13,7 @@ const AuditLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'APPROVE', 'REJECT', 'VIEW', 'EXPORT', 'LOGIN', 'LOGOUT', 'BULK_IMPORT', 'EXECUTE', 'SEND', 'QUEUE', 'RETRY', 'ENABLE', 'DISABLE', 'CHECK_IN', 'CHECK_OUT', 'DEACTIVATE', 'REACTIVATE', 'TRANSFER_SITE', 'ACCESS_CHANGE', 'ROLE_CHANGE']
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'IMPORT', 'APPROVE', 'REJECT', 'VIEW', 'EXPORT', 'LOGIN', 'LOGOUT', 'BULK_IMPORT', 'EXECUTE', 'SEND', 'QUEUE', 'RETRY', 'ENABLE', 'DISABLE', 'CHECK_IN', 'CHECK_OUT', 'DEACTIVATE', 'REACTIVATE', 'TRANSFER_SITE', 'ACCESS_CHANGE', 'ROLE_CHANGE', 'ASSIGN_SCOPE', 'DEACTIVATE_SCOPE', 'TRANSFER_SCOPE', 'UNLINK_SCOPE', 'APPROVE_REGISTRATION', 'REJECT_REGISTRATION', 'DEACTIVATE_LOCATION', 'BULK_DEACTIVATE']
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -31,7 +31,7 @@ const AuditLogSchema = new mongoose.Schema({
   newValue: mongoose.Schema.Types.Mixed,
   changes: {
     type: mongoose.Schema.Types.Mixed, // Stores the true before/after diff payload
-    required: true
+    default: {}
   },
   timestamp: {
     type: Date,

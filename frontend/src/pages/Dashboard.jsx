@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useSiteContext } from '../context/SiteContext';
+import usePageMeta from '../hooks/usePageMeta';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import {
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
+  usePageMeta('Executive Dashboard', 'Real-time manufacturing KPIs, inventory valuation, and active production metrics.');
   const navigate = useNavigate();
   const { activeSiteId, activeWarehouseId } = useSiteContext();
   const [loading, setLoading] = useState(true);
@@ -203,19 +205,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* TOAST ALERT */}
-        {toastMsg && (
-          <div className={`p-3.5 rounded-xl text-xs font-bold border flex items-center justify-between shadow-sm animate-fadeIn ${
-            toastMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
-          }`}>
-            <div className="flex items-center space-x-2">
-              {toastMsg.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />}
-              <span>{toastMsg.text}</span>
-            </div>
-            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">×</button>
-          </div>
-        )}
       </section>
+
 
       {/* EXECUTIVE KEY METRICS TILES */}
       <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-5">
@@ -268,11 +259,10 @@ export default function Dashboard() {
         </div>
 
         <div
-          className={`rounded-2xl border p-4 shadow-sm space-y-1 ${
-            metrics.pendingApprovalsCount > 0
+          className={`rounded-2xl border p-4 shadow-sm space-y-1 ${metrics.pendingApprovalsCount > 0
               ? 'bg-amber-50/60 border-amber-200 text-amber-800'
               : 'bg-white border-slate-200 text-slate-700'
-          }`}
+            }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider">Pending Approvals</span>
@@ -512,6 +502,30 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {/* Floating Non-Intrusive Toast Notification */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
+          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start justify-between gap-3 backdrop-blur-md ${toastMsg.type === 'success'
+            ? 'bg-slate-900/95 text-white border-emerald-500/40'
+            : 'bg-slate-900/95 text-white border-rose-500/40'
+            }`}>
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-xl mt-0.5 ${toastMsg.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                {toastMsg.type === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertTriangle className="h-5 w-5 shrink-0" />}
+              </div>
+              <div>
+                <div className={`text-xs font-black uppercase tracking-wider ${toastMsg.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {toastMsg.type === 'success' ? 'Action Completed' : 'Issue / Notice'}
+                </div>
+                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{toastMsg.text}</div>
+              </div>
+            </div>
+            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

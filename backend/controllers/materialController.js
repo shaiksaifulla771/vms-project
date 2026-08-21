@@ -48,7 +48,7 @@ exports.getMaterials = async (req, res, next) => {
 
     const totalCount = await Material.countDocuments(query);
     let materialQuery = Material.find(query)
-      .select('name code unit basePrice type subcategory status description importSource manufacturer createdAt')
+      .select('name code unit basePrice type subcategory status description importSource manufacturer safetyStock minOrderQty moq lotSize leadTimeDays makeOrBuy defaultVendorId reorderPoint reorderQuantity storageConditions createdAt')
       .sort({ createdAt: -1 })
       .lean();
 

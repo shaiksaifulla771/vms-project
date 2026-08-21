@@ -49,6 +49,56 @@ const MaterialSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  // Planning & Procurement Parameters
+  safetyStock: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  minOrderQty: {
+    type: Number,
+    default: 1,
+    min: 0.001,
+  },
+  moq: {
+    type: Number,
+    default: 1,
+    min: 0.001,
+  },
+  lotSize: {
+    type: Number,
+    default: 1,
+    min: 0.001,
+  },
+  leadTimeDays: {
+    type: Number,
+    default: 7,
+    min: 0,
+  },
+  makeOrBuy: {
+    type: String,
+    enum: ['MAKE', 'BUY'],
+    default: 'BUY',
+  },
+  defaultVendorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vendor',
+  },
+  reorderPoint: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  reorderQuantity: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  storageConditions: {
+    type: String,
+    trim: true,
+    default: 'Ambient',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

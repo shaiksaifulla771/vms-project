@@ -48,8 +48,8 @@ const EnterpriseDataGrid = ({
 
   return (
     <div className="w-full bg-white border border-slate-200 rounded-md shadow-sm overflow-hidden font-sans text-xs">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[768px]">
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="w-full text-left border-collapse min-w-[850px]">
           {/* Table Header */}
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[11px]">

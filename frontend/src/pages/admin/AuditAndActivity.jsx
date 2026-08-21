@@ -121,11 +121,10 @@ const AuditAndActivity = () => {
       <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveTab('audit')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'audit'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'audit'
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+            : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
         >
           <FileText className="w-4 h-4" />
           <span>Audit Trail ({logs.length})</span>
@@ -133,11 +132,10 @@ const AuditAndActivity = () => {
 
         <button
           onClick={() => setActiveTab('live')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'live'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'live'
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+            : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
         >
           <Users className="w-4 h-4" />
           <span>Live Activity ({activeUsers.filter(u => u.isOnline).length} Active)</span>
@@ -145,11 +143,10 @@ const AuditAndActivity = () => {
 
         <button
           onClick={() => setActiveTab('login')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'login'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'login'
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+            : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
         >
           <Key className="w-4 h-4" />
           <span>Login History</span>
@@ -157,11 +154,10 @@ const AuditAndActivity = () => {
 
         <button
           onClick={() => setActiveTab('access')}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'access'
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'access'
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+            : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
         >
           <ShieldCheck className="w-4 h-4" />
           <span>Access Scope Changes</span>
@@ -275,11 +271,10 @@ const AuditAndActivity = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className={`px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wider ${
-                        log.action === 'DEACTIVATE' ? 'bg-rose-100 text-rose-700' :
+                      <span className={`px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wider ${log.action === 'DEACTIVATE' ? 'bg-rose-100 text-rose-700' :
                         log.action === 'TRANSFER_SITE' ? 'bg-purple-100 text-purple-700' :
-                        log.action === 'ACCESS_CHANGE' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                      }`}>
+                          log.action === 'ACCESS_CHANGE' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
                         {log.action}
                       </span>
                     </td>
@@ -333,9 +328,8 @@ const AuditAndActivity = () => {
                       <span className="text-[10px] text-slate-400 font-bold">{u.role}</span>
                     </div>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                    u.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${u.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                    }`}>
                     ● {u.activityStatusText}
                   </span>
                 </div>
@@ -368,9 +362,8 @@ const AuditAndActivity = () => {
                   <span className="font-bold text-slate-900">{lh.userName || 'User'}</span>
                   <span className="text-slate-500 font-mono text-[11px]">{new Date(lh.timestamp).toLocaleString()}</span>
                 </div>
-                <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${
-                  lh.action === 'LOGIN' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                }`}>
+                <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${lh.action === 'LOGIN' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                  }`}>
                   {lh.action} SUCCESSFUL
                 </span>
               </div>
@@ -399,50 +392,88 @@ const AuditAndActivity = () => {
 
       {/* ACTIVITY DETAILS INSPECTION DRAWER */}
       {selectedAuditDetail && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center">
-                <FileText className="w-5 h-5 text-blue-600 mr-2" /> ACTIVITY DETAILS AUDIT DRAWER
-              </h3>
-              <button onClick={() => setSelectedAuditDetail(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs font-semibold text-slate-700 bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div className="grid grid-cols-2 gap-2">
-                <p><strong>User:</strong> {selectedAuditDetail.userName || 'Admin'}</p>
-                <p><strong>Role:</strong> {selectedAuditDetail.role || 'Admin'}</p>
-                <p><strong>Action:</strong> <span className="font-black text-blue-600">{selectedAuditDetail.action}</span></p>
-                <p><strong>Module:</strong> {selectedAuditDetail.module || 'General'}</p>
-                <p><strong>Date:</strong> {new Date(selectedAuditDetail.timestamp).toLocaleDateString()}</p>
-                <p><strong>Time:</strong> {new Date(selectedAuditDetail.timestamp).toLocaleTimeString()}</p>
-                <p><strong>Location:</strong> {selectedAuditDetail.locationName || 'Hyderabad Plant'}</p>
-                <p><strong>IP / Device:</strong> 192.168.1.104 / Chrome Windows</p>
-              </div>
-
-              <div className="pt-2 border-t border-slate-200">
-                <strong className="block mb-1 text-slate-900">Reason / Description:</strong>
-                <p className="p-2 bg-white rounded-lg border border-slate-200 text-slate-800 italic">
-                  {selectedAuditDetail.reason || 'Master configuration action recorded.'}
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                  Audit Record Inspector
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Action: <strong className="text-blue-700">{selectedAuditDetail.action}</strong> ● Module: {selectedAuditDetail.module || 'System Governance'}
                 </p>
               </div>
+              <button onClick={() => setSelectedAuditDetail(null)} className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors">✕</button>
+            </div>
 
-              {selectedAuditDetail.previousValue && (
-                <div className="pt-2 border-t border-slate-200 grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-900">
-                    <strong>Previous State:</strong>
-                    <pre className="text-[10px] mt-1 font-mono">{JSON.stringify(selectedAuditDetail.previousValue, null, 2)}</pre>
+            <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Performed By (Admin)</span>
+                  <span className="font-extrabold text-slate-900">{selectedAuditDetail.userName || selectedAuditDetail.userId?.username || 'Admin'}</span>
+                  <span className="text-[10px] text-slate-500 font-semibold block">Role: {selectedAuditDetail.role || 'Admin'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Timestamp (Date &amp; Time)</span>
+                  <span className="font-bold font-mono text-slate-900">{new Date(selectedAuditDetail.timestamp).toLocaleDateString()}</span>
+                  <span className="text-[10px] text-slate-500 font-mono block">{new Date(selectedAuditDetail.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                </div>
+                <div className="col-span-2 pt-1.5 border-t border-slate-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Target User / Entity (To Whom)</span>
+                    <span className="font-extrabold text-slate-900 text-sm">
+                      {selectedAuditDetail.previousValue?.username || selectedAuditDetail.newValue?.username || selectedAuditDetail.locationName || 'System Target'}
+                    </span>
+                    {(selectedAuditDetail.previousValue?.email || selectedAuditDetail.newValue?.email) && (
+                      <span className="text-[11px] text-slate-500 font-mono block">
+                        {selectedAuditDetail.newValue?.email || selectedAuditDetail.previousValue?.email}
+                      </span>
+                    )}
                   </div>
-                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900">
-                    <strong>New State:</strong>
-                    <pre className="text-[10px] mt-1 font-mono">{JSON.stringify(selectedAuditDetail.newValue, null, 2)}</pre>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Current Status</span>
+                    <span className="inline-flex items-center gap-1 font-extrabold text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      {selectedAuditDetail.newValue?.accountStatus || 'ACTIVE'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SCOPE & ROLES BEFORE VS AFTER COMPARISON */}
+              {selectedAuditDetail.previousValue && (
+                <div className="pt-2 border-t border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-2">Scope &amp; Permissions Change Summary</span>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1 text-rose-900">
+                      <strong className="text-xs text-rose-900 font-black block">Previous State:</strong>
+                      <p><span className="font-bold">Role:</span> {selectedAuditDetail.previousValue.role || 'N/A'}</p>
+                      <p><span className="font-bold">Sites:</span> {Array.isArray(selectedAuditDetail.previousValue.siteNames) && selectedAuditDetail.previousValue.siteNames.length > 0 ? selectedAuditDetail.previousValue.siteNames.join(', ') : 'Global / All Sites'}</p>
+                      <p><span className="font-bold">Warehouses:</span> {Array.isArray(selectedAuditDetail.previousValue.warehouseNames) && selectedAuditDetail.previousValue.warehouseNames.length > 0 ? selectedAuditDetail.previousValue.warehouseNames.join(', ') : 'Global / All Warehouses'}</p>
+                    </div>
+                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1 text-emerald-900">
+                      <strong className="text-xs text-emerald-900 font-black block">Newly Assigned State:</strong>
+                      <p><span className="font-bold">Role:</span> {selectedAuditDetail.newValue?.role || 'N/A'}</p>
+                      <p><span className="font-bold">Sites:</span> {Array.isArray(selectedAuditDetail.newValue?.siteNames) && selectedAuditDetail.newValue?.siteNames.length > 0 ? selectedAuditDetail.newValue?.siteNames.join(', ') : 'Global / All Sites'}</p>
+                      <p><span className="font-bold">Warehouses:</span> {Array.isArray(selectedAuditDetail.newValue?.warehouseNames) && selectedAuditDetail.newValue?.warehouseNames.length > 0 ? selectedAuditDetail.newValue?.warehouseNames.join(', ') : 'Global / All Warehouses'}</p>
+                    </div>
                   </div>
                 </div>
               )}
+
+              {/* MANDATORY JUSTIFICATION */}
+              <div className="pt-2 border-t border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Admin Stated Reason / Justification:</span>
+                <p className="p-2.5 bg-white rounded-xl border border-slate-200 text-slate-800 italic font-medium leading-relaxed">
+                  "{selectedAuditDetail.reason || 'No description provided'}"
+                </p>
+              </div>
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
               <button
+                type="button"
                 onClick={() => handleCreateCorrectiveChange(selectedAuditDetail)}
                 className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl flex items-center space-x-1"
               >
@@ -451,8 +482,9 @@ const AuditAndActivity = () => {
               </button>
 
               <button
+                type="button"
                 onClick={() => setSelectedAuditDetail(null)}
-                className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl shadow-md"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
               >
                 Close Drawer
               </button>

@@ -2,6 +2,10 @@ const User = require('../models/User');
 const Site = require('../models/Site');
 const Warehouse = require('../models/Warehouse');
 const AuthAuditLog = require('../models/AuthAuditLog');
+const UserAccessAssignment = require('../models/UserAccessAssignment');
+const authz = require('../utils/authz');
+const scopeResolver = require('../utils/scopeResolver');
+const { invalidateUserStatusCache } = require('../middleware/authMiddleware');
 const emailService = require('../services/emailService');
 const mongoose = require('mongoose');
 
@@ -10,7 +14,7 @@ const mongoose = require('mongoose');
 // @access  Private/Admin
 exports.getUsers = async (req, res, next) => {
   try {
-    if (!req.user || req.user.role !== 'Admin') {
+    if (!req.user || !authz.isGlobalAdmin(req.user)) {
       return res.status(403).json({ success: false, error: 'Access denied: Admin role required' });
     }
 
@@ -20,12 +24,27 @@ exports.getUsers = async (req, res, next) => {
       filter.accountStatus = status;
     }
 
-    const users = await User.find(filter).select('-password').sort({ createdAt: -1 });
+    const users = await User.find(filter)
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const populatedUsers = await Promise.all(users.map(async (u) => {
+      const { siteIds, warehouseIds } = await scopeResolver.getUserAssignedScopes(u);
+      const sites = await Site.find({ _id: { $in: siteIds } }).select('name code').lean();
+      const warehouses = await Warehouse.find({ _id: { $in: warehouseIds } }).select('name code').lean();
+
+      return {
+        ...u,
+        siteIds: sites,
+        warehouseIds: warehouses
+      };
+    }));
 
     res.status(200).json({
       success: true,
-      count: users.length,
-      data: users
+      count: populatedUsers.length,
+      data: populatedUsers
     });
   } catch (err) {
     next(err);
@@ -155,6 +174,40 @@ exports.approveUser = async (req, res, next) => {
       return res.status(409).json({ success: false, error: 'Concurrent modification detected. Account status changed during approval.' });
     }
 
+    // Sync UserAccessAssignment
+    const newAssignments = [];
+    for (const sId of validatedSiteIds) {
+      if (sId) {
+        newAssignments.push({
+          userId: updatedUser._id,
+          scopeType: 'site',
+          scopeId: sId,
+          status: 'active',
+          assignedBy: req.user._id,
+          assignedAt: new Date(),
+          reason: 'Initial user approval scope assignment'
+        });
+      }
+    }
+    for (const wId of validatedWarehouseIds) {
+      if (wId) {
+        newAssignments.push({
+          userId: updatedUser._id,
+          scopeType: 'warehouse',
+          scopeId: wId,
+          status: 'active',
+          assignedBy: req.user._id,
+          assignedAt: new Date(),
+          reason: 'Initial user approval scope assignment'
+        });
+      }
+    }
+    if (newAssignments.length > 0) {
+      await UserAccessAssignment.insertMany(newAssignments);
+    }
+
+    invalidateUserStatusCache(updatedUser._id);
+
     // 11. Audit Logging
     try {
       await AuthAuditLog.create({
@@ -181,20 +234,8 @@ exports.approveUser = async (req, res, next) => {
     try {
       await emailService.sendEmail({
         recipient: updatedUser.email,
-        subject: 'Your VendorOS VMS access has been approved',
-        textBody: `Hello ${updatedUser.username},\n\nYour VendorOS VMS access request has been approved. You can now access VMS services.\n\nAssigned role: ${newRole}\n\nRegards,\nVendorOS VMS Administration`,
-        htmlBody: `
-          <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
-            <h2>Access approved</h2>
-            <p>Hello ${updatedUser.username},</p>
-            <p>Your VendorOS VMS access request has been approved.</p>
-            <p><strong>Assigned role:</strong> ${newRole}</p>
-            <p>You can now log in and access your VMS workspace.</p>
-            <p>Regards,<br/>VendorOS VMS Administration</p>
-          </div>
-        `,
         templateCode: 'AUTH_ACCESS_APPROVED',
-        metadata: { userId: updatedUser._id, role: newRole }
+        metadata: { userId: updatedUser._id, role: newRole, username: updatedUser.username }
       });
     } catch (emailErr) {
       console.error('[EmailService Error]: Notification sending failed:', emailErr.message);

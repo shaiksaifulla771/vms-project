@@ -151,8 +151,8 @@ const Warehouse = () => {
           </CardHeader>
           <CardContent className="pt-6">
             {activeTab === 'inventory' && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-700">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-xs text-slate-700 min-w-[650px]">
                   <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                     <tr>
                       <th className="p-4">Material Code & Name</th>

@@ -3,7 +3,7 @@ const llmService = require('../services/llmService');
 exports.ask = async (req, res) => {
   try {
     const { prompt, context } = req.body;
-    
+
     if (!prompt) {
       return res.status(400).json({ success: false, error: 'Prompt is required' });
     }

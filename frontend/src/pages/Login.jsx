@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { isFirebaseConfigured } from '../config/firebase';
+import usePageMeta from '../hooks/usePageMeta';
 import {
   BadgeCheck,
   Building2,
@@ -46,6 +47,7 @@ const Xperte3DLogo = ({ size = "h-11 w-11" }) => (
 );
 
 const Login = () => {
+  usePageMeta('Sign In & Authentication', 'Secure enterprise authentication portal for VendorOS.');
   const { loginWithEmailPassword, loginWithGoogle, registerWithEmailPassword, sendPasswordReset } = useAuth();
   const [activeTab, setActiveTab] = useState('signin');
   const [username, setUsername] = useState('');

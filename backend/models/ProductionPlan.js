@@ -26,6 +26,35 @@ const PlanIngredientSchema = new mongoose.Schema({
   lossPercentage: { type: Number, default: 0 },
 }, { _id: true });
 
+const CustomMaterialSchema = new mongoose.Schema({
+  materialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', required: true },
+  materialCode: String,
+  materialName: String,
+  quantity: { type: Number, required: true, min: 0.0001 },
+  uom: { type: String, default: 'pcs' },
+  warehouseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
+  reason: { type: String, default: 'Manual addition outside standard BOM' },
+  addedBy: { type: mongoose.Schema.Types.Mixed },
+  addedAt: { type: Date, default: Date.now },
+  isApproved: { type: Boolean, default: true },
+}, { _id: true });
+
+const MaterialSubstitutionSchema = new mongoose.Schema({
+  originalMaterialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', required: true },
+  originalMaterialCode: String,
+  originalMaterialName: String,
+  substituteMaterialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', required: true },
+  substituteMaterialCode: String,
+  substituteMaterialName: String,
+  originalQuantity: { type: Number, required: true },
+  substituteQuantity: { type: Number, required: true },
+  conversionFactor: { type: Number, default: 1.0 },
+  reason: { type: String, default: 'Approved engineering substitute' },
+  substitutedBy: { type: mongoose.Schema.Types.Mixed },
+  substitutedAt: { type: Date, default: Date.now },
+  isApproved: { type: Boolean, default: true },
+}, { _id: true });
+
 const ProductionPlanSchema = new mongoose.Schema({
   planNumber: {
     type: String,
@@ -36,6 +65,27 @@ const ProductionPlanSchema = new mongoose.Schema({
     required: [true, 'Plan name is required'],
     trim: true,
     default: 'Production Plan',
+  },
+  isTemplate: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  isReusable: {
+    type: Boolean,
+    default: true,
+  },
+  basedOnPlanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionPlan',
+  },
+  allowPartial: {
+    type: Boolean,
+    default: false,
+  },
+  requireDifferentApprover: {
+    type: Boolean,
+    default: false,
   },
   mrpRunId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -105,6 +155,8 @@ const ProductionPlanSchema = new mongoose.Schema({
     min: 0,
   },
   ingredients: [PlanIngredientSchema],
+  customMaterials: [CustomMaterialSchema],
+  substitutions: [MaterialSubstitutionSchema],
   quantity: {
     type: Number,
     default: 1,
@@ -127,6 +179,19 @@ const ProductionPlanSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ProductionPlan',
   },
+  seriesId: {
+    type: String,
+    trim: true,
+    index: true,
+  },
+  seriesIndex: {
+    type: Number,
+    default: 1,
+  },
+  seriesTotal: {
+    type: Number,
+    default: 1,
+  },
   requiredDate: {
     type: Date,
     required: [true, 'Required date is required'],
@@ -137,8 +202,8 @@ const ProductionPlanSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: [
-      'UNSCHEDULED', 'SCHEDULED', 'RELEASED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD', 'CANCELLED',
-      'Unscheduled', 'Scheduled', 'Released', 'In Progress', 'In Production', 'Completed', 'On Hold', 'Cancelled', 'Draft', 'Pending', 'Partially Scheduled', 'Material Reserved', 'Allocated', 'Rescheduled'
+      'UNSCHEDULED', 'DRAFT', 'VALIDATED', 'PENDING_APPROVAL', 'APPROVED', 'RELEASED', 'IN_PROGRESS', 'PARTIALLY_COMPLETED', 'COMPLETED', 'ON_HOLD', 'CANCELLED', 'REJECTED',
+      'Unscheduled', 'Scheduled', 'Released', 'In Progress', 'In Production', 'Completed', 'On Hold', 'Cancelled', 'Draft', 'Pending', 'Partially Scheduled', 'Material Reserved', 'Allocated', 'Rescheduled', 'SCHEDULED'
     ],
     default: 'UNSCHEDULED',
   },
@@ -239,6 +304,9 @@ const ProductionPlanSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
   },
   cancelledAt: Date,
+  createdBy: {
+    type: mongoose.Schema.Types.Mixed,
+  },
   approvedBy: {
     type: mongoose.Schema.Types.Mixed,
   },
@@ -294,8 +362,9 @@ const ProductionPlanSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.Mixed,
   },
-  updatedBy: {
-    type: mongoose.Schema.Types.Mixed,
+  version: {
+    type: Number,
+    default: 1,
   },
   createdAt: {
     type: Date,
@@ -305,6 +374,9 @@ const ProductionPlanSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   }
+}, {
+  timestamps: true,
+  optimisticConcurrency: true,
 });
 
 // Helper: Sync plan calculations
@@ -331,13 +403,27 @@ function syncPlanCalculations(doc) {
     doc.planName = `${doc.productName || 'Production Plan'} - ${doc.planNumber || Date.now()}`;
   }
 
-  // Recalculate ingredient totals based on totalPlans
+  // Recalculate ingredient totals based on totalPlans and guarantee positive quantityPerPlan
   if (doc.ingredients && doc.ingredients.length > 0) {
     for (const ing of doc.ingredients) {
       if (ing.materialId && !ing.material) ing.material = ing.materialId;
       if (ing.material && !ing.materialId) ing.materialId = ing.material;
+      
+      const parsedQty = Number(ing.quantityPerPlan);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        if (ing.totalQuantity && doc.totalPlans && doc.totalPlans > 0) {
+          ing.quantityPerPlan = Math.max(0.000001, Math.round((ing.totalQuantity / doc.totalPlans) * 10000) / 10000);
+        } else if (ing.qty && Number(ing.qty) > 0) {
+          ing.quantityPerPlan = Math.max(0.000001, Number(ing.qty));
+        } else {
+          ing.quantityPerPlan = 1;
+        }
+      } else {
+        ing.quantityPerPlan = Math.max(0.000001, parsedQty);
+      }
+
       const lossMultiplier = 1 + ((ing.lossPercentage || 0) / 100);
-      ing.totalQuantity = Math.round((ing.quantityPerPlan * doc.totalPlans * lossMultiplier) * 10000) / 10000;
+      ing.totalQuantity = Math.round((ing.quantityPerPlan * (doc.totalPlans || doc.quantity || 1) * lossMultiplier) * 10000) / 10000;
     }
   }
 

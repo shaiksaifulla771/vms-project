@@ -200,14 +200,14 @@ exports.verifyOtp = async (req, res, next) => {
       password: pendingRegistration.passwordHash,
       role: 'Viewer',
       requestedRole: pendingRegistration.requestedRole,
-      accountStatus: 'Pending',
+      accountStatus: 'PENDING',
       userCode: newUserCode,
       isVerified: true
     });
 
     await PendingRegistration.deleteOne({ _id: pendingRegistration._id });
 
-    const admins = await User.find({ role: 'Admin', accountStatus: 'Active', isVerified: true }).select('email username');
+    const admins = await User.find({ role: 'Admin', accountStatus: { $in: ['Active', 'ACTIVE'] }, isVerified: true }).select('email username');
     await Promise.all(admins.map((admin) => emailService.sendEmail({
       recipient: admin.email,
       subject: 'New VendorOS VMS access request',
@@ -275,13 +275,14 @@ exports.login = async (req, res, next) => {
     }
 
     // Check account status (Admin Approval)
-    if (user.accountStatus === 'Pending') {
+    const normalizedStatus = (user.accountStatus || '').toUpperCase();
+    if (normalizedStatus === 'PENDING') {
       return res.status(403).json({
         success: false,
         error: 'Your account is pending administrator approval.',
       });
     }
-    if (user.accountStatus === 'Suspended') {
+    if (normalizedStatus === 'SUSPENDED' || normalizedStatus === 'REJECTED' || normalizedStatus === 'DISABLED') {
       return res.status(403).json({
         success: false,
         error: 'Your account has been suspended.',
@@ -873,6 +874,38 @@ exports.resetPassword = async (req, res, next) => {
       success: true,
       message: 'Password reset successfully! You can now log in with your new password.'
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Revoke User Tokens (Admin)
+// @route   POST /api/auth/revoke/:userId
+// @access  Private (Admin)
+exports.revokeUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    user.refreshTokenHash = undefined;
+    await user.save();
+
+    // If firebaseUid exists, revoke Firebase refresh tokens too
+    if (user.firebaseUid) {
+      try {
+        const firebaseAuth = auth || (admin.auth ? admin.auth() : null);
+        if (firebaseAuth) {
+          await firebaseAuth.revokeRefreshTokens(user.firebaseUid);
+        }
+      } catch (fbErr) {
+        console.warn('[Firebase Revoke Warning]:', fbErr.message);
+      }
+    }
+
+    res.status(200).json({ success: true, message: 'All tokens for user revoked successfully' });
   } catch (err) {
     next(err);
   }

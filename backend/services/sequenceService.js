@@ -43,4 +43,20 @@ class SequenceService {
   }
 }
 
+/**
+ * Backward-compatible wrapper matching the legacy nextSeqNumber(key, prefix) pattern.
+ * Returns e.g. "PLAN-1001", "MRP-1002". Starts at seq 1000 on first use.
+ * Atomic — safe under concurrency.
+ */
+SequenceService.nextSeqNumber = async function nextSeqNumber(key, prefix) {
+  const seqDoc = await Sequence.findByIdAndUpdate(
+    key,
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+  // First upsert starts at 0+1=1; legacy started at 1000. Offset if needed.
+  const num = seqDoc.seq < 1000 ? seqDoc.seq + 1000 : seqDoc.seq;
+  return `${prefix}-${num}`;
+};
+
 module.exports = SequenceService;

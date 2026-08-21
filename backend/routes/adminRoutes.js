@@ -46,5 +46,7 @@ router.get('/active-users', getActiveUsersAndSessions);
 
 // 6. User Permissions & Location Scope
 router.put('/users/:userId/access', updateUserAccess);
+router.put('/users/:userId/access-scope', updateUserAccess);
 
 module.exports = router;
+

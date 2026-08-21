@@ -12,7 +12,9 @@ import {
   Search,
   Filter,
   Info,
-  Plus
+  Plus,
+  ArrowRight,
+  ArrowLeft
 } from 'lucide-react';
 
 const UsersAndAccessScope = () => {
@@ -23,6 +25,7 @@ const UsersAndAccessScope = () => {
   const [error, setError] = useState(null);
 
   const [editUserModal, setEditUserModal] = useState(null);
+  const [scopeStep, setScopeStep] = useState(1); // 1 = Configure, 2 = Review & Confirm
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
@@ -68,30 +71,33 @@ const UsersAndAccessScope = () => {
 
   const handleOpenEdit = (user) => {
     setEditUserModal(user);
+    setScopeStep(1);
     setSelectedRole(user.role || 'Viewer');
-    setSelectedSiteIds(user.siteIds ? user.siteIds.map(s => s._id || s) : []);
-    setSelectedWarehouseIds(user.warehouseIds ? user.warehouseIds.map(w => w._id || w) : []);
+    setSelectedSiteIds(user.siteIds ? user.siteIds.map(s => String(s._id || s)) : []);
+    setSelectedWarehouseIds(user.warehouseIds ? user.warehouseIds.map(w => String(w._id || w)) : []);
     setMandatoryReason('');
   };
 
   const handleToggleSiteScope = (siteId) => {
-    if (selectedSiteIds.includes(siteId)) {
-      setSelectedSiteIds(selectedSiteIds.filter(id => id !== siteId));
+    const sId = String(siteId);
+    if (selectedSiteIds.includes(sId)) {
+      setSelectedSiteIds(selectedSiteIds.filter(id => id !== sId));
     } else {
-      setSelectedSiteIds([...selectedSiteIds, siteId]);
+      setSelectedSiteIds([...selectedSiteIds, sId]);
     }
   };
 
   const handleToggleWarehouseScope = (warehouseId) => {
-    if (selectedWarehouseIds.includes(warehouseId)) {
-      setSelectedWarehouseIds(selectedWarehouseIds.filter(id => id !== warehouseId));
+    const wId = String(warehouseId);
+    if (selectedWarehouseIds.includes(wId)) {
+      setSelectedWarehouseIds(selectedWarehouseIds.filter(id => id !== wId));
     } else {
-      setSelectedWarehouseIds([...selectedWarehouseIds, warehouseId]);
+      setSelectedWarehouseIds([...selectedWarehouseIds, wId]);
     }
   };
 
   const handleSaveAccessScope = async () => {
-    if (!mandatoryReason.trim()) {
+    if (!mandatoryReason || !mandatoryReason.trim()) {
       alert('Mandatory reason is required for updating user scope.');
       return;
     }
@@ -108,16 +114,17 @@ const UsersAndAccessScope = () => {
           role: selectedRole,
           siteIds: selectedSiteIds,
           warehouseIds: selectedWarehouseIds,
-          reason: mandatoryReason
+          reason: mandatoryReason.trim()
         });
       }
 
       setSystemNotice({
         type: 'success',
-        title: 'Access Scope Updated & Saved to MongoDB',
-        message: `Updated access scope and activated permissions for ${editUserModal.username || editUserModal.email}. Notification email dispatched.`
+        title: 'Access Scope Updated & Enforced',
+        message: `Updated access scope and activated permissions for ${editUserModal.username || editUserModal.email}.`
       });
       setEditUserModal(null);
+      setMandatoryReason('');
       fetchData();
     } catch (err) {
       alert(err.response?.data?.error || err.response?.data?.message || 'Error updating access scope');
@@ -181,19 +188,6 @@ const UsersAndAccessScope = () => {
           </button>
         </div>
       </div>
-
-      {systemNotice && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-900 rounded-2xl flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-            <div>
-              <h4 className="text-xs font-black uppercase">{systemNotice.title}</h4>
-              <p className="text-xs font-medium">{systemNotice.message}</p>
-            </div>
-          </div>
-          <button onClick={() => setSystemNotice(null)} className="text-xs font-bold px-2 py-1 bg-white/50 hover:bg-white rounded-lg">Dismiss</button>
-        </div>
-      )}
 
       {/* 3-LEVEL ACCESS RULE POLICY BANNER */}
       <div className="bg-purple-50 border border-purple-200 p-5 rounded-2xl text-xs text-purple-950 font-medium space-y-1">
@@ -275,98 +269,325 @@ const UsersAndAccessScope = () => {
         </table>
       </div>
 
-      {/* EDIT ACCESS SCOPE MODAL */}
+      {/* EDIT ACCESS SCOPE MODAL (2-STEP WORKFLOW) */}
       {editUserModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900">
-                Edit Access Scope for {editUserModal.username}
-              </h3>
-              <button onClick={() => setEditUserModal(null)} className="text-slate-400 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">User Role:</label>
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                >
-                  <option value="Admin">Admin</option>
-                  <option value="Inventory Manager">Inventory Manager</option>
-                  <option value="Inventory">Inventory Operator</option>
-                  <option value="Production Manager">Production Manager</option>
-                  <option value="Production">Production Worker</option>
-                  <option value="Planner">Planner</option>
-                  <option value="Viewer">Viewer</option>
-                </select>
-              </div>
-
-              {/* Site Scope Picker */}
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Allowed Site Scope:</label>
-                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
-                  {(sites.length > 0 ? sites : [
-                    { _id: 'site-1', name: 'Hyderabad Plant' },
-                    { _id: 'site-2', name: 'Bangalore Plant' },
-                    { _id: 'site-3', name: 'Chennai Distribution Center' }
-                  ]).map(s => (
-                    <label key={s._id} className="flex items-center space-x-2 text-xs font-semibold cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedSiteIds.includes(s._id)}
-                        onChange={() => handleToggleSiteScope(s._id)}
-                        className="rounded border-slate-300 text-blue-600"
-                      />
-                      <span>{s.name}</span>
-                    </label>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-slate-900">
+                    {scopeStep === 1 ? 'Edit Access Scope & Permissions' : 'Review & Confirm Scope Changes'}
+                  </h3>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${scopeStep === 1 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
+                    Step {scopeStep} of 2: {scopeStep === 1 ? 'Configure Scope' : 'Confirm Impact'}
+                  </span>
                 </div>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Target User: <strong className="text-slate-800">{editUserModal.username}</strong> ({editUserModal.email})
+                </p>
               </div>
-
-              {/* Warehouse Scope Picker */}
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Allowed Warehouse Scope:</label>
-                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
-                  {(warehouses.length > 0 ? warehouses : [
-                    { _id: 'wh-1', name: 'Main Warehouse' },
-                    { _id: 'wh-2', name: 'Raw Material Warehouse' },
-                    { _id: 'wh-3', name: 'Finished Goods Warehouse' }
-                  ]).map(w => (
-                    <label key={w._id} className="flex items-center space-x-2 text-xs font-semibold cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedWarehouseIds.includes(w._id)}
-                        onChange={() => handleToggleWarehouseScope(w._id)}
-                        className="rounded border-slate-300 text-purple-600"
-                      />
-                      <span>{w.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Reason for Access Change (Mandatory):</label>
-                <textarea
-                  value={mandatoryReason}
-                  onChange={(e) => setMandatoryReason(e.target.value)}
-                  placeholder="e.g. Admin updated warehouse access scope for plant restructuring..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl h-20 text-xs font-medium text-slate-900"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button onClick={() => setEditUserModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
-                Cancel
-              </button>
-              <button onClick={handleSaveAccessScope} disabled={actionLoading} className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md">
-                {actionLoading ? 'Saving...' : 'Save Scope Changes'}
+              <button
+                type="button"
+                onClick={() => setEditUserModal(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                title="Close"
+              >
+                ✕
               </button>
             </div>
+
+            {/* STEP 1: CONFIGURATION */}
+            {scopeStep === 1 && (
+              <div className="space-y-4 text-xs">
+                {/* CURRENTLY ASSIGNED SCOPE BREAKDOWN */}
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                      Currently Assigned Scope &amp; Audit Metadata
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Assigned: {editUserModal.scopeAssignedAt || editUserModal.updatedAt || editUserModal.createdAt ? new Date(editUserModal.scopeAssignedAt || editUserModal.updatedAt || editUserModal.createdAt).toLocaleDateString() : 'Initial'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 text-slate-700 pt-1 border-t border-slate-200/70">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">Current Role</span>
+                      <span className="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 inline-block mt-0.5 truncate max-w-full">
+                        {editUserModal.role || 'Viewer'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">Assigned Sites</span>
+                      <span className="font-bold text-slate-800 block mt-0.5 truncate" title={(editUserModal.siteIds && editUserModal.siteIds.length > 0) ? editUserModal.siteIds.map(s => s.name || s.code).join(', ') : 'Global (All Sites)'}>
+                        {(editUserModal.siteIds && editUserModal.siteIds.length > 0)
+                          ? editUserModal.siteIds.map(s => s.name || s.code).join(', ')
+                          : 'Global (All Sites)'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">Assigned Warehouses</span>
+                      <span className="font-bold text-slate-800 block mt-0.5 truncate" title={(editUserModal.warehouseIds && editUserModal.warehouseIds.length > 0) ? editUserModal.warehouseIds.map(w => w.name || w.code).join(', ') : 'Global (All Warehouses)'}>
+                        {(editUserModal.warehouseIds && editUserModal.warehouseIds.length > 0)
+                          ? editUserModal.warehouseIds.map(w => w.name || w.code).join(', ')
+                          : 'Global (All Warehouses)'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold">Assigned By</span>
+                      <span className="font-bold text-slate-800 block mt-0.5 truncate" title={editUserModal.scopeAssignedBy || 'System Admin'}>
+                        {editUserModal.scopeAssignedBy || 'System Admin'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Assign Role &amp; Responsibilities:
+                  </label>
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  >
+                    <option value="Admin">Admin (Full Control)</option>
+                    <option value="Inventory Manager">Inventory Manager (Stock &amp; Facility Oversight)</option>
+                    <option value="Inventory">Inventory Operator (Stock Move Execution)</option>
+                    <option value="Production Manager">Production Manager (Routing &amp; Orders)</option>
+                    <option value="Production">Production Worker (Shop-floor Execution)</option>
+                    <option value="Planner">Planner (MRP &amp; Scheduling)</option>
+                    <option value="QC Inspector">QC Inspector (Inspections &amp; Dispositions)</option>
+                    <option value="Viewer">Viewer (Read-only Access)</option>
+                  </select>
+                </div>
+
+                {/* Site Scope Picker */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-700 font-bold">Allowed Site Scope (Add/Remove):</label>
+                    <div className="space-x-2 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSiteIds(sites.map(s => String(s._id)))}
+                        className="text-blue-600 hover:underline font-bold"
+                      >
+                        Select All
+                      </button>
+                      <span>|</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSiteIds([])}
+                        className="text-slate-500 hover:underline font-bold"
+                      >
+                        Clear (Global)
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                    {sites.map(s => (
+                      <label key={s._id} className="flex items-center space-x-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedSiteIds.includes(String(s._id))}
+                          onChange={() => handleToggleSiteScope(s._id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="truncate">{s.name} ({s.code || 'Site'})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Warehouse Scope Picker */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-700 font-bold">Allowed Warehouse Scope (Add/Remove):</label>
+                    <div className="space-x-2 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWarehouseIds(warehouses.map(w => String(w._id)))}
+                        className="text-purple-600 hover:underline font-bold"
+                      >
+                        Select All
+                      </button>
+                      <span>|</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWarehouseIds([])}
+                        className="text-slate-500 hover:underline font-bold"
+                      >
+                        Clear (Global)
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                    {warehouses.map(w => (
+                      <label key={w._id} className="flex items-center space-x-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedWarehouseIds.includes(String(w._id))}
+                          onChange={() => handleToggleWarehouseScope(w._id)}
+                          className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                        />
+                        <span className="truncate">{w.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Reason for Access Scope Change (Mandatory) <span className="text-rose-500">*</span>:
+                  </label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={mandatoryReason}
+                    onChange={(e) => setMandatoryReason(e.target.value)}
+                    placeholder="State specific operational reason for updating user roles, sites, or warehouses..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  {!mandatoryReason.trim() && (
+                    <p className="text-[10px] text-amber-600 font-semibold mt-0.5">⚠ Scope cannot be assigned without providing a valid justification reason.</p>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditUserModal(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!mandatoryReason.trim()}
+                    onClick={() => setScopeStep(2)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <span>Review Changes</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: REVIEW & FINAL SUBMIT */}
+            {scopeStep === 2 && (
+              <div className="space-y-4 text-xs">
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 font-medium">
+                  <p className="font-bold flex items-center gap-1.5 text-xs text-blue-900">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                    Review Scope Impact Before Final Submission
+                  </p>
+                  <p className="text-[11px] text-blue-800 mt-0.5">
+                    Compare the previous configuration against the newly assigned roles and facility access.
+                  </p>
+                </div>
+
+                {/* SIDE-BY-SIDE COMPARISON CARDS */}
+                <div className="grid grid-cols-2 gap-3 text-[11px]">
+                  {/* PREVIOUS STATE */}
+                  <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2 text-rose-950">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-rose-200">
+                      <strong className="text-xs text-rose-900 font-black">Previous State (Before)</strong>
+                      <span className="text-[9px] font-mono font-bold text-rose-700 bg-rose-100/70 px-1.5 py-0.5 rounded">ORIGINAL</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-rose-700 block font-bold">Role:</span>
+                      <span className="font-extrabold text-rose-900">{editUserModal.role || 'Viewer'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-rose-700 block font-bold">Assigned Sites:</span>
+                      <span className="font-semibold text-rose-900 block leading-tight">
+                        {(editUserModal.siteIds && editUserModal.siteIds.length > 0)
+                          ? editUserModal.siteIds.map(s => s.name || s.code).join(', ')
+                          : 'Global / All Sites'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-rose-700 block font-bold">Assigned Warehouses:</span>
+                      <span className="font-semibold text-rose-900 block leading-tight">
+                        {(editUserModal.warehouseIds && editUserModal.warehouseIds.length > 0)
+                          ? editUserModal.warehouseIds.map(w => w.name || w.code).join(', ')
+                          : 'Global / All Warehouses'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* NEWLY ASSIGNED STATE */}
+                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2 text-emerald-950">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-emerald-200">
+                      <strong className="text-xs text-emerald-900 font-black">Newly Assigned State (After)</strong>
+                      <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">MODIFIED</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-700 block font-bold">Role:</span>
+                      <span className="font-extrabold text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-300 inline-block">
+                        {selectedRole}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-700 block font-bold">Assigned Sites:</span>
+                      <span className="font-semibold text-emerald-900 block leading-tight">
+                        {selectedSiteIds.length > 0
+                          ? sites.filter(s => selectedSiteIds.includes(String(s._id))).map(s => s.name).join(', ')
+                          : 'Global / All Sites'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-700 block font-bold">Assigned Warehouses:</span>
+                      <span className="font-semibold text-emerald-900 block leading-tight">
+                        {selectedWarehouseIds.length > 0
+                          ? warehouses.filter(w => selectedWarehouseIds.includes(String(w._id))).map(w => w.name).join(', ')
+                          : 'Global / All Warehouses'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* STATED REASON PREVIEW */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Stated Justification Reason:</span>
+                  <p className="text-slate-800 italic font-medium">"{mandatoryReason}"</p>
+                </div>
+
+                {/* STEP 2 FOOTER */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setScopeStep(1)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Edit</span>
+                  </button>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditUserModal(null)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={handleSaveAccessScope}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{actionLoading ? 'Enforcing...' : 'Final Submit & Enforce Scope'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -435,8 +656,27 @@ const UsersAndAccessScope = () => {
           </form>
         </div>
       )}
+
+      {/* FLOATING TOAST NOTIFICATION (BOTTOM RIGHT) */}
+      {systemNotice && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
+          <div className="p-4 bg-slate-900/95 text-white rounded-2xl shadow-2xl border border-emerald-500/40 flex items-start justify-between gap-3 backdrop-blur-md">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl mt-0.5">
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+              </div>
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-emerald-400">{systemNotice.title}</div>
+                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{systemNotice.message}</div>
+              </div>
+            </div>
+            <button onClick={() => setSystemNotice(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default UsersAndAccessScope;
+

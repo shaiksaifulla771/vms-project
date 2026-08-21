@@ -1,9 +1,9 @@
 import React from 'react';
 
-export const Table = ({ children, className = '', wrapperClassName = 'overflow-x-auto', ...props }) => {
+export const Table = ({ children, className = '', wrapperClassName = 'overflow-x-auto custom-scrollbar', ...props }) => {
   return (
     <div className={`w-full ${wrapperClassName}`}>
-      <table className={`w-full text-left border-collapse ${className}`} {...props}>
+      <table className={`w-full text-left border-collapse min-w-[700px] ${className}`} {...props}>
         {children}
       </table>
     </div>

@@ -1,7 +1,3 @@
-const admin = require('firebase-admin');
-const { cert, getApps, initializeApp } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
-
 // Backend Firebase Admin SDK initialization
 const projectId = process.env.FIREBASE_PROJECT_ID || 'vendor-management-system-b1791';
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
@@ -11,10 +7,18 @@ if (privateKey) {
   privateKey = privateKey.replace(/\\n/g, '\n');
 }
 
+let admin = {};
+let auth = null;
 let firebaseAdminApp = null;
 let isInitialized = false;
 
 try {
+  const firebaseAdmin = require('firebase-admin');
+  const { cert, getApps, initializeApp } = require('firebase-admin/app');
+  const { getAuth } = require('firebase-admin/auth');
+
+  admin = firebaseAdmin;
+
   const existingApps = getApps();
   if (existingApps.length === 0) {
     if (clientEmail && privateKey) {
@@ -45,11 +49,27 @@ try {
     firebaseAdminApp = existingApps[0];
     isInitialized = true;
   }
+
+  auth = firebaseAdminApp ? getAuth(firebaseAdminApp) : null;
 } catch (error) {
-  console.error('[Firebase Admin] Initialization error:', error.message);
+  // Graceful fallback for test runners (e.g. Jest CJS) or environments without Firebase credentials
+  if (process.env.NODE_ENV !== 'test') {
+    console.error('[Firebase Admin] Initialization error:', error.message);
+  }
 }
 
-const auth = firebaseAdminApp ? getAuth(firebaseAdminApp) : getAuth();
+// Fallback stub if auth was not instantiated
+if (!auth) {
+  auth = {
+    verifyIdToken: async () => {
+      const err = new Error('Firebase Admin Auth not initialized');
+      err.code = 'auth/invalid-id-token';
+      throw err;
+    },
+    getUser: async () => null,
+    deleteUser: async () => null,
+  };
+}
 
 if (!admin.auth) {
   admin.auth = () => auth;

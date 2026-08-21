@@ -4,16 +4,35 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enterprise Manufacturing ERP Operations Portal</title>
+    
+    <!-- Primary Meta Tags -->
+    <title>VendorOS — Enterprise Manufacturing & VMS Operations Portal</title>
+    <meta name="title" content="VendorOS — Enterprise Manufacturing & VMS Operations Portal" />
+    <meta name="description" content="Next-generation Vendor Management System & MRP Operations Portal for discrete manufacturing, multi-level BOM explosion, inventory netting, and supplier governance." />
+    <meta name="theme-color" content="#0f172a" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://vendoros.enterprise.internal/" />
+    <meta property="og:title" content="VendorOS — Enterprise Manufacturing & VMS Operations Portal" />
+    <meta property="og:description" content="Next-generation Vendor Management System & MRP Operations Portal for discrete manufacturing, multi-level BOM explosion, inventory netting, and supplier governance." />
+    <meta property="og:image" content="/favicon.svg" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://vendoros.enterprise.internal/" />
+    <meta property="twitter:title" content="VendorOS — Enterprise Manufacturing & VMS Operations Portal" />
+    <meta property="twitter:description" content="Next-generation Vendor Management System & MRP Operations Portal for discrete manufacturing, multi-level BOM explosion, inventory netting, and supplier governance." />
+    <meta property="twitter:image" content="/favicon.svg" />
   </head>
-  <body>
+  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
     <script>
       window.onerror = function(message, source, lineno, colno, error) {
-        document.body.innerHTML = '<div style="padding: 20px; background: red; color: white; font-family: monospace; font-size: 20px;">' +
-          '<h2>GLOBAL INIT ERROR</h2>' +
-          '<p>' + message + '</p>' +
-          '<p>Source: ' + source + ':' + lineno + ':' + colno + '</p>' +
-          '<pre>' + (error && error.stack ? error.stack : '') + '</pre>' +
+        document.body.innerHTML = '<div style="padding: 20px; background: #0f172a; color: #f87171; font-family: monospace; font-size: 16px; border: 1px solid #ef4444; margin: 20px; border-radius: 8px;">' +
+          '<h2 style="color: #ef4444; margin-top: 0;">APPLICATION INITIALIZATION ERROR</h2>' +
+          '<p><strong>Message:</strong> ' + message + '</p>' +
+          '<p><strong>Source:</strong> ' + source + ':' + lineno + ':' + colno + '</p>' +
+          '<pre style="background: #1e293b; padding: 12px; border-radius: 4px; overflow-x: auto;">' + (error && error.stack ? error.stack : '') + '</pre>' +
           '</div>';
       };
     </script>

@@ -214,6 +214,7 @@ app.use('/api', (req, res, next) => {
 const { enforceActiveLocation } = require('./middleware/locationEnforcement');
 
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/access', require('./routes/accessControlRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/sites', require('./routes/siteRoutes'));
 app.use('/api/warehouses', require('./routes/warehouseRoutes'));
@@ -250,10 +251,12 @@ app.use('/api/performance', require('./routes/performanceRoutes'));
 app.use('/api/chat', require('./routes/chatRoutes'));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12. VMS Domain Event Handlers
+// 12. VMS & Planning Domain Event Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 const { registerVMSEventHandlers } = require('./events/handlers/vmsEventHandlers');
+const { registerPlanningEventHandlers } = require('./events/handlers/planningEventHandlers');
 registerVMSEventHandlers();
+registerPlanningEventHandlers();
 
 // Root route (minimal — no system info)
 app.get('/', (req, res) => {

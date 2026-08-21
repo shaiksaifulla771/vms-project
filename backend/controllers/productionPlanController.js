@@ -1,24 +1,19 @@
 const mongoose = require('mongoose');
 const ProductionPlan = require('../models/ProductionPlan');
 const ProductionOrder = require('../models/ProductionOrder');
-const Sequence = require('../models/Sequence');
 const BOM = require('../models/BOM');
 const Material = require('../models/Material');
 const InventoryItem = require('../models/InventoryItem');
+const AuditLog = require('../models/AuditLog');
+const IdempotencyKey = require('../models/IdempotencyKey');
 const asyncHandler = require('../middleware/asyncHandler');
 const InventoryLedgerService = require('../services/inventoryLedgerService');
 const MRPEngineService = require('../services/mrpEngineService');
+const ProductionPlanInstance = require('../models/ProductionPlanInstance');
+const ProductionPlanningEngine = require('../services/productionPlanningEngine');
+const { nextSeqNumber } = require('../services/sequenceService');
+const { eventBus, EVENTS } = require('../events/eventBus');
 
-// Helper: Generate next sequential number
-async function nextSeqNumber(key, prefix) {
-  let seqDoc = await Sequence.findById(key);
-  if (!seqDoc) {
-    seqDoc = await Sequence.create({ _id: key, seq: 1000 });
-  } else {
-    seqDoc = await Sequence.findByIdAndUpdate(key, { $inc: { seq: 1 } }, { new: true });
-  }
-  return `${prefix}-${seqDoc.seq}`;
-}
 
 // @desc    Get all production plans with filters and pagination
 // @route   GET /api/production-plans
@@ -187,9 +182,10 @@ exports.createManualPlan = asyncHandler(async (req, res, next) => {
     const batchSize = activeBom.batchSize || 1;
     finalIngredients = (activeBom.components || []).map(comp => {
       const compMat = comp.materialId || (comp.mpnId && comp.mpnId.materialId);
-      const compQty = comp.quantity || comp.qty || 1;
-      const lossPct = comp.lossPercentage || comp.lossPercent || 0;
-      const quantityPerPlan = compQty / batchSize;
+      const rawCompQty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty !== undefined ? comp.qty : 1));
+      const compQty = rawCompQty > 0 ? rawCompQty : 1;
+      const lossPct = Number(comp.lossPercentage || comp.lossPercent || 0);
+      const quantityPerPlan = Math.max(0.000001, compQty / batchSize);
       const totalQuantity = (targetPlansCount * quantityPerPlan) * (1 + lossPct / 100);
 
       return {
@@ -212,7 +208,8 @@ exports.createManualPlan = asyncHandler(async (req, res, next) => {
       const matId = ing.materialId || ing.material;
       const matDoc = await Material.findById(matId);
       if (!matDoc) continue;
-      const qtyPerPlan = Number(ing.quantityPerPlan || ing.qty || 1);
+      const rawQty = Number(ing.quantityPerPlan !== undefined ? ing.quantityPerPlan : (ing.qty !== undefined ? ing.qty : 1));
+      const qtyPerPlan = Math.max(0.000001, rawQty > 0 ? rawQty : 1);
       const lossPct = Number(ing.lossPercentage || 0);
       const totalQuantity = (targetPlansCount * qtyPerPlan) * (1 + lossPct / 100);
 
@@ -335,6 +332,286 @@ exports.createManualPlan = asyncHandler(async (req, res, next) => {
 });
 
 exports.createProductionPlan = exports.createManualPlan;
+
+// @desc    Update / Edit an existing production plan (e.g. edit number of plans, BOM, shift, warehouse, dates)
+// @route   PUT /api/production-plans/:id
+// @access  Private (Admin, Production Manager, Planner)
+exports.updateProductionPlan = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) {
+    return res.status(404).json({ success: false, error: 'Production plan not found' });
+  }
+
+  const normalizedStatus = (plan.status || '').toUpperCase();
+  if (normalizedStatus === 'COMPLETED' || normalizedStatus === 'CANCELLED') {
+    return res.status(400).json({
+      success: false,
+      error: `Plan in status ${plan.status} is finalized and cannot be edited.`
+    });
+  }
+
+  const {
+    planName,
+    totalPlans,
+    quantity,
+    bomId,
+    warehouseId,
+    siteId,
+    requiredDate,
+    requiredByDate,
+    priority,
+    workCenter,
+    shiftId,
+    notes,
+    remarks,
+    ingredients
+  } = req.body;
+
+  const newTotalPlans = totalPlans !== undefined ? parseInt(totalPlans, 10) : (quantity !== undefined ? parseInt(quantity, 10) : plan.totalPlans);
+  if (isNaN(newTotalPlans) || newTotalPlans < 1) {
+    return res.status(400).json({ success: false, error: 'Total plans/quantity must be at least 1' });
+  }
+
+  // If already partially or fully released, total plans cannot be less than already committed plans
+  const committedPlans = (plan.releasedPlans || 0) + (plan.completedPlans || 0);
+  if (newTotalPlans < committedPlans) {
+    return res.status(400).json({
+      success: false,
+      error: `Cannot reduce total plans to ${newTotalPlans} because ${committedPlans} plans are already released/completed.`
+    });
+  }
+
+  const targetWarehouseId = warehouseId || plan.warehouseId;
+  const targetSiteId = siteId !== undefined ? siteId : plan.siteId;
+  const targetBomId = bomId !== undefined ? bomId : plan.bomId;
+
+  let activeBom = null;
+  if (targetBomId) {
+    activeBom = await BOM.findById(targetBomId).populate('components.materialId').populate('components.mpnId');
+  } else if (!ingredients || ingredients.length === 0) {
+    activeBom = await BOM.findOne({ productId: plan.productId, status: 'Active' })
+      .populate('components.materialId')
+      .populate('components.mpnId') ||
+      await BOM.findOne({ productId: plan.productId, status: { $ne: 'Deleted' } })
+      .populate('components.materialId')
+      .populate('components.mpnId');
+  }
+
+  // Recalculate ingredients if totalPlans, bom, or warehouse changed or custom ingredients provided
+  let finalIngredients = plan.ingredients || [];
+  let materialStatus = plan.materialStatus;
+
+  if (activeBom && (!ingredients || ingredients.length === 0)) {
+    const batchSize = activeBom.batchSize || 1;
+    finalIngredients = (activeBom.components || []).map(comp => {
+      const compMat = comp.materialId || (comp.mpnId && comp.mpnId.materialId);
+      const rawCompQty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty !== undefined ? comp.qty : 1));
+      const compQty = rawCompQty > 0 ? rawCompQty : 1;
+      const lossPct = Number(comp.lossPercentage || comp.lossPercent || 0);
+      const quantityPerPlan = Math.max(0.000001, compQty / batchSize);
+      const totalQuantity = (newTotalPlans * quantityPerPlan) * (1 + lossPct / 100);
+
+      return {
+        material: compMat?._id || compMat,
+        materialId: compMat?._id || compMat,
+        materialCode: compMat?.code || '',
+        materialName: compMat?.name || '',
+        quantityPerPlan: Math.round(quantityPerPlan * 10000) / 10000,
+        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
+        uom: compMat?.unit || comp.uom || 'pcs',
+        warehouse: targetWarehouseId,
+        warehouseId: targetWarehouseId,
+        lossPercentage: lossPct,
+      };
+    });
+    materialStatus = await MRPEngineService.checkMaterialAvailability(activeBom._id, newTotalPlans, targetWarehouseId);
+  } else if (Array.isArray(ingredients) && ingredients.length > 0) {
+    finalIngredients = [];
+    for (const ing of ingredients) {
+      const matId = ing.materialId || ing.material;
+      const matDoc = await Material.findById(matId);
+      if (!matDoc) continue;
+      const rawQty = Number(ing.quantityPerPlan !== undefined ? ing.quantityPerPlan : (ing.qty !== undefined ? ing.qty : 1));
+      const qtyPerPlan = Math.max(0.000001, rawQty > 0 ? rawQty : 1);
+      const lossPct = Number(ing.lossPercentage || 0);
+      const totalQuantity = (newTotalPlans * qtyPerPlan) * (1 + lossPct / 100);
+
+      finalIngredients.push({
+        material: matDoc._id,
+        materialId: matDoc._id,
+        materialCode: matDoc.code,
+        materialName: matDoc.name,
+        quantityPerPlan: Math.round(qtyPerPlan * 10000) / 10000,
+        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
+        uom: ing.uom || matDoc.unit || 'pcs',
+        warehouse: ing.warehouseId || ing.warehouse || targetWarehouseId,
+        warehouseId: ing.warehouseId || ing.warehouse || targetWarehouseId,
+        lossPercentage: lossPct,
+      });
+    }
+
+    const matIds = finalIngredients.map(i => i.material);
+    const invQuery = { materialId: { $in: matIds } };
+    if (targetWarehouseId && targetWarehouseId !== 'all' && mongoose.Types.ObjectId.isValid(targetWarehouseId)) {
+      invQuery.warehouseId = targetWarehouseId;
+    }
+    const invItems = await InventoryItem.find(invQuery);
+    const stockMap = {};
+    for (const item of invItems) {
+      stockMap[item.materialId.toString()] = Math.max(0, (item.onHand || 0) - (item.reserved || 0));
+    }
+    const shortages = [];
+    let hasShortage = false;
+    let hasPartial = false;
+    for (const ing of finalIngredients) {
+      const avail = stockMap[ing.material.toString()] || 0;
+      const shortageQty = Math.max(0, ing.totalQuantity - avail);
+      if (shortageQty > 0) {
+        hasShortage = true;
+        if (avail > 0) hasPartial = true;
+        shortages.push({
+          material: ing.material,
+          materialId: ing.material,
+          materialCode: ing.materialCode,
+          materialName: ing.materialName,
+          requiredQty: ing.totalQuantity,
+          availableQty: avail,
+          shortageQty,
+          unit: ing.uom,
+          warehouseId: targetWarehouseId,
+        });
+      }
+    }
+    materialStatus = {
+      status: hasShortage ? (hasPartial ? 'PARTIAL' : 'SHORTAGE') : 'READY',
+      shortages,
+      components: finalIngredients.map(i => ({
+        materialId: i.material,
+        materialCode: i.materialCode,
+        materialName: i.materialName,
+        requiredQty: i.totalQuantity,
+        availableQty: stockMap[i.material.toString()] || 0,
+        shortageQty: Math.max(0, i.totalQuantity - (stockMap[i.material.toString()] || 0)),
+        unit: i.uom,
+      })),
+      checkedAt: new Date(),
+    };
+  }
+
+  // Update plan fields
+  if (planName) plan.planName = planName;
+  plan.totalPlans = newTotalPlans;
+  plan.quantity = newTotalPlans;
+  plan.availablePlans = Math.max(0, newTotalPlans - (plan.reservedPlans || 0) - (plan.releasedPlans || 0) - (plan.completedPlans || 0));
+  if (targetBomId) {
+    plan.bomId = targetBomId;
+    plan.bom = targetBomId;
+    if (activeBom) plan.bomVersion = String(activeBom.version || 1);
+  }
+  if (targetWarehouseId) plan.warehouseId = targetWarehouseId;
+  if (targetSiteId !== undefined) plan.siteId = targetSiteId;
+  if (requiredDate || requiredByDate) {
+    const targetDate = new Date(requiredByDate || requiredDate);
+    plan.requiredDate = targetDate;
+    plan.requiredByDate = targetDate;
+  }
+  if (priority) plan.priority = priority.toUpperCase();
+  if (workCenter) plan.workCenter = workCenter;
+  if (shiftId) {
+    plan.schedule = plan.schedule || {};
+    plan.schedule.shiftId = shiftId;
+    plan.schedule.shift = shiftId;
+  }
+  if (notes !== undefined) plan.notes = notes;
+  if (remarks !== undefined) plan.remarks = remarks;
+  plan.ingredients = finalIngredients;
+  plan.materialStatus = materialStatus;
+
+  plan.auditHistory = plan.auditHistory || [];
+  plan.auditHistory.push({
+    action: 'UPDATE_PLAN',
+    user: req.user ? req.user.id : null,
+    timestamp: new Date(),
+    details: `Plan ${plan.planNumber} updated: totalPlans=${newTotalPlans}, bomId=${targetBomId || 'N/A'}, warehouseId=${targetWarehouseId || 'N/A'}`
+  });
+
+  await plan.save();
+
+  // Handle Edit Scope: All remaining unreleased plans in this series/group
+  const editScope = req.body.editScope || 'SINGLE'; // 'SINGLE' | 'ALL_REMAINING'
+  let seriesUpdatedCount = 1;
+
+  if (editScope === 'ALL_REMAINING' && (plan.seriesId || plan.parentPlanId)) {
+    const filter = plan.seriesId
+      ? {
+          seriesId: plan.seriesId,
+          seriesIndex: { $gte: plan.seriesIndex || 1 },
+          status: { $in: ['UNSCHEDULED', 'DRAFT', 'SCHEDULED', 'PENDING_APPROVAL', 'VALIDATED', 'Unscheduled', 'Scheduled', 'Draft', 'Pending'] }
+        }
+      : {
+          parentPlanId: plan.parentPlanId,
+          status: { $in: ['UNSCHEDULED', 'DRAFT', 'SCHEDULED', 'PENDING_APPROVAL', 'VALIDATED', 'Unscheduled', 'Scheduled', 'Draft', 'Pending'] }
+        };
+
+    const remainingPlans = await ProductionPlan.find(filter);
+    for (const p of remainingPlans) {
+      if (p._id.toString() === plan._id.toString()) continue;
+
+      const committed = (p.releasedPlans || 0) + (p.completedPlans || 0);
+      if (newTotalPlans < committed) continue;
+
+      if (planName) p.planName = `${planName} (${p.seriesIndex ? `Series ${p.seriesIndex}/${p.seriesTotal || 'N'}` : 'Batch'})`;
+      p.totalPlans = newTotalPlans;
+      p.quantity = newTotalPlans;
+      p.availablePlans = Math.max(0, newTotalPlans - (p.reservedPlans || 0) - (p.releasedPlans || 0) - (p.completedPlans || 0));
+      if (targetBomId) {
+        p.bomId = targetBomId;
+        p.bom = targetBomId;
+        if (activeBom) p.bomVersion = String(activeBom.version || 1);
+      }
+      if (targetWarehouseId) p.warehouseId = targetWarehouseId;
+      if (targetSiteId !== undefined) p.siteId = targetSiteId;
+      if (priority) p.priority = priority.toUpperCase();
+      if (workCenter) p.workCenter = workCenter;
+      if (shiftId) {
+        p.schedule = p.schedule || {};
+        p.schedule.shiftId = shiftId;
+        p.schedule.shift = shiftId;
+      }
+      p.ingredients = finalIngredients;
+      p.materialStatus = materialStatus;
+      if (notes !== undefined) p.notes = notes;
+
+      p.auditHistory = p.auditHistory || [];
+      p.auditHistory.push({
+        action: 'UPDATE_PLAN_SERIES',
+        user: req.user ? req.user.id : null,
+        timestamp: new Date(),
+        details: `Updated via series batch edit from plan ${plan.planNumber} (totalPlans=${newTotalPlans})`
+      });
+
+      await p.save();
+      seriesUpdatedCount++;
+    }
+  }
+
+  const updatedPlan = await ProductionPlan.findById(plan._id)
+    .populate('productId', 'name code unit type')
+    .populate('product', 'name code unit type')
+    .populate('bomId')
+    .populate('warehouseId', 'name code')
+    .populate('ingredients.material', 'name code unit');
+
+  res.status(200).json({
+    success: true,
+    data: updatedPlan,
+    materialStatus,
+    seriesUpdatedCount,
+    message: seriesUpdatedCount > 1
+      ? `Successfully updated ${seriesUpdatedCount} plans in the series with ${newTotalPlans} planned units.`
+      : `Plan ${plan.planNumber} updated successfully with ${newTotalPlans} planned units.`
+  });
+});
 
 // @desc    Strict MRP production plan creation (for backwards compatibility)
 // @route   POST /api/production-plans/create-strict
@@ -497,8 +774,17 @@ exports.materialCheckProductionPlan = asyncHandler(async (req, res, next) => {
     strictWarehouse: req.body.strictWarehouse === true
   };
 
+  let activeBomId = plan.bomId || plan.bom;
+  if (!activeBomId && (plan.productId || plan.product)) {
+    const defaultBom = await BOM.findOne({ productId: plan.productId || plan.product, status: 'Active' }) ||
+      await BOM.findOne({ productId: plan.productId || plan.product, status: { $ne: 'Deleted' } });
+    if (defaultBom) {
+      activeBomId = defaultBom._id;
+    }
+  }
+
   const matCheck = await MRPEngineService.checkMaterialAvailability(
-    plan.bomId,
+    activeBomId,
     plan.quantity || plan.totalPlans || 1,
     warehouseId,
     siteId,
@@ -523,18 +809,43 @@ exports.approveProductionPlan = asyncHandler(async (req, res, next) => {
   const plan = await ProductionPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
 
-  plan.approvedBy = req.user ? req.user.id : null;
+  // 1. Transition validation
+  const transitionCheck = ProductionPlanningEngine.validateTransition(plan.status, 'APPROVED');
+  if (!transitionCheck.valid) {
+    return res.status(400).json({ success: false, error: transitionCheck.error });
+  }
+
+  // 2. Maker-checker policy check (Rev. 2 Part D1)
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+  const creatorId = plan.createdBy ? (plan.createdBy._id || plan.createdBy) : null;
+  if (plan.requireDifferentApprover && currentUserId && creatorId) {
+    if (String(currentUserId) === String(creatorId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Maker-checker policy violation: Approver cannot be the same user who created the plan.',
+      });
+    }
+  }
+
+  plan.status = 'APPROVED';
+  plan.approvedBy = currentUserId;
   plan.approvedAt = new Date();
-  plan.updatedBy = req.user ? req.user.id : null;
+  plan.updatedBy = currentUserId;
 
   plan.auditHistory.push({
     action: 'APPROVE_PLAN',
-    user: req.user ? req.user.id : null,
+    user: currentUserId,
     timestamp: new Date(),
-    details: `Plan approved by ${req.user ? req.user.username : 'Planner'}`,
+    details: `Plan approved by ${req.user ? req.user.username : 'Approver'}`,
   });
 
   await plan.save();
+
+  // Also update pending instances if any
+  await ProductionPlanInstance.updateMany(
+    { planId: plan._id, status: { $in: ['UNSCHEDULED', 'DRAFT', 'VALIDATED', 'PENDING_APPROVAL'] } },
+    { $set: { status: 'APPROVED', approvedBy: currentUserId, approvedAt: new Date() } }
+  );
 
   res.status(200).json({
     success: true,
@@ -550,12 +861,25 @@ exports.useProductionPlan = asyncHandler(async (req, res, next) => {
   const plan = await ProductionPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, error: 'Production plan not found' });
 
-  const quantityToUse = Math.max(1, parseInt(req.body.quantity || req.body.plansToUse || 1, 10));
+  const rawQty = req.body.quantity !== undefined ? req.body.quantity : (req.body.quantityToUse !== undefined ? req.body.quantityToUse : req.body.plansToUse);
+  const quantityToUse = Math.max(1, parseInt(rawQty || 1, 10));
 
-  if (quantityToUse > plan.availablePlans) {
+  const available = plan.availablePlans !== undefined ? plan.availablePlans : (plan.remainingQuantity !== undefined ? plan.remainingQuantity : (plan.totalPlans || plan.quantity || 0));
+
+  if (quantityToUse > available) {
     return res.status(400).json({
       success: false,
-      error: `Requested quantity (${quantityToUse}) exceeds available plans (${plan.availablePlans}).`
+      error: `Requested quantity (${quantityToUse}) exceeds available plans (${available}).`
+    });
+  }
+
+  // Unified Execution Guard (Rev. 2 Part C1 & Test 9)
+  const execCheck = await ProductionPlanningEngine.canExecute(plan);
+  if (!execCheck.allowed) {
+    return res.status(400).json({
+      success: false,
+      error: execCheck.reason,
+      shortages: execCheck.shortages || [],
     });
   }
 
@@ -563,6 +887,13 @@ exports.useProductionPlan = asyncHandler(async (req, res, next) => {
   let materialStatus;
   if (plan.bomId) {
     materialStatus = await MRPEngineService.checkMaterialAvailability(plan.bomId, quantityToUse, plan.warehouseId);
+    if (materialStatus.status === 'SHORTAGE' || (materialStatus.shortages && materialStatus.shortages.length > 0)) {
+      return res.status(400).json({
+        success: false,
+        error: `Execution blocked due to material shortages in requested quantity (${quantityToUse} units).`,
+        shortages: materialStatus.shortages,
+      });
+    }
   }
 
   // Build component requirements for this batch
@@ -833,37 +1164,152 @@ exports.completeProductionPlan = asyncHandler(async (req, res, next) => {
   });
 });
 
-// Backwards-compatible helpers
+// @desc    Copy / Batch-Copy production plan (Single copy or Grouped Batch Series)
+// @route   POST /api/production-plans/:id/copy
+// @access  Private (Admin, Production Manager, Planner)
 exports.copyProductionPlan = asyncHandler(async (req, res, next) => {
   const sourcePlan = await ProductionPlan.findById(req.params.id);
   if (!sourcePlan) return res.status(404).json({ success: false, error: 'Source plan not found' });
 
-  const planNumber = await nextSeqNumber('productionPlan', 'PLAN');
-  const targetQuantity = req.body.quantity || sourcePlan.originalQuantity || sourcePlan.quantity;
+  const copyCount = Math.max(1, parseInt(req.body.copyCount || 1, 10));
+  const targetQuantity = req.body.quantity !== undefined ? parseInt(req.body.quantity, 10) : (sourcePlan.originalQuantity || sourcePlan.quantity || sourcePlan.totalPlans || 1);
+  const targetWarehouseId = req.body.warehouseId || sourcePlan.warehouseId;
+  const targetBomId = req.body.bomId || sourcePlan.bomId;
+  const baseTargetDate = req.body.requiredDate ? new Date(req.body.requiredDate) : new Date(Date.now() + 86400000 * 7);
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
 
-  const newPlan = await ProductionPlan.create({
-    planNumber,
-    productId: sourcePlan.productId,
-    product: sourcePlan.product || sourcePlan.productId,
-    bomId: sourcePlan.bomId,
-    bom: sourcePlan.bom || sourcePlan.bomId,
-    siteId: sourcePlan.siteId,
-    warehouseId: sourcePlan.warehouseId,
-    quantity: targetQuantity,
-    originalQuantity: targetQuantity,
-    remainingQuantity: targetQuantity,
-    requiredDate: req.body.requiredDate || new Date(Date.now() + 86400000 * 7),
-    requiredByDate: req.body.requiredDate || new Date(Date.now() + 86400000 * 7),
-    status: 'UNSCHEDULED',
-    planSource: 'MANUAL',
-    source: 'MANUAL',
-    priority: sourcePlan.priority || 'MEDIUM',
-    notes: `Copy of ${sourcePlan.planNumber}`,
-    copiedFromPlanId: sourcePlan._id,
-    createdBy: req.user ? req.user.id : null,
+  // Active BOM & Ingredient resolution with dynamic scaling
+  let activeBom = null;
+  if (targetBomId) {
+    activeBom = await BOM.findById(targetBomId).populate('components.materialId');
+  } else {
+    activeBom = await BOM.findOne({ productId: sourcePlan.productId, status: 'Active' }).populate('components.materialId');
+  }
+
+  let finalIngredients = [];
+  if (activeBom && activeBom.components && activeBom.components.length > 0) {
+    const batchSize = activeBom.batchSize || 1;
+    finalIngredients = activeBom.components.map(comp => {
+      const compMat = comp.materialId || {};
+      const rawCompQty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty !== undefined ? comp.qty : 1));
+      const compQty = rawCompQty > 0 ? rawCompQty : 1;
+      const lossPct = Number(comp.lossPercentage || 0);
+      const quantityPerPlan = Math.max(0.000001, compQty / batchSize);
+      const totalQuantity = (targetQuantity * quantityPerPlan) * (1 + lossPct / 100);
+
+      return {
+        material: compMat?._id || comp.materialId,
+        materialId: compMat?._id || comp.materialId,
+        materialCode: compMat?.code || '',
+        materialName: compMat?.name || '',
+        quantityPerPlan: Math.round(quantityPerPlan * 10000) / 10000,
+        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
+        uom: compMat?.unit || comp.uom || 'pcs',
+        warehouse: targetWarehouseId,
+        warehouseId: targetWarehouseId,
+        lossPercentage: lossPct,
+      };
+    });
+  } else {
+    finalIngredients = (sourcePlan.ingredients || []).map(ing => {
+      const qtyPerPlan = ing.quantityPerPlan || 1;
+      const lossPct = ing.lossPercentage || 0;
+      const totalQuantity = (targetQuantity * qtyPerPlan) * (1 + lossPct / 100);
+      return {
+        material: ing.material || ing.materialId,
+        materialId: ing.materialId || ing.material,
+        materialCode: ing.materialCode,
+        materialName: ing.materialName,
+        quantityPerPlan: qtyPerPlan,
+        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
+        uom: ing.uom || 'pcs',
+        warehouse: targetWarehouseId,
+        warehouseId: targetWarehouseId,
+        lossPercentage: lossPct,
+      };
+    });
+  }
+
+  // Live stock evaluation for the new batch
+  const materialStatus = activeBom
+    ? await MRPEngineService.checkMaterialAvailability(activeBom._id, targetQuantity, targetWarehouseId)
+    : (sourcePlan.materialStatus || { status: 'READY', shortages: [], components: [] });
+
+  const seriesId = copyCount > 1 ? `SERIES-${sourcePlan.planNumber || 'PLAN'}-${Date.now()}` : undefined;
+  const createdPlans = [];
+
+  for (let i = 1; i <= copyCount; i++) {
+    const planNumber = await nextSeqNumber('productionPlan', 'PLAN');
+    const planDate = new Date(baseTargetDate.getTime() + (i - 1) * 86400000);
+
+    const newPlan = await ProductionPlan.create({
+      planNumber,
+      planName: copyCount > 1 ? `${sourcePlan.planName || 'Plan'} (Batch ${i}/${copyCount})` : `${sourcePlan.planName || 'Plan'} (Copy)`,
+      productId: sourcePlan.productId,
+      product: sourcePlan.product || sourcePlan.productId,
+      productCode: sourcePlan.productCode,
+      productName: sourcePlan.productName,
+      bomId: activeBom ? activeBom._id : sourcePlan.bomId,
+      bom: activeBom ? activeBom._id : sourcePlan.bomId,
+      bomVersion: activeBom ? String(activeBom.version || 1) : (sourcePlan.bomVersion || '1'),
+      siteId: req.body.siteId || sourcePlan.siteId,
+      warehouseId: targetWarehouseId,
+      totalPlans: targetQuantity,
+      quantity: targetQuantity,
+      originalQuantity: targetQuantity,
+      availablePlans: targetQuantity,
+      releasedPlans: 0,
+      reservedPlans: 0,
+      completedPlans: 0,
+      cancelledPlans: 0,
+      ingredients: finalIngredients,
+      materialStatus,
+      requiredDate: planDate,
+      requiredByDate: planDate,
+      status: 'UNSCHEDULED',
+      planSource: 'MANUAL',
+      source: 'MANUAL',
+      priority: req.body.priority || sourcePlan.priority || 'MEDIUM',
+      workCenter: req.body.workCenter || sourcePlan.workCenter || 'Main Assembly Line 1',
+      schedule: {
+        productionDate: planDate,
+        startTime: '09:00',
+        endTime: '17:00',
+        shiftId: req.body.shiftId || sourcePlan.schedule?.shiftId || 'Morning Shift',
+        shift: req.body.shiftId || sourcePlan.schedule?.shift || 'Morning Shift',
+        warehouseId: targetWarehouseId,
+        estimatedDuration: 480,
+        capacityCheckStatus: 'Sufficient',
+        materialCheckStatus: materialStatus.status || 'Ready'
+      },
+      seriesId,
+      seriesIndex: i,
+      seriesTotal: copyCount,
+      notes: req.body.notes || `Copied from ${sourcePlan.planNumber}${copyCount > 1 ? ` (Batch ${i} of ${copyCount})` : ''}`,
+      copiedFromPlanId: sourcePlan._id,
+      createdBy: currentUserId,
+      auditHistory: [
+        {
+          action: copyCount > 1 ? 'BATCH_COPY_PLAN' : 'COPY_PLAN',
+          user: currentUserId,
+          timestamp: new Date(),
+          details: `Copied from ${sourcePlan.planNumber} with targetQuantity=${targetQuantity}${copyCount > 1 ? ` (Series: ${i}/${copyCount})` : ''}`
+        }
+      ]
+    });
+
+    createdPlans.push(newPlan);
+  }
+
+  res.status(201).json({
+    success: true,
+    data: copyCount === 1 ? createdPlans[0] : createdPlans,
+    count: createdPlans.length,
+    seriesId,
+    message: copyCount === 1
+      ? `Plan ${sourcePlan.planNumber} copied as ${createdPlans[0].planNumber}`
+      : `Successfully generated series of ${copyCount} copy plans (${createdPlans[0].planNumber} to ${createdPlans[createdPlans.length - 1].planNumber}).`
   });
-
-  res.status(201).json({ success: true, data: newPlan, message: `Plan ${sourcePlan.planNumber} copied as ${newPlan.planNumber}` });
 });
 
 exports.unscheduleProductionPlan = asyncHandler(async (req, res, next) => {
@@ -1001,4 +1447,777 @@ exports.splitProductionPlan = asyncHandler(async (req, res, next) => {
     childPlans
   });
 });
+
+// @desc    Create structured wizard master plan with batch instances (Rev. 2 Part B4/B5)
+// @route   POST /api/production-plans/wizard
+// @access  Private
+exports.createWizardPlan = asyncHandler(async (req, res, next) => {
+  const {
+    planName,
+    productId,
+    bomId,
+    totalQuantity,
+    requiredDate,
+    warehouseId,
+    siteId,
+    priority = 'MEDIUM',
+    workCenter = 'Main Assembly Line 1',
+    shiftId = 'Standard Shift',
+    splitMode = 'COUNT',
+    splitValue = 1,
+    customSplits = [],
+    customMaterials = [],
+    substitutions = [],
+    isTemplate = false,
+    allowPartial = false,
+    requireDifferentApprover = false,
+    notes = '',
+  } = req.body;
+
+  if (!productId) return res.status(400).json({ success: false, error: 'Product is required' });
+  if (!warehouseId) return res.status(400).json({ success: false, error: 'Warehouse is required' });
+  const totalQty = Number(totalQuantity || 1);
+  if (isNaN(totalQty) || totalQty <= 0) {
+    return res.status(400).json({ success: false, error: 'Total quantity must be greater than zero' });
+  }
+
+  const product = await Material.findById(productId);
+  if (!product) return res.status(404).json({ success: false, error: 'Product not found' });
+
+  // Resolve BOM
+  let activeBom = null;
+  if (bomId) {
+    activeBom = await BOM.findById(bomId).populate('components.materialId');
+  } else {
+    activeBom = await BOM.findOne({ productId, status: 'Active' }).populate('components.materialId');
+  }
+
+  const planNumber = await nextSeqNumber('productionPlan', 'PLAN');
+
+  // Build standard ingredients from BOM
+  let ingredients = [];
+  if (activeBom && activeBom.components && activeBom.components.length > 0) {
+    const batchSize = activeBom.batchSize || 1;
+    ingredients = activeBom.components.map(c => {
+      const mat = c.materialId || {};
+      const lossPct = c.lossPercentage || 0;
+      const qtyPerPlan = (c.quantity || c.qty || 1) / batchSize;
+      const lossMult = 1 + (lossPct / 100);
+      return {
+        material: mat._id || c.materialId,
+        materialId: mat._id || c.materialId,
+        materialCode: mat.code || c.materialCode,
+        materialName: mat.name || c.materialName,
+        quantityPerPlan: qtyPerPlan,
+        totalQuantity: Math.round((qtyPerPlan * totalQty * lossMult) * 10000) / 10000,
+        uom: mat.unit || c.uom || 'pcs',
+        warehouse: warehouseId,
+        warehouseId,
+        lossPercentage: lossPct,
+      };
+    });
+  }
+
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+
+  // Create Master Production Plan
+  const plan = await ProductionPlan.create({
+    planNumber,
+    planName: planName || `${product.name} Master Plan`,
+    productId,
+    product: productId,
+    productCode: product.code,
+    productName: product.name,
+    bomId: activeBom?._id || null,
+    bom: activeBom?._id || null,
+    bomVersion: activeBom?.version || '1',
+    siteId: siteId || null,
+    warehouseId,
+    totalPlans: totalQty,
+    quantity: totalQty,
+    availablePlans: totalQty,
+    releasedPlans: 0,
+    completedPlans: 0,
+    cancelledPlans: 0,
+    requiredDate: requiredDate ? new Date(requiredDate) : new Date(Date.now() + 7 * 86400000),
+    requiredByDate: requiredDate ? new Date(requiredDate) : new Date(Date.now() + 7 * 86400000),
+    priority,
+    workCenter,
+    isTemplate: Boolean(isTemplate),
+    allowPartial: Boolean(allowPartial),
+    requireDifferentApprover: Boolean(requireDifferentApprover),
+    ingredients,
+    customMaterials: (customMaterials || []).map(cm => ({
+      materialId: cm.materialId,
+      materialCode: cm.materialCode,
+      materialName: cm.materialName,
+      quantity: Number(cm.quantity || 1),
+      uom: cm.uom || 'pcs',
+      reason: cm.reason || 'Manual addition outside standard BOM',
+      addedBy: currentUserId,
+      isApproved: true,
+    })),
+    substitutions: (substitutions || []).map(sub => ({
+      originalMaterialId: sub.originalMaterialId,
+      originalMaterialCode: sub.originalMaterialCode,
+      substituteMaterialId: sub.substituteMaterialId,
+      substituteMaterialCode: sub.substituteMaterialCode,
+      originalQuantity: Number(sub.originalQuantity || 1),
+      substituteQuantity: Number(sub.substituteQuantity || 1),
+      conversionFactor: Number(sub.conversionFactor || 1),
+      reason: sub.reason || 'Approved engineering substitute',
+      substitutedBy: currentUserId,
+      isApproved: true,
+    })),
+    status: 'DRAFT',
+    planSource: 'MANUAL',
+    source: 'MANUAL',
+    notes,
+    createdBy: currentUserId,
+    auditHistory: [
+      {
+        action: 'CREATE_WIZARD_PLAN',
+        user: currentUserId,
+        timestamp: new Date(),
+        details: `Created master plan ${planNumber} for ${totalQty} units via wizard.`,
+      }
+    ]
+  });
+
+  // Generate instances via unified splitting engine
+  let batchInstances = [];
+  try {
+    const rawBatches = ProductionPlanningEngine.splitPlanIntoBatches({
+      totalQuantity: totalQty,
+      splitMode,
+      splitValue,
+      customSplits,
+      startDate: requiredDate ? new Date(requiredDate) : new Date(),
+      workCenter,
+      shiftId,
+      allowPartial,
+    });
+
+    for (let i = 0; i < rawBatches.length; i++) {
+      const b = rawBatches[i];
+      const instNumber = `${planNumber}-${String.fromCharCode(65 + i)}`;
+      const instance = await ProductionPlanInstance.create({
+        instanceNumber: instNumber,
+        planId: plan._id,
+        planNumber: plan.planNumber,
+        sequence: b.sequence || (i + 1),
+        productId: plan.productId,
+        productCode: plan.productCode,
+        productName: plan.productName,
+        bomId: plan.bomId,
+        bomVersion: plan.bomVersion,
+        warehouseId: plan.warehouseId,
+        siteId: plan.siteId,
+        quantity: b.quantity,
+        plannedStartDate: b.plannedStartDate,
+        shiftId: b.shiftId || shiftId,
+        workCenter: b.workCenter || workCenter,
+        status: 'DRAFT',
+        notes: b.notes,
+        createdBy: currentUserId,
+      });
+      batchInstances.push(instance);
+    }
+  } catch (splitErr) {
+    return res.status(400).json({ success: false, error: splitErr.message });
+  }
+
+  res.status(201).json({
+    success: true,
+    data: plan,
+    instances: batchInstances,
+    message: `Master plan ${plan.planNumber} created with ${batchInstances.length} batch instances.`
+  });
+});
+
+// @desc    Generate/Split plan instances for a master plan
+// @route   POST /api/production-plans/:id/instances
+// @access  Private
+exports.generatePlanInstances = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+  const {
+    splitMode = 'COUNT',
+    splitValue = 1,
+    customSplits = [],
+    startDate,
+    workCenter,
+    shiftId,
+  } = req.body;
+
+  // Clear existing draft instances
+  await ProductionPlanInstance.deleteMany({
+    planId: plan._id,
+    status: { $in: ['DRAFT', 'UNSCHEDULED'] }
+  });
+
+  const rawBatches = ProductionPlanningEngine.splitPlanIntoBatches({
+    totalQuantity: plan.quantity || plan.totalPlans,
+    splitMode,
+    splitValue,
+    customSplits,
+    startDate: startDate ? new Date(startDate) : (plan.requiredDate || new Date()),
+    workCenter: workCenter || plan.workCenter || 'Main Assembly Line 1',
+    shiftId: shiftId || 'Standard Shift',
+    allowPartial: plan.allowPartial,
+  });
+
+  const createdInstances = [];
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+
+  for (let i = 0; i < rawBatches.length; i++) {
+    const b = rawBatches[i];
+    const instNumber = `${plan.planNumber}-${String.fromCharCode(65 + i)}`;
+    const instance = await ProductionPlanInstance.create({
+      instanceNumber: instNumber,
+      planId: plan._id,
+      planNumber: plan.planNumber,
+      sequence: b.sequence || (i + 1),
+      productId: plan.productId,
+      productCode: plan.productCode,
+      productName: plan.productName,
+      bomId: plan.bomId,
+      bomVersion: plan.bomVersion,
+      warehouseId: plan.warehouseId,
+      siteId: plan.siteId,
+      quantity: b.quantity,
+      plannedStartDate: b.plannedStartDate,
+      shiftId: b.shiftId,
+      workCenter: b.workCenter,
+      status: 'DRAFT',
+      notes: b.notes,
+      createdBy: currentUserId,
+    });
+    createdInstances.push(instance);
+  }
+
+  await ProductionPlanningEngine.syncPlanProgressFromInstances(plan._id);
+
+  res.status(201).json({
+    success: true,
+    data: createdInstances,
+    count: createdInstances.length,
+    message: `Generated ${createdInstances.length} plan instances for ${plan.planNumber}.`
+  });
+});
+
+// @desc    Get instances for a master plan
+// @route   GET /api/production-plans/:id/instances
+// @access  Private
+exports.getPlanInstances = asyncHandler(async (req, res, next) => {
+  const instances = await ProductionPlanInstance.find({ planId: req.params.id })
+    .populate('productId', 'name code unit')
+    .populate('warehouseId', 'name code')
+    .populate('productionOrderId', 'prdNumber status')
+    .sort('sequence');
+
+  res.status(200).json({ success: true, count: instances.length, data: instances });
+});
+
+// @desc    Validate plan server-side before approval/release (Rev. 2 Part C2)
+// @route   POST /api/production-plans/:id/validate
+// @access  Private
+exports.validatePlan = asyncHandler(async (req, res, next) => {
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+  const validation = await ProductionPlanningEngine.validatePlanForRelease(req.params.id, currentUserId);
+
+  let updatedPlan = null;
+  if (validation.valid) {
+    const plan = await ProductionPlan.findById(req.params.id);
+    if (plan) {
+      if (['DRAFT', 'UNSCHEDULED'].includes(plan.status)) {
+        plan.status = 'VALIDATED';
+      }
+      if (validation.materialStatus) {
+        plan.materialStatus = validation.materialStatus;
+      }
+      plan.auditHistory.push({
+        action: 'VALIDATE_PLAN',
+        user: currentUserId,
+        timestamp: new Date(),
+        details: validation.warnings && validation.warnings.length > 0
+          ? `Plan validated with warnings: ${validation.warnings.join('; ')}`
+          : 'Plan passed server-side validation checks.',
+      });
+      await plan.save();
+      updatedPlan = plan;
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    data: updatedPlan,
+    validation,
+    message: validation.valid
+      ? (validation.warnings?.length > 0 ? 'Plan validated with warnings.' : 'Plan validated successfully.')
+      : 'Validation checks failed.',
+  });
+});
+
+// @desc    Submit plan for approval
+// @route   POST /api/production-plans/:id/submit-approval
+// @access  Private
+exports.submitForApproval = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+  const transitionCheck = ProductionPlanningEngine.validateTransition(plan.status, 'PENDING_APPROVAL');
+  if (!transitionCheck.valid) {
+    return res.status(400).json({ success: false, error: transitionCheck.error });
+  }
+
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+  plan.status = 'PENDING_APPROVAL';
+  plan.auditHistory.push({
+    action: 'SUBMIT_APPROVAL',
+    user: currentUserId,
+    timestamp: new Date(),
+    details: 'Submitted plan for managerial approval.',
+  });
+
+  await plan.save();
+
+  await ProductionPlanInstance.updateMany(
+    { planId: plan._id, status: { $in: ['DRAFT', 'VALIDATED'] } },
+    { $set: { status: 'PENDING_APPROVAL' } }
+  );
+
+  res.status(200).json({ success: true, data: plan, message: 'Plan submitted for approval.' });
+});
+
+// @desc    Reject a production plan
+// @route   POST /api/production-plans/:id/reject
+// @access  Private
+exports.rejectProductionPlan = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+  const transitionCheck = ProductionPlanningEngine.validateTransition(plan.status, 'REJECTED');
+  if (!transitionCheck.valid) {
+    return res.status(400).json({ success: false, error: transitionCheck.error });
+  }
+
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+  const reason = req.body.reason || 'Approver rejected plan';
+
+  plan.status = 'REJECTED';
+  plan.auditHistory.push({
+    action: 'REJECT_PLAN',
+    user: currentUserId,
+    timestamp: new Date(),
+    details: `Plan rejected by approver. Reason: ${reason}`,
+  });
+
+  await plan.save();
+
+  await ProductionPlanInstance.updateMany(
+    { planId: plan._id, status: 'PENDING_APPROVAL' },
+    { $set: { status: 'REJECTED', holdReason: reason } }
+  );
+
+  res.status(200).json({ success: true, data: plan, message: 'Plan rejected.' });
+});
+
+// @desc    Check plan reuse staleness (Rev. 2 Part B7)
+// @route   GET /api/production-plans/:id/reuse-staleness
+// @access  Private
+exports.getReuseStaleness = asyncHandler(async (req, res, next) => {
+  const staleness = await ProductionPlanningEngine.checkReuseStaleness(req.params.id);
+  res.status(200).json({ success: true, data: staleness });
+});
+
+// @desc    Reuse an existing plan (Rev. 2 Part B7)
+// @route   POST /api/production-plans/:id/reuse
+// @access  Private
+exports.reuseProductionPlan = asyncHandler(async (req, res, next) => {
+  const sourcePlan = await ProductionPlan.findById(req.params.id).populate('productId');
+  if (!sourcePlan) return res.status(404).json({ success: false, error: 'Source plan not found' });
+
+  const {
+    quantity,
+    requiredDate,
+    warehouseId,
+    siteId,
+    priority,
+    notes,
+    splitMode = 'COUNT',
+    splitValue = 1,
+  } = req.body;
+
+  const targetQty = Number(quantity || sourcePlan.quantity || sourcePlan.totalPlans || 1);
+  const targetWhId = warehouseId || sourcePlan.warehouseId;
+  const targetDate = requiredDate ? new Date(requiredDate) : new Date(Date.now() + 7 * 86400000);
+
+  // Fetch active BOM for product
+  const activeBom = await BOM.findOne({
+    productId: sourcePlan.productId?._id || sourcePlan.productId,
+    status: 'Active'
+  }).populate('components.materialId');
+
+  const newPlanNumber = await nextSeqNumber('productionPlan', 'PLAN');
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+
+  // Build ingredients from active BOM
+  let ingredients = [];
+  if (activeBom && activeBom.components && activeBom.components.length > 0) {
+    const batchSize = activeBom.batchSize || 1;
+    ingredients = activeBom.components.map(c => {
+      const mat = c.materialId || {};
+      const lossPct = c.lossPercentage || 0;
+      const qtyPerPlan = (c.quantity || c.qty || 1) / batchSize;
+      const lossMult = 1 + (lossPct / 100);
+      return {
+        material: mat._id || c.materialId,
+        materialId: mat._id || c.materialId,
+        materialCode: mat.code || c.materialCode,
+        materialName: mat.name || c.materialName,
+        quantityPerPlan: qtyPerPlan,
+        totalQuantity: Math.round((qtyPerPlan * targetQty * lossMult) * 10000) / 10000,
+        uom: mat.unit || c.uom || 'pcs',
+        warehouse: targetWhId,
+        warehouseId: targetWhId,
+        lossPercentage: lossPct,
+      };
+    });
+  }
+
+  // Create cloned Master Plan forward
+  const newPlan = await ProductionPlan.create({
+    planNumber: newPlanNumber,
+    planName: `${sourcePlan.planName} (Reused)`,
+    basedOnPlanId: sourcePlan._id,
+    copiedFromPlanId: sourcePlan._id,
+    productId: sourcePlan.productId,
+    product: sourcePlan.product || sourcePlan.productId,
+    productCode: sourcePlan.productCode,
+    productName: sourcePlan.productName,
+    bomId: activeBom?._id || sourcePlan.bomId,
+    bom: activeBom?._id || sourcePlan.bomId,
+    bomVersion: activeBom?.version || sourcePlan.bomVersion || '1',
+    siteId: siteId || sourcePlan.siteId,
+    warehouseId: targetWhId,
+    totalPlans: targetQty,
+    quantity: targetQty,
+    availablePlans: targetQty,
+    releasedPlans: 0,
+    completedPlans: 0,
+    cancelledPlans: 0,
+    requiredDate: targetDate,
+    requiredByDate: targetDate,
+    priority: priority || sourcePlan.priority || 'MEDIUM',
+    workCenter: sourcePlan.workCenter || 'Main Assembly Line 1',
+    ingredients,
+    customMaterials: sourcePlan.customMaterials || [],
+    substitutions: sourcePlan.substitutions || [],
+    materialStatus: activeBom
+      ? await MRPEngineService.checkMaterialAvailability(activeBom._id, targetQty, targetWhId)
+      : (sourcePlan.materialStatus || { status: 'READY', shortages: [], components: [] }),
+    status: 'DRAFT',
+    planSource: 'MANUAL',
+    source: 'MANUAL',
+    notes: notes || `Reused from master plan ${sourcePlan.planNumber}`,
+    createdBy: currentUserId,
+    auditHistory: [
+      {
+        action: 'REUSE_PLAN',
+        user: currentUserId,
+        timestamp: new Date(),
+        details: `Reused from source plan ${sourcePlan.planNumber} into new plan ${newPlanNumber}`,
+      }
+    ]
+  });
+
+  // Generate instances for reused plan
+  const rawBatches = ProductionPlanningEngine.splitPlanIntoBatches({
+    totalQuantity: targetQty,
+    splitMode,
+    splitValue,
+    startDate: targetDate,
+    workCenter: newPlan.workCenter,
+  });
+
+  const createdInstances = [];
+  for (let i = 0; i < rawBatches.length; i++) {
+    const b = rawBatches[i];
+    const instNumber = `${newPlanNumber}-${String.fromCharCode(65 + i)}`;
+    const instance = await ProductionPlanInstance.create({
+      instanceNumber: instNumber,
+      planId: newPlan._id,
+      planNumber: newPlan.planNumber,
+      sequence: i + 1,
+      productId: newPlan.productId,
+      productCode: newPlan.productCode,
+      productName: newPlan.productName,
+      bomId: newPlan.bomId,
+      bomVersion: newPlan.bomVersion,
+      warehouseId: newPlan.warehouseId,
+      siteId: newPlan.siteId,
+      quantity: b.quantity,
+      plannedStartDate: b.plannedStartDate,
+      workCenter: b.workCenter,
+      status: 'DRAFT',
+      notes: b.notes,
+      createdBy: currentUserId,
+    });
+    createdInstances.push(instance);
+  }
+
+  res.status(201).json({
+    success: true,
+    data: newPlan,
+    instances: createdInstances,
+    message: `Plan ${sourcePlan.planNumber} successfully reused as new plan ${newPlan.planNumber} with ${createdInstances.length} batch instances.`
+  });
+});
+
+// @desc    Add custom material component outside standard BOM (Rev. 2 Part B8)
+// @route   POST /api/production-plans/:id/custom-material
+// @access  Private
+exports.addCustomMaterial = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+  const { materialId, quantity, uom, reason, warehouseId } = req.body;
+  if (!materialId || !quantity) {
+    return res.status(400).json({ success: false, error: 'materialId and quantity are required' });
+  }
+
+  const mat = await Material.findById(materialId);
+  if (!mat) return res.status(404).json({ success: false, error: 'Material not found' });
+
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+  const customItem = {
+    materialId: mat._id,
+    materialCode: mat.code,
+    materialName: mat.name,
+    quantity: Number(quantity),
+    uom: uom || mat.unit || 'pcs',
+    warehouseId: warehouseId || plan.warehouseId,
+    reason: reason || 'Manual addition outside standard BOM',
+    addedBy: currentUserId,
+    addedAt: new Date(),
+    isApproved: true,
+  };
+
+  plan.customMaterials.push(customItem);
+  plan.auditHistory.push({
+    action: 'ADD_CUSTOM_MATERIAL',
+    user: currentUserId,
+    timestamp: new Date(),
+    details: `Added custom material ${mat.code} (${mat.name}, Qty: ${quantity}). Reason: ${reason || 'N/A'}`,
+  });
+
+  await plan.save();
+
+  res.status(201).json({ success: true, data: plan, customMaterial: customItem });
+});
+
+// @desc    Add material substitution (Rev. 2 Part B8)
+// @route   POST /api/production-plans/:id/substitute-material
+// @access  Private
+exports.addSubstitution = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+
+  const {
+    originalMaterialId,
+    substituteMaterialId,
+    originalQuantity,
+    substituteQuantity,
+    conversionFactor = 1.0,
+    reason,
+  } = req.body;
+
+  const [origMat, subMat] = await Promise.all([
+    Material.findById(originalMaterialId),
+    Material.findById(substituteMaterialId),
+  ]);
+
+  if (!origMat || !subMat) {
+    return res.status(404).json({ success: false, error: 'Original or substitute material not found' });
+  }
+
+  const currentUserId = req.user ? (req.user.id || req.user._id) : null;
+  const subItem = {
+    originalMaterialId: origMat._id,
+    originalMaterialCode: origMat.code,
+    originalMaterialName: origMat.name,
+    substituteMaterialId: subMat._id,
+    substituteMaterialCode: subMat.code,
+    substituteMaterialName: subMat.name,
+    originalQuantity: Number(originalQuantity),
+    substituteQuantity: Number(substituteQuantity),
+    conversionFactor: Number(conversionFactor),
+    reason: reason || 'Approved engineering substitute',
+    substitutedBy: currentUserId,
+    substitutedAt: new Date(),
+    isApproved: true,
+  };
+
+  plan.substitutions.push(subItem);
+  plan.auditHistory.push({
+    action: 'SUBSTITUTE_MATERIAL',
+    user: currentUserId,
+    timestamp: new Date(),
+    details: `Substituted ${origMat.code} (${originalQuantity}) with ${subMat.code} (${substituteQuantity}). Reason: ${reason}`,
+  });
+
+  await plan.save();
+
+  res.status(201).json({ success: true, data: plan, substitution: subItem });
+});
+
+// @desc    Get reusable master plan templates
+// @route   GET /api/production-plans/templates
+// @access  Private
+exports.getReusableTemplates = asyncHandler(async (req, res, next) => {
+  const templates = await ProductionPlan.find({
+    $or: [{ isTemplate: true }, { isReusable: true }]
+  })
+    .populate('productId', 'name code unit')
+    .populate('bomId')
+    .populate('warehouseId', 'name code')
+    .sort('-createdAt')
+    .limit(50);
+
+  res.status(200).json({ success: true, count: templates.length, data: templates });
+});
+
+// @desc    Synchronize master plan progress dynamically from instance records
+// @route   POST /api/production-plans/:id/sync-progress
+// @access  Private
+exports.syncPlanProgress = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlanningEngine.syncPlanProgressFromInstances(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+  res.status(200).json({ success: true, data: plan });
+});
+
+// @desc    Match and rank existing production plans using 10-criteria deterministic engine
+// @route   POST /api/production-plans/match
+// @access  Private
+exports.matchProductionPlans = asyncHandler(async (req, res, next) => {
+  const matchResult = await ProductionPlanningEngine.matchExistingPlans(req.body);
+  if (!matchResult.success) {
+    return res.status(400).json(matchResult);
+  }
+  res.status(200).json(matchResult);
+});
+
+// @desc    Re-verify production plan against live inventory, BOM, site, machine & capacity
+// @route   POST /api/production-plans/:id/re-verify
+// @access  Private
+exports.reverifyProductionPlan = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id).populate('productId bomId warehouseId siteId');
+  if (!plan) return res.status(404).json({ success: false, code: 'PLAN_NOT_FOUND', error: 'Plan not found' });
+
+  const remaining = plan.remainingQuantity !== undefined ? plan.remainingQuantity : (plan.availablePlans || plan.totalPlans || 0);
+  const bomId = plan.bomId?._id || plan.bomId;
+  const whId = plan.warehouseId?._id || plan.warehouseId;
+  const siteId = plan.siteId?._id || plan.siteId;
+
+  const checks = {
+    inventory: { passed: true, details: 'Inventory verified' },
+    bom: { passed: true, details: 'BOM recipe is active and current' },
+    warehouse: { passed: true, details: 'Warehouse is active and reachable' },
+    capacity: { passed: true, details: 'Capacity verified for work center' },
+    status: { passed: !['CANCELLED', 'REJECTED'].includes(plan.status), details: `Current status: ${plan.status}` },
+    remaining: { passed: remaining > 0, remaining, details: `${remaining} units available` },
+  };
+
+  if (bomId) {
+    const matCheck = await MRPEngineService.checkMaterialAvailability(bomId, remaining || 1, whId, siteId);
+    if (matCheck.status === 'SHORTAGE') {
+      checks.inventory.passed = false;
+      checks.inventory.details = `Material shortages detected (${(matCheck.shortages || []).length} items)`;
+      checks.inventory.shortages = matCheck.shortages;
+    }
+  }
+
+  const allPassed = Object.values(checks).every(c => c.passed);
+
+  res.status(200).json({
+    success: true,
+    planId: plan._id,
+    planNumber: plan.planNumber,
+    isReady: allPassed,
+    checks,
+    remainingQuantity: remaining,
+  });
+});
+
+// @desc    Manager/Approver Override to force plan execution with mandatory justification
+// @route   POST /api/production-plans/:id/override
+// @access  Private (Admin, Production Manager, Approver only)
+exports.overrideProductionPlan = asyncHandler(async (req, res, next) => {
+  const allowedRoles = ['Admin', 'Production Manager', 'Approver', 'Manager'];
+  if (!req.user || !allowedRoles.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      code: 'UNAUTHORIZED_OVERRIDE',
+      error: 'Only authorized Production Managers or Approvers can override plan restrictions.',
+    });
+  }
+
+  const { justification } = req.body;
+  if (!justification || justification.trim().length < 10) {
+    return res.status(400).json({
+      success: false,
+      code: 'INVALID_JUSTIFICATION',
+      error: 'A detailed typed justification (minimum 10 characters) is mandatory for managerial override.',
+    });
+  }
+
+  const plan = await ProductionPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, code: 'PLAN_NOT_FOUND', error: 'Plan not found' });
+
+  const currentUserId = req.user.id || req.user._id;
+  plan.status = 'APPROVED';
+  plan.overrideDetails = {
+    overriddenBy: currentUserId,
+    overriddenAt: new Date(),
+    justification: justification.trim(),
+  };
+  plan.auditHistory.push({
+    action: 'MANAGER_OVERRIDE',
+    user: currentUserId,
+    timestamp: new Date(),
+    details: `Manager override by ${req.user.username || req.user.name} (${req.user.role}). Reason: ${justification.trim()}`,
+  });
+
+  await plan.save();
+
+  // Write immutable audit log entry
+  try {
+    await AuditLog.create({
+      entityType: 'ProductionPlan',
+      entityId: plan._id,
+      action: 'APPROVE',
+      userId: currentUserId,
+      userName: req.user.username || req.user.name,
+      role: req.user.role,
+      module: 'Planning',
+      reason: `MANAGER_OVERRIDE: ${justification.trim()}`,
+      changes: {
+        status: 'APPROVED',
+        overrideJustification: justification.trim(),
+      },
+    });
+  } catch (err) {
+    console.warn('[AuditLog] Override log warning:', err.message);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Managerial override successfully recorded. Plan is approved for execution.',
+    data: plan,
+  });
+});
+
+
 

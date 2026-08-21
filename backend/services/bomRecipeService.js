@@ -24,14 +24,23 @@ const validateBOMComponents = async (productId, components, currentBomId = null)
   }
 
   // 2. Extract proposed component material IDs for cycle validation
-  const mpnIds = components.map(c => c.mpnId).filter(Boolean);
-  const mpns = await mongoose.model('MPN').find({ _id: { $in: mpnIds } }).populate('materialId');
+  const mpnIds = components.map(c => c.mpnId?._id || c.mpnId).filter(Boolean);
+  const directMatIds = components.map(c => c.materialId?._id || c.materialId).filter(Boolean);
+
+  const [mpns, directMats] = await Promise.all([
+    mongoose.model('MPN').find({ _id: { $in: mpnIds } }).populate('materialId'),
+    mongoose.model('Material').find({ _id: { $in: directMatIds } })
+  ]);
   
   const proposedComponentMaterialIds = [];
 
   for (const mpn of mpns) {
     if (!mpn.materialId) continue;
     const mat = mpn.materialId;
+    proposedComponentMaterialIds.push((mat._id || mat).toString());
+  }
+
+  for (const mat of directMats) {
     proposedComponentMaterialIds.push(mat._id.toString());
   }
 
@@ -62,12 +71,12 @@ exports.createBOM = async (data, userContext) => {
     const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
 
     const cleanComponents = componentsWithCost.map(c => ({
-      materialId: c.materialId || (c.mpnId?.materialId) || undefined,
-      mpnId: c.mpnId,
-      qty: c.qty,
-      quantity: c.qty,
-      lossPercent: c.lossPercent,
-      lossPercentage: c.lossPercent
+      materialId: c.materialId || (c.mpnId?.materialId?._id || c.mpnId?.materialId) || undefined,
+      mpnId: c.mpnId || undefined,
+      qty: Number(c.qty !== undefined ? c.qty : (c.quantity || 1)),
+      quantity: Number(c.qty !== undefined ? c.qty : (c.quantity || 1)),
+      lossPercent: Number(c.lossPercent !== undefined ? c.lossPercent : (c.lossPercentage || 0)),
+      lossPercentage: Number(c.lossPercent !== undefined ? c.lossPercent : (c.lossPercentage || 0))
     }));
 
     let seqDoc = await Sequence.findById('bomOrder').session(session);
@@ -106,6 +115,11 @@ exports.createBOM = async (data, userContext) => {
         { materialId: productId },
         { manufacturerName: manufacturer },
         { session, sort: { createdAt: -1 } }
+      );
+      await mongoose.model('Material').findByIdAndUpdate(
+        productId,
+        { manufacturer: manufacturer },
+        { session }
       );
     }
 
@@ -185,12 +199,12 @@ exports.updateBOM = async (id, data, userContext) => {
     const eDate = effectiveDate ? new Date(effectiveDate) : bom.effectiveDate;
     const { componentsWithCost } = await bomCostService.calculateBomCost(components, eDate);
     const cleanComponents = componentsWithCost.map(c => ({
-      materialId: c.materialId || (c.mpnId?.materialId) || undefined,
-      mpnId: c.mpnId,
-      qty: c.qty,
-      quantity: c.qty,
-      lossPercent: c.lossPercent,
-      lossPercentage: c.lossPercent
+      materialId: c.materialId || (c.mpnId?.materialId?._id || c.mpnId?.materialId) || undefined,
+      mpnId: c.mpnId || undefined,
+      qty: Number(c.qty !== undefined ? c.qty : (c.quantity || 1)),
+      quantity: Number(c.qty !== undefined ? c.qty : (c.quantity || 1)),
+      lossPercent: Number(c.lossPercent !== undefined ? c.lossPercent : (c.lossPercentage || 0)),
+      lossPercentage: Number(c.lossPercent !== undefined ? c.lossPercent : (c.lossPercentage || 0))
     }));
 
     const oldDoc = bom.toObject();
@@ -227,6 +241,11 @@ exports.updateBOM = async (id, data, userContext) => {
         { materialId: productId },
         { manufacturerName: manufacturer },
         { session, sort: { createdAt: -1 } }
+      );
+      await mongoose.model('Material').findByIdAndUpdate(
+        productId,
+        { manufacturer: manufacturer },
+        { session }
       );
     }
 

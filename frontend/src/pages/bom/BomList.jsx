@@ -143,8 +143,8 @@ export default function BomList() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto pb-64 min-h-[500px]">
-            <table className="w-full text-xs text-left border-collapse">
+          <div className="overflow-x-auto custom-scrollbar pb-64 min-h-[500px]">
+            <table className="w-full text-xs text-left border-collapse min-w-[950px]">
               <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase tracking-tight border-b border-slate-300 select-none">
                 <tr>
                   <th className="w-10 px-2 py-2 text-center font-mono border-r border-slate-200">#</th>

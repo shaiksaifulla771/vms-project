@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import { useSiteContext } from '../context/SiteContext';
+import usePageMeta from '../hooks/usePageMeta';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -36,7 +37,25 @@ const TABS = [
   { id: 'ledger', label: 'Audit Ledger', icon: History },
 ];
 
+const statusStyles = {
+  PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+  APPROVED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
+  IN_TRANSIT: 'bg-blue-50 text-blue-700 border-blue-200',
+  COMPLETED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  CANCELLED: 'bg-slate-100 text-slate-600 border-slate-200',
+  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  LowStock: 'bg-amber-50 text-amber-700 border-amber-200',
+  OutOfStock: 'bg-rose-50 text-rose-700 border-rose-200',
+  Draft: 'bg-slate-50 text-slate-600 border-slate-200',
+};
+
 export default function Inventory() {
+  usePageMeta('Inventory & Materials Management', 'Real-time stock ledger, batch tracking, warehouse balances, and adjustments.');
   const {
     activeSiteId,
     activeWarehouseId,
@@ -47,7 +66,7 @@ export default function Inventory() {
     filteredWarehouses
   } = useSiteContext();
   const [activeTab, setActiveTab] = useState('overview');
-  
+
   const [balances, setBalances] = useState([]);
   const [summary, setSummary] = useState({
     totalSKUs: 0,
@@ -80,6 +99,7 @@ export default function Inventory() {
   // Modals
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
   const [isTrfModalOpen, setIsTrfModalOpen] = useState(false);
+  const [stockOutWarningModal, setStockOutWarningModal] = useState(null);
 
   // Forms
   const [adjForm, setAdjForm] = useState({
@@ -186,9 +206,9 @@ export default function Inventory() {
 
       const matchesStatus =
         statusFilter === 'ALL' ? true :
-        statusFilter === 'IN_STOCK' ? avail > 0 :
-        statusFilter === 'OUT_OF_STOCK' ? avail <= 0 :
-        statusFilter === 'LOW_STOCK' ? (avail <= reorder && avail > 0) : true;
+          statusFilter === 'IN_STOCK' ? avail > 0 :
+            statusFilter === 'OUT_OF_STOCK' ? avail <= 0 :
+              statusFilter === 'LOW_STOCK' ? (avail <= reorder && avail > 0) : true;
 
       return matchesSearch && matchesType && matchesStatus;
     });
@@ -213,12 +233,13 @@ export default function Inventory() {
       const onHand = Number(item.balance !== undefined ? item.balance : (item.onHand || 0));
       const reserved = Number(item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0));
       const avail = Math.max(0, onHand - reserved);
-      const unitPrice = Number(item.materialId?.basePrice || item.materialId?.standardCost || item.materialId?.cost || item.unitPrice || 0);
+      const unitPrice = Number(item.unitPrice !== undefined ? item.unitPrice : (item.materialId?.unitPrice || item.materialId?.basePrice || item.materialId?.standardCost || item.materialId?.cost || item.materialId?.purchasePrice || item.materialId?.price || 0));
+      const totalValItem = Number(item.totalValue !== undefined ? item.totalValue : (onHand * unitPrice));
 
       totalOnHand += onHand;
       totalAvail += avail;
       totalRes += reserved;
-      totalVal += (onHand * unitPrice);
+      totalVal += totalValItem;
 
       if (avail > 0) inStock++;
       else outOfStock++;
@@ -239,15 +260,39 @@ export default function Inventory() {
     };
   }, [filteredBalances, balances, summary, searchQuery, typeFilter, statusFilter]);
 
-  // Adjustments Handlers
+  // Adjustments Handlers with Stock Out Over-Withdrawal Validation
   const handleCreateAdjustment = async (e) => {
     e.preventDefault();
     try {
       const targetWh = adjForm.warehouseId || activeWarehouseId || warehouses[0]?._id;
       if (!targetWh) {
-        alert('Please select a target warehouse.');
+        setToastMsg({ type: 'error', text: 'Please select a target warehouse.' });
         return;
       }
+
+      // Check for over-withdrawal when adjustmentType is OUT
+      if (adjForm.adjustmentType === 'OUT') {
+        const mat = materials.find(m => m._id === adjForm.materialId);
+        const curBal = balances.find(b =>
+          (b.materialId?._id === adjForm.materialId || b.materialId === adjForm.materialId) &&
+          (b.warehouseId?._id === targetWh || b.warehouseId === targetWh)
+        );
+        const availStock = curBal ? (curBal.available !== undefined ? curBal.available : Math.max(0, (curBal.balance || 0) - (curBal.reserved || 0))) : 0;
+        const reqQty = Number(adjForm.quantity || 0);
+
+        if (reqQty > availStock) {
+          setStockOutWarningModal({
+            materialName: mat?.name || 'Selected Material',
+            materialCode: mat?.code || '',
+            unit: mat?.unit || 'pcs',
+            availableStock: availStock,
+            requestedQty: reqQty,
+            deficit: Math.round((reqQty - availStock) * 1000) / 1000
+          });
+          return;
+        }
+      }
+
       const res = await api.post('/api/inventory/adjustments', {
         ...adjForm,
         warehouseId: targetWh,
@@ -474,22 +519,6 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* TOAST NOTIFICATION */}
-      {toastMsg && (
-        <div className={`p-3 rounded-xl text-xs font-bold border flex items-center justify-between shadow-xs animate-fadeIn ${
-          toastMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          : toastMsg.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-900'
-          : 'bg-blue-50 border-blue-200 text-blue-900'
-        }`}>
-          <div className="flex items-center space-x-2">
-            {toastMsg.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-             : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />}
-            <span>{toastMsg.text}</span>
-          </div>
-          <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">×</button>
-        </div>
-      )}
-
       {/* COMPACT KPI METRICS TILES */}
       <div className="grid gap-2.5 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs space-y-0.5">
@@ -548,11 +577,10 @@ export default function Inventory() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
-                  isActive
+                className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${isActive
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                }`}
+                  }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span>{tab.label}</span>
@@ -631,8 +659,8 @@ export default function Inventory() {
           </CardHeader>
 
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs min-w-[900px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-3.5">Material Details</th>
@@ -656,8 +684,8 @@ export default function Inventory() {
                             No Stock Items Found in Selected Scope
                           </p>
                           <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                            {activeSite 
-                              ? `Currently filtered to "${activeSite.name}" ${activeWarehouse ? `→ "${activeWarehouse.name}"` : ''}. If you adjusted stock in another facility, switch plant in the top header or click below.` 
+                            {activeSite
+                              ? `Currently filtered to "${activeSite.name}" ${activeWarehouse ? `→ "${activeWarehouse.name}"` : ''}. If you adjusted stock in another facility, switch plant in the top header or click below.`
                               : 'No stock records match the current search or filters.'}
                           </p>
                           {(activeSiteId || (activeWarehouseId && activeWarehouseId !== 'all')) && (
@@ -681,8 +709,8 @@ export default function Inventory() {
                       const onHand = Number(item.balance !== undefined ? item.balance : (item.onHand || 0));
                       const reserved = Number(item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0));
                       const avail = Math.max(0, onHand - reserved);
-                      const unitPrice = Number(item.materialId?.basePrice || item.materialId?.standardCost || item.materialId?.cost || item.unitPrice || 0);
-                      const totalVal = onHand * unitPrice;
+                      const unitPrice = Number(item.unitPrice !== undefined ? item.unitPrice : (item.materialId?.unitPrice || item.materialId?.basePrice || item.materialId?.standardCost || item.materialId?.cost || item.materialId?.purchasePrice || item.materialId?.price || 0));
+                      const totalVal = Number(item.totalValue !== undefined ? item.totalValue : (onHand * unitPrice));
                       const reorder = item.materialId?.reorderLevel || item.materialId?.safetyStock || 10;
                       const isLow = avail > 0 && avail <= reorder;
 
@@ -713,18 +741,32 @@ export default function Inventory() {
                           <td className="p-3.5 text-right font-mono font-black text-emerald-700 whitespace-nowrap">
                             {formattedAvail} <span className="text-[10px] font-normal text-emerald-600">{item.materialId?.unit || 'pcs'}</span>
                           </td>
-                          <td className="p-3.5 text-right font-mono text-slate-600 whitespace-nowrap">
-                            ₹{unitPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <td className="p-3.5 text-right font-mono whitespace-nowrap">
+                            <div className="flex flex-col items-end">
+                              <span className="font-extrabold text-slate-900">
+                                ₹{unitPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              {item.hasBom ? (
+                                <span className="inline-flex items-center text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 mt-0.5" title={`BOM Unit Cost (${item.bomNumber || 'BOM'})`}>
+                                  BOM Cost
+                                </span>
+                              ) : (
+                                item.priceSource && item.priceSource !== 'Default' && (
+                                  <span className="text-[9px] text-slate-400 font-semibold mt-0.5">
+                                    {item.priceSource}
+                                  </span>
+                                )
+                              )}
+                            </div>
                           </td>
                           <td className="p-3.5 text-right font-mono font-extrabold text-purple-900 whitespace-nowrap">
                             ₹{totalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-extrabold uppercase whitespace-nowrap tracking-wide leading-none ${
-                              avail === 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                              isLow ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                              'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}>
+                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-extrabold uppercase whitespace-nowrap tracking-wide leading-none ${avail === 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                isLow ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                  'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}>
                               {avail === 0 ? 'Out of Stock' : isLow ? 'Low Stock' : 'In Stock'}
                             </span>
                           </td>
@@ -775,8 +817,8 @@ export default function Inventory() {
 
           <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-xs min-w-[750px]">
                   <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
                     <tr>
                       <th className="p-3.5">Adj Code</th>
@@ -792,57 +834,59 @@ export default function Inventory() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {adjustments.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-slate-400 text-xs italic">No adjustment records found.</td>
+                        <td colSpan={8} className="p-8 text-center text-slate-400 text-xs italic">No adjustment requests found.</td>
                       </tr>
                     ) : (
                       adjustments.map((adj) => {
-                        const isPending = adj.status === 'Pending Approval';
+                        const isAddition = adj.adjustmentType === 'IN' || adj.type === 'INCREASE' || adj.type === 'ADJUSTMENT_IN' || adj.type === 'IN';
+                        const formattedQty = Math.abs(Number(adj.quantity || 0));
                         return (
                           <tr key={adj._id} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="p-3.5 font-mono font-extrabold text-blue-600 whitespace-nowrap">{adj.adjNumber}</td>
+                            <td className="p-3.5 font-mono font-extrabold text-blue-600 whitespace-nowrap">
+                              {adj.adjNumber || adj.adjustmentNumber || 'ADJ'}
+                            </td>
                             <td className="p-3.5">
                               <p className="font-extrabold text-slate-900">{adj.materialId?.name}</p>
                               <p className="text-[10px] text-slate-400 font-mono">{adj.materialId?.code}</p>
                             </td>
-                            <td className="p-3.5 text-slate-700">{adj.warehouseId?.name}</td>
+                            <td className="p-3.5 text-slate-700 font-bold">{adj.warehouseId?.name}</td>
                             <td className="p-3.5 text-center whitespace-nowrap">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-[10px] whitespace-nowrap ${
-                                adj.adjustmentType === 'IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {adj.adjustmentType} {adj.quantity} {adj.materialId?.unit || 'pcs'}
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-black text-[10px] ${
+                                  isAddition ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                }`}>
+                                  {isAddition ? `+${formattedQty}` : `-${formattedQty}`} {adj.materialId?.unit || 'pcs'}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                                  {isAddition ? 'Addition (IN)' : 'Reduction (OUT)'}
+                                </span>
+                              </div>
                             </td>
-                            <td className="p-3.5 text-slate-600 max-w-xs truncate">{adj.reason}</td>
-                            <td className="p-3.5 text-slate-500 whitespace-nowrap">{adj.createdBy?.username || 'User'}</td>
+                            <td className="p-3.5 text-slate-600 text-[11px] max-w-xs truncate">{adj.reason}</td>
+                            <td className="p-3.5 text-slate-600 text-xs">{adj.createdBy?.username || 'Planner'}</td>
                             <td className="p-3.5 text-center whitespace-nowrap">
-                              <span className={`inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-extrabold uppercase whitespace-nowrap tracking-wide leading-none ${
-                                adj.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                adj.status === 'Rejected' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                                'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${statusStyles[adj.status]}`}>
                                 {adj.status}
                               </span>
                             </td>
-                            <td className="p-3.5 text-right">
-                              {isPending ? (
+                            <td className="p-3.5 text-right whitespace-nowrap">
+                              {adj.status === 'PENDING' ? (
                                 <div className="flex items-center justify-end gap-1.5">
                                   <button
-                                    onClick={() => handleApproveAdjustment(adj._id, adj.adjNumber)}
-                                    disabled={actionLoadingId === adj._id}
-                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg transition-colors"
+                                    onClick={() => handleApproveAdjustment(adj._id, adj.adjNumber || adj.adjustmentNumber)}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
                                   >
                                     Approve
                                   </button>
                                   <button
-                                    onClick={() => handleRejectAdjustment(adj._id, adj.adjNumber)}
-                                    disabled={actionLoadingId === adj._id}
-                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-[11px] rounded-lg transition-colors"
+                                    onClick={() => handleRejectAdjustment(adj._id, adj.adjNumber || adj.adjustmentNumber)}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all"
                                   >
                                     Reject
                                   </button>
                                 </div>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-mono">{adj.approvedBy?.username ? `by ${adj.approvedBy.username}` : 'Processed'}</span>
+                                <span className="text-slate-400 text-xs italic">Closed</span>
                               )}
                             </td>
                           </tr>
@@ -860,10 +904,10 @@ export default function Inventory() {
       {/* TAB 3: INTER-WAREHOUSE TRANSFERS */}
       {activeTab === 'transfers' && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200/90 shadow-sm">
             <div>
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Inter-Warehouse Stock Transfers</h3>
-              <p className="text-[11px] text-slate-500 font-medium">Track stock transit across sites: Request &bull; Approve &bull; Dispatch &bull; Receive.</p>
+              <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">Inter-Warehouse Inventory Transfers</h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Move materials between storage facilities and production bays</p>
             </div>
             <button
               onClick={() => setIsTrfModalOpen(true)}
@@ -875,8 +919,8 @@ export default function Inventory() {
 
           <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-xs min-w-[800px]">
                   <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
                     <tr>
                       <th className="p-3.5 whitespace-nowrap">Transfer Code</th>
@@ -908,54 +952,41 @@ export default function Inventory() {
                               <span className="font-bold text-slate-900">{trf.toWarehouseId?.name}</span>
                             </div>
                           </td>
-                          <td className="p-3.5 text-right font-mono font-black text-slate-900 whitespace-nowrap">
-                            {trf.quantity} <span className="text-[10px] font-normal text-slate-500">{trf.materialId?.unit || 'pcs'}</span>
-                          </td>
+                          <td className="p-3.5 text-right font-black text-slate-900 whitespace-nowrap">{trf.quantity} {trf.materialId?.unit || 'pcs'}</td>
                           <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-extrabold uppercase whitespace-nowrap tracking-wide leading-none ${
-                              trf.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              trf.status === 'In Transit' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                              trf.status === 'Approved' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                              trf.status === 'Cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                              'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${statusStyles[trf.status]}`}>
                               {trf.status}
                             </span>
                           </td>
-                          <td className="p-3.5 text-slate-500 text-[11px] whitespace-nowrap">{new Date(trf.createdAt).toLocaleDateString()}</td>
+                          <td className="p-3.5 text-slate-500 whitespace-nowrap text-xs">{new Date(trf.createdAt).toLocaleDateString()}</td>
                           <td className="p-3.5 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
-                              {trf.status === 'Pending Approval' && (
+                              {trf.status === 'PENDING' && (
                                 <button
-                                  onClick={() => handleApproveTransfer(trf._id, trf.transferNumber)}
-                                  disabled={actionLoadingId === trf._id}
-                                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[11px] rounded-lg transition-colors"
+                                  onClick={() => handleUpdateTransferStatus(trf._id, 'IN_TRANSIT')}
+                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
                                 >
-                                  Approve
+                                  Dispatch
                                 </button>
                               )}
-                              {trf.status === 'Approved' && (
+                              {trf.status === 'IN_TRANSIT' && (
                                 <button
-                                  onClick={() => handleDispatchTransfer(trf._id, trf.transferNumber)}
-                                  disabled={actionLoadingId === trf._id}
-                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] rounded-lg transition-colors flex items-center gap-1"
+                                  onClick={() => handleUpdateTransferStatus(trf._id, 'COMPLETED')}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
                                 >
-                                  <Truck className="h-3 w-3" /> Dispatch
+                                  Receive
                                 </button>
                               )}
-                              {trf.status === 'In Transit' && (
+                              {['PENDING', 'IN_TRANSIT'].includes(trf.status) && (
                                 <button
-                                  onClick={() => handleReceiveTransfer(trf._id, trf.transferNumber)}
-                                  disabled={actionLoadingId === trf._id}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg transition-colors flex items-center gap-1"
+                                  onClick={() => handleUpdateTransferStatus(trf._id, 'CANCELLED')}
+                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all"
                                 >
-                                  <Check className="h-3 w-3" /> Receive
+                                  Cancel
                                 </button>
                               )}
-                              {trf.status === 'Completed' && (
-                                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                                  <CheckCircle2 className="h-3.5 w-3.5" /> Delivered
-                                </span>
+                              {['COMPLETED', 'CANCELLED'].includes(trf.status) && (
+                                <span className="text-slate-400 text-xs italic">Finished</span>
                               )}
                             </div>
                           </td>
@@ -997,8 +1028,8 @@ export default function Inventory() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs min-w-[750px]">
                 <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-3.5 whitespace-nowrap">Timestamp</th>
@@ -1031,8 +1062,15 @@ export default function Inventory() {
                             <span className="font-mono text-slate-400 text-[10px]">{tx.materialId?.code}</span>
                           </td>
                           <td className="p-3.5 font-sans text-slate-700">{tx.warehouseId?.name || 'Warehouse'}</td>
-                          <td className={`p-3.5 text-right font-black whitespace-nowrap ${tx.quantity >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                            {tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity} {tx.materialId?.unit || 'pcs'}
+                          <td className={`p-3.5 text-right font-black whitespace-nowrap ${
+                            (['ADJUSTMENT_OUT', 'TRANSFER_OUT', 'Issue', 'CONSUMPTION', 'SCRAP'].includes(tx.type) || tx.quantity < 0)
+                              ? 'text-rose-700' : 'text-emerald-700'
+                          }`}>
+                            {(() => {
+                              const isOutward = ['ADJUSTMENT_OUT', 'TRANSFER_OUT', 'Issue', 'CONSUMPTION', 'SCRAP'].includes(tx.type) || tx.quantity < 0;
+                              const absQty = Math.abs(Number(tx.quantity || 0));
+                              return `${isOutward ? '-' : '+'}${absQty} ${tx.materialId?.unit || 'pcs'}`;
+                            })()}
                           </td>
                           <td className="p-3.5 text-slate-600 truncate max-w-xs">{tx.referenceId || tx.sourceDocType || '—'}</td>
                           <td className="p-3.5 font-sans text-slate-500 whitespace-nowrap">{tx.userId?.username || 'System'}</td>
@@ -1284,6 +1322,91 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      {/* MODAL: STOCK OUT OVER-WITHDRAWAL DEFICIT POPUP */}
+      {stockOutWarningModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white border border-rose-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scaleUp">
+            <div className="flex items-center gap-3 pb-3 border-b border-rose-100">
+              <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Stock Out Limit Exceeded</h3>
+                <p className="text-xs text-rose-600 font-bold">Action Cannot Be Performed</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-rose-50/80 border border-rose-200 rounded-xl text-xs space-y-2 text-rose-950 font-medium">
+              <p className="font-bold text-slate-900">
+                {stockOutWarningModal.materialName} ({stockOutWarningModal.materialCode})
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="p-2 bg-white rounded-lg border border-rose-200">
+                  <span className="text-[10px] text-slate-500 block font-bold uppercase">Present Stock</span>
+                  <span className="text-sm font-black text-emerald-700 font-mono">
+                    {stockOutWarningModal.availableStock} {stockOutWarningModal.unit}
+                  </span>
+                </div>
+                <div className="p-2 bg-white rounded-lg border border-rose-200">
+                  <span className="text-[10px] text-slate-500 block font-bold uppercase">Requested Stock Out</span>
+                  <span className="text-sm font-black text-rose-700 font-mono">
+                    {stockOutWarningModal.requestedQty} {stockOutWarningModal.unit}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-rose-900 pt-1 leading-relaxed font-semibold">
+                ⚠ Present stock is only <strong>{stockOutWarningModal.availableStock} {stockOutWarningModal.unit}</strong>. Requested withdrawal of <strong>{stockOutWarningModal.requestedQty} {stockOutWarningModal.unit}</strong> exceeds inventory by <strong className="font-mono text-rose-950 underline">{stockOutWarningModal.deficit} {stockOutWarningModal.unit}</strong>.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setStockOutWarningModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+              >
+                Understood, Modify Quantity
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST NOTIFICATION (BOTTOM RIGHT) */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
+          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start justify-between gap-3 backdrop-blur-md ${
+            toastMsg.type === 'success'
+              ? 'bg-slate-900/95 text-white border-emerald-500/40'
+              : toastMsg.type === 'error'
+                ? 'bg-slate-900/95 text-white border-rose-500/40'
+                : 'bg-slate-900/95 text-white border-blue-500/40'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-xl mt-0.5 ${
+                toastMsg.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+              }`}>
+                {toastMsg.type === 'success' ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                )}
+              </div>
+              <div>
+                <div className={`text-xs font-black uppercase tracking-wider ${
+                  toastMsg.type === 'success' ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {toastMsg.type === 'success' ? 'Operation Success' : 'Attention / Error'}
+                </div>
+                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{toastMsg.text}</div>
+              </div>
+            </div>
+            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

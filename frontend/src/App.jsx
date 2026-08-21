@@ -39,6 +39,13 @@ import ProductionRoutes from './pages/production/ProductionRoutes';
 import ChatPanel from './features/chat/ChatPanel';
 import { Sparkles } from 'lucide-react';
 
+// Legal, Recovery & Trust Components
+import NotFound from './pages/NotFound';
+import PrivacyPolicy from './pages/legal/PrivacyPolicy';
+import TermsOfService from './pages/legal/TermsOfService';
+import CookieBanner from './components/CookieBanner';
+import SupportModal from './components/SupportModal';
+
 import ResetPassword from './pages/ResetPassword';
 
 // Role-based Route Guard Component
@@ -75,6 +82,7 @@ const AppContent = () => {
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // Full screen mode by default
   const [chatOpen, setChatOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
 
   if (loading) {
     return (
@@ -165,8 +173,8 @@ const AppContent = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex">
-      {/* Sidebar navigation */}
+    <div className="min-h-screen w-full bg-slate-50 flex flex-col antialiased">
+      {/* Sidebar navigation drawer */}
       <Sidebar
         activePage={sidebarActivePage}
         setActivePage={setActivePage}
@@ -174,44 +182,72 @@ const AppContent = () => {
         setIsCollapsed={setSidebarCollapsed}
       />
 
-      {/* Main page context */}
-      <div className="flex-1 pl-0 flex flex-col min-h-screen transition-all duration-300">
-        {/* Top Header navbar */}
-        <Header
-          activePage={sidebarActivePage}
-          sidebarCollapsed={sidebarCollapsed}
-          setSidebarCollapsed={setSidebarCollapsed}
-        />
+      {/* Top Header navbar */}
+      <Header
+        activePage={sidebarActivePage}
+        sidebarCollapsed={sidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
+      />
 
-        {/* Central content area */}
-        <main className="flex-1 pt-16 p-8 overflow-y-auto">
-          <div className="w-full h-full">
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" />} />
-              <Route path="/dashboard/*" element={<Dashboard />} />
-              <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-              <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
-              <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
-              <Route path="/masters/*" element={<Masters />} />
-              <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
-              <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator']}><Warehouse /></ProtectedRoute>} />
-              <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
-              <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
-              <Route path="/bom/*" element={<BOMRoutes />} />
-              <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
-              <Route path="/scheduling/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'Planner']}><Scheduling /></ProtectedRoute>} />
-              <Route path="/purchasing/*" element={<ProtectedRoute roles={['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']}><Purchasing /></ProtectedRoute>} />
-              <Route path="/workflows/*" element={<ProtectedRoute roles={['Admin']}><Workflows /></ProtectedRoute>} />
-              <Route path="/email/*" element={<ProtectedRoute roles={['Admin']}><EmailTemplates /></ProtectedRoute>} />
-              <Route path="/plugins/*" element={<ProtectedRoute roles={['Admin']}><Plugins /></ProtectedRoute>} />
-              <Route path="/quality/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector']}><Quality /></ProtectedRoute>} />
-              <Route path="/reports/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector', 'Finance']}><Reports /></ProtectedRoute>} />
-              <Route path="/settings/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
-              <Route path="*" element={<Navigate to="/dashboard" />} />
-            </Routes>
+      {/* Central content area - natural smooth window scrolling */}
+      <main className="flex-1 pt-20 px-4 sm:px-6 lg:px-8 pb-28 w-full max-w-7xl mx-auto min-w-0">
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="/dashboard/*" element={<Dashboard />} />
+          <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
+          <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+          <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
+          <Route path="/masters/*" element={<Masters />} />
+          <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+          <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator']}><Warehouse /></ProtectedRoute>} />
+          <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
+          <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+          <Route path="/bom/*" element={<BOMRoutes />} />
+          <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
+          <Route path="/scheduling/*" element={<Navigate to="/planning" replace />} />
+          <Route path="/purchasing/*" element={<ProtectedRoute roles={['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']}><Purchasing /></ProtectedRoute>} />
+          <Route path="/workflows/*" element={<ProtectedRoute roles={['Admin']}><Workflows /></ProtectedRoute>} />
+          <Route path="/email/*" element={<ProtectedRoute roles={['Admin']}><EmailTemplates /></ProtectedRoute>} />
+          <Route path="/plugins/*" element={<ProtectedRoute roles={['Admin']}><Plugins /></ProtectedRoute>} />
+          <Route path="/quality/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector']}><Quality /></ProtectedRoute>} />
+          <Route path="/reports/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector', 'Finance']}><Reports /></ProtectedRoute>} />
+          <Route path="/settings/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
+          
+          {/* Trust, Legal & Custom 404 Recovery Routes */}
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms-of-service" element={<TermsOfService />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+
+        {/* Global Enterprise Trust & Compliance Footer */}
+        <footer className="mt-16 pt-6 border-t border-slate-800/80 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            &copy; {new Date().getFullYear()} VendorOS Enterprise ERP &bull; Production v2.4
           </div>
-        </main>
-      </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setSupportOpen(true)}
+              className="text-slate-400 hover:text-blue-400 transition-colors cursor-pointer"
+            >
+              Support & Help
+            </button>
+            <span>&bull;</span>
+            <a href="/privacy-policy" className="text-slate-400 hover:text-blue-400 transition-colors">
+              Privacy Policy
+            </a>
+            <span>&bull;</span>
+            <a href="/terms-of-service" className="text-slate-400 hover:text-blue-400 transition-colors">
+              Terms of Service
+            </a>
+          </div>
+        </footer>
+      </main>
+
+      {/* Cookie Consent Banner */}
+      <CookieBanner />
+
+      {/* Support & Health Modal */}
+      <SupportModal isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
 
       {/* Floating AI Chat Button */}
       {user && (

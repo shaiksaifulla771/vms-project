@@ -42,7 +42,14 @@ exports.getBOMs = async (query) => {
 
   let boms = await BOM.find(filter)
     .populate('productId', 'name code unit manufacturer')
-    .populate('components.mpnId')
+    .populate({
+      path: 'components.mpnId',
+      populate: [
+        { path: 'materialId', select: 'name code unit type manufacturer basePrice' },
+        { path: 'vendorId', select: 'name company gstin' }
+      ]
+    })
+    .populate('components.materialId', 'name code unit type manufacturer basePrice')
     .populate({
       path: 'duplicatedFrom',
       select: 'version productId',
@@ -88,7 +95,7 @@ exports.getBOMs = async (query) => {
   const enrichedBoms = boms.map(b => ({ 
     ...b, 
     cloneCount: cloneCountMap[b._id.toString()] || 0,
-    mpnManufacturer: b.productId ? mpnMap[b.productId._id?.toString()] : null
+    mpnManufacturer: b.productId ? (mpnMap[b.productId._id?.toString()] || b.productId.manufacturer || b.manufacturer) : null
   }));
 
   const total = enrichedBoms.length;
@@ -126,10 +133,11 @@ exports.getBOM = async (id) => {
     .populate({
       path: 'components.mpnId',
       populate: [
-        { path: 'materialId', select: 'name code unit type' },
+        { path: 'materialId', select: 'name code unit type manufacturer basePrice' },
         { path: 'vendorId', select: 'name company gstin' }
       ]
     })
+    .populate('components.materialId', 'name code unit type manufacturer basePrice')
     .lean();
 
   if (!bom) {

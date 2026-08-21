@@ -18,7 +18,11 @@ class MaterialService {
     const session = await mongoose.startSession();
     startSafeTransaction(session);
     try {
-      let { name, code, unit, type, subcategory, status, description, basePrice } = data;
+      let {
+        name, code, unit, type, subcategory, status, description, basePrice,
+        safetyStock, minOrderQty, moq, lotSize, leadTimeDays, makeOrBuy,
+        defaultVendorId, reorderPoint, reorderQuantity, storageConditions
+      } = data;
 
       if (!name || !unit || typeof name !== 'string' || typeof unit !== 'string') {
         throw new Error('VALIDATION_ERROR: Please provide valid text strings for name and unit of measurement');
@@ -52,6 +56,8 @@ class MaterialService {
         }
       }
 
+      const resolvedMoq = moq !== undefined ? Number(moq) : (minOrderQty !== undefined ? Number(minOrderQty) : 1);
+
       const material = new Material({
         name,
         code: finalCode,
@@ -60,7 +66,17 @@ class MaterialService {
         subcategory,
         status: status || 'Active',
         description,
-        basePrice: typeof basePrice === 'number' ? basePrice : parseFloat(basePrice) || 0
+        basePrice: typeof basePrice === 'number' ? basePrice : parseFloat(basePrice) || 0,
+        safetyStock: safetyStock !== undefined ? Number(safetyStock) : 0,
+        minOrderQty: resolvedMoq,
+        moq: resolvedMoq,
+        lotSize: lotSize !== undefined ? Number(lotSize) : 1,
+        leadTimeDays: leadTimeDays !== undefined ? Number(leadTimeDays) : 7,
+        makeOrBuy: makeOrBuy ? String(makeOrBuy).toUpperCase() : (['Finished', 'Semi-Finished', 'Assembly'].includes(type) ? 'MAKE' : 'BUY'),
+        defaultVendorId: defaultVendorId || null,
+        reorderPoint: reorderPoint !== undefined ? Number(reorderPoint) : 0,
+        reorderQuantity: reorderQuantity !== undefined ? Number(reorderQuantity) : 0,
+        storageConditions: storageConditions || 'Ambient',
       });
       
       await material.save({ session });
@@ -107,7 +123,11 @@ class MaterialService {
     const session = await mongoose.startSession();
     startSafeTransaction(session);
     try {
-      const { name, code, unit, type, subcategory, status, description } = data;
+      const {
+        name, code, unit, type, subcategory, status, description, basePrice,
+        safetyStock, minOrderQty, moq, lotSize, leadTimeDays, makeOrBuy,
+        defaultVendorId, reorderPoint, reorderQuantity, storageConditions
+      } = data;
       let material = await Material.findById(id).session(session);
 
       if (!material) {
@@ -138,6 +158,20 @@ class MaterialService {
       if (subcategory !== undefined) material.subcategory = subcategory;
       if (status !== undefined) material.status = status;
       if (description !== undefined) material.description = description;
+      if (basePrice !== undefined) material.basePrice = Number(basePrice);
+      if (safetyStock !== undefined) material.safetyStock = Number(safetyStock);
+      if (moq !== undefined || minOrderQty !== undefined) {
+        const val = moq !== undefined ? Number(moq) : Number(minOrderQty);
+        material.moq = val;
+        material.minOrderQty = val;
+      }
+      if (lotSize !== undefined) material.lotSize = Number(lotSize);
+      if (leadTimeDays !== undefined) material.leadTimeDays = Number(leadTimeDays);
+      if (makeOrBuy !== undefined) material.makeOrBuy = String(makeOrBuy).toUpperCase();
+      if (defaultVendorId !== undefined) material.defaultVendorId = defaultVendorId || null;
+      if (reorderPoint !== undefined) material.reorderPoint = Number(reorderPoint);
+      if (reorderQuantity !== undefined) material.reorderQuantity = Number(reorderQuantity);
+      if (storageConditions !== undefined) material.storageConditions = storageConditions;
 
       await material.save({ session });
 

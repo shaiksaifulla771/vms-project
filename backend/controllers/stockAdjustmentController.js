@@ -87,7 +87,7 @@ exports.createAdjustmentRequest = asyncHandler(async (req, res) => {
     if (afterQty < 0) {
       return res.status(400).json({
         success: false,
-        error: `Insufficient stock for adjustment OUT. Current balance: ${beforeQty} ${material.unit}. Adjustment: ${adjQty} ${material.unit}`
+        error: `Cannot Perform Stock Out: Available stock is only ${beforeQty} ${material.unit}. Requested withdrawal of ${adjQty} ${material.unit} exceeds available inventory by ${(adjQty - beforeQty).toFixed(2)} ${material.unit}.`
       });
     }
   }

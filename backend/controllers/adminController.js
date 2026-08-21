@@ -6,6 +6,10 @@ const InventoryItem = require('../models/InventoryItem');
 const StockTransfer = require('../models/StockTransfer');
 const ProductionOrder = require('../models/ProductionOrder');
 const Appointment = require('../models/Appointment');
+const UserAccessAssignment = require('../models/UserAccessAssignment');
+const authz = require('../utils/authz');
+const scopeResolver = require('../utils/scopeResolver');
+const { invalidateUserStatusCache } = require('../middleware/authMiddleware');
 const mongoose = require('mongoose');
 
 // Helper to write Audit Log
@@ -28,7 +32,7 @@ const createAuditRecord = async (data, req) => {
       newValue: data.newValue || null,
       changes: data.changes || { text: data.reason || 'Action executed' },
       ipAddress: req?.ip || '127.0.0.1',
-      userAgent: req?.get('User-Agent') || 'Windows Chrome'
+      userAgent: typeof req?.get === 'function' ? (req.get('User-Agent') || 'Browser') : (req?.userAgent || 'Windows Chrome')
     });
     await log.save();
     return log;
@@ -465,16 +469,22 @@ exports.getActiveUsersAndSessions = async (req, res) => {
   try {
     const users = await User.find()
       .select('username email role accountStatus siteIds warehouseIds lastLoginAt lastActivityAt lastActivityIp lastActivityUserAgent')
-      .populate('siteIds', 'name')
-      .populate('warehouseIds', 'name')
       .lean();
 
     const fifteenMins = new Date(Date.now() - 15 * 60 * 1000);
 
-    const activeUsers = users.map(u => ({
-      ...u,
-      isOnline: u.lastActivityAt && new Date(u.lastActivityAt) >= fifteenMins,
-      activityStatusText: u.lastActivityAt && new Date(u.lastActivityAt) >= fifteenMins ? 'Active now' : 'Inactive'
+    const activeUsers = await Promise.all(users.map(async (u) => {
+      const { siteIds, warehouseIds } = await scopeResolver.getUserAssignedScopes(u);
+      const sites = await Site.find({ _id: { $in: siteIds } }).select('name code').lean();
+      const warehouses = await Warehouse.find({ _id: { $in: warehouseIds } }).select('name code').lean();
+
+      return {
+        ...u,
+        siteIds: sites,
+        warehouseIds: warehouses,
+        isOnline: u.lastActivityAt && new Date(u.lastActivityAt) >= fifteenMins,
+        activityStatusText: u.lastActivityAt && new Date(u.lastActivityAt) >= fifteenMins ? 'Active now' : 'Inactive'
+      };
     }));
 
     // Login History Logs
@@ -495,18 +505,26 @@ exports.updateUserAccess = async (req, res) => {
     const { userId } = req.params;
     const { role, siteIds, warehouseIds, reason } = req.body;
     const emailService = require('../services/emailService');
+    const Site = require('../models/Site');
+    const Warehouse = require('../models/Warehouse');
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'Reason is mandatory for changing user access scope and role permissions.' });
+    }
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const prevRole = user.role;
     const prevStatus = user.accountStatus;
-    const prevSiteIds = user.siteIds || [];
-    const prevWarehouseIds = user.warehouseIds || [];
+    const prevScopes = await scopeResolver.getUserAssignedScopes(user);
 
     if (role) user.role = role;
     if (siteIds) user.siteIds = siteIds;
     if (warehouseIds) user.warehouseIds = warehouseIds;
+    user.scopeAssignedBy = req.user ? (req.user.username || req.user.email || 'Admin') : 'System Admin';
+    user.scopeAssignedAt = new Date();
+    user.scopeReason = reason.trim();
 
     const wasPending = (user.accountStatus || '').toUpperCase() === 'PENDING';
     if (wasPending) {
@@ -516,17 +534,85 @@ exports.updateUserAccess = async (req, res) => {
 
     await user.save();
 
-    const auditDesc = `Admin changed ${user.username}'s access & scope permissions. Role: ${prevRole} -> ${user.role}. Status: ${prevStatus} -> ${user.accountStatus}.`;
+    // Sync active UserAccessAssignment collection
+    if (siteIds !== undefined || warehouseIds !== undefined) {
+      await UserAccessAssignment.updateMany(
+        { userId: user._id, status: 'active' },
+        { status: 'inactive', removedAt: new Date(), removedBy: req.user?._id, reason: `Updated via Admin Scope Control: ${reason.trim()}` }
+      );
+
+      const newAssignments = [];
+      if (Array.isArray(siteIds)) {
+        for (const sId of siteIds) {
+          if (sId) {
+            newAssignments.push({
+              userId: user._id,
+              scopeType: 'site',
+              scopeId: sId,
+              status: 'active',
+              assignedBy: req.user?._id || user._id,
+              assignedAt: new Date(),
+              reason: reason.trim()
+            });
+          }
+        }
+      }
+      if (Array.isArray(warehouseIds)) {
+        for (const wId of warehouseIds) {
+          if (wId) {
+            newAssignments.push({
+              userId: user._id,
+              scopeType: 'warehouse',
+              scopeId: wId,
+              status: 'active',
+              assignedBy: req.user?._id || user._id,
+              assignedAt: new Date(),
+              reason: reason.trim()
+            });
+          }
+        }
+      }
+      if (newAssignments.length > 0) {
+        await UserAccessAssignment.insertMany(newAssignments);
+      }
+    }
+
+    invalidateUserStatusCache(user._id);
+
+    // Fetch newly assigned site and warehouse names for the audit record
+    const newSites = siteIds && siteIds.length > 0 ? await Site.find({ _id: { $in: siteIds } }).select('name code') : [];
+    const newWarehouses = warehouseIds && warehouseIds.length > 0 ? await Warehouse.find({ _id: { $in: warehouseIds } }).select('name code') : [];
+    const newSiteNames = newSites.map(s => s.name || s.code);
+    const newWarehouseNames = newWarehouses.map(w => w.name || w.code);
+
+    const auditDesc = `Admin changed ${user.username}'s access & scope permissions. Role: ${prevRole} -> ${user.role}. Reason: ${reason.trim()}`;
 
     await createAuditRecord({
       entityType: 'User',
       entityId: user._id,
       action: wasPending ? 'ACCOUNT_APPROVED' : 'ACCESS_CHANGE',
       module: 'Users & Access',
-      reason: reason || auditDesc,
-      previousValue: { role: prevRole, accountStatus: prevStatus, siteIds: prevSiteIds, warehouseIds: prevWarehouseIds },
-      newValue: { role: user.role, accountStatus: user.accountStatus, siteIds: user.siteIds, warehouseIds: user.warehouseIds }
+      reason: reason.trim() || auditDesc,
+      previousValue: {
+        username: user.username,
+        email: user.email,
+        role: prevRole,
+        accountStatus: prevStatus,
+        siteIds: prevScopes.siteIds,
+        warehouseIds: prevScopes.warehouseIds
+      },
+      newValue: {
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        accountStatus: user.accountStatus,
+        siteIds: user.siteIds,
+        siteNames: newSiteNames,
+        warehouseIds: user.warehouseIds,
+        warehouseNames: newWarehouseNames
+      }
     }, req);
+
 
     if (wasPending) {
       try {
@@ -557,3 +643,6 @@ exports.updateUserAccess = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
+
+exports.createAuditRecord = createAuditRecord;
+

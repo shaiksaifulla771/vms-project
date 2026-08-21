@@ -170,36 +170,160 @@ class WorkflowEngineService {
         const actualVal = payload[field];
         let passed = false;
         if (operator === 'equals') passed = String(actualVal) === String(value);
+        else if (operator === 'not_equals') passed = String(actualVal) !== String(value);
+        else if (operator === 'greater_than') passed = Number(actualVal) > Number(value);
+        else if (operator === 'less_than') passed = Number(actualVal) < Number(value);
         else passed = Boolean(actualVal);
 
-        return { status: 'Success', result: { conditionMet: passed, field, actualVal } };
+        return { status: 'Success', result: { conditionMet: passed, field, actualVal, operator, targetValue: value } };
       }
+
       case 'Email': {
-        const templateCode = step.config.templateCode || 'APPOINTMENT_APPROVED';
-        const recipient = payload.visitorEmail || payload.email || 'visitor@example.com';
-        await emailService.sendTemplateEmail(templateCode, recipient, payload);
-        return { status: 'Success', result: { emailSent: true, recipient, templateCode } };
+        const templateCode = step.config?.templateCode || 'APPOINTMENT_APPROVED';
+        const recipient = payload.visitorEmail || payload.email || payload.hostEmail || 'visitor@example.com';
+        try {
+          await emailService.sendTemplateEmail(templateCode, recipient, payload);
+          return { status: 'Success', result: { emailSent: true, recipient, templateCode } };
+        } catch (err) {
+          return { status: 'Failed', error: `Email dispatch failed: ${err.message}` };
+        }
       }
+
       case 'Approval': {
-        // Auto-approve if payload status is already Approved
-        const isApproved = payload.status === 'Approved';
+        const isApproved = payload.status === 'Approved' || payload.status === 'APPROVED';
         return { status: 'Success', result: { approved: isApproved, autoApproved: isApproved } };
       }
+
+      case 'UpdateEntity': {
+        try {
+          const { modelName, field, value } = step.config || {};
+          if (modelName && field && execution.entityId) {
+            const mongoose = require('mongoose');
+            const Model = mongoose.model(modelName);
+            if (Model) {
+              const updated = await Model.findByIdAndUpdate(
+                execution.entityId,
+                { $set: { [field]: value } },
+                { new: true }
+              );
+              return { status: 'Success', result: { entityUpdated: true, modelName, field, value, entityId: execution.entityId } };
+            }
+          }
+          return { status: 'Success', result: { skipped: true, reason: 'Missing model or entity reference' } };
+        } catch (err) {
+          return { status: 'Failed', error: `Entity update failed: ${err.message}` };
+        }
+      }
+
+      case 'Webhook': {
+        try {
+          const { url, method = 'POST' } = step.config || {};
+          if (!url) return { status: 'Success', result: { skipped: true, reason: 'No webhook URL specified' } };
+
+          // Native fetch available in Node.js 18+
+          const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: execution.triggerEvent, payload, executionId: execution._id }),
+            signal: AbortSignal.timeout(5000)
+          });
+
+          return { status: 'Success', result: { webhookSent: true, url, statusCode: response.status } };
+        } catch (err) {
+          return { status: 'Failed', error: `Webhook request failed: ${err.message}` };
+        }
+      }
+
       default:
-        return { status: 'Success', result: { executed: true } };
+        return { status: 'Success', result: { executed: true, stepType: step.type } };
     }
   }
 
-  async pauseWorkflow(executionId) {
-    return WorkflowExecution.findByIdAndUpdate(executionId, { status: 'Paused' }, { new: true });
+  async pauseWorkflow(executionId, userId = null) {
+    const execution = await WorkflowExecution.findByIdAndUpdate(
+      executionId,
+      { status: 'Paused' },
+      { new: true }
+    );
+    if (userId && execution) {
+      await auditService.writeAuditLog(null, 'WorkflowExecution', executionId, 'PAUSE', null, { status: 'Paused' }, userId);
+    }
+    return execution;
   }
 
-  async resumeWorkflow(executionId) {
-    return WorkflowExecution.findByIdAndUpdate(executionId, { status: 'Running' }, { new: true });
+  async resumeWorkflow(executionId, resumePayload = {}, userId = null) {
+    const execution = await WorkflowExecution.findById(executionId).populate('workflowId');
+    if (!execution) throw new Error('Workflow execution not found');
+    if (execution.status !== 'Paused') {
+      throw new Error(`Cannot resume workflow in status '${execution.status}'`);
+    }
+
+    const wf = execution.workflowId;
+    if (!wf || !wf.steps) throw new Error('Associated workflow definition not found');
+
+    execution.status = 'Running';
+    const startIndex = execution.currentStepIndex + 1;
+
+    try {
+      for (let i = startIndex; i < wf.steps.length; i++) {
+        const step = wf.steps[i];
+        execution.currentStepIndex = i;
+
+        const stepResult = await this.executeStep(step, resumePayload, execution);
+
+        execution.executionHistory.push({
+          stepOrder: step.stepOrder,
+          stepName: step.name,
+          status: stepResult.status,
+          result: stepResult.result,
+          error: stepResult.error || null,
+        });
+
+        await WorkflowLog.create({
+          workflowId: wf._id,
+          executionId: execution._id,
+          stepName: step.name,
+          actionType: step.type,
+          status: stepResult.status === 'Success' ? 'Success' : 'Failed',
+          details: stepResult,
+        });
+
+        if (stepResult.status === 'Failed') {
+          execution.status = 'Failed';
+          execution.error = stepResult.error;
+          break;
+        }
+      }
+
+      if (execution.status === 'Running') {
+        execution.status = 'Completed';
+        execution.completedAt = new Date();
+      }
+    } catch (err) {
+      execution.status = 'Failed';
+      execution.error = err.message;
+      logger.error('WorkflowEngineService', `Resume failed for workflow [${wf.code}]`, err);
+    }
+
+    await execution.save();
+
+    if (userId) {
+      await auditService.writeAuditLog(null, 'WorkflowExecution', execution._id, 'RESUME', null, { status: execution.status }, userId);
+    }
+
+    return execution;
   }
 
-  async cancelWorkflow(executionId) {
-    return WorkflowExecution.findByIdAndUpdate(executionId, { status: 'Cancelled' }, { new: true });
+  async cancelWorkflow(executionId, userId = null) {
+    const execution = await WorkflowExecution.findByIdAndUpdate(
+      executionId,
+      { status: 'Cancelled', completedAt: new Date() },
+      { new: true }
+    );
+    if (userId && execution) {
+      await auditService.writeAuditLog(null, 'WorkflowExecution', executionId, 'CANCEL', null, { status: 'Cancelled' }, userId);
+    }
+    return execution;
   }
 
   async getWorkflowStatus(executionId) {

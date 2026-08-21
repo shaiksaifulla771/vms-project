@@ -10,7 +10,7 @@ import { Badge } from '../components/ui/Badge';
 import {
   CalendarClock, Clock, Plus, CheckCircle2, AlertTriangle, RefreshCw,
   XCircle, Filter, CheckCircle, Factory, Play, Undo2, Copy, Check,
-  ArrowRight, ArrowLeft, Layers, Sliders, ShieldCheck, X, Sparkles
+  ArrowRight, ArrowLeft, Layers, Sliders, ShieldCheck, X, Sparkles, Edit3
 } from 'lucide-react';
 
 const TABS = [
@@ -28,6 +28,17 @@ const SHIFTS = [
   { id: 'EVE', name: 'Evening Shift', start: '14:00', end: '22:00', hours: 8 },
   { id: 'NIGHT', name: 'Night Shift', start: '22:00', end: '06:00', hours: 8 },
 ];
+
+const priorityBadgeStyles = {
+  CRITICAL: 'bg-rose-50 text-rose-700 border border-rose-200',
+  Critical: 'bg-rose-50 text-rose-700 border border-rose-200',
+  HIGH: 'bg-rose-50 text-rose-700 border border-rose-200',
+  High: 'bg-rose-50 text-rose-700 border border-rose-200',
+  MEDIUM: 'bg-blue-50 text-blue-700 border border-blue-200',
+  Medium: 'bg-blue-50 text-blue-700 border border-blue-200',
+  LOW: 'bg-slate-100 text-slate-600 border border-slate-200',
+  Low: 'bg-slate-100 text-slate-600 border border-slate-200',
+};
 
 const DEFAULT_OPERATIONAL_STAGES = [
   { seq: 1, name: 'Material Staging & Kitting', resource: 'Warehouse Staging Bay', setupMins: 15, runMins: 30, color: 'bg-amber-500', barColor: 'bg-amber-400' },
@@ -90,6 +101,29 @@ const Scheduling = () => {
     requiredDate: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0],
     priority: 'Medium',
     reason: 'Urgent customer demand',
+    notes: '',
+  });
+
+  // Direct Plan Edit State (Rev. 3)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [submittingEdit, setSubmittingEdit] = useState(false);
+  const [editPlanForm, setEditPlanForm] = useState({
+    _id: '',
+    planNumber: '',
+    planName: '',
+    productName: '',
+    productCode: '',
+    bomId: '',
+    quantity: 50,
+    requiredDate: '',
+    warehouseId: '',
+    priority: 'MEDIUM',
+    workCenter: 'Main Assembly Line 1',
+    shiftId: 'Morning Shift',
+    seriesId: '',
+    seriesIndex: 1,
+    seriesTotal: 1,
+    editScope: 'SINGLE',
     notes: '',
   });
 
@@ -320,6 +354,65 @@ const Scheduling = () => {
     }
   };
 
+  // Open Edit Plan Modal
+  const handleOpenEditPlan = (plan) => {
+    const rawQty = plan.totalPlans || plan.quantity || 1;
+    const reqDate = plan.requiredDate ? new Date(plan.requiredDate).toISOString().split('T')[0] : new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+    const shift = plan.schedule?.shiftId || plan.schedule?.shift || 'Morning Shift';
+
+    setEditPlanForm({
+      _id: plan._id,
+      planNumber: plan.planNumber || 'N/A',
+      planName: plan.planName || '',
+      productName: plan.productId?.name || plan.product?.name || plan.productName || 'Product',
+      productCode: plan.productId?.code || plan.product?.code || plan.productCode || '',
+      bomId: plan.bomId?._id || plan.bomId || plan.bom?._id || plan.bom || '',
+      quantity: rawQty,
+      requiredDate: reqDate,
+      warehouseId: plan.warehouseId?._id || plan.warehouseId || (warehouses[0]?._id || ''),
+      priority: plan.priority || 'MEDIUM',
+      workCenter: plan.workCenter || 'Main Assembly Line 1',
+      shiftId: shift,
+      seriesId: plan.seriesId || '',
+      seriesIndex: plan.seriesIndex || 1,
+      seriesTotal: plan.seriesTotal || 1,
+      editScope: 'SINGLE',
+      notes: plan.notes || plan.remarks || '',
+    });
+    setIsEditModalOpen(true);
+  };
+
+  // Submit Edit Plan
+  const handleEditPlanSubmit = async (e) => {
+    e.preventDefault();
+    if (!editPlanForm._id) return;
+    setSubmittingEdit(true);
+    try {
+      const payload = {
+        planName: editPlanForm.planName,
+        totalPlans: parseInt(editPlanForm.quantity, 10),
+        quantity: parseInt(editPlanForm.quantity, 10),
+        bomId: editPlanForm.bomId || undefined,
+        warehouseId: editPlanForm.warehouseId,
+        requiredDate: editPlanForm.requiredDate,
+        priority: editPlanForm.priority,
+        workCenter: editPlanForm.workCenter,
+        shiftId: editPlanForm.shiftId,
+        editScope: editPlanForm.editScope,
+        notes: editPlanForm.notes,
+      };
+
+      const res = await productionPlanService.updatePlan(editPlanForm._id, payload);
+      setToastMsg({ type: 'success', text: res.message || `Plan ${editPlanForm.planNumber} updated successfully.` });
+      setIsEditModalOpen(false);
+      await fetchData();
+    } catch (err) {
+      setToastMsg({ type: 'error', text: err.response?.data?.error || err.message || 'Failed to update plan' });
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
   // Copy / Duplicate Plan Action
   const handleCopyPlan = async (planId, planNumber) => {
     setActionLoadingId(planId);
@@ -423,21 +516,7 @@ const Scheduling = () => {
 
   return (
     <div className="space-y-6">
-      {/* Toast Feedback */}
-      {toastMsg && (
-        <div className={`p-4 rounded-xl text-xs font-bold border flex items-center justify-between shadow-sm ${
-          toastMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-          : toastMsg.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800'
-          : 'bg-blue-50 border-blue-200 text-blue-800'
-        }`}>
-          <div className="flex items-center space-x-2">
-            {toastMsg.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-             : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />}
-            <span>{toastMsg.text}</span>
-          </div>
-          <button onClick={() => setToastMsg(null)} className="text-slate-400 text-sm font-bold">×</button>
-        </div>
-      )}
+
 
       {/* 5-STAGE WORKFLOW METRIC CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
@@ -550,8 +629,8 @@ const Scheduling = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs text-slate-700 min-w-[800px]">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4 whitespace-nowrap">Plan Number</th>
@@ -573,34 +652,54 @@ const Scheduling = () => {
                   ) : (
                     unscheduledPlans.map((plan) => (
                       <tr key={plan._id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="p-4 font-mono font-bold text-slate-900 whitespace-nowrap">{plan.planNumber}</td>
+                        <td className="p-4 font-mono font-bold text-blue-600 whitespace-nowrap">{plan.planNumber}</td>
                         <td className="p-4">
                           <p className="font-extrabold text-slate-900">{plan.productId?.name || 'Product'}</p>
                           <p className="text-[10px] font-mono text-slate-400">{plan.productId?.code}</p>
+                          {plan.materialStatus?.status === 'SHORTAGE' && (
+                            <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
+                              <span>Root Cause: Missing Material Supply</span>
+                            </div>
+                          )}
+                          {plan.holdReason && (
+                            <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              <span>Hold Reason: {plan.holdReason}</span>
+                            </div>
+                          )}
                         </td>
-                        <td className="p-4 text-right font-mono font-black text-blue-600 whitespace-nowrap">
-                          {plan.quantity} <span className="text-[10px] text-slate-500 font-normal">{plan.productId?.unit || 'pcs'}</span>
+
+                        <td className="p-4 text-right font-mono font-black text-slate-900 whitespace-nowrap">
+                          {plan.totalPlans || plan.quantity} <span className="text-[10px] text-slate-500 font-normal">{plan.productId?.unit || 'pcs'}</span>
                         </td>
-                        <td className="p-4 font-mono text-slate-600 whitespace-nowrap">
+                        <td className="p-4 whitespace-nowrap font-medium text-slate-600">
                           {plan.requiredDate ? new Date(plan.requiredDate).toLocaleDateString() : 'N/A'}
                         </td>
-                        <td className="p-4 text-slate-600">
-                          <span className="font-semibold text-slate-800">{plan.priority || 'Medium'}</span>
-                          <span className="text-slate-400 text-[10px] block">({plan.planSource || 'MRP'})</span>
+                        <td className="p-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold ${priorityBadgeStyles[plan.priority || 'MEDIUM']}`}>
+                            {plan.priority || 'MEDIUM'}
+                          </span>
                         </td>
                         <td className="p-4 text-center whitespace-nowrap">
                           <span className="inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-extrabold uppercase whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200">
                             Unscheduled
                           </span>
                         </td>
-                        <td className="p-4 text-right whitespace-nowrap space-x-1.5">
+                        <td className="p-4 text-right whitespace-nowrap">
                           <Button
                             size="sm"
-                            isLoading={actionLoadingId === plan._id}
                             onClick={() => openScheduleModal(plan)}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-sm"
                           >
                             <CalendarClock className="h-3.5 w-3.5 mr-1" /> Schedule Plan
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenEditPlan(plan)}
+                            className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs"
+                          >
+                            <Edit3 className="h-3.5 w-3.5 mr-1" /> Edit
                           </Button>
                           <Button
                             size="sm"
@@ -642,8 +741,8 @@ const Scheduling = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs text-slate-700 min-w-[850px]">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4 whitespace-nowrap">Linked PO</th>
@@ -757,8 +856,8 @@ const Scheduling = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs text-slate-700 min-w-[750px]">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4 whitespace-nowrap">PO Number</th>
@@ -829,8 +928,8 @@ const Scheduling = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs text-slate-700 min-w-[750px]">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4 whitespace-nowrap">PO Number</th>
@@ -890,8 +989,8 @@ const Scheduling = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs text-slate-700 min-w-[700px]">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4 whitespace-nowrap">Plan Number</th>
@@ -1220,8 +1319,8 @@ const Scheduling = () => {
                   <span className="text-[10px] font-bold text-slate-400">Editable Setup & Run Durations</span>
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                  <table className="w-full text-left text-xs text-slate-700">
+                <div className="overflow-x-auto custom-scrollbar rounded-2xl border border-slate-200">
+                  <table className="w-full text-left text-xs text-slate-700 min-w-[650px]">
                     <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                       <tr>
                         <th className="p-3 w-8 text-center">#</th>
@@ -1335,8 +1434,234 @@ const Scheduling = () => {
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* MODAL: EDIT PRODUCTION PLAN (Direct Quantity, Shift, BOM, Warehouse, Scope) */}
+      {/* ========================================================================= */}
+      {isEditModalOpen && editPlanForm._id && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-100 animate-scaleIn max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Edit3 className="w-5 h-5" /></div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Edit Plan {editPlanForm.planNumber}</h3>
+                  <p className="text-xs text-slate-500">Update planned quantity, production shift, recipe, or target warehouse</p>
+                </div>
+              </div>
+              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-5 h-5" /></button>
+            </div>
+
+            <form onSubmit={handleEditPlanSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Target Product</label>
+                  <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between">
+                    <span className="truncate">{editPlanForm.productName}</span>
+                    <span className="text-[10px] text-slate-500 font-mono">({editPlanForm.productCode || 'SKU'})</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Plan Title</label>
+                  <input
+                    type="text"
+                    value={editPlanForm.planName}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, planName: e.target.value }))}
+                    placeholder="e.g. Q3 Main Frame Assembly Plan"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Number of Plans (Qty) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editPlanForm.quantity}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                    className="w-full text-xs p-2.5 bg-blue-50/50 border border-blue-200 rounded-xl font-black text-blue-900 focus:bg-white"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Required Completion Date *</label>
+                  <input
+                    type="date"
+                    value={editPlanForm.requiredDate}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, requiredDate: e.target.value }))}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Priority</label>
+                  <select
+                    value={editPlanForm.priority}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, priority: e.target.value }))}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="CRITICAL">Critical</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Recipe / BOM Version</label>
+                  <select
+                    value={editPlanForm.bomId}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, bomId: e.target.value }))}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:bg-white"
+                  >
+                    <option value="">Active Standard Recipe (Default)</option>
+                    {boms.map(b => (
+                      <option key={b._id} value={b._id}>{b.bomNumber} (v{b.version || 1}) - {b.components?.length || 0} components</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Target Warehouse *</label>
+                  <select
+                    value={editPlanForm.warehouseId}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, warehouseId: e.target.value }))}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white"
+                    required
+                  >
+                    {warehouses.map(w => (
+                      <option key={w._id} value={w._id}>{w.name} ({w.code})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Work Center / Line</label>
+                  <input
+                    type="text"
+                    value={editPlanForm.workCenter}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, workCenter: e.target.value }))}
+                    placeholder="e.g. Main Assembly Line 1"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Default Production Shift</label>
+                  <select
+                    value={editPlanForm.shiftId}
+                    onChange={e => setEditPlanForm(prev => ({ ...prev, shiftId: e.target.value }))}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white"
+                  >
+                    <option value="Morning Shift">Morning Shift (08:00 - 16:00)</option>
+                    <option value="Evening Shift">Evening Shift (16:00 - 00:00)</option>
+                    <option value="Night Shift">Night Shift (00:00 - 08:00)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Edit Scope: Only this plan vs All remaining plans in series */}
+              {(editPlanForm.seriesId || editPlanForm.seriesTotal > 1) && (
+                <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-2">
+                  <label className="block text-xs font-black text-indigo-950">
+                    Apply Updates To:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className={`p-2.5 rounded-lg border text-xs cursor-pointer flex items-center gap-2 transition-all ${editPlanForm.editScope === 'SINGLE' ? 'bg-white border-indigo-500 shadow-sm text-indigo-900 font-bold' : 'bg-indigo-100/40 border-transparent text-slate-700 font-medium'}`}>
+                      <input
+                        type="radio"
+                        name="editScope"
+                        value="SINGLE"
+                        checked={editPlanForm.editScope === 'SINGLE'}
+                        onChange={() => setEditPlanForm(prev => ({ ...prev, editScope: 'SINGLE' }))}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Only this Plan ({editPlanForm.planNumber})</span>
+                    </label>
+
+                    <label className={`p-2.5 rounded-lg border text-xs cursor-pointer flex items-center gap-2 transition-all ${editPlanForm.editScope === 'ALL_REMAINING' ? 'bg-white border-indigo-500 shadow-sm text-indigo-900 font-bold' : 'bg-indigo-100/40 border-transparent text-slate-700 font-medium'}`}>
+                      <input
+                        type="radio"
+                        name="editScope"
+                        value="ALL_REMAINING"
+                        checked={editPlanForm.editScope === 'ALL_REMAINING'}
+                        onChange={() => setEditPlanForm(prev => ({ ...prev, editScope: 'ALL_REMAINING' }))}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>All Remaining Plans in Series</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Planner Remarks & Notes</label>
+                <textarea
+                  rows={2}
+                  value={editPlanForm.notes}
+                  onChange={e => setEditPlanForm(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Special shop-floor constraints..."
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="text-xs font-bold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  isLoading={submittingEdit}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm"
+                >
+                  <Check className="w-4 h-4 mr-1.5" />
+                  <span>{editPlanForm.editScope === 'ALL_REMAINING' ? 'Save All Remaining Plans' : 'Save Plan Changes'}</span>
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Non-Intrusive Toast Feedback */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
+          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start justify-between gap-3 backdrop-blur-md ${
+            toastMsg.type === 'success'
+              ? 'bg-slate-900/95 text-white border-emerald-500/40'
+              : 'bg-slate-900/95 text-white border-rose-500/40'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-xl mt-0.5 ${toastMsg.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                {toastMsg.type === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertTriangle className="h-5 w-5 shrink-0" />}
+              </div>
+              <div>
+                <div className={`text-xs font-black uppercase tracking-wider ${toastMsg.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {toastMsg.type === 'success' ? 'Completed' : 'Notice / Issue'}
+                </div>
+                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{toastMsg.text}</div>
+              </div>
+            </div>
+            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default Scheduling;
+

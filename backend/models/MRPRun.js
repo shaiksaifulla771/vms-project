@@ -52,6 +52,26 @@ const MRPRunSchema = new mongoose.Schema({
     applyLotSizing: { type: Boolean, default: true },
     multiLevel: { type: Boolean, default: true },
   },
+  algorithmVersion: {
+    type: String,
+    default: 'MRP-2.1',
+  },
+  planningRuleVersion: {
+    type: String,
+    default: 'RULESET-1.4',
+  },
+  idempotencyKey: {
+    type: String,
+  },
+  inputHash: {
+    type: String,
+  },
+  inputSnapshot: {
+    type: mongoose.Schema.Types.Mixed, // Immutable snapshot of demand, inventory balances & open supply at run time
+  },
+  candidateProposal: {
+    type: mongoose.Schema.Types.Mixed, // Generated candidate plan before commit
+  },
   status: {
     type: String,
     enum: ['In Progress', 'Completed', 'Failed', 'Converted'],
@@ -87,6 +107,7 @@ const MRPRunSchema = new mongoose.Schema({
 MRPRunSchema.index({ createdAt: -1 });
 MRPRunSchema.index({ productId: 1, createdAt: -1 });
 MRPRunSchema.index({ warehouseId: 1 });
+MRPRunSchema.index({ idempotencyKey: 1 });
 
 module.exports = mongoose.model('MRPRun', MRPRunSchema);
 

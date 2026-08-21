@@ -1,22 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import {
-  CheckCircle2,
-  RefreshCw,
-  Filter,
-  Plus,
-  Unlink,
-  ArrowRightLeft,
-  AlertTriangle,
   Building2,
-  Warehouse,
-  Eye,
-  Edit2,
   ShieldAlert,
-  ChevronRight,
+  Eye,
   UserCheck,
   XCircle,
-  Bell
+  CheckCircle2
 } from 'lucide-react';
 
 const NetworkAndSites = () => {
@@ -29,7 +19,7 @@ const NetworkAndSites = () => {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [_error, setError] = useState(null);
 
   // Modals & Drawers
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
@@ -41,7 +31,9 @@ const NetworkAndSites = () => {
   const [unlinkModal, setUnlinkModal] = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
   const [editUserScopeModal, setEditUserScopeModal] = useState(null);
+  const [selectedAuditLogDetail, setSelectedAuditLogDetail] = useState(null);
   const [approveUserModal, setApproveUserModal] = useState(null); // Pending Request object
+  const [scopeActionLoading, setScopeActionLoading] = useState(false);
 
   const [mandatoryReason, setMandatoryReason] = useState('');
   const [selectedTargetSiteId, setSelectedTargetSiteId] = useState('');
@@ -224,21 +216,33 @@ const NetworkAndSites = () => {
   const handleOpenEditScope = (u) => {
     setEditUserScopeModal(u);
     setSelectedRole(u.role || 'Viewer');
-    setSelectedSiteIds(u.siteIds ? u.siteIds.map(s => s._id || s) : []);
-    setSelectedWarehouseIds(u.warehouseIds ? u.warehouseIds.map(w => w._id || w) : []);
+    setSelectedSiteIds(u.siteIds ? u.siteIds.map(s => String(s._id || s)) : []);
+    setSelectedWarehouseIds(u.warehouseIds ? u.warehouseIds.map(w => String(w._id || w)) : []);
     setMandatoryReason('');
   };
 
-  const handleSaveUserScope = () => {
-    if (!mandatoryReason.trim()) { alert('Reason is required.'); return; }
-    setUsers(users.map(u => u._id === editUserScopeModal._id ? {
-      ...u, role: selectedRole,
-      siteIds: sites.filter(s => selectedSiteIds.includes(s._id)),
-      warehouseIds: warehouses.filter(w => selectedWarehouseIds.includes(w._id))
-    } : u));
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'UPDATE_SCOPE', module: 'User Access Scope', locationName: editUserScopeModal.username, reason: mandatoryReason }, ...auditLogs]);
-    setSystemNotice({ title: 'Scope Updated', message: `Updated access scope for ${editUserScopeModal.username}.` });
-    setEditUserScopeModal(null);
+  const handleSaveUserScope = async () => {
+    if (!mandatoryReason || !mandatoryReason.trim()) {
+      alert('Mandatory Reason is required to update user access scope and permissions.');
+      return;
+    }
+    setScopeActionLoading(true);
+    try {
+      await api.put(`/api/admin/users/${editUserScopeModal._id}/access-scope`, {
+        role: selectedRole,
+        siteIds: selectedSiteIds,
+        warehouseIds: selectedWarehouseIds,
+        reason: mandatoryReason.trim()
+      });
+      setSystemNotice({ title: 'Access Scope Updated', message: `Successfully updated roles & facility scopes for ${editUserScopeModal.username}.` });
+      setEditUserScopeModal(null);
+      setMandatoryReason('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.message || err.response?.data?.error || 'Failed to update access scope.');
+    } finally {
+      setScopeActionLoading(false);
+    }
   };
 
   return (
@@ -297,26 +301,14 @@ const NetworkAndSites = () => {
         </div>
       </div>
 
-      {/* SYSTEM NOTICE */}
-      {systemNotice && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs font-medium">
-          <div className="flex items-center space-x-2">
-            <i className="ti ti-circle-check fs-4 text-emerald-600"></i>
-            <span><strong>{systemNotice.title}:</strong> {systemNotice.message}</span>
-          </div>
-          <button onClick={() => setSystemNotice(null)} className="font-bold underline text-emerald-700">Dismiss</button>
-        </div>
-      )}
-
       {/* CLEAN TABS */}
       <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-xl overflow-x-auto">
         <button
           onClick={() => setActiveTab('pendingApprovals')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'pendingApprovals'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'pendingApprovals'
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
         >
           <UserCheck className="w-4 h-4" />
           <span>Pending Approvals</span>
@@ -329,11 +321,10 @@ const NetworkAndSites = () => {
 
         <button
           onClick={() => setActiveTab('hierarchyTree')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'hierarchyTree'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'hierarchyTree'
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
         >
           <i className="ti ti-git-fork fs-5"></i>
           <span>Facility Hierarchy</span>
@@ -341,11 +332,10 @@ const NetworkAndSites = () => {
 
         <button
           onClick={() => setActiveTab('sites')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'sites'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'sites'
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
         >
           <i className="ti ti-building fs-5"></i>
           <span>Sites</span>
@@ -353,11 +343,10 @@ const NetworkAndSites = () => {
 
         <button
           onClick={() => setActiveTab('warehouses')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'warehouses'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'warehouses'
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
         >
           <i className="ti ti-home-2 fs-5"></i>
           <span>Warehouses</span>
@@ -365,11 +354,10 @@ const NetworkAndSites = () => {
 
         <button
           onClick={() => setActiveTab('userScope')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'userScope'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'userScope'
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
         >
           <i className="ti ti-user-check fs-5"></i>
           <span>User Access Scopes</span>
@@ -377,11 +365,10 @@ const NetworkAndSites = () => {
 
         <button
           onClick={() => setActiveTab('auditLog')}
-          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'auditLog'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
+          className={`px-4 py-2 font-bold text-xs transition-all border-b-2 -mb-px flex items-center gap-1.5 ${activeTab === 'auditLog'
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
         >
           <i className="ti ti-history fs-5"></i>
           <span>Audit Logs</span>
@@ -544,8 +531,8 @@ const NetworkAndSites = () => {
 
       {/* TAB 2: SITE MASTER TABLE */}
       {activeTab === 'sites' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
-          <table className="w-full text-left text-xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-x-auto custom-scrollbar shadow-2xs">
+          <table className="w-full text-left text-xs min-w-[800px]">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <th className="py-2.5 px-3.5">SITE NAME</th>
@@ -587,8 +574,8 @@ const NetworkAndSites = () => {
 
       {/* TAB 3: WAREHOUSE MASTER TABLE */}
       {activeTab === 'warehouses' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
-          <table className="w-full text-left text-xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-x-auto custom-scrollbar shadow-2xs">
+          <table className="w-full text-left text-xs min-w-[750px]">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <th className="py-2.5 px-3.5">WAREHOUSE NAME</th>
@@ -628,8 +615,8 @@ const NetworkAndSites = () => {
 
       {/* TAB 4: ACTIVE USER ACCESS SCOPE TABLE */}
       {activeTab === 'userScope' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
-          <table className="w-full text-left text-xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-x-auto custom-scrollbar shadow-2xs">
+          <table className="w-full text-left text-xs min-w-[750px]">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <th className="py-2.5 px-3.5">USER NAME</th>
@@ -664,8 +651,8 @@ const NetworkAndSites = () => {
 
       {/* TAB 5: AUDIT LOG TABLE */}
       {activeTab === 'auditLog' && (
-        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-hidden shadow-2xs">
-          <table className="w-full text-left text-xs">
+        <div className="bg-white border border-slate-200 border-t-0 rounded-b-xl overflow-x-auto custom-scrollbar shadow-2xs">
+          <table className="w-full text-left text-xs min-w-[750px]">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <th className="py-2.5 px-3.5">TIMESTAMP</th>
@@ -685,7 +672,7 @@ const NetworkAndSites = () => {
                   <td className="py-2.5 px-3.5 text-slate-600 text-xs">{log.module || 'General'}</td>
                   <td className="py-2.5 px-3.5 font-bold text-slate-800 text-xs">{log.locationName || 'System'}</td>
                   <td className="py-2.5 px-3.5 text-center">
-                    <button onClick={() => setSelectedWarehouseDetail(log)} className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs">Inspect</button>
+                    <button onClick={() => setSelectedAuditLogDetail(log)} className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-blue-700 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs transition-colors">Inspect</button>
                   </td>
                 </tr>
               ))}
@@ -890,55 +877,283 @@ const NetworkAndSites = () => {
         </div>
       )}
 
-      {/* MODAL: EDIT USER SCOPE */}
+      {/* MODAL: EDIT USER ACCESS SCOPE (PONYTAIL MINIMAL 1-STEP) */}
       {editUserScopeModal && (
-        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-5 space-y-3 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-sm font-bold text-slate-900">Edit User Scope: {editUserScopeModal.username}</h3>
-              <button onClick={() => setEditUserScopeModal(null)} className="text-slate-400 font-bold">✕</button>
-            </div>
-            <div className="space-y-3 text-xs">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <label className="block text-slate-600 font-bold mb-1">Role:</label>
-                <select value={selectedRole} onChange={e => setSelectedRole(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-bold">
-                  <option>Admin</option>
-                  <option>Inventory Manager</option>
-                  <option>Production Manager</option>
-                  <option>Planner</option>
-                  <option>Viewer</option>
+                <h3 className="text-base font-black text-slate-900">
+                  Edit Access Scope &amp; Permissions
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Target User: <strong className="text-slate-800">{editUserScopeModal.username}</strong> ({editUserScopeModal.email})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditUserScopeModal(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* FORM BODY */}
+            <div className="space-y-3.5 text-xs">
+              {/* ROLE */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  Assign Role &amp; Responsibilities:
+                </label>
+                <select
+                  value={selectedRole}
+                  onChange={e => setSelectedRole(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="Admin">Admin (Full Control)</option>
+                  <option value="Inventory Manager">Inventory Manager (Stock &amp; Facility Oversight)</option>
+                  <option value="Inventory">Inventory Operator (Stock Move Execution)</option>
+                  <option value="Production Manager">Production Manager (Routing &amp; Orders)</option>
+                  <option value="Production">Production Worker (Shop-floor Execution)</option>
+                  <option value="Planner">Planner (MRP &amp; Scheduling)</option>
+                  <option value="QC Inspector">QC Inspector (Inspections &amp; Dispositions)</option>
+                  <option value="Viewer">Viewer (Read-only Access)</option>
                 </select>
               </div>
+
+              {/* SITES SCOPE */}
               <div>
-                <label className="block text-slate-600 font-bold mb-1">Allowed Sites Scope:</label>
-                <div className="space-y-1 max-h-28 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
-                  {sites.map(s => (
-                    <label key={s._id} className="flex items-center space-x-2 font-medium">
-                      <input
-                        type="checkbox"
-                        checked={selectedSiteIds.includes(s._id)}
-                        onChange={e => {
-                          if (e.target.checked) setSelectedSiteIds([...selectedSiteIds, s._id]);
-                          else setSelectedSiteIds(selectedSiteIds.filter(id => id !== s._id));
-                        }}
-                      />
-                      <span>{s.name} ({s.code})</span>
-                    </label>
-                  ))}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-700 font-bold">Allowed Sites Scope:</label>
+                  <div className="space-x-2 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSiteIds(sites.map(s => String(s._id)))}
+                      className="text-blue-600 hover:underline font-bold"
+                    >
+                      Select All
+                    </button>
+                    <span>|</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSiteIds([])}
+                      className="text-slate-500 hover:underline font-bold"
+                    >
+                      Clear (Global)
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto p-2.5 border border-slate-200 rounded-xl bg-slate-50">
+                  {sites.map(s => {
+                    const isChecked = selectedSiteIds.includes(String(s._id));
+                    return (
+                      <label key={s._id} className="flex items-center space-x-2 font-semibold text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => {
+                            const sId = String(s._id);
+                            if (e.target.checked) setSelectedSiteIds([...selectedSiteIds, sId]);
+                            else setSelectedSiteIds(selectedSiteIds.filter(id => id !== sId));
+                          }}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="truncate">{s.name} ({s.code || 'Site'})</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* WAREHOUSES SCOPE */}
               <div>
-                <label className="block text-slate-600 font-bold mb-1">Mandatory Audit Reason:</label>
-                <textarea required rows={2} placeholder="Reason for scope update..." value={mandatoryReason} onChange={e => setMandatoryReason(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg font-medium" />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-700 font-bold">Allowed Warehouses Scope:</label>
+                  <div className="space-x-2 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWarehouseIds(warehouses.map(w => String(w._id)))}
+                      className="text-purple-600 hover:underline font-bold"
+                    >
+                      Select All
+                    </button>
+                    <span>|</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWarehouseIds([])}
+                      className="text-slate-500 hover:underline font-bold"
+                    >
+                      Clear (Global)
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto p-2.5 border border-slate-200 rounded-xl bg-slate-50">
+                  {warehouses.map(w => {
+                    const isChecked = selectedWarehouseIds.includes(String(w._id));
+                    return (
+                      <label key={w._id} className="flex items-center space-x-2 font-semibold text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => {
+                            const wId = String(w._id);
+                            if (e.target.checked) setSelectedWarehouseIds([...selectedWarehouseIds, wId]);
+                            else setSelectedWarehouseIds(selectedWarehouseIds.filter(id => id !== wId));
+                          }}
+                          className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                        />
+                        <span className="truncate">{w.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* MANDATORY REASON */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  Reason for Scope Change (Mandatory) <span className="text-rose-500">*</span>:
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="State specific operational reason for updating user roles, sites, or warehouses..."
+                  value={mandatoryReason}
+                  onChange={e => setMandatoryReason(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+                {!mandatoryReason.trim() && (
+                  <p className="text-[10px] text-amber-600 font-semibold mt-0.5">⚠ Scope cannot be assigned without providing a valid justification reason.</p>
+                )}
               </div>
             </div>
-            <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
-              <button onClick={() => setEditUserScopeModal(null)} className="px-3.5 py-1.5 bg-white text-slate-700 font-bold text-xs rounded-lg border border-slate-200">Cancel</button>
-              <button onClick={handleSaveUserScope} className="px-3.5 py-1.5 bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm">Save Scope</button>
+
+            {/* FOOTER */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setEditUserScopeModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!mandatoryReason.trim() || scopeActionLoading}
+                onClick={handleSaveUserScope}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
+              >
+                {scopeActionLoading ? 'Saving...' : 'Save Scope'}
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL: DEDICATED AUDIT LOG DETAIL INSPECTOR */}
+      {selectedAuditLogDetail && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-blue-600" />
+                  Audit Record Inspector
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Action: <strong className="text-blue-700">{selectedAuditLogDetail.action}</strong> ● Module: {selectedAuditLogDetail.module || 'Network & Sites'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAuditLogDetail(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Performed By (Admin)</span>
+                  <span className="font-extrabold text-slate-900">{selectedAuditLogDetail.userName || 'Admin'}</span>
+                  <span className="text-[10px] text-slate-500 font-semibold block">Role: {selectedAuditLogDetail.role || 'Admin'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Timestamp (Date &amp; Time)</span>
+                  <span className="font-bold font-mono text-slate-900">{new Date(selectedAuditLogDetail.timestamp).toLocaleDateString()}</span>
+                  <span className="text-[10px] text-slate-500 font-mono block">{new Date(selectedAuditLogDetail.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                </div>
+                <div className="col-span-2 pt-1.5 border-t border-slate-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Target Entity / To Whom</span>
+                    <span className="font-extrabold text-slate-900 text-sm">
+                      {selectedAuditLogDetail.previousValue?.username || selectedAuditLogDetail.newValue?.username || selectedAuditLogDetail.locationName || 'System Target'}
+                    </span>
+                    {(selectedAuditLogDetail.previousValue?.email || selectedAuditLogDetail.newValue?.email) && (
+                      <span className="text-[11px] text-slate-500 font-mono block">
+                        {selectedAuditLogDetail.newValue?.email || selectedAuditLogDetail.previousValue?.email}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Current Status</span>
+                    <span className="inline-flex items-center gap-1 font-extrabold text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      {selectedAuditLogDetail.newValue?.accountStatus || 'ACTIVE'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SCOPE CHANGES COMPARISON */}
+              {selectedAuditLogDetail.previousValue && (
+                <div className="pt-2 border-t border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-2">Scope &amp; Permissions Change Summary</span>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1 text-rose-900">
+                      <strong className="text-xs text-rose-900 font-black block">Previous State:</strong>
+                      <p><span className="font-bold">Role:</span> {selectedAuditLogDetail.previousValue.role || 'N/A'}</p>
+                      <p><span className="font-bold">Sites:</span> {Array.isArray(selectedAuditLogDetail.previousValue.siteNames) && selectedAuditLogDetail.previousValue.siteNames.length > 0 ? selectedAuditLogDetail.previousValue.siteNames.join(', ') : 'Global / All Sites'}</p>
+                      <p><span className="font-bold">Warehouses:</span> {Array.isArray(selectedAuditLogDetail.previousValue.warehouseNames) && selectedAuditLogDetail.previousValue.warehouseNames.length > 0 ? selectedAuditLogDetail.previousValue.warehouseNames.join(', ') : 'Global / All Warehouses'}</p>
+                    </div>
+                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1 text-emerald-900">
+                      <strong className="text-xs text-emerald-900 font-black block">Newly Assigned State:</strong>
+                      <p><span className="font-bold">Role:</span> {selectedAuditLogDetail.newValue?.role || 'N/A'}</p>
+                      <p><span className="font-bold">Sites:</span> {Array.isArray(selectedAuditLogDetail.newValue?.siteNames) && selectedAuditLogDetail.newValue?.siteNames.length > 0 ? selectedAuditLogDetail.newValue?.siteNames.join(', ') : 'Global / All Sites'}</p>
+                      <p><span className="font-bold">Warehouses:</span> {Array.isArray(selectedAuditLogDetail.newValue?.warehouseNames) && selectedAuditLogDetail.newValue?.warehouseNames.length > 0 ? selectedAuditLogDetail.newValue?.warehouseNames.join(', ') : 'Global / All Warehouses'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MANDATORY REASON RECORDED */}
+              <div className="pt-2 border-t border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Admin Stated Reason / Justification:</span>
+                <p className="p-2.5 bg-white rounded-xl border border-slate-200 text-slate-800 italic font-medium leading-relaxed">
+                  "{selectedAuditLogDetail.reason || 'No justification recorded.'}"
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedAuditLogDetail(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* MODAL: ADD SITE */}
       {showAddSiteModal && (
@@ -1046,8 +1261,26 @@ const NetworkAndSites = () => {
           </div>
         </div>
       )}
+      {/* FLOATING TOAST NOTIFICATION */}
+      {systemNotice && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
+          <div className="p-4 bg-slate-900/95 text-white rounded-2xl shadow-2xl border border-emerald-500/40 flex items-start justify-between gap-3 backdrop-blur-md">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl mt-0.5">
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+              </div>
+              <div>
+                <div className="text-xs font-black uppercase tracking-wider text-emerald-400">{systemNotice.title}</div>
+                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{systemNotice.message}</div>
+              </div>
+            </div>
+            <button onClick={() => setSystemNotice(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default NetworkAndSites;
+
