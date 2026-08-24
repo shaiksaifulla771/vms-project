@@ -2,6 +2,8 @@ const Redis = require('ioredis');
 const RedisMock = require('ioredis-mock');
 
 let redisClient = null;
+let pubClient = null;
+let subClient = null;
 
 // Graceful fallback state
 let isRedisAvailable = false;
@@ -12,6 +14,8 @@ const initRedis = () => {
   // PHASE 14: Use in-memory mock for test isolation to prevent touching any real Redis data
   if (process.env.NODE_ENV === 'test') {
     redisClient = new RedisMock();
+    pubClient = new RedisMock();
+    subClient = new RedisMock();
     isRedisAvailable = true;
     return redisClient;
   }
@@ -19,14 +23,18 @@ const initRedis = () => {
   // PHASE 2 & 3: Safely connect using env variables, don't hardcode URLs
   const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
   
-  redisClient = new Redis(redisUrl, {
+  const options = {
     maxRetriesPerRequest: 1,
     retryStrategy(times) {
       if (times > 2) return null; // Stop retrying after 2 attempts
       return 1000;
     },
     enableOfflineQueue: false // Fail fast if Redis is down
-  });
+  };
+
+  redisClient = new Redis(redisUrl, options);
+  pubClient = new Redis(redisUrl, options);
+  subClient = new Redis(redisUrl, options);
 
   redisClient.on('connect', () => {
     isRedisAvailable = true;
@@ -50,6 +58,16 @@ const getClient = () => {
   return redisClient;
 };
 
+const getPubClient = () => {
+  if (!pubClient) initRedis();
+  return pubClient;
+};
+
+const getSubClient = () => {
+  if (!subClient) initRedis();
+  return subClient;
+};
+
 const getRedisStatus = () => {
   if (!redisClient) initRedis();
   return isRedisAvailable;
@@ -58,13 +76,19 @@ const getRedisStatus = () => {
 const closeRedis = async () => {
   if (redisClient) {
     await redisClient.quit();
+    if (pubClient) await pubClient.quit();
+    if (subClient) await subClient.quit();
     redisClient = null;
+    pubClient = null;
+    subClient = null;
     isRedisAvailable = false;
   }
 };
 
 module.exports = {
   getClient,
+  getPubClient,
+  getSubClient,
   getRedisStatus,
   closeRedis
 };

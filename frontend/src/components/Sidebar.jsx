@@ -13,13 +13,18 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  X
+  X,
+  UserCheck,
+  Sliders,
+  Sparkles,
+  Layers,
+  FileCode
 } from 'lucide-react';
 
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
   const { user, logout } = useAuth();
 
-  // Clean, professional navigation structure
+  // Clean, focused, high-level navigation structure
   const allMenuItems = [
     {
       id: 'dashboard',
@@ -41,7 +46,7 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
     },
     {
       id: 'inventory',
-      name: 'Inventory',
+      name: 'Inventory & Materials',
       icon: Boxes,
       roles: ['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']
     },
@@ -146,7 +151,7 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
             const Icon = item.icon;
             const isActive =
               activePage === item.id ||
-              (activePage === 'users-access' && item.id === 'sites') ||
+              (activePage === 'admin' && item.id === 'control-center') ||
               (activePage === 'bom' && item.id === 'masters') ||
               (activePage === 'warehouse' && item.id === 'sites') ||
               (activePage === 'mrp' && item.id === 'planning');

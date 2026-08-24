@@ -25,6 +25,7 @@
     "react-apexcharts": "^2.1.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.2",
+    "socket.io-client": "^4.8.3",
     "tsparticles": "^4.3.2",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },

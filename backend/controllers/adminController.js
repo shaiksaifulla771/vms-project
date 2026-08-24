@@ -644,5 +644,61 @@ exports.updateUserAccess = async (req, res) => {
   }
 };
 
+// 8. Toggle User Account Status (Active <-> Inactive) (Image 3)
+exports.toggleUserAccountStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status, reason } = req.body;
+
+    if (!status || !['ACTIVE', 'INACTIVE', 'SUSPENDED'].includes(status.toUpperCase())) {
+      return res.status(400).json({ message: 'Valid status (ACTIVE, INACTIVE, SUSPENDED) is required.' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Protect against self-deactivation by the current admin
+    if (req.user && req.user._id.toString() === user._id.toString() && status.toUpperCase() !== 'ACTIVE') {
+      return res.status(400).json({ message: 'You cannot deactivate your own admin account.' });
+    }
+
+    const prevStatus = user.accountStatus;
+    user.accountStatus = status.toUpperCase();
+
+    // Increment tokenVersion to immediately revoke all active JWT tokens & sessions
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    await user.save();
+
+    // Invalidate live in-memory and Redis permission cache
+    invalidateUserStatusCache(user._id);
+
+    const auditAction = status.toUpperCase() === 'ACTIVE' ? 'REACTIVATE' : 'DEACTIVATE';
+    await createAuditRecord({
+      entityType: 'User',
+      entityId: user._id,
+      action: auditAction,
+      module: 'Users & Access',
+      reason: reason || `Admin toggled user status from ${prevStatus} to ${user.accountStatus}`,
+      previousValue: { accountStatus: prevStatus },
+      newValue: { accountStatus: user.accountStatus, tokenVersion: user.tokenVersion }
+    }, req);
+
+    res.json({
+      success: true,
+      message: `User status changed to ${user.accountStatus}. Sessions invalidated.`,
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        accountStatus: user.accountStatus
+      }
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 exports.createAuditRecord = createAuditRecord;
+
 

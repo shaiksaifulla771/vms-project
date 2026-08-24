@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import useSSE from '../../hooks/useSSE';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
@@ -19,6 +20,12 @@ const VendorsTab = () => {
   const vendorFileInputRef = useRef(null);
 
   // Consolidated States at Top of VendorsTab
+  const { isConnected } = useSSE({
+    'VENDOR_CREATED': () => fetchVendors(),
+    'VENDOR_UPDATED': () => fetchVendors(),
+    'VENDOR_DELETED': () => fetchVendors(),
+  });
+
   const [vendors, setVendors] = useState([]);
   const [searchInputVal, setSearchInputVal] = useState('');
   const [vendorBlockingPopupMessage, setVendorBlockingPopupMessage] = useState('');

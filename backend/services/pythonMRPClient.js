@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const jwt = require('jsonwebtoken');
 
 const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:8001';
 
@@ -35,6 +36,18 @@ function createErrorEnvelope(code, message, retryable = true, correlationId = ''
  */
 class PythonMRPClient {
   /**
+   * Generates a short-lived, cryptographically signed Service JWT for internal microservice auth.
+   */
+  static generateServiceToken() {
+    const secret = process.env.JWT_SECRET || 'fallback-secret-for-development-only';
+    return jwt.sign(
+      { sub: 'mrp-gateway', role: 'internal-service' },
+      secret,
+      { expiresIn: '5m', issuer: 'vms-node-gateway', audience: 'python-mrp-service' }
+    );
+  }
+
+  /**
    * Health check for Python microservice
    */
   static async isHealthy() {
@@ -60,6 +73,7 @@ class PythonMRPClient {
         headers: {
           'Content-Type': 'application/json',
           'X-Correlation-ID': correlationId,
+          'Authorization': `Bearer ${PythonMRPClient.generateServiceToken()}`
         },
         body: JSON.stringify({ ...payload, correlation_id: correlationId }),
         signal: getTimeoutSignal(4000),
@@ -85,7 +99,10 @@ class PythonMRPClient {
     try {
       const response = await fetch(`${PYTHON_SERVICE_URL}/api/mrp/forecast`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${PythonMRPClient.generateServiceToken()}`
+        },
         body: JSON.stringify({
           material_id: materialId,
           historical_consumption: historicalConsumption,
@@ -99,6 +116,62 @@ class PythonMRPClient {
       }
       return null;
     } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Linear Programming Multi-Vendor Procurement Optimizer (PuLP)
+   */
+  static async optimizeLPProcurement(demandRequirements = [], vendorQuotations = []) {
+    try {
+      const response = await fetch(`${PYTHON_SERVICE_URL}/api/mrp/lp-procurement`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${PythonMRPClient.generateServiceToken()}`
+        },
+        body: JSON.stringify({
+          demand_requirements: demandRequirements,
+          vendor_quotations: vendorQuotations
+        }),
+        signal: getTimeoutSignal(5000),
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+      return null;
+    } catch (err) {
+      logger.warn('PythonMRPClient', `LP Procurement call failed (${err.message}).`);
+      return null;
+    }
+  }
+
+  /**
+   * Vectorized Subledger Stock Balance Reconciliation (Polars)
+   */
+  static async reconcileLedgerWithPolars(transactions = [], currentBalances = []) {
+    try {
+      const response = await fetch(`${PYTHON_SERVICE_URL}/api/inventory/reconcile-polars`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${PythonMRPClient.generateServiceToken()}`
+        },
+        body: JSON.stringify({
+          transactions,
+          current_balances: currentBalances
+        }),
+        signal: getTimeoutSignal(6000),
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+      return null;
+    } catch (err) {
+      logger.warn('PythonMRPClient', `Polars reconciliation call failed (${err.message}).`);
       return null;
     }
   }

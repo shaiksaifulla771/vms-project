@@ -14,7 +14,12 @@ import {
   Info,
   Plus,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle,
+  XCircle,
+  UserX,
+  UserCheck,
+  RotateCcw
 } from 'lucide-react';
 
 const UsersAndAccessScope = () => {
@@ -23,10 +28,12 @@ const UsersAndAccessScope = () => {
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('ALL');
 
+  // Edit Scope Modal States (Matching Image 7)
   const [editUserModal, setEditUserModal] = useState(null);
-  const [scopeStep, setScopeStep] = useState(1); // 1 = Configure, 2 = Review & Confirm
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [scopeStep, setScopeStep] = useState(1);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
   const [selectedWarehouseIds, setSelectedWarehouseIds] = useState([]);
@@ -34,7 +41,14 @@ const UsersAndAccessScope = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [systemNotice, setSystemNotice] = useState(null);
 
-  // New User Form State
+  // Conflict Resolution Modal State (Matching Image 8)
+  const [conflictModal, setConflictModal] = useState(null);
+
+  // Red Warning Banner State (Matching Image 8)
+  const [redWarningBanner, setRedWarningBanner] = useState(null);
+
+  // Add User Form State
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
     email: '',
@@ -96,13 +110,77 @@ const UsersAndAccessScope = () => {
     }
   };
 
-  const handleSaveAccessScope = async () => {
+  // Conflict Detection Logic (Image 8)
+  const checkForScopeConflicts = () => {
+    if (!editUserModal) return null;
+    const currentUserId = String(editUserModal._id);
+
+    for (const wId of selectedWarehouseIds) {
+      // Find if another user already holds this warehouse
+      const conflictingUser = users.find(u => {
+        if (String(u._id) === currentUserId) return false;
+        const uWhs = u.warehouseIds ? u.warehouseIds.map(w => String(w._id || w)) : [];
+        return uWhs.includes(wId);
+      });
+
+      if (conflictingUser) {
+        const whObj = warehouses.find(w => String(w._id) === wId);
+        return {
+          type: 'warehouse',
+          resourceName: whObj ? `${whObj.name} (${whObj.code})` : 'Assigned Warehouse',
+          resourceId: wId,
+          conflictingUser: conflictingUser,
+          targetUser: editUserModal
+        };
+      }
+    }
+    return null;
+  };
+
+  const handleInitiateSaveScope = () => {
     if (!mandatoryReason || !mandatoryReason.trim()) {
-      alert('Mandatory reason is required for updating user scope.');
+      alert('Mandatory audit justification reason is required.');
       return;
     }
+
+    // Run Conflict Detector (Image 8)
+    const conflict = checkForScopeConflicts();
+    if (conflict) {
+      setConflictModal(conflict);
+      return;
+    }
+
+    // No conflict -> execute direct save
+    executeSaveScope(false);
+  };
+
+  const executeSaveScope = async (replaceExisting, conflictInfo = null) => {
     setActionLoading(true);
     try {
+      if (replaceExisting && conflictInfo) {
+        // Remove the conflicting user's scope on this warehouse
+        const prevUser = conflictInfo.conflictingUser;
+        const updatedPrevWhs = (prevUser.warehouseIds || [])
+          .map(w => String(w._id || w))
+          .filter(wId => wId !== String(conflictInfo.resourceId));
+
+        await api.put(`/api/admin/users/${prevUser._id}/access`, {
+          role: prevUser.role,
+          siteIds: prevUser.siteIds ? prevUser.siteIds.map(s => String(s._id || s)) : [],
+          warehouseIds: updatedPrevWhs,
+          reason: `Scope transferred to ${editUserModal.username || editUserModal.email} by Admin. Justification: ${mandatoryReason.trim()}`
+        });
+
+        // Trigger the Prominent Red Warning Banner (Image 8)
+        setRedWarningBanner({
+          removedUser: prevUser,
+          assignedUser: editUserModal,
+          resourceName: conflictInfo.resourceName,
+          timestamp: new Date()
+        });
+      }
+
+      // Update target user's scope
       if ((editUserModal.accountStatus || '').toUpperCase() === 'PENDING') {
         await api.put(`/api/users/${editUserModal._id}/approve`, {
           role: selectedRole,
@@ -120,9 +198,11 @@ const UsersAndAccessScope = () => {
 
       setSystemNotice({
         type: 'success',
-        title: 'Access Scope Updated & Enforced',
-        message: `Updated access scope and activated permissions for ${editUserModal.username || editUserModal.email}.`
+        title: 'Access Scope Saved & Enforced',
+        message: `Updated permissions for ${editUserModal.username || editUserModal.email}.`
       });
+
+      setConflictModal(null);
       setEditUserModal(null);
       setMandatoryReason('');
       fetchData();
@@ -133,31 +213,15 @@ const UsersAndAccessScope = () => {
     }
   };
 
-  const handleCreateUser = (e) => {
-    e.preventDefault();
-    if (!newUser.username || !newUser.email) return;
-
-    const created = {
-      _id: `usr-${Date.now()}`,
-      username: newUser.username,
-      email: newUser.email,
-      role: newUser.role,
-      siteIds: [],
-      warehouseIds: []
-    };
-
-    setUsers([created, ...users]);
-    setSystemNotice({
-      type: 'success',
-      title: 'User Registered',
-      message: `User ${newUser.username} registered with role ${newUser.role}.`
-    });
-    setShowAddUserModal(false);
-    setNewUser({ username: '', email: '', role: 'Inventory Manager', password: 'password123' });
-  };
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = (u.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (u.email || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
       {/* Top Banner Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl text-white">
         <div>
@@ -167,7 +231,7 @@ const UsersAndAccessScope = () => {
             </span>
             <span className="text-xs text-slate-400">3-Level Granular Location Scope Governance</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight">Users, Roles & Scope Access</h1>
+          <h1 className="text-2xl font-black tracking-tight">User Access Scoped Matrix</h1>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -189,488 +253,367 @@ const UsersAndAccessScope = () => {
         </div>
       </div>
 
-      {/* 3-LEVEL ACCESS RULE POLICY BANNER */}
-      <div className="bg-purple-50 border border-purple-200 p-5 rounded-2xl text-xs text-purple-950 font-medium space-y-1">
-        <h3 className="font-black text-sm uppercase tracking-wider flex items-center">
-          <ShieldCheck className="w-4 h-4 mr-2 text-purple-600" /> 3-Level Permission & Location Scope Blueprint
-        </h3>
-        <p>
-          Permissions operate at 3 levels: <strong>User</strong> → <strong>Role</strong> → <strong>Module & Location Scope (Site/Warehouse)</strong>.
-          Restricting a user to specific sites or warehouses prevents them from accessing or creating operations outside their assigned scope.
-        </p>
-      </div>
-
-      {/* USERS ACCESS TABLE */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <table className="w-full text-left text-xs">
-          <thead>
-            <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
-              <th className="py-3.5 px-4">User</th>
-              <th className="py-3.5 px-4">Email</th>
-              <th className="py-3.5 px-4">Role</th>
-              <th className="py-3.5 px-4">Site Access Scope</th>
-              <th className="py-3.5 px-4">Warehouse Access Scope</th>
-              <th className="py-3.5 px-4 text-center">Manage Scope</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-            {users.map((u) => (
-              <tr key={u._id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="py-3.5 px-4 font-extrabold text-slate-900 flex items-center space-x-2">
-                  <div className="h-7 w-7 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center">
-                    {u.username ? u.username.charAt(0).toUpperCase() : 'U'}
-                  </div>
-                  <span>{u.username}</span>
-                </td>
-                <td className="py-3.5 px-4 text-slate-500 font-mono">{u.email}</td>
-                <td className="py-3.5 px-4">
-                  <span className="px-2.5 py-1 bg-slate-100 text-slate-800 font-extrabold text-[10px] rounded-lg">
-                    {u.role}
-                  </span>
-                </td>
-                <td className="py-3.5 px-4">
-                  {(u.siteIds && u.siteIds.length > 0) ? (
-                    <div className="flex flex-wrap gap-1">
-                      {u.siteIds.map((s, idx) => (
-                        <span key={idx} className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[10px] rounded-md border border-blue-200">
-                          {s.name || 'Site'}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-slate-400 font-bold text-[11px]">Global (All Sites)</span>
-                  )}
-                </td>
-                <td className="py-3.5 px-4">
-                  {(u.warehouseIds && u.warehouseIds.length > 0) ? (
-                    <div className="flex flex-wrap gap-1">
-                      {u.warehouseIds.map((w, idx) => (
-                        <span key={idx} className="px-2 py-0.5 bg-purple-50 text-purple-700 font-bold text-[10px] rounded-md border border-purple-200">
-                          {w.name || 'Warehouse'}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-slate-400 font-bold text-[11px]">Global (All Warehouses)</span>
-                  )}
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button
-                    onClick={() => handleOpenEdit(u)}
-                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl border border-blue-200 transition-colors flex items-center justify-center space-x-1 mx-auto"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Edit Scope</span>
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* EDIT ACCESS SCOPE MODAL (2-STEP WORKFLOW) */}
-      {editUserModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black text-slate-900">
-                    {scopeStep === 1 ? 'Edit Access Scope & Permissions' : 'Review & Confirm Scope Changes'}
-                  </h3>
-                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${scopeStep === 1 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
-                    Step {scopeStep} of 2: {scopeStep === 1 ? 'Configure Scope' : 'Confirm Impact'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Target User: <strong className="text-slate-800">{editUserModal.username}</strong> ({editUserModal.email})
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditUserModal(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
-                title="Close"
-              >
-                ✕
-              </button>
+      {/* RED WARNING ALERT BANNER (Matching Image 8) */}
+      {redWarningBanner && (
+        <div className="bg-rose-50 border-2 border-rose-400/80 p-5 rounded-2xl shadow-lg text-rose-950 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slideDown">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-rose-200/80 text-rose-700 shrink-0">
+              <AlertTriangle className="h-6 w-6 text-rose-600" />
             </div>
-
-            {/* STEP 1: CONFIGURATION */}
-            {scopeStep === 1 && (
-              <div className="space-y-4 text-xs">
-                {/* CURRENTLY ASSIGNED SCOPE BREAKDOWN */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                      Currently Assigned Scope &amp; Audit Metadata
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      Assigned: {editUserModal.scopeAssignedAt || editUserModal.updatedAt || editUserModal.createdAt ? new Date(editUserModal.scopeAssignedAt || editUserModal.updatedAt || editUserModal.createdAt).toLocaleDateString() : 'Initial'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 text-slate-700 pt-1 border-t border-slate-200/70">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-bold">Current Role</span>
-                      <span className="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 inline-block mt-0.5 truncate max-w-full">
-                        {editUserModal.role || 'Viewer'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-bold">Assigned Sites</span>
-                      <span className="font-bold text-slate-800 block mt-0.5 truncate" title={(editUserModal.siteIds && editUserModal.siteIds.length > 0) ? editUserModal.siteIds.map(s => s.name || s.code).join(', ') : 'Global (All Sites)'}>
-                        {(editUserModal.siteIds && editUserModal.siteIds.length > 0)
-                          ? editUserModal.siteIds.map(s => s.name || s.code).join(', ')
-                          : 'Global (All Sites)'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-bold">Assigned Warehouses</span>
-                      <span className="font-bold text-slate-800 block mt-0.5 truncate" title={(editUserModal.warehouseIds && editUserModal.warehouseIds.length > 0) ? editUserModal.warehouseIds.map(w => w.name || w.code).join(', ') : 'Global (All Warehouses)'}>
-                        {(editUserModal.warehouseIds && editUserModal.warehouseIds.length > 0)
-                          ? editUserModal.warehouseIds.map(w => w.name || w.code).join(', ')
-                          : 'Global (All Warehouses)'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-bold">Assigned By</span>
-                      <span className="font-bold text-slate-800 block mt-0.5 truncate" title={editUserModal.scopeAssignedBy || 'System Admin'}>
-                        {editUserModal.scopeAssignedBy || 'System Admin'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">
-                    Assign Role &amp; Responsibilities:
-                  </label>
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  >
-                    <option value="Admin">Admin (Full Control)</option>
-                    <option value="Inventory Manager">Inventory Manager (Stock &amp; Facility Oversight)</option>
-                    <option value="Inventory">Inventory Operator (Stock Move Execution)</option>
-                    <option value="Production Manager">Production Manager (Routing &amp; Orders)</option>
-                    <option value="Production">Production Worker (Shop-floor Execution)</option>
-                    <option value="Planner">Planner (MRP &amp; Scheduling)</option>
-                    <option value="QC Inspector">QC Inspector (Inspections &amp; Dispositions)</option>
-                    <option value="Viewer">Viewer (Read-only Access)</option>
-                  </select>
-                </div>
-
-                {/* Site Scope Picker */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-slate-700 font-bold">Allowed Site Scope (Add/Remove):</label>
-                    <div className="space-x-2 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSiteIds(sites.map(s => String(s._id)))}
-                        className="text-blue-600 hover:underline font-bold"
-                      >
-                        Select All
-                      </button>
-                      <span>|</span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSiteIds([])}
-                        className="text-slate-500 hover:underline font-bold"
-                      >
-                        Clear (Global)
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
-                    {sites.map(s => (
-                      <label key={s._id} className="flex items-center space-x-2 text-xs font-semibold text-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedSiteIds.includes(String(s._id))}
-                          onChange={() => handleToggleSiteScope(s._id)}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="truncate">{s.name} ({s.code || 'Site'})</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Warehouse Scope Picker */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-slate-700 font-bold">Allowed Warehouse Scope (Add/Remove):</label>
-                    <div className="space-x-2 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedWarehouseIds(warehouses.map(w => String(w._id)))}
-                        className="text-purple-600 hover:underline font-bold"
-                      >
-                        Select All
-                      </button>
-                      <span>|</span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedWarehouseIds([])}
-                        className="text-slate-500 hover:underline font-bold"
-                      >
-                        Clear (Global)
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 max-h-28 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
-                    {warehouses.map(w => (
-                      <label key={w._id} className="flex items-center space-x-2 text-xs font-semibold text-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedWarehouseIds.includes(String(w._id))}
-                          onChange={() => handleToggleWarehouseScope(w._id)}
-                          className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                        />
-                        <span className="truncate">{w.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">
-                    Reason for Access Scope Change (Mandatory) <span className="text-rose-500">*</span>:
-                  </label>
-                  <textarea
-                    required
-                    rows={2}
-                    value={mandatoryReason}
-                    onChange={(e) => setMandatoryReason(e.target.value)}
-                    placeholder="State specific operational reason for updating user roles, sites, or warehouses..."
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                  {!mandatoryReason.trim() && (
-                    <p className="text-[10px] text-amber-600 font-semibold mt-0.5">⚠ Scope cannot be assigned without providing a valid justification reason.</p>
-                  )}
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditUserModal(null)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!mandatoryReason.trim()}
-                    onClick={() => setScopeStep(2)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
-                  >
-                    <span>Review Changes</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black uppercase rounded-md tracking-wider">
+                  Access Transferred Warning
+                </span>
+                <span className="text-xs text-rose-600 font-medium">
+                  {new Date(redWarningBanner.timestamp).toLocaleTimeString()}
+                </span>
               </div>
-            )}
+              <p className="font-extrabold text-sm text-slate-900 mt-1">
+                You have removed <span className="text-rose-700 underline font-black">{redWarningBanner.removedUser.username || redWarningBanner.removedUser.email}</span>'s access and transferred <span className="font-black text-slate-900">{redWarningBanner.resourceName}</span> to <span className="text-emerald-700 underline font-black">{redWarningBanner.assignedUser.username || redWarningBanner.assignedUser.email}</span>.
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {redWarningBanner.removedUser.username || redWarningBanner.removedUser.email} can no longer access or approve transactions in this warehouse.
+              </p>
+            </div>
+          </div>
 
-            {/* STEP 2: REVIEW & FINAL SUBMIT */}
-            {scopeStep === 2 && (
-              <div className="space-y-4 text-xs">
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 font-medium">
-                  <p className="font-bold flex items-center gap-1.5 text-xs text-blue-900">
-                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                    Review Scope Impact Before Final Submission
-                  </p>
-                  <p className="text-[11px] text-blue-800 mt-0.5">
-                    Compare the previous configuration against the newly assigned roles and facility access.
-                  </p>
-                </div>
-
-                {/* SIDE-BY-SIDE COMPARISON CARDS */}
-                <div className="grid grid-cols-2 gap-3 text-[11px]">
-                  {/* PREVIOUS STATE */}
-                  <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2 text-rose-950">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-rose-200">
-                      <strong className="text-xs text-rose-900 font-black">Previous State (Before)</strong>
-                      <span className="text-[9px] font-mono font-bold text-rose-700 bg-rose-100/70 px-1.5 py-0.5 rounded">ORIGINAL</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-rose-700 block font-bold">Role:</span>
-                      <span className="font-extrabold text-rose-900">{editUserModal.role || 'Viewer'}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-rose-700 block font-bold">Assigned Sites:</span>
-                      <span className="font-semibold text-rose-900 block leading-tight">
-                        {(editUserModal.siteIds && editUserModal.siteIds.length > 0)
-                          ? editUserModal.siteIds.map(s => s.name || s.code).join(', ')
-                          : 'Global / All Sites'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-rose-700 block font-bold">Assigned Warehouses:</span>
-                      <span className="font-semibold text-rose-900 block leading-tight">
-                        {(editUserModal.warehouseIds && editUserModal.warehouseIds.length > 0)
-                          ? editUserModal.warehouseIds.map(w => w.name || w.code).join(', ')
-                          : 'Global / All Warehouses'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* NEWLY ASSIGNED STATE */}
-                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2 text-emerald-950">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-emerald-200">
-                      <strong className="text-xs text-emerald-900 font-black">Newly Assigned State (After)</strong>
-                      <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">MODIFIED</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-emerald-700 block font-bold">Role:</span>
-                      <span className="font-extrabold text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-300 inline-block">
-                        {selectedRole}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-emerald-700 block font-bold">Assigned Sites:</span>
-                      <span className="font-semibold text-emerald-900 block leading-tight">
-                        {selectedSiteIds.length > 0
-                          ? sites.filter(s => selectedSiteIds.includes(String(s._id))).map(s => s.name).join(', ')
-                          : 'Global / All Sites'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-emerald-700 block font-bold">Assigned Warehouses:</span>
-                      <span className="font-semibold text-emerald-900 block leading-tight">
-                        {selectedWarehouseIds.length > 0
-                          ? warehouses.filter(w => selectedWarehouseIds.includes(String(w._id))).map(w => w.name).join(', ')
-                          : 'Global / All Warehouses'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* STATED REASON PREVIEW */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Stated Justification Reason:</span>
-                  <p className="text-slate-800 italic font-medium">"{mandatoryReason}"</p>
-                </div>
-
-                {/* STEP 2 FOOTER */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setScopeStep(1)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back to Edit</span>
-                  </button>
-
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditUserModal(null)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={actionLoading}
-                      onClick={handleSaveAccessScope}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{actionLoading ? 'Enforcing...' : 'Final Submit & Enforce Scope'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => {
+                handleOpenEdit(redWarningBanner.removedUser);
+                setRedWarningBanner(null);
+              }}
+              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center gap-1.5"
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span>Give Alternate Scope</span>
+            </button>
+            <button
+              onClick={() => setRedWarningBanner(null)}
+              className="p-2 text-slate-400 hover:text-slate-700 text-sm font-bold"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
 
-      {/* MODAL: + ADD USER */}
-      {showAddUserModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateUser} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 flex items-center">
-                <Users className="w-5 h-5 text-blue-600 mr-2" /> Register New User
-              </h3>
-              <button type="button" onClick={() => setShowAddUserModal(false)} className="text-slate-400 font-bold">✕</button>
+      {/* FILTER & SEARCH BAR */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div className="relative w-full sm:w-80">
+          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by user name or work email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-medium"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Filter className="h-4 w-4 text-slate-400" />
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-bold text-slate-700"
+          >
+            <option value="ALL">All Roles</option>
+            <option value="Admin">Admin</option>
+            <option value="Inventory Manager">Inventory Manager</option>
+            <option value="Production Manager">Production Manager</option>
+            <option value="Warehouse Operator">Warehouse Operator</option>
+            <option value="Viewer">Viewer</option>
+          </select>
+        </div>
+      </div>
+
+      {/* SCOPED USER ACCESS TABLE (Matching Image 7 Table Layout) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
+              <tr>
+                <th className="p-4">User Name</th>
+                <th className="p-4">Work E-Mail</th>
+                <th className="p-4">Role</th>
+                <th className="p-4">Allowed Sites</th>
+                <th className="p-4">Allowed Warehouses</th>
+                <th className="p-4 text-right">Manage</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                    No users matching criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map(user => {
+                  const userSiteNames = (user.siteIds || []).map(s => {
+                    const sObj = sites.find(site => String(site._id) === String(s._id || s));
+                    return sObj ? sObj.name : 'Site';
+                  });
+
+                  const userWhNames = (user.warehouseIds || []).map(w => {
+                    const wObj = warehouses.find(wh => String(wh._id) === String(w._id || w));
+                    return wObj ? wObj.name : 'Warehouse';
+                  });
+
+                  const isAdmin = (user.role || '').toLowerCase() === 'admin';
+
+                  return (
+                    <tr key={user._id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-4 font-bold text-slate-900 flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 text-[11px]">
+                          {(user.username || user.email || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <span>{user.username || 'Unnamed'}</span>
+                          {user.accountStatus === 'PENDING' && (
+                            <span className="ml-2 px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[9px] font-black uppercase rounded">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="p-4 font-mono text-slate-600">{user.email}</td>
+
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                          isAdmin ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {user.role}
+                        </span>
+                      </td>
+
+                      {/* Allowed Sites */}
+                      <td className="p-4">
+                        {isAdmin ? (
+                          <span className="font-extrabold text-purple-700 text-xs">All Sites (Global)</span>
+                        ) : userSiteNames.length === 0 ? (
+                          <span className="text-slate-400 italic text-[11px]">None assigned</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {userSiteNames.map((name, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold">
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Allowed Warehouses */}
+                      <td className="p-4">
+                        {isAdmin ? (
+                          <span className="font-extrabold text-purple-700 text-xs">All Warehouses (Global)</span>
+                        ) : userWhNames.length === 0 ? (
+                          <span className="text-slate-400 italic text-[11px]">None assigned</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {userWhNames.map((name, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold">
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Manage Button */}
+                      <td className="p-4 text-right">
+                        <button
+                          onClick={() => handleOpenEdit(user)}
+                          className="px-3 py-1.5 bg-white border border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-purple-700 font-extrabold rounded-xl shadow-xs transition-colors"
+                        >
+                          Edit Scope
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* EDIT SCOPE MODAL (Matching Image 7 Modal Blueprint) */}
+      {editUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-scaleIn">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Edit User Access Scope</h3>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  {editUserModal.email} &bull; <span className="font-bold text-purple-700">{editUserModal.role}</span> &bull; <span className="uppercase text-emerald-700 font-bold">{editUserModal.accountStatus}</span>
+                </p>
+              </div>
+              <button onClick={() => setEditUserModal(null)} className="text-slate-400 hover:text-slate-700 text-xl font-bold">✕</button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="p-5 space-y-4 text-xs">
+              {/* Role Selection */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">User Full Name:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Vikramaditya Singh"
-                  value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Email Address:</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. vikram@vendoros.com"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Role Assignment:</label>
+                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Assigned Role</label>
                 <select
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                 >
-                  <option value="Admin">Admin</option>
-                  <option value="Inventory Manager">Inventory Manager</option>
-                  <option value="Production Manager">Production Manager</option>
-                  <option value="Planner">Planner</option>
-                  <option value="QC Inspector">QC Inspector</option>
-                  <option value="Viewer">Viewer</option>
+                  <option value="Admin">Admin (Global Platform Oversight)</option>
+                  <option value="Inventory Manager">Inventory Manager (Facility Inventory Oversight)</option>
+                  <option value="Production Manager">Production Manager (Manufacturing Floor Control)</option>
+                  <option value="Warehouse Operator">Warehouse Operator (Stock Movements & Receiving)</option>
+                  <option value="QC Inspector">QC Inspector (Quality Gatekeeper)</option>
+                  <option value="Planner">Planner (MRP Scheduling)</option>
+                  <option value="Viewer">Viewer (Read-Only)</option>
                 </select>
               </div>
+
+              {/* Option to Allowed Sites (Matching Image 7) */}
+              <div>
+                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Option for Allowed Sites</label>
+                <div className="space-y-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  {sites.map(site => {
+                    const isChecked = selectedSiteIds.includes(String(site._id));
+                    return (
+                      <label key={site._id} className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer hover:bg-slate-100 p-1.5 rounded-lg">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSiteScope(site._id)}
+                          className="rounded text-purple-600 focus:ring-purple-500"
+                        />
+                        <span>{site.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">({site.code})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Option to Allowed Warehouses (Matching Image 7) */}
+              <div>
+                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Option for Allowed Warehouses</label>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  {warehouses.map(wh => {
+                    const isChecked = selectedWarehouseIds.includes(String(wh._id));
+                    const parentSite = sites.find(s => String(s._id) === String(wh.siteId?._id || wh.siteId));
+                    return (
+                      <label key={wh._id} className="flex items-center justify-between font-bold text-slate-800 cursor-pointer hover:bg-slate-100 p-1.5 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleWarehouseScope(wh._id)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>{wh.name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">({wh.code})</span>
+                        </div>
+                        {parentSite && (
+                          <span className="text-[10px] text-slate-400">{parentSite.name}</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Mandatory Reason (Matching Image 7) */}
+              <div>
+                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Audit Justification Reason *</label>
+                <textarea
+                  rows={2}
+                  value={mandatoryReason}
+                  onChange={(e) => setMandatoryReason(e.target.value)}
+                  placeholder="Explain why this role and scope is being granted or modified..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-3">
-              <button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                onClick={() => setEditUserModal(null)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+              >
                 Cancel
               </button>
-              <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md">
-                Create User
+              <button
+                onClick={handleInitiateSaveScope}
+                disabled={actionLoading}
+                className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md text-xs transition-colors"
+              >
+                {actionLoading ? 'Saving...' : 'Save Scope'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
-      {/* FLOATING TOAST NOTIFICATION (BOTTOM RIGHT) */}
-      {systemNotice && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
-          <div className="p-4 bg-slate-900/95 text-white rounded-2xl shadow-2xl border border-emerald-500/40 flex items-start justify-between gap-3 backdrop-blur-md">
-            <div className="flex items-start gap-3">
-              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl mt-0.5">
-                <CheckCircle2 className="h-5 w-5 shrink-0" />
+      {/* CONFLICT RESOLUTION MODAL (Matching Image 8 Blueprint) */}
+      {conflictModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-amber-300 max-w-md w-full overflow-hidden animate-scaleIn">
+            <div className="p-5 bg-amber-500/10 border-b border-amber-200 flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
+                <AlertTriangle className="h-6 w-6 text-amber-600" />
               </div>
               <div>
-                <div className="text-xs font-black uppercase tracking-wider text-emerald-400">{systemNotice.title}</div>
-                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{systemNotice.message}</div>
+                <h3 className="font-black text-slate-900 text-sm">Warehouse Assignment Conflict</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{conflictModal.resourceName}</p>
               </div>
             </div>
-            <button onClick={() => setSystemNotice(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+
+            <div className="p-5 space-y-4 text-xs leading-relaxed text-slate-700">
+              <p>
+                This facility is already assigned to <strong className="text-slate-900 font-extrabold">{conflictModal.conflictingUser.username || conflictModal.conflictingUser.email}</strong>.
+              </p>
+              <p className="font-medium text-slate-600">
+                How would you like to proceed?
+              </p>
+
+              <div className="space-y-2.5">
+                {/* Option 1: Co-assignment */}
+                <div
+                  onClick={() => executeSaveScope(false, conflictModal)}
+                  className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-all flex items-start gap-3"
+                >
+                  <UserCheck className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-extrabold text-slate-900">Add Another User (Co-Assignment)</h4>
+                    <p className="text-[11px] text-slate-500">Allow both users to manage and access this facility simultaneously.</p>
+                  </div>
+                </div>
+
+                {/* Option 2: Transfer Ownership */}
+                <div
+                  onClick={() => executeSaveScope(true, conflictModal)}
+                  className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-100/50 cursor-pointer transition-all flex items-start gap-3"
+                >
+                  <UserX className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-extrabold text-rose-900">Transfer Ownership (Remove Existing)</h4>
+                    <p className="text-[11px] text-rose-700">Immediately revoke {conflictModal.conflictingUser.username || conflictModal.conflictingUser.email}'s access and assign exclusively to {conflictModal.targetUser.username || conflictModal.targetUser.email}.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+              <button
+                onClick={() => setConflictModal(null)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -679,4 +622,3 @@ const UsersAndAccessScope = () => {
 };
 
 export default UsersAndAccessScope;
-

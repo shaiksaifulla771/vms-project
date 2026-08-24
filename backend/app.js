@@ -251,6 +251,11 @@ app.use('/api/performance', require('./routes/performanceRoutes'));
 app.use('/api/chat', require('./routes/chatRoutes'));
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 11.5 Realtime Streams (SSE)
+// ─────────────────────────────────────────────────────────────────────────────
+app.use('/api/stream', require('./routes/streamRoutes'));
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 12. VMS & Planning Domain Event Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 const { registerVMSEventHandlers } = require('./events/handlers/vmsEventHandlers');

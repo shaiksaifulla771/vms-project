@@ -194,6 +194,15 @@ const AppContent = () => {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" />} />
           <Route path="/dashboard/*" element={<Dashboard />} />
+          <Route path="/admin/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+          <Route path="/admin/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+          <Route path="/admin/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
+          <Route path="/admin/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+          <Route path="/admin/audit-logs/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
+          <Route path="/admin/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+          <Route path="/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+          <Route path="/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+          <Route path="/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
           <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
           <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
           <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
@@ -204,7 +213,7 @@ const AppContent = () => {
           <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
           <Route path="/bom/*" element={<BOMRoutes />} />
           <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
-          <Route path="/scheduling/*" element={<Navigate to="/planning" replace />} />
+          <Route path="/scheduling/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Production', 'Production Manager', 'Planner']}><Scheduling /></ProtectedRoute>} />
           <Route path="/purchasing/*" element={<ProtectedRoute roles={['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']}><Purchasing /></ProtectedRoute>} />
           <Route path="/workflows/*" element={<ProtectedRoute roles={['Admin']}><Workflows /></ProtectedRoute>} />
           <Route path="/email/*" element={<ProtectedRoute roles={['Admin']}><EmailTemplates /></ProtectedRoute>} />

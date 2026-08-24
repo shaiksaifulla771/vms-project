@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import useSSE from '../../hooks/useSSE';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
@@ -215,6 +216,12 @@ const validateRowData = (item, isAutoEntryVal, systemExistingCodes, importedCode
 
 
 const MaterialsTab = () => {
+  const { isConnected } = useSSE({
+    'MATERIAL_CREATED': () => fetchMaterials(),
+    'MATERIAL_UPDATED': () => fetchMaterials(),
+    'MATERIAL_DELETED': () => fetchMaterials(),
+  });
+
   const [deletedMaterialsHistory, setDeletedMaterialsHistory] = useState(() => {
     try {
       const saved = localStorage.getItem('erp_deleted_materials_history');

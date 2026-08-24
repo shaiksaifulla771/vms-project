@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const logger = require('../utils/logger');
+const { getPubClient, getRedisStatus } = require('../config/redis');
 
 /**
  * Domain Event Bus — In-process EventEmitter carrying secondary side-effects only (notifications, audit, planning updates).
@@ -35,6 +36,21 @@ class DomainEventBus extends EventEmitter {
         }
       } catch (err) {
         logger.error('EventBus', `Sync Listener Error on [${eventName}]`, err);
+      }
+    }
+
+    // Dual-publish to Redis Pub/Sub Backplane (if available)
+    if (getRedisStatus()) {
+      try {
+        const pubClient = getPubClient();
+        if (pubClient) {
+          // Fire-and-forget publish
+          pubClient.publish(`domain:${eventName}`, JSON.stringify(eventPayload)).catch(err => {
+            logger.error('EventBus', `Redis Publish Error on [${eventName}]`, err);
+          });
+        }
+      } catch (err) {
+        logger.error('EventBus', `Failed to get PubClient for [${eventName}]`, err);
       }
     }
 

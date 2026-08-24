@@ -11,6 +11,7 @@ backend/.env
 !**/*.env.example
 *service-account*.json
 *.pem
+.agents/mcp_config.json
 
 
 # Build output
@@ -38,3 +39,10 @@ npm-debug.log*
 !frontend/**/*.js
 Masters_old.jsx
 dynamo/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/

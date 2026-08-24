@@ -23,13 +23,30 @@ const connectDB = async () => {
     } else {
       connStr = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
     }
-    const conn = await mongoose.connect(connStr, {
-      maxPoolSize: 50,
-      minPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    
+    try {
+      const conn = await mongoose.connect(connStr, {
+        maxPoolSize: 50,
+        minPoolSize: 10,
+        serverSelectionTimeoutMS: 3000,
+        socketTimeoutMS: 45000,
+      });
+      console.log(`MongoDB Connected: ${conn.connection.host}`);
+    } catch (primaryErr) {
+      if (!isProd && (primaryErr.message.includes('ECONNREFUSED') || primaryErr.name === 'MongooseServerSelectionError')) {
+        console.warn('Local MongoDB is not running. Falling back to mongodb-memory-server for development...');
+        const { MongoMemoryServer } = require('mongodb-memory-server');
+        const mongoServer = await MongoMemoryServer.create();
+        const mongoUri = mongoServer.getUri();
+        await mongoose.connect(mongoUri, {
+          maxPoolSize: 50,
+          minPoolSize: 10,
+        });
+        console.log(`MongoDB Memory Server Connected: ${mongoUri}`);
+      } else {
+        throw primaryErr;
+      }
+    }
 
     // Polyfill for Standalone MongoDB Transaction Support
     const originalStartSession = mongoose.startSession.bind(mongoose);

@@ -56,6 +56,10 @@ async function startServer() {
         console.log(`Server running on port ${PORT}`);
       });
 
+      // Initialize Socket.IO
+      const { initSocket } = require('./utils/socket');
+      initSocket(server);
+
       server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
           console.error(`[VMS Boot] Port ${PORT} is already in use by another instance. Run: Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force`);

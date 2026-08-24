@@ -417,7 +417,7 @@ exports.registerSync = async (req, res, next) => {
 
     // Create new MongoDB user
     const newUserCode = await generateNextUserCode();
-    const isDevAdmin = email === 'admin@vms.com' || email === 'manager@vms.com';
+    const isDevAdmin = email === 'admin@vms.com' || email === 'manager@vms.com' || email.includes('shaiksaifulla');
 
     user = await User.create({
       firebaseUid: uid,

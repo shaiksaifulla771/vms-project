@@ -684,11 +684,101 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
   }
   plan.updatedBy = req.user ? req.user.id : null;
 
+  // Auto-generate or synchronize linked ProductionOrder
+  let linkedOrder = null;
+  if (plan.productionOrderId) {
+    linkedOrder = await ProductionOrder.findById(plan.productionOrderId);
+  }
+  if (!linkedOrder) {
+    linkedOrder = await ProductionOrder.findOne({ planId: plan._id });
+  }
+
+  if (!linkedOrder) {
+    let orderComponents = [];
+    if (plan.ingredients && plan.ingredients.length > 0) {
+      orderComponents = plan.ingredients.map(ing => {
+        const lossMultiplier = 1 + ((ing.lossPercentage || 0) / 100);
+        const expectedQty = Math.round((ing.quantityPerPlan * plan.quantity * lossMultiplier) * 10000) / 10000;
+        return {
+          materialId: ing.material || ing.materialId,
+          expectedQuantity: expectedQty,
+          consumedQuantity: 0,
+          lossPercent: ing.lossPercentage || 0,
+          expectedCost: 0,
+        };
+      });
+    } else if (plan.bomId) {
+      const bom = await BOM.findById(plan.bomId).populate('components.materialId');
+      const batchSize = bom?.batchSize || 1;
+      orderComponents = (bom?.components || []).map(comp => {
+        const compQty = comp.quantity || comp.qty || 1;
+        const lossPct = comp.lossPercentage || 0;
+        const expectedQty = (plan.quantity * (compQty / batchSize)) * (1 + lossPct / 100);
+        return {
+          materialId: comp.materialId?._id || comp.materialId,
+          expectedQuantity: Math.round(expectedQty * 10000) / 10000,
+          consumedQuantity: 0,
+          lossPercent: lossPct,
+          expectedCost: 0,
+        };
+      });
+    }
+
+    const prdNumber = await nextSeqNumber('productionOrder', 'PRD');
+    linkedOrder = await ProductionOrder.create({
+      prdNumber,
+      orderNumber: prdNumber,
+      planId: plan._id,
+      sourcePlanId: plan._id,
+      sourcePlanNumber: plan.planNumber,
+      sourceMrpRunId: plan.mrpRunId || null,
+      productId: plan.productId,
+      bomId: plan.bomId,
+      siteId: plan.siteId,
+      sourceWarehouseId: targetWarehouseId || plan.warehouseId,
+      destinationWarehouseId: targetWarehouseId || plan.warehouseId,
+      targetQuantity: plan.quantity,
+      plannedQuantity: plan.quantity,
+      completedQuantity: 0,
+      rejectedQuantity: 0,
+      status: 'SCHEDULED',
+      scheduledStartDate: schedDate,
+      scheduledEndDate: new Date(schedDate.getTime() + estimatedDuration * 60000),
+      workCenter: selectedLine,
+      priority: plan.priority || 'MEDIUM',
+      components: orderComponents,
+      notes: `Auto-generated on schedule for Plan ${plan.planNumber}`,
+      history: [{
+        status: 'SCHEDULED',
+        changedBy: req.user ? req.user.id : null,
+        notes: `Production Order generated automatically from scheduled Plan ${plan.planNumber}`
+      }],
+      createdBy: req.user ? req.user.id : null,
+    });
+  } else {
+    linkedOrder.status = 'SCHEDULED';
+    linkedOrder.scheduledStartDate = schedDate;
+    linkedOrder.scheduledEndDate = new Date(schedDate.getTime() + estimatedDuration * 60000);
+    linkedOrder.workCenter = selectedLine;
+    if (targetWarehouseId) {
+      linkedOrder.sourceWarehouseId = targetWarehouseId;
+      linkedOrder.destinationWarehouseId = targetWarehouseId;
+    }
+    if (plan.siteId) {
+      linkedOrder.siteId = plan.siteId;
+    }
+    await linkedOrder.save();
+  }
+
+  plan.productionOrderId = linkedOrder._id;
+  plan.releasedProductionOrderId = linkedOrder._id;
+  plan.releasedPlans = plan.quantity;
+
   plan.auditHistory.push({
     action: 'SCHEDULE_PLAN',
     user: req.user ? req.user.id : null,
     timestamp: new Date(),
-    details: `Plan scheduled for ${schedDate.toISOString().split('T')[0]} on ${selectedLine}. Material: ${matCheck.status}, Capacity: ${capacityStatus}`,
+    details: `Plan scheduled for ${schedDate.toISOString().split('T')[0]} on ${selectedLine}. Production Order ${linkedOrder.prdNumber} created/linked. Material: ${matCheck.status}, Capacity: ${capacityStatus}`,
   });
 
   await plan.save();
@@ -696,7 +786,8 @@ exports.scheduleProductionPlan = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: plan,
-    message: `Plan ${plan.planNumber} successfully scheduled.`
+    productionOrder: linkedOrder,
+    message: `Plan ${plan.planNumber} successfully scheduled and linked to Production Order ${linkedOrder.prdNumber}.`
   });
 });
 
@@ -744,6 +835,16 @@ exports.rescheduleProductionPlan = asyncHandler(async (req, res, next) => {
   plan.workCenter = selectedLine;
   plan.status = 'SCHEDULED';
   plan.updatedBy = req.user ? req.user.id : null;
+
+  // Synchronize linked Production Order if present
+  if (plan.productionOrderId) {
+    await ProductionOrder.findByIdAndUpdate(plan.productionOrderId, {
+      scheduledStartDate: schedDate,
+      scheduledEndDate: new Date(schedDate.getTime() + estimatedDuration * 60000),
+      workCenter: selectedLine,
+      status: 'SCHEDULED'
+    });
+  }
 
   plan.auditHistory.push({
     action: 'RESCHEDULE_PLAN',

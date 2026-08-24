@@ -1,3 +1,6 @@
+const dotenv = require('dotenv');
+const path = require('path');
+dotenv.config({ path: path.join(__dirname, '../.env') });
 const mongoose = require('mongoose');
 const User = require('../models/User'); // Reuse the real schema to ensure hooks run
 

@@ -155,62 +155,92 @@ const NetworkAndSites = () => {
     }
   };
 
-  const handleAssignWarehouseToSite = () => {
+  const handleAssignWarehouseToSite = async () => {
     if (!selectedWarehouseToAssign || !mandatoryReason.trim()) {
       alert('Please select a warehouse and enter a mandatory reason.');
       return;
     }
     const targetSite = assignWarehouseModal;
-    setWarehouses(warehouses.map(w => w._id === selectedWarehouseToAssign ? { ...w, siteId: { _id: targetSite._id, name: targetSite.name } } : w));
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'ASSIGN', module: 'Network & Sites', locationName: targetSite.name, reason: mandatoryReason }, ...auditLogs]);
-    setSystemNotice({ title: 'Warehouse Assigned', message: `Assigned warehouse to ${targetSite.name}.` });
-    setAssignWarehouseModal(null);
-    setMandatoryReason('');
-    setSelectedWarehouseToAssign('');
+    try {
+      await api.put(`/api/admin/warehouses/${selectedWarehouseToAssign}/transfer`, {
+        newSiteId: targetSite._id,
+        reason: mandatoryReason.trim()
+      });
+      setSystemNotice({ title: 'Warehouse Assigned', message: `Assigned warehouse to ${targetSite.name}.` });
+      setAssignWarehouseModal(null);
+      setMandatoryReason('');
+      setSelectedWarehouseToAssign('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to assign warehouse to plant.');
+    }
   };
 
-  const handleUnlinkWarehouse = () => {
+  const handleUnlinkWarehouse = async () => {
     if (!mandatoryReason.trim()) {
       alert('Mandatory audit reason required to unlink location.');
       return;
     }
     const wh = unlinkModal;
-    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: null } : w));
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'UNLINK', module: 'Network & Sites', locationName: wh.name, reason: mandatoryReason }, ...auditLogs]);
-    setSystemNotice({ title: 'Warehouse Unlinked', message: `Detached ${wh.name} from site.` });
-    setUnlinkModal(null);
-    setMandatoryReason('');
+    try {
+      await api.put(`/api/admin/warehouses/${wh._id}/unlink`, {
+        reason: mandatoryReason.trim()
+      });
+      setSystemNotice({ title: 'Warehouse Unlinked', message: `Detached ${wh.name} from site and moved to Orphan Pool.` });
+      setUnlinkModal(null);
+      setMandatoryReason('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to unlink warehouse.');
+    }
   };
 
-  const handleTransferSite = () => {
+  const handleTransferSite = async () => {
     if (!selectedTargetSiteId || !mandatoryReason.trim()) {
       alert('Target site and mandatory reason required.');
       return;
     }
     const wh = transferModal;
-    const targetSite = sites.find(s => s._id === selectedTargetSiteId);
-    setWarehouses(warehouses.map(w => w._id === wh._id ? { ...w, siteId: targetSite ? { _id: targetSite._id, name: targetSite.name } : null } : w));
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'TRANSFER', module: 'Network & Sites', locationName: wh.name, reason: mandatoryReason }, ...auditLogs]);
-    setSystemNotice({ title: 'Site Transferred', message: `Transferred ${wh.name} to ${targetSite?.name}.` });
-    setTransferModal(null);
-    setMandatoryReason('');
+    try {
+      await api.put(`/api/admin/warehouses/${wh._id}/transfer`, {
+        newSiteId: selectedTargetSiteId,
+        reason: mandatoryReason.trim()
+      });
+      setSystemNotice({ title: 'Site Transferred', message: `Transferred ${wh.name} to target plant successfully.` });
+      setTransferModal(null);
+      setMandatoryReason('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to transfer warehouse.');
+    }
   };
 
-  const handleDeactivateLocation = () => {
+  const handleDeactivateLocation = async () => {
     if (!mandatoryReason.trim()) {
       alert('Mandatory reason required for deactivation.');
       return;
     }
     const target = deactivateModal;
-    if (target.code?.startsWith('HYD') || target.code?.startsWith('BLR') || target.code?.startsWith('MAA') || target._id?.startsWith('site')) {
-      setSites(sites.map(s => s._id === target._id ? { ...s, status: 'Inactive', deactivationReason: mandatoryReason } : s));
-    } else {
-      setWarehouses(warehouses.map(w => w._id === target._id ? { ...w, status: 'Inactive', deactivationReason: mandatoryReason } : w));
+    const isSite = target.type && (target.type.includes('Plant') || target.type.includes('Center') || !target.siteId);
+    try {
+      if (isSite) {
+        await api.put(`/api/admin/sites/${target._id}/toggle-status`, {
+          status: target.status === 'Active' ? 'Inactive' : 'Active',
+          reason: mandatoryReason.trim()
+        });
+      } else {
+        await api.put(`/api/admin/warehouses/${target._id}/toggle-status`, {
+          status: target.status === 'Active' ? 'Inactive' : 'Active',
+          reason: mandatoryReason.trim()
+        });
+      }
+      setSystemNotice({ title: 'Status Updated', message: `Toggled active status for ${target.name}.` });
+      setDeactivateModal(null);
+      setMandatoryReason('');
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to toggle location status.');
     }
-    setAuditLogs([{ _id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userName: 'Shaik Saifulla', role: 'Admin', action: 'DEACTIVATE', module: 'Network & Sites', locationName: target.name, reason: mandatoryReason }, ...auditLogs]);
-    setSystemNotice({ title: 'Location Deactivated', message: `Marked ${target.name} as inactive.` });
-    setDeactivateModal(null);
-    setMandatoryReason('');
   };
 
   const handleOpenEditScope = (u) => {
