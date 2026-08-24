@@ -33,7 +33,7 @@ const MaterialSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
+    enum: ['Active', 'Inactive', 'Draft'],
     default: 'Active',
   },
   description: {
@@ -103,6 +103,20 @@ const MaterialSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  deactivatedAt: {
+    type: Date,
+    default: null,
+  },
+  deactivatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  deactivationReason: {
+    type: String,
+    trim: true,
+    default: '',
+  },
 });
 
 // Performance Indexes for Fast Lookups, Search, and Filtering
@@ -110,5 +124,10 @@ MaterialSchema.index({ type: 1, status: 1 });
 MaterialSchema.index({ name: 1, status: 1 });
 MaterialSchema.index({ status: 1, createdAt: -1 });
 MaterialSchema.index({ name: 'text', code: 'text', description: 'text' });
+
+const blockHardDelete = function(next) { next(new Error('Hard deletion is prohibited by enterprise governance. Use soft deactivation.')); };
+MaterialSchema.pre('deleteOne', { document: true, query: true }, blockHardDelete);
+MaterialSchema.pre('deleteMany', blockHardDelete);
+MaterialSchema.pre('findOneAndDelete', blockHardDelete);
 
 module.exports = mongoose.model('Material', MaterialSchema);

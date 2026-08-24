@@ -44,10 +44,29 @@ const WarehouseMaterialSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  deactivatedAt: {
+    type: Date,
+    default: null,
+  },
+  deactivatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  deactivationReason: {
+    type: String,
+    trim: true,
+    default: '',
+  },
 });
 
 WarehouseMaterialSchema.index({ materialId: 1, warehouseId: 1 }, { unique: true });
 WarehouseMaterialSchema.index({ warehouseId: 1 });
 WarehouseMaterialSchema.index({ siteId: 1 });
+
+const blockHardDelete = function(next) { next(new Error('Hard deletion is prohibited by enterprise governance. Use soft deactivation.')); };
+WarehouseMaterialSchema.pre('deleteOne', { document: true, query: true }, blockHardDelete);
+WarehouseMaterialSchema.pre('deleteMany', blockHardDelete);
+WarehouseMaterialSchema.pre('findOneAndDelete', blockHardDelete);
 
 module.exports = mongoose.model('WarehouseMaterial', WarehouseMaterialSchema);

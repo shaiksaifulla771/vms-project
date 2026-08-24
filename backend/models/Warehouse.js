@@ -75,4 +75,9 @@ const WarehouseSchema = new mongoose.Schema({
 // Optimize queries
 WarehouseSchema.index({ isActive: 1 });
 
+const blockHardDelete = function(next) { next(new Error('Hard deletion is prohibited by enterprise governance. Use soft deactivation.')); };
+WarehouseSchema.pre('deleteOne', { document: true, query: true }, blockHardDelete);
+WarehouseSchema.pre('deleteMany', blockHardDelete);
+WarehouseSchema.pre('findOneAndDelete', blockHardDelete);
+
 module.exports = mongoose.model('Warehouse', WarehouseSchema);

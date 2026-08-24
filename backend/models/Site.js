@@ -82,4 +82,9 @@ SiteSchema.pre('save', function (next) {
   next();
 });
 
+const blockHardDelete = function(next) { next(new Error('Hard deletion is prohibited by enterprise governance. Use soft deactivation.')); };
+SiteSchema.pre('deleteOne', { document: true, query: true }, blockHardDelete);
+SiteSchema.pre('deleteMany', blockHardDelete);
+SiteSchema.pre('findOneAndDelete', blockHardDelete);
+
 module.exports = mongoose.model('Site', SiteSchema);

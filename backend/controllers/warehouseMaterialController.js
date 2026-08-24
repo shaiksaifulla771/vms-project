@@ -2,6 +2,19 @@ const WarehouseMaterial = require('../models/WarehouseMaterial');
 const Material = require('../models/Material');
 const Warehouse = require('../models/Warehouse');
 const asyncHandler = require('../middleware/asyncHandler');
+const authz = require('../utils/authz');
+const scopeResolver = require('../utils/scopeResolver');
+
+/**
+ * Validates if the user has active scope assignments for the target warehouse.
+ * Bypasses for global administrators.
+ */
+async function checkWarehouseScope(user, targetWarehouseId) {
+  if (!user || !targetWarehouseId) return false;
+  if (authz.isGlobalAdmin(user)) return true;
+  const { warehouseIds } = await scopeResolver.getUserAssignedScopes(user);
+  return warehouseIds.some(id => String(id) === String(targetWarehouseId));
+}
 
 // @desc    Get materials assigned to warehouses
 // @route   GET /api/warehouse-materials
@@ -43,6 +56,11 @@ exports.assignMaterialToWarehouse = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: 'Warehouse not found' });
   }
 
+  // 3-Level Access Scope Governance Enforcement
+  if (!(await checkWarehouseScope(req.user, warehouse._id))) {
+    return res.status(403).json({ success: false, error: 'Access denied. You do not have an active assignment to this warehouse.' });
+  }
+
   const resolvedSiteId = siteId || warehouse.siteId;
 
   // Check if assignment already exists
@@ -78,6 +96,11 @@ exports.updateAssignedMaterial = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: 'Warehouse material assignment not found' });
   }
 
+  // 3-Level Access Scope Governance Enforcement
+  if (!(await checkWarehouseScope(req.user, assignment.warehouseId))) {
+    return res.status(403).json({ success: false, error: 'Access denied. You do not have an active assignment to this warehouse.' });
+  }
+
   const { minStock, maxStock, reorderPoint, status } = req.body;
   if (minStock !== undefined) assignment.minStock = minStock;
   if (maxStock !== undefined) assignment.maxStock = maxStock;
@@ -88,7 +111,7 @@ exports.updateAssignedMaterial = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: assignment });
 });
 
-// @desc    Unassign material from warehouse
+// @desc    Unassign material from warehouse (Soft Deactivation)
 // @route   DELETE /api/warehouse-materials/:id
 // @access  Private
 exports.unassignMaterialFromWarehouse = asyncHandler(async (req, res) => {
@@ -97,6 +120,20 @@ exports.unassignMaterialFromWarehouse = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: 'Warehouse material assignment not found' });
   }
 
-  await assignment.deleteOne();
-  res.status(200).json({ success: true, message: 'Material unassigned from warehouse' });
+  // 3-Level Access Scope Governance Enforcement
+  if (!(await checkWarehouseScope(req.user, assignment.warehouseId))) {
+    return res.status(403).json({ success: false, error: 'Access denied. You do not have an active assignment to this warehouse.' });
+  }
+
+  if (assignment.status === 'Inactive') {
+    return res.status(400).json({ success: false, error: 'Material is already inactive in this warehouse' });
+  }
+
+  assignment.status = 'Inactive';
+  assignment.deactivatedAt = Date.now();
+  assignment.deactivatedBy = req.user ? req.user.id : null;
+  assignment.deactivationReason = req.body.reason || 'Unassigned via API';
+  await assignment.save();
+
+  res.status(200).json({ success: true, message: 'Material unassigned from warehouse successfully' });
 });

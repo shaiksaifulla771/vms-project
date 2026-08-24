@@ -5,7 +5,7 @@ const {
   updateAssignedMaterial,
   unassignMaterialFromWarehouse
 } = require('../controllers/warehouseMaterialController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -14,10 +14,13 @@ router.use(protect);
 router.route('/')
   .get(getAssignedMaterials);
 
-router.post('/assign', assignMaterialToWarehouse);
+// Only authorized roles can modify assignments
+const assignmentRoles = ['Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator'];
+
+router.post('/assign', authorize(assignmentRoles), assignMaterialToWarehouse);
 
 router.route('/:id')
-  .put(updateAssignedMaterial)
-  .delete(unassignMaterialFromWarehouse);
+  .put(authorize(assignmentRoles), updateAssignedMaterial)
+  .delete(authorize(assignmentRoles), unassignMaterialFromWarehouse);
 
 module.exports = router;

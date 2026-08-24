@@ -22,11 +22,11 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await Material.deleteMany({});
-  await Vendor.deleteMany({});
-  await MPN.deleteMany({});
-  await BOM.deleteMany({});
-  await FlatBOM.deleteMany({});
+  await Material.collection.deleteMany({});
+  await Vendor.collection.deleteMany({});
+  await MPN.collection.deleteMany({});
+  await BOM.collection.deleteMany({});
+  await FlatBOM.collection.deleteMany({});
 });
 
 describe('Masters & BOM Performance Optimization Unit Tests', () => {
