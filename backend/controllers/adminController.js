@@ -614,6 +614,21 @@ exports.updateUserAccess = async (req, res) => {
     }, req);
 
 
+    const NotificationService = require('../services/notificationService');
+    try {
+      await NotificationService.notifyUser(user._id, {
+        type: wasPending ? 'account_approved' : 'role_changed',
+        title: wasPending ? 'Account Approved' : 'Permissions & Scope Updated',
+        message: wasPending
+          ? `Your VMS account was approved with role "${user.role}".`
+          : `Your VMS role was updated to "${user.role}" by Administrator. Reason: ${reason.trim()}`,
+        metadata: { role: user.role, reason: reason.trim() },
+        severity: 'info'
+      });
+    } catch (notifErr) {
+      // Ignored
+    }
+
     if (wasPending) {
       try {
         await emailService.sendEmail({

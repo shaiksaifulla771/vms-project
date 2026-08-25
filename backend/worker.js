@@ -23,6 +23,7 @@ async function startWorker() {
       const { connection, QUEUES } = require('./config/queue');
       const importProcessor = require('./workers/importWorker');
       const commitProcessor = require('./workers/commitWorker');
+      const emailProcessor = require('./workers/emailWorker');
 
       await connectDB();
 
@@ -33,6 +34,9 @@ async function startWorker() {
 
       importWorker.on('completed', job => console.log(`✅ [IMPORT] Job ${job.id} completed.`));
       importWorker.on('failed', (job, err) => console.error(`❌ [IMPORT] Job ${job.id} failed:`, err));
+      importWorker.on('error', err => {
+        // Suppress unhandled crash when Redis connection drops
+      });
 
       const commitWorker = new Worker(QUEUES.COMMIT, async job => {
         console.log(`[COMMIT] Processing job ${job.id}`);
@@ -41,6 +45,20 @@ async function startWorker() {
 
       commitWorker.on('completed', job => console.log(`✅ [COMMIT] Job ${job.id} completed.`));
       commitWorker.on('failed', (job, err) => console.error(`❌ [COMMIT] Job ${job.id} failed:`, err));
+      commitWorker.on('error', err => {
+        // Suppress unhandled crash when Redis connection drops
+      });
+
+      const emailWorker = new Worker(QUEUES.EMAIL, async job => {
+        console.log(`[EMAIL] Processing job ${job.id}`);
+        return emailProcessor(job);
+      }, { connection });
+
+      emailWorker.on('completed', job => console.log(`✅ [EMAIL] Job ${job.id} completed.`));
+      emailWorker.on('failed', (job, err) => console.error(`❌ [EMAIL] Job ${job.id} failed:`, err));
+      emailWorker.on('error', err => {
+        // Suppress unhandled crash when Redis connection drops
+      });
 
       console.log('👷 Workers are listening for jobs on Redis...');
       workersStarted = true;
@@ -49,6 +67,7 @@ async function startWorker() {
         console.log('Shutting down workers...');
         await importWorker.close();
         await commitWorker.close();
+        await emailWorker.close();
         await mongoose.connection.close();
         process.exit(0);
       });

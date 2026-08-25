@@ -213,6 +213,30 @@ const UsersAndAccessScope = () => {
     }
   };
 
+  const handleRejectRequest = async () => {
+    if (!editUserModal) return;
+    if (!window.confirm(`Are you sure you want to reject the access request for ${editUserModal.username || editUserModal.email}?`)) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await api.put(`/api/users/${editUserModal._id}/reject`, {
+        reason: mandatoryReason || 'Rejected by Administrator'
+      });
+      setSystemNotice({
+        type: 'warning',
+        title: 'Access Request Rejected',
+        message: `Rejected access request for ${editUserModal.username || editUserModal.email}.`
+      });
+      setEditUserModal(null);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Error rejecting user request');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const filteredUsers = users.filter(u => {
     const matchesSearch = (u.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (u.email || '').toLowerCase().includes(searchQuery.toLowerCase());
@@ -538,20 +562,41 @@ const UsersAndAccessScope = () => {
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-              <button
-                onClick={() => setEditUserModal(null)}
-                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleInitiateSaveScope}
-                disabled={actionLoading}
-                className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md text-xs transition-colors"
-              >
-                {actionLoading ? 'Saving...' : 'Save Scope'}
-              </button>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2.5">
+              <div>
+                {(editUserModal.accountStatus || '').toUpperCase() === 'PENDING' && (
+                  <button
+                    onClick={handleRejectRequest}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs transition-colors"
+                  >
+                    Reject Request
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditUserModal(null)}
+                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleInitiateSaveScope}
+                  disabled={actionLoading}
+                  className={`px-5 py-2 text-white font-extrabold rounded-xl shadow-md text-xs transition-colors ${
+                    (editUserModal.accountStatus || '').toUpperCase() === 'PENDING'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30'
+                      : 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/30'
+                  }`}
+                >
+                  {actionLoading
+                    ? 'Processing...'
+                    : (editUserModal.accountStatus || '').toUpperCase() === 'PENDING'
+                    ? '✓ Approve & Grant Role'
+                    : 'Save Scope'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -63,6 +63,12 @@ exports.otpLimiter = createLimiter({
   max: isProd ? 5 : 100
 });
 
+exports.passwordResetLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 5 : 50,
+  message: { success: false, error: 'Too many password reset requests. Please try again in 15 minutes.' }
+});
+
 // General protection limiters
 exports.unauthenticatedIpLimiter = createLimiter({
   windowMs: 15 * 60 * 1000,

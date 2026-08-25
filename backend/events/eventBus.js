@@ -92,6 +92,15 @@ const EVENTS = {
   // Stock Transfers
   STOCK_TRANSFER_CREATED: 'STOCK_TRANSFER_CREATED',
   STOCK_TRANSFER_COMPLETED: 'STOCK_TRANSFER_COMPLETED',
+  // Auth & Identity Lifecycle
+  USER_REGISTERED: 'user.registered',
+  OTP_SENT: 'auth.otp_sent',
+  OTP_VERIFIED: 'auth.otp_verified',
+  REGISTRATION_COMPLETED: 'auth.registration_completed',
+  ACCOUNT_APPROVED: 'user.account_approved',
+  ACCOUNT_REJECTED: 'user.account_rejected',
+  ROLE_CHANGED: 'user.role_changed',
+  SCOPE_CHANGED: 'user.scope_changed',
   // VMS
   VISITOR_CREATED: 'visitor.created',
   VISITOR_UPDATED: 'visitor.updated',
@@ -100,6 +109,7 @@ const EVENTS = {
   APPOINTMENT_CREATED: 'appointment.created',
   APPOINTMENT_APPROVED: 'appointment.approved',
   APPOINTMENT_REJECTED: 'appointment.rejected',
+  APPOINTMENT_RESCHEDULED: 'appointment.rescheduled',
   APPOINTMENT_CANCELLED: 'appointment.cancelled',
   VISITOR_CHECKED_IN: 'visitor.checked_in',
   VISITOR_CHECKED_OUT: 'visitor.checked_out',

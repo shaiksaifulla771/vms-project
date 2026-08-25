@@ -4,7 +4,16 @@ const AuthAuditLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['ACCOUNT_APPROVED', 'ACCOUNT_REJECTED', 'REGISTRATION', 'LOGIN', 'LOGOUT', 'EMAIL_VERIFIED', 'MIGRATION_SUCCESS', 'MIGRATION_FAILED']
+    enum: [
+      'ACCOUNT_APPROVED', 'ACCOUNT_REJECTED',
+      'REGISTRATION', 'REGISTRATION_STARTED',
+      'LOGIN', 'LOGOUT',
+      'EMAIL_VERIFIED',
+      'OTP_SENT', 'OTP_VERIFIED', 'OTP_RESENT',
+      'ROLE_CHANGED', 'SCOPE_CHANGED',
+      'MIGRATION_SUCCESS', 'MIGRATION_FAILED',
+      'APPOINTMENT_SCHEDULED', 'APPOINTMENT_RESCHEDULED', 'APPOINTMENT_CANCELLED'
+    ]
   },
   targetUserId: {
     type: mongoose.Schema.Types.ObjectId,

@@ -4,12 +4,17 @@ const PendingRegistration = require('../models/PendingRegistration');
 const AuthAuditLog = require('../models/AuthAuditLog');
 const getJwtSecret = require('../config/jwt');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const emailService = require('../services/emailService');
+const NotificationService = require('../services/notificationService');
 const { admin, auth } = require('../config/firebaseAdmin');
 const { generateNextUserCode } = require('../utils/userCodeGenerator');
 
-const EMAIL_REGEX = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/;
-const OTP_TTL_MINUTES = 5;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const OTP_TTL_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES, 10) || 10;
+const OTP_MAX_ATTEMPTS = parseInt(process.env.OTP_MAX_ATTEMPTS, 10) || 5;
+const OTP_RESEND_COOLDOWN_SECONDS = parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS, 10) || 60;
+const OTP_MAX_RESENDS = parseInt(process.env.OTP_MAX_RESENDS, 10) || 5;
 
 // Helper to sign JWT
 const getSignedJwtToken = (userId, tokenVersion) => {
@@ -18,21 +23,19 @@ const getSignedJwtToken = (userId, tokenVersion) => {
   });
 };
 
-const generateOtpPool = () => {
-  const codes = new Set();
-  while (codes.size < 100) {
-    codes.add(Math.floor(1000 + Math.random() * 9000).toString());
-  }
-  return Array.from(codes);
-};
-
+/**
+ * Generates a cryptographically secure 4-digit numeric OTP (1000 - 9999)
+ */
 const pickRegistrationOtp = () => {
-  const otpPool = generateOtpPool();
-  return otpPool[crypto.randomInt(0, otpPool.length)];
+  return crypto.randomInt(1000, 10000).toString();
 };
 
 const getValidRequestedRole = (role) => {
-  const validRequestedRoles = ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'];
+  const validRequestedRoles = [
+    'Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 
+    'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 
+    'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'
+  ];
   return validRequestedRoles.includes(role) ? role : 'Viewer';
 };
 
@@ -42,7 +45,12 @@ const buildAuthUser = (user) => ({
   email: user.email,
   role: user.role,
   requestedRole: user.requestedRole,
-  accountStatus: user.accountStatus
+  accountStatus: user.accountStatus,
+  approvalStatus: user.approvalStatus,
+  isVerified: user.isVerified,
+  emailVerified: user.emailVerified || false,
+  siteIds: user.siteIds || [],
+  warehouseIds: user.warehouseIds || []
 });
 
 const issueAuthTokens = async (res, user, req) => {
@@ -66,7 +74,7 @@ const issueAuthTokens = async (res, user, req) => {
   return token;
 };
 
-// @desc    Register a user (Triggers OTP verification)
+// @desc    Register a user (Triggers 4-digit OTP email verification)
 // @route   POST /api/auth/register
 // @access  Public
 exports.register = async (req, res, next) => {
@@ -76,85 +84,77 @@ exports.register = async (req, res, next) => {
     const email = String(req.body.email || '').trim().toLowerCase();
 
     if (!username || !email || !password) {
-      return res.status(400).json({ success: false, error: 'Please provide all details (name, email, and password).' });
+      return res.status(400).json({ success: false, error: 'Please provide name, email, and password.' });
     }
 
     if (!EMAIL_REGEX.test(email)) {
-      return res.status(400).json({ success: false, error: 'Please provide a valid email address' });
+      return res.status(400).json({ success: false, error: 'Please provide a valid email address (e.g. user@domain.com)' });
+    }
+
+    // Basic domain check to block obvious fake addresses
+    const emailParts = email.split('@');
+    if (emailParts.length !== 2 || !emailParts[1].includes('.')) {
+      return res.status(400).json({ success: false, error: 'Invalid email domain format.' });
     }
 
     const userExists = await User.findOne({ email });
     if (userExists) {
-      if (!userExists.isVerified && userExists.accountStatus === 'Pending') {
+      if (!userExists.isVerified && (userExists.accountStatus === 'Pending' || userExists.accountStatus === 'PENDING')) {
         await User.deleteOne({ _id: userExists._id });
       } else {
-      return res.status(400).json({ success: false, error: 'Email address already registered' });
+        return res.status(400).json({ success: false, error: 'Email address already registered' });
       }
     }
 
     const finalRequestedRole = getValidRequestedRole(role);
-
     const generatedOtp = pickRegistrationOtp();
     const otpExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
+    // Hash OTP before storage — never store plaintext OTP in MongoDB
+    const otpHash = await bcrypt.hash(generatedOtp, 10);
+
+    // Save in temporary staging collection until verified & approved
     await PendingRegistration.findOneAndDelete({ email });
     const pendingRegistration = await PendingRegistration.create({
       username,
       email,
       passwordHash: password,
       requestedRole: finalRequestedRole,
-      otp: generatedOtp,
-      otpExpires
+      otpHash,
+      otpExpires,
+      purpose: 'REGISTRATION'
     });
 
-    const otpEmail = await emailService.sendEmail({
+    // Queue email asynchronously — email failure should NOT block registration
+    const otpEmail = await emailService.queueEmail({
       recipient: email,
-      subject: 'Your VendorOS VMS verification code',
-      textBody: `Your VendorOS VMS verification code is ${generatedOtp}. This code expires in ${OTP_TTL_MINUTES} minutes.`,
+      subject: 'Your 4-Digit VMS Verification Code',
+      textBody: `Welcome to VendorOS VMS. Your verification code is ${generatedOtp}. This code expires in ${OTP_TTL_MINUTES} minutes.`,
       htmlBody: `
-        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
-          <h2>VendorOS VMS verification</h2>
-          <p>Use this 4-digit code to verify your account:</p>
-          <p style="font-size:28px;font-weight:700;letter-spacing:6px">${generatedOtp}</p>
-          <p>This code expires in ${OTP_TTL_MINUTES} minutes.</p>
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#2563eb;margin-top:0">VendorOS VMS Verification</h2>
+          <p>Hello <strong>${username}</strong>,</p>
+          <p>Please enter this 4-digit code to verify your email address and submit your access request:</p>
+          <div style="background:#f1f5f9;border-radius:8px;padding:16px;text-align:center;margin:20px 0">
+            <span style="font-size:36px;font-weight:800;letter-spacing:10px;color:#1e293b">${generatedOtp}</span>
+          </div>
+          <p style="color:#64748b;font-size:14px">This verification code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>.</p>
+          <p style="color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;padding-top:12px">Once verified, your account request will be forwarded to the System Administrator for role assignment and activation.</p>
         </div>
       `,
-      templateCode: 'AUTH_REGISTRATION_OTP',
-      metadata: { purpose: 'registration_otp', expiresAt: otpExpires }
+      templateCode: 'AUTH_REGISTRATION_OTP'
     });
-
-    if (otpEmail.status !== 'Sent') {
-      await PendingRegistration.deleteOne({ _id: pendingRegistration._id });
-      return res.status(502).json({
-        success: false,
-        error: 'Registration could not be completed because the OTP email was not delivered. Please contact support or check SMTP configuration.',
-        details: process.env.NODE_ENV === 'production' ? undefined : otpEmail.error
-      });
-    }
-
-    const isConsoleOtp = otpEmail.metadata?.provider === 'console';
-    const devOtpPayload = process.env.NODE_ENV === 'production' || !isConsoleOtp ? {} : { devOtp: generatedOtp };
 
     res.status(201).json({
       success: true,
-      message: isConsoleOtp
-        ? `Registration successful. Development email mode is active, so the OTP was logged on the backend console. It expires in ${OTP_TTL_MINUTES} minutes.`
-        : `Registration successful. A 4-digit OTP has been sent to ${email}. It expires in ${OTP_TTL_MINUTES} minutes.`,
-      ...devOtpPayload,
-      registration: {
-        id: pendingRegistration._id,
-        username: pendingRegistration.username,
-        email: pendingRegistration.email,
-        requestedRole: pendingRegistration.requestedRole,
-        otpExpires: pendingRegistration.otpExpires
-      }
+      message: `A 4-digit verification code has been dispatched to your registered email (${email}). Please check your inbox.`
     });
   } catch (err) {
     next(err);
   }
 };
 
-// @desc    Verify OTP and activate account
+// @desc    Verify 4-Digit OTP and place user in PENDING Approval State
 // @route   POST /api/auth/verify-otp
 // @access  Public
 exports.verifyOtp = async (req, res, next) => {
@@ -163,11 +163,11 @@ exports.verifyOtp = async (req, res, next) => {
     const otp = String(req.body.otp || '').trim();
 
     if (!email || !otp) {
-      return res.status(400).json({ success: false, error: 'Please specify email and OTP' });
+      return res.status(400).json({ success: false, error: 'Please provide both email and 4-digit OTP' });
     }
 
     if (!/^\d{4}$/.test(otp)) {
-      return res.status(400).json({ success: false, error: 'Please enter a valid 4-digit OTP code' });
+      return res.status(400).json({ success: false, error: 'Please enter a valid 4-digit numeric OTP code' });
     }
 
     const pendingRegistration = await PendingRegistration.findOne({ email }).select('+passwordHash');
@@ -175,16 +175,29 @@ exports.verifyOtp = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'No pending registration found for this email. Please register again.' });
     }
 
-    // Validate OTP code and expiry
-    if (pendingRegistration.otp !== otp) {
-      pendingRegistration.attempts += 1;
-      await pendingRegistration.save();
-      return res.status(400).json({ success: false, error: 'Invalid verification OTP code' });
+    if (pendingRegistration.attempts >= OTP_MAX_ATTEMPTS) {
+      await PendingRegistration.deleteOne({ _id: pendingRegistration._id });
+      return res.status(429).json({ success: false, error: 'Too many incorrect OTP attempts. Please register again.' });
     }
 
+    // Check expiry BEFORE comparing hash (avoid unnecessary bcrypt work)
     if (new Date(pendingRegistration.otpExpires) < new Date()) {
       await PendingRegistration.deleteOne({ _id: pendingRegistration._id });
-      return res.status(400).json({ success: false, error: 'Verification OTP code expired' });
+      return res.status(400).json({ success: false, error: 'Verification code has expired. Please register again.' });
+    }
+
+    // Compare submitted OTP against stored bcrypt hash
+    const isOtpValid = pendingRegistration.otpHash
+      ? await bcrypt.compare(otp, pendingRegistration.otpHash)
+      : false;
+
+    if (!isOtpValid) {
+      pendingRegistration.attempts += 1;
+      await pendingRegistration.save();
+      return res.status(400).json({ 
+        success: false, 
+        error: `Invalid verification code. ${OTP_MAX_ATTEMPTS - pendingRegistration.attempts} attempt(s) remaining.` 
+      });
     }
 
     const existingUser = await User.findOne({ email });
@@ -193,50 +206,153 @@ exports.verifyOtp = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Email address already registered' });
     }
 
-    const newUserCode = await generateNextUserCode();
-    const user = await User.create({
-      username: pendingRegistration.username,
-      email: pendingRegistration.email,
-      password: pendingRegistration.passwordHash,
-      role: 'Viewer',
-      requestedRole: pendingRegistration.requestedRole,
-      accountStatus: 'PENDING',
-      userCode: newUserCode,
-      isVerified: true
-    });
+    // Mark temporary staging record as OTP verified & awaiting admin approval
+    pendingRegistration.isOtpVerified = true;
+    pendingRegistration.status = 'AWAITING_APPROVAL';
+    pendingRegistration.otpVerifiedAt = new Date();
+    pendingRegistration.otpHash = undefined;
+    pendingRegistration.otpExpires = undefined;
+    await pendingRegistration.save();
 
-    await PendingRegistration.deleteOne({ _id: pendingRegistration._id });
+    // 1. Dispatch in-app and push notification to Admin
+    try {
+      await NotificationService.notifyAdmins({
+        type: 'new_registration',
+        title: 'New User Registration Request',
+        message: `User ${pendingRegistration.username} (${pendingRegistration.email}) verified their email and requested the "${pendingRegistration.requestedRole}" role. Awaiting your approval.`,
+        relatedUserId: pendingRegistration._id,
+        metadata: {
+          pendingId: pendingRegistration._id,
+          email: pendingRegistration.email,
+          username: pendingRegistration.username,
+          requestedRole: pendingRegistration.requestedRole,
+          registeredAt: pendingRegistration.createdAt
+        },
+        severity: 'info'
+      });
+    } catch (e) {}
 
-    const admins = await User.find({ role: 'Admin', accountStatus: { $in: ['Active', 'ACTIVE'] }, isVerified: true }).select('email username');
-    await Promise.all(admins.map((admin) => emailService.sendEmail({
-      recipient: admin.email,
-      subject: 'New VendorOS VMS access request',
-      textBody: `New access request:\nName: ${user.username}\nEmail: ${user.email}\nRequested role: ${user.requestedRole}\nDate/time: ${new Date().toLocaleString()}\nPlease approve or reject this request in Admin settings.`,
-      htmlBody: `
-        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
-          <h2>New access request</h2>
-          <p><strong>Name:</strong> ${user.username}</p>
-          <p><strong>Email:</strong> ${user.email}</p>
-          <p><strong>Requested role:</strong> ${user.requestedRole}</p>
-          <p><strong>Date/time:</strong> ${new Date().toLocaleString()}</p>
-          <p>Open VendorOS VMS Admin Settings to approve or reject this user.</p>
-        </div>
-      `,
-      templateCode: 'AUTH_ADMIN_ACCESS_REQUEST',
-      metadata: { userId: user._id, requestedRole: user.requestedRole }
-    })));
+    // 2. Dispatch email to Active Admins
+    try {
+      const admins = await User.find({ role: 'Admin', accountStatus: { $in: ['Active', 'ACTIVE'] }, isVerified: true }).select('email username');
+      await Promise.all(admins.map((adminUser) => emailService.sendEmail({
+        recipient: adminUser.email,
+        subject: 'Action Required: New VMS Access Request',
+        textBody: `New User Access Request:\nName: ${pendingRegistration.username}\nEmail: ${pendingRegistration.email}\nRequested Role: ${pendingRegistration.requestedRole}\nTime: ${new Date().toLocaleString()}\n\nPlease review and approve this user in the Admin Dashboard.`,
+        htmlBody: `
+          <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px">
+            <h2 style="color:#2563eb;margin-top:0">New User Access Request</h2>
+            <p>A new user has verified their 4-digit OTP and is awaiting your role assignment and approval:</p>
+            <ul style="list-style:none;padding:0">
+              <li style="margin-bottom:8px"><strong>Name:</strong> ${pendingRegistration.username}</li>
+              <li style="margin-bottom:8px"><strong>Email:</strong> ${pendingRegistration.email}</li>
+              <li style="margin-bottom:8px"><strong>Requested Role:</strong> <span style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:4px;font-weight:600">${pendingRegistration.requestedRole}</span></li>
+              <li style="margin-bottom:8px"><strong>Timestamp:</strong> ${new Date().toLocaleString()}</li>
+            </ul>
+            <p>Please log in to the <strong>Admin Users & Access Control</strong> panel to assign their role, site scope, and approve their account.</p>
+          </div>
+        `,
+        templateCode: 'AUTH_ADMIN_ACCESS_REQUEST',
+        metadata: { pendingId: pendingRegistration._id, requestedRole: pendingRegistration.requestedRole }
+      })));
+    } catch (e) {}
+
+    // 3. Write Auth Audit Log
+    try {
+      await AuthAuditLog.create({
+        action: 'OTP_VERIFIED',
+        targetEmail: pendingRegistration.email,
+        previousAccountStatus: 'PENDING_OTP',
+        newAccountStatus: 'AWAITING_APPROVAL',
+        assignedRole: pendingRegistration.requestedRole,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] || 'Browser'
+      });
+    } catch (e) {}
 
     res.status(200).json({
       success: true,
-      message: 'Email verified successfully. Your access request is now pending administrator approval.',
-      user: buildAuthUser(user)
+      message: '4-digit OTP verified successfully! Your access request is stored in temporary staging and pending System Administrator approval.',
+      isOtpVerified: true,
+      email: pendingRegistration.email,
+      username: pendingRegistration.username,
+      requestedRole: pendingRegistration.requestedRole
     });
   } catch (err) {
     next(err);
   }
 };
 
-// @desc    Login user (Checks verification flag)
+// @desc    Resend 4-Digit OTP
+// @route   POST /api/auth/resend-otp
+// @access  Public
+exports.resendOtp = async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    const pending = await PendingRegistration.findOne({ email });
+    if (!pending) {
+      return res.status(404).json({ success: false, error: 'No pending registration found for this email.' });
+    }
+
+    if (pending.isOtpVerified) {
+      return res.status(400).json({ success: false, error: 'Email is already verified. Awaiting admin approval.' });
+    }
+
+    // Enforce maximum resend attempts
+    if (pending.resendCount >= OTP_MAX_RESENDS) {
+      return res.status(429).json({ success: false, error: 'Maximum resend attempts exceeded. Please register again.' });
+    }
+
+    // Rate-limit resends (cooldown period between resends)
+    const now = Date.now();
+    const cooldownMs = OTP_RESEND_COOLDOWN_SECONDS * 1000;
+    if (pending.lastOtpSentAt && (now - new Date(pending.lastOtpSentAt).getTime()) < cooldownMs) {
+      const waitSeconds = Math.ceil((cooldownMs - (now - new Date(pending.lastOtpSentAt).getTime())) / 1000);
+      return res.status(429).json({ success: false, error: `Please wait ${waitSeconds}s before requesting a new code.` });
+    }
+
+    const newOtp = pickRegistrationOtp();
+    const newOtpHash = await bcrypt.hash(newOtp, 10);
+    pending.otpHash = newOtpHash;
+    pending.otpExpires = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+    pending.attempts = 0;
+    pending.resendCount += 1;
+    pending.lastOtpSentAt = new Date();
+    await pending.save();
+
+    // Queue email asynchronously
+    await emailService.queueEmail({
+      recipient: email,
+      subject: 'Your New 4-Digit VMS Verification Code',
+      textBody: `Your new VendorOS VMS verification code is ${newOtp}. This code expires in ${OTP_TTL_MINUTES} minutes.`,
+      htmlBody: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#2563eb;margin-top:0">Your New Verification Code</h2>
+          <p>Hello <strong>${pending.username}</strong>,</p>
+          <p>Here is your new 4-digit verification code:</p>
+          <div style="background:#f1f5f9;border-radius:8px;padding:16px;text-align:center;margin:20px 0">
+            <span style="font-size:36px;font-weight:800;letter-spacing:10px;color:#1e293b">${newOtp}</span>
+          </div>
+          <p style="color:#64748b;font-size:14px">This code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>.</p>
+        </div>
+      `,
+      templateCode: 'AUTH_RESEND_OTP'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `A new 4-digit verification code has been dispatched to your email (${email}). Please check your inbox.`
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Login user (Checks verification flag & temporary staging)
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = async (req, res, next) => {
@@ -248,7 +364,8 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    const { email, password } = req.body;
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = req.body.password;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, error: 'Please provide an email and password' });
@@ -256,6 +373,30 @@ exports.login = async (req, res, next) => {
 
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
+      // Check if user is in temporary PendingRegistration staging
+      const bcrypt = require('bcryptjs');
+      const pendingReg = await PendingRegistration.findOne({ email }).select('+passwordHash');
+      if (pendingReg) {
+        const isMatch = await bcrypt.compare(password, pendingReg.passwordHash);
+        if (!isMatch) {
+          return res.status(401).json({ success: false, error: 'Invalid credentials' });
+        }
+        if (!pendingReg.isOtpVerified) {
+          return res.status(403).json({
+            success: false,
+            requireOtp: true,
+            email: pendingReg.email,
+            error: 'Account requires 4-digit OTP verification. Please enter the verification code sent to your email.'
+          });
+        }
+        return res.status(403).json({
+          success: false,
+          requireApproval: true,
+          email: pendingReg.email,
+          error: 'Your email has been verified. Your account access request is pending administrator approval.'
+        });
+      }
+
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
@@ -285,7 +426,7 @@ exports.login = async (req, res, next) => {
     if (normalizedStatus === 'SUSPENDED' || normalizedStatus === 'REJECTED' || normalizedStatus === 'DISABLED') {
       return res.status(403).json({
         success: false,
-        error: 'Your account has been suspended.',
+        error: 'Your account has been suspended or rejected.',
       });
     }
 
@@ -417,7 +558,7 @@ exports.registerSync = async (req, res, next) => {
 
     // Create new MongoDB user
     const newUserCode = await generateNextUserCode();
-    const isDevAdmin = email === 'admin@vms.com' || email === 'manager@vms.com' || email.includes('shaiksaifulla');
+    const isDevAdmin = email === 'shaiksaifulla771@gmail.com';
 
     user = await User.create({
       firebaseUid: uid,
@@ -430,7 +571,7 @@ exports.registerSync = async (req, res, next) => {
       emailVerified: emailVerified
     });
 
-    const authToken = getSignedJwtToken(user._id, user.tokenVersion || 0);
+    const authToken = isDevAdmin ? getSignedJwtToken(user._id, user.tokenVersion || 0) : null;
     return res.status(201).json({
       success: true,
       message: isDevAdmin ? 'Administrator account initialized.' : 'Account access request submitted. Administrator approval is pending.',
@@ -773,16 +914,24 @@ exports.migrateLegacy = async (req, res, next) => {
 exports.forgotPassword = async (req, res, next) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Please provide a valid email address.' });
+    const genericResponse = {
+      success: true,
+      message: 'If an account exists for this email, a reset link has been sent.'
+    };
+
+    if (!email || !EMAIL_REGEX.test(email)) {
+      return res.status(200).json(genericResponse);
     }
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(200).json({
-        success: true,
-        message: 'If an account exists with that email address, a password reset link has been dispatched to your inbox.'
-      });
+      return res.status(200).json(genericResponse);
+    }
+
+    // Enforce 60-second cooldown per account to prevent email flooding
+    const now = Date.now();
+    if (user.lastPasswordResetRequestedAt && (now - new Date(user.lastPasswordResetRequestedAt).getTime() < 60 * 1000)) {
+      return res.status(200).json(genericResponse);
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
@@ -790,12 +939,13 @@ exports.forgotPassword = async (req, res, next) => {
 
     user.resetPasswordToken = hashedToken;
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    user.lastPasswordResetRequestedAt = new Date();
     await user.save();
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const resetUrl = `${clientUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+    const clientUrl = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',')[0].trim() : 'http://localhost:3000';
+    const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
-    await emailService.sendEmail({
+    await emailService.queueEmail({
       recipient: user.email,
       subject: 'VendorOS VMS Password Reset Link',
       textBody: `Hello ${user.username},\n\nYou requested a password reset for your VendorOS VMS account.\n\nPlease click the link below to set a new password:\n${resetUrl}\n\nThis link expires in 15 minutes. If you did not request this, please ignore this email.\n\nRegards,\nVendorOS VMS Security`,
@@ -815,10 +965,7 @@ exports.forgotPassword = async (req, res, next) => {
       metadata: { userId: user._id, userCode: user.userCode }
     });
 
-    res.status(200).json({
-      success: true,
-      message: 'If an account exists with that email address, a password reset link has been dispatched to your inbox.'
-    });
+    res.status(200).json(genericResponse);
   } catch (err) {
     next(err);
   }
@@ -829,12 +976,11 @@ exports.forgotPassword = async (req, res, next) => {
 // @access  Public
 exports.resetPassword = async (req, res, next) => {
   try {
-    const email = String(req.body.email || '').trim().toLowerCase();
     const token = String(req.body.token || '').trim();
     const newPassword = String(req.body.newPassword || '').trim();
 
-    if (!email || !token || !newPassword) {
-      return res.status(400).json({ success: false, error: 'Please provide email, reset token, and new password.' });
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Please provide reset token and new password.' });
     }
 
     if (newPassword.length < 6) {
@@ -843,8 +989,8 @@ exports.resetPassword = async (req, res, next) => {
 
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
+    // Resolve user by the hashed reset token alone (no email needed in payload/URL)
     const user = await User.findOne({
-      email,
       resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: new Date() }
     }).select('+resetPasswordToken +resetPasswordExpires +password');
@@ -853,9 +999,11 @@ exports.resetPassword = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Invalid or expired password reset link. Please request a new link.' });
     }
 
+    // Set new password (pre-save hook will encrypt it with bcrypt)
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
+    user.tokenVersion = (user.tokenVersion || 0) + 1; // Invalidate previous sessions
     await user.save();
 
     // Also update Firebase password if firebaseUid is present

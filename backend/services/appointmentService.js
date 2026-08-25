@@ -165,6 +165,22 @@ class AppointmentService {
       status: appointment.status
     }, userId);
 
+    const visitor = await Visitor.findById(appointment.visitorId).populate('hostEmployeeId', 'username email');
+
+    const payload = {
+      appointmentId: appointment._id,
+      appointmentNumber: appointment.appointmentNumber,
+      visitorName: visitor ? visitor.fullName : 'Visitor',
+      visitorEmail: visitor ? visitor.email : 'visitor@example.com',
+      employeeName: visitor && visitor.hostEmployeeId ? visitor.hostEmployeeId.username : 'Host',
+      appointmentDate: new Date(nextStart).toLocaleDateString(),
+      appointmentTime: new Date(nextStart).toLocaleTimeString(),
+      companyName: 'VendorOS VMS',
+      notes: appointment.approvalNotes
+    };
+
+    eventBus.emit(EVENTS.APPOINTMENT_RESCHEDULED, payload);
+
     return appointment;
   }
 

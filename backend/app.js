@@ -184,22 +184,23 @@ app.use('/api', botProtection);
 
 // Global unauthenticated IP rate limiter (volumetric attack defense)
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/auth')) return next(); // Auth routes have their own specific limiters
+  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks')) return next();
   return unauthenticatedIpLimiter(req, res, next);
 });
 
-// Mount auth routes BEFORE global protect middleware
+// Mount public auth and webhook routes BEFORE global protect middleware
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/webhooks', require('./routes/webhookRoutes'));
 
-// Global Firebase ID Token authentication (all /api/* routes except /api/auth/*)
+// Global Firebase ID Token authentication (all /api/* routes except /api/auth/* and /api/webhooks/*)
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/auth')) return next();
+  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks')) return next();
   protect(req, res, next);
 });
 
 // Authenticated user-aware rate limiting (after protect — req.user is verified)
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/auth')) return next();
+  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks')) return next();
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     return writeLimiter(req, res, next);
   } else if (req.method === 'GET') {
@@ -256,10 +257,12 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 app.use('/api/stream', require('./routes/streamRoutes'));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12. VMS & Planning Domain Event Handlers
+// 12. Domain Event Handlers (Auth, VMS & Planning)
 // ─────────────────────────────────────────────────────────────────────────────
+const { registerAuthEventHandlers } = require('./events/handlers/authEventHandlers');
 const { registerVMSEventHandlers } = require('./events/handlers/vmsEventHandlers');
 const { registerPlanningEventHandlers } = require('./events/handlers/planningEventHandlers');
+registerAuthEventHandlers();
 registerVMSEventHandlers();
 registerPlanningEventHandlers();
 

@@ -15,23 +15,34 @@ try {
 
 class EmailService {
   getProvider() {
-    const key = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
-    if (key && !key.includes('your-actual-brevo-api-key')) {
+    // 1. Check Brevo REST API Key
+    const brevoApiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+    if (brevoApiKey && !brevoApiKey.includes('your-actual-brevo-api-key') && !brevoApiKey.includes('REPLACE')) {
       return 'brevo';
     }
+
+    // 2. Check Brevo SMTP or standard SMTP
+    if (this.isSmtpConfigured()) {
+      return 'smtp';
+    }
+
+    // 3. Fallback to specified provider or console
     return (process.env.EMAIL_PROVIDER && process.env.EMAIL_PROVIDER !== 'brevo') ? process.env.EMAIL_PROVIDER : 'console';
   }
 
   getSmtpCredentials() {
     return {
-      user: process.env.EMAIL_USER || process.env.EMAIL_USERNAME,
-      pass: process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD
+      host: process.env.SMTP_HOST || process.env.EMAIL_HOST || (process.env.BREVO_SMTP_KEY || process.env.BREVO_API_KEY ? 'smtp-relay.brevo.com' : undefined),
+      port: Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587),
+      user: process.env.BREVO_SMTP_USER || process.env.SMTP_USER || process.env.EMAIL_USER || process.env.EMAIL_USERNAME,
+      pass: process.env.BREVO_SMTP_KEY || process.env.BREVO_SMTP_PASS || process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD
     };
   }
 
   isSmtpConfigured() {
-    const { user, pass } = this.getSmtpCredentials();
-    return Boolean(process.env.EMAIL_HOST && process.env.EMAIL_PORT && user && pass);
+    const { host, user, pass } = this.getSmtpCredentials();
+    if (process.env.EMAIL_SERVICE === 'gmail' && user && pass) return true;
+    return Boolean(host && user && pass);
   }
 
   /**
@@ -114,11 +125,20 @@ class EmailService {
   }
 
   /**
-   * Direct email dispatch (Supports Brevo API, SMTP, and Console fallback)
+   * Direct email dispatch (Supports Brevo API, Gmail/SMTP, and Console fallback)
    */
   async sendEmail(options) {
-    const { recipient, cc, bcc, subject, htmlBody, textBody, templateCode, metadata, userId } = options;
+    const { recipient, cc, bcc, subject, htmlBody, textBody, templateCode, eventId, eventType, metadata, userId } = options;
     const provider = this.getProvider();
+
+    // Idempotency check: if eventId already processed and delivered, skip duplicate
+    if (eventId) {
+      const existing = await EmailLog.findOne({ eventId, status: { $in: ['Sent', 'DELIVERED'] } });
+      if (existing) {
+        logger.info('EmailService', `Email event [${eventId}] already processed. Skipping duplicate send.`);
+        return existing;
+      }
+    }
 
     logger.info('EmailService', `Dispatching email to [${recipient}] with subject: "${subject}" via [${provider}] provider`);
 
@@ -132,24 +152,41 @@ class EmailService {
         logger.info('EmailService', `Brevo Transactional Email dispatched to ${recipient} (MessageId: ${messageId})`);
       } else if (provider === 'smtp') {
         if (!nodemailer) {
-          throw new Error('SMTP email requires the nodemailer package to be installed');
-        }
-
-        if (!this.isSmtpConfigured()) {
-          throw new Error('SMTP email is not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER/EMAIL_USERNAME, and EMAIL_PASS/EMAIL_PASSWORD.');
+          throw new Error('SMTP email requires nodemailer');
         }
 
         const { user: emailUser, pass: emailPass } = this.getSmtpCredentials();
+        let transporter;
 
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_HOST,
-          port: Number(process.env.EMAIL_PORT || 587),
-          secure: process.env.EMAIL_SECURE === 'true',
-          auth: emailUser && emailPass ? {
-            user: emailUser,
-            pass: emailPass
-          } : undefined
-        });
+        if (process.env.SMTP_HOST) {
+          transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT || 587),
+            secure: process.env.SMTP_SECURE === 'true' || Number(process.env.SMTP_PORT) === 465,
+            auth: {
+              user: emailUser,
+              pass: emailPass
+            }
+          });
+        } else if (process.env.EMAIL_SERVICE === 'gmail' || (process.env.EMAIL_HOST && process.env.EMAIL_HOST.includes('gmail'))) {
+          transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+              user: emailUser,
+              pass: emailPass
+            }
+          });
+        } else {
+          transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+            port: Number(process.env.EMAIL_PORT || 587),
+            secure: process.env.EMAIL_SECURE === 'true' || Number(process.env.EMAIL_PORT) === 465,
+            auth: emailUser && emailPass ? {
+              user: emailUser,
+              pass: emailPass
+            } : undefined
+          });
+        }
 
         const info = await transporter.sendMail({
           from: process.env.EMAIL_FROM || emailUser || 'no-reply@vendoros.local',
@@ -162,10 +199,15 @@ class EmailService {
         });
 
         messageId = info.messageId || messageId;
-        logger.info('EmailService', `SMTP Email dispatched to ${recipient}`);
+        logger.info('EmailService', `SMTP/Gmail Email successfully delivered to ${recipient}`);
       } else {
         // Console / Mock Dev Provider
-        logger.info('EmailService', `[DEV MOCK EMAIL DISPATCH] To: ${recipient} | Subject: ${subject} | Body: ${textBody || htmlBody || ''}`);
+        console.log(`\n======================================================`);
+        console.log(`📧 [VMS EMAIL SERVICE - DEV/CONSOLE MODE]`);
+        console.log(`To      : ${recipient}`);
+        console.log(`Subject : ${subject}`);
+        console.log(`Body    : ${textBody || subject}`);
+        console.log(`======================================================\n`);
       }
     } catch (err) {
       status = 'Failed';
@@ -174,13 +216,17 @@ class EmailService {
     }
 
     const emailLog = await EmailLog.create({
+      eventId: eventId || null,
+      eventType: eventType || 'TRANSACTIONAL',
       recipient,
       subject,
       templateCode: templateCode || 'MANUAL',
+      userId: userId || null,
       status,
       sentAt: new Date(),
       messageId,
       error: errorMsg,
+      lastError: errorMsg,
       metadata: { ...(metadata || {}), provider }
     });
 
@@ -191,7 +237,7 @@ class EmailService {
         emailLog._id,
         'SEND',
         null,
-        { recipient, subject, status },
+        { recipient, subject, status, eventId },
         userId
       );
     }
@@ -232,10 +278,49 @@ class EmailService {
   }
 
   /**
-   * Queue email for asynchronous processing
+   * Queue email for asynchronous processing via BullMQ (with MongoDB fallback)
    */
   async queueEmail(options) {
+    const { emailQueue } = require('../config/queue');
+
+    // 1. If BullMQ queue is active with Redis, dispatch as BullMQ background job
+    if (emailQueue) {
+      try {
+        const job = await emailQueue.add(
+          options.eventType || 'send-email',
+          {
+            recipient: options.recipient,
+            cc: options.cc || [],
+            bcc: options.bcc || [],
+            subject: options.subject,
+            htmlBody: options.htmlBody,
+            textBody: options.textBody || '',
+            templateCode: options.templateCode || null,
+            eventId: options.eventId || null,
+            eventType: options.eventType || 'TRANSACTIONAL',
+            metadata: options.metadata || {},
+            userId: options.userId || null
+          },
+          {
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 60000 // 1m -> 2m -> 4m backoff
+            },
+            removeOnComplete: 100,
+            removeOnFail: 500
+          }
+        );
+        logger.info('EmailService', `Email queued via BullMQ (Job ID: ${job.id}) to ${options.recipient}`);
+      } catch (err) {
+        logger.warn('EmailService', `BullMQ add failed, falling back to MongoDB queue: ${err.message}`);
+      }
+    }
+
+    // 2. Persist to MongoDB EmailQueue (serves as audit record & fallback for in-process worker)
     const queueItem = await EmailQueue.create({
+      eventId: options.eventId || null,
+      eventType: options.eventType || 'TRANSACTIONAL',
       recipient: options.recipient,
       cc: options.cc || [],
       bcc: options.bcc || [],
@@ -244,12 +329,14 @@ class EmailService {
       textBody: options.textBody || '',
       templateCode: options.templateCode || null,
       templateData: options.templateData || {},
-      status: 'Pending',
+      status: 'QUEUED',
       scheduledFor: options.scheduledFor || new Date()
     });
 
-    // Auto-process queue item
-    setImmediate(() => this.processQueueItem(queueItem._id));
+    // Auto-trigger in-process fallback if not on BullMQ
+    if (!emailQueue) {
+      setImmediate(() => this.processQueueItem(queueItem._id));
+    }
 
     return queueItem;
   }

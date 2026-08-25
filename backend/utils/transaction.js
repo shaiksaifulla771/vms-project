@@ -2,52 +2,65 @@ const mongoose = require('mongoose');
 
 let supportsTransactions = false;
 
-// Call this after connecting to DB to auto-detect replica set
+// Call this after connecting to DB to auto-detect replica set or sharded cluster
 exports.detectTransactionSupport = async () => {
   try {
     if (mongoose.connection && mongoose.connection.db) {
       const admin = mongoose.connection.db.admin();
-      const info = await admin.command({ isMaster: 1 });
-      // If setName exists, it is a replica set and supports transactions
-      supportsTransactions = !!info.setName;
-      console.log(`[Transaction System] MongoDB Replica Set detected: ${supportsTransactions}. Transactions ${supportsTransactions ? 'ENABLED' : 'DISABLED'}.`);
+      let info;
+      try {
+        info = await admin.command({ hello: 1 });
+      } catch (err) {
+        info = await admin.command({ isMaster: 1 });
+      }
+      // If setName exists (replica set) or msg === 'isdbgrid' (mongos cluster), transactions are supported
+      supportsTransactions = !!(info && (info.setName || info.msg === 'isdbgrid'));
+      console.log(`[Transaction System] MongoDB Cluster detected: ReplicaSet/Sharded=${supportsTransactions}. Multi-document transactions ${supportsTransactions ? 'ENABLED' : 'DISABLED (graceful degradation active)'}.`);
+      return supportsTransactions;
     }
   } catch (error) {
-    console.warn('[Transaction System] Failed to detect transaction support, defaulting to DISABLED.');
+    console.warn(`[Transaction System] Failed to detect transaction support (${error.message}), defaulting to DISABLED.`);
     supportsTransactions = false;
   }
+  return supportsTransactions;
 };
+
+exports.getSupportsTransactions = () => supportsTransactions;
 
 exports.withTransaction = async (session, operations) => {
   if (supportsTransactions) {
     session.startTransaction();
     try {
-      await operations();
+      const result = await operations();
       await session.commitTransaction();
+      return result;
     } catch (error) {
-      await session.abortTransaction();
+      if (session.inTransaction()) {
+        await session.abortTransaction();
+      }
       throw error;
     }
   } else {
     // Run without transaction wrapper safely
-    await operations();
+    return await operations();
   }
 };
 
 exports.startSafeTransaction = (session) => {
-  if (supportsTransactions) {
+  if (supportsTransactions && session && typeof session.startTransaction === 'function') {
     session.startTransaction();
   }
 };
 
 exports.commitSafeTransaction = async (session) => {
-  if (supportsTransactions && session.inTransaction()) {
+  if (supportsTransactions && session && typeof session.inTransaction === 'function' && session.inTransaction()) {
     await session.commitTransaction();
   }
 };
 
 exports.abortSafeTransaction = async (session) => {
-  if (supportsTransactions && session.inTransaction()) {
+  if (supportsTransactions && session && typeof session.inTransaction === 'function' && session.inTransaction()) {
     await session.abortTransaction();
   }
 };
+

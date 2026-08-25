@@ -7,10 +7,8 @@ const ResetPassword = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const emailParam = searchParams.get('email') || '';
   const tokenParam = searchParams.get('token') || '';
 
-  const [email, setEmail] = useState(emailParam);
   const [token, setToken] = useState(tokenParam);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -19,17 +17,16 @@ const ResetPassword = () => {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    if (emailParam) setEmail(emailParam);
     if (tokenParam) setToken(tokenParam);
-  }, [emailParam, tokenParam]);
+  }, [tokenParam]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    if (!email || !token) {
-      setError('Invalid or missing password reset link parameters.');
+    if (!token) {
+      setError('Invalid or missing password reset link parameter.');
       return;
     }
 
@@ -46,7 +43,6 @@ const ResetPassword = () => {
     setLoading(true);
     try {
       const res = await api.post('/auth/reset-password', {
-        email,
         token,
         newPassword
       });
@@ -72,7 +68,7 @@ const ResetPassword = () => {
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-white">Reset Your Password</h2>
           <p className="text-xs text-slate-400">
-            Set a new secure password for <span className="text-blue-400 font-semibold">{email || 'your VMS account'}</span>
+            Set a new secure password for <span className="text-blue-400 font-semibold">your VMS account</span>
           </p>
         </div>
 

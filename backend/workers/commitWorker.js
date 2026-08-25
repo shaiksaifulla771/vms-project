@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Staging = require('../models/Staging');
 const { writeAuditLog } = require('../services/auditService');
+const { startSafeTransaction, commitSafeTransaction, abortSafeTransaction } = require('../utils/transaction');
 
 const Vendor = require('../models/Vendor');
 const Material = require('../models/Material');
@@ -47,7 +48,7 @@ module.exports = async function commitProcessor(job) {
     // and easily capture the diff for the audit log.
     for (const row of chunk) {
       const session = await mongoose.startSession();
-      session.startTransaction();
+      startSafeTransaction(session);
       try {
         // Create new document instance
         const newDoc = new TargetModel(row.parsedData);
@@ -68,10 +69,10 @@ module.exports = async function commitProcessor(job) {
         row.status = 'committed';
         await row.save({ session });
 
-        await session.commitTransaction();
+        await commitSafeTransaction(session);
         committedCount++;
       } catch (err) {
-        await session.abortTransaction();
+        await abortSafeTransaction(session);
         console.error(`Failed to commit row ${row.rowNumber}:`, err);
         
         // Mark staging row as failed (outside the aborted transaction)

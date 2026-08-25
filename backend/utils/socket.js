@@ -59,7 +59,13 @@ const initSocket = (server) => {
   });
 
   io.on('connection', (socket) => {
-    logger.info('Socket.IO', `Client connected: ${socket.user._id}`);
+    logger.info('Socket.IO', `Client connected: ${socket.user._id} (${socket.user.email})`);
+
+    // Personal user room
+    socket.join(`user:${socket.user._id}`);
+    if (socket.user.email) {
+      socket.join(`user:${socket.user.email}`);
+    }
 
     // Automatically join room for their specific Site
     if (socket.user.siteId) {
@@ -69,6 +75,9 @@ const initSocket = (server) => {
     // Role-based room (e.g., 'role:Admin')
     if (socket.user.role) {
       socket.join(`role:${socket.user.role}`);
+      if (socket.user.role === 'Admin') {
+        socket.join('admin_room');
+      }
     }
 
     socket.on('disconnect', () => {

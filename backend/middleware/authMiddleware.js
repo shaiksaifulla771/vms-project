@@ -138,14 +138,14 @@ exports.protect = async (req, res, next) => {
     });
   }
 
-  // Admin bypasses non-active check unless explicitly suspended/deactivated
-  const isGlobalAdmin = authz.isGlobalAdmin(cachedStatus);
+  // Admin check: Only ACTIVE or APPROVED Admin accounts can access endpoints
+  const isGlobalAdmin = authz.isGlobalAdmin(cachedStatus) && (cachedStatus.status === 'ACTIVE' || cachedStatus.status === 'APPROVED');
   const isActive = cachedStatus.status === 'ACTIVE' || cachedStatus.status === 'APPROVED';
 
-  if (!isActive && !isGlobalAdmin) {
+  if (!isActive) {
     return res.status(403).json({
       success: false,
-      error: 'Account access denied. Contact your administrator.',
+      error: 'Account access denied. Your account is pending administrator approval or inactive.',
       accountStatus: cachedStatus.status,
       approvalStatus: cachedStatus.approvalStatus
     });

@@ -96,6 +96,9 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     select: false,
   },
+  lastPasswordResetRequestedAt: {
+    type: Date,
+  },
   siteIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Site' }],
   warehouseIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }],
   scopeAssignedBy: { type: String, default: 'System Admin' },

@@ -48,12 +48,14 @@ const Xperte3DLogo = ({ size = "h-11 w-11" }) => (
 
 const Login = () => {
   usePageMeta('Sign In & Authentication', 'Secure enterprise authentication portal for VendorOS.');
-  const { loginWithEmailPassword, loginWithGoogle, registerWithEmailPassword, sendPasswordReset } = useAuth();
-  const [activeTab, setActiveTab] = useState('signin');
+  const { loginWithEmailPassword, loginWithGoogle, registerWithEmailPassword, verifyRegistrationOtp, resendRegistrationOtp, sendPasswordReset } = useAuth();
+  const [activeTab, setActiveTab] = useState('signin'); // 'signin', 'signup', 'forgot', 'otp', 'pending_notice'
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Viewer');
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '']);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMsg, setSuccessMsg] = useState('');
@@ -63,13 +65,22 @@ const Login = () => {
     setSuccessMsg('');
   };
 
+  // Resend cooldown timer effect
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown(prev => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   const validateCredentials = () => {
     const nextErrors = {};
     if (activeTab === 'signup' && !username.trim()) nextErrors.username = 'Full name is required';
     if (!email.trim()) nextErrors.email = 'Work email is required';
     else if (!/\S+@\S+\.\S+/.test(email)) nextErrors.email = 'Enter a valid email address';
-    if (activeTab !== 'forgot' && !password) nextErrors.password = 'Password is required';
-    else if (activeTab !== 'forgot' && password.length < 6) nextErrors.password = 'Password must be at least 6 characters';
+    if (activeTab !== 'forgot' && activeTab !== 'otp' && !password) nextErrors.password = 'Password is required';
+    else if (activeTab !== 'forgot' && activeTab !== 'otp' && password.length < 6) nextErrors.password = 'Password must be at least 6 characters';
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -84,7 +95,15 @@ const Login = () => {
     setIsLoading(false);
 
     if (!res.success) {
-      setErrors({ form: res.error || 'Authentication failed' });
+      if (res.requireOtp) {
+        setSuccessMsg('Account requires OTP verification. Please enter the 4-digit code.');
+        setActiveTab('otp');
+        setOtpDigits(['', '', '', '']);
+      } else if (res.requireApproval) {
+        setActiveTab('pending_notice');
+      } else {
+        setErrors({ form: res.error || 'Authentication failed' });
+      }
     }
   };
 
@@ -98,10 +117,77 @@ const Login = () => {
     setIsLoading(false);
 
     if (res.success) {
-      setSuccessMsg(res.message || 'Account created. Check your email for verification. Access request is pending administrator approval.');
-      setActiveTab('signin');
-      setUsername('');
-      setPassword('');
+      setSuccessMsg(res.message || 'A 4-digit verification code has been dispatched to your email.');
+      setActiveTab('otp');
+      setOtpDigits(['', '', '', '']);
+      setResendCooldown(30);
+    } else {
+      setErrors({ form: res.error });
+    }
+  };
+
+  const handleOtpDigitChange = (index, value) => {
+    if (!/^\d*$/.test(value)) return;
+    const cleanValue = value.slice(-1);
+    const nextDigits = [...otpDigits];
+    nextDigits[index] = cleanValue;
+    setOtpDigits(nextDigits);
+
+    // Auto-advance focus to next input box
+    if (cleanValue && index < 3) {
+      const nextInput = document.getElementById(`otp-input-${index + 1}`);
+      if (nextInput) nextInput.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-input-${index - 1}`);
+      if (prevInput) prevInput.focus();
+    }
+  };
+
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').trim();
+    if (/^\d{4}$/.test(pasted)) {
+      setOtpDigits(pasted.split(''));
+      const lastInput = document.getElementById('otp-input-3');
+      if (lastInput) lastInput.focus();
+    }
+  };
+
+  const handleVerifyOtpSubmit = async (event) => {
+    event.preventDefault();
+    resetFeedback();
+    const fullOtp = otpDigits.join('');
+    if (fullOtp.length !== 4) {
+      setErrors({ form: 'Please enter all 4 digits of the verification code.' });
+      return;
+    }
+
+    setIsLoading(true);
+    const res = await verifyRegistrationOtp(email, fullOtp);
+    setIsLoading(false);
+
+    if (res.success) {
+      setActiveTab('pending_notice');
+      setSuccessMsg(res.message);
+    } else {
+      setErrors({ form: res.error || 'Invalid OTP code. Please try again.' });
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+    resetFeedback();
+    setIsLoading(true);
+    const res = await resendRegistrationOtp(email);
+    setIsLoading(false);
+
+    if (res.success) {
+      setSuccessMsg(res.message || 'New 4-digit verification code dispatched.');
+      setResendCooldown(30);
     } else {
       setErrors({ form: res.error });
     }
@@ -205,13 +291,37 @@ const Login = () => {
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60">
               <div className="mb-6">
                 <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-md">
-                  {activeTab === 'signup' ? <UserPlus className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
+                  {activeTab === 'signup' ? (
+                    <UserPlus className="h-5 w-5 text-blue-400" />
+                  ) : activeTab === 'otp' ? (
+                    <ShieldCheck className="h-5 w-5 text-cyan-400" />
+                  ) : activeTab === 'pending_notice' ? (
+                    <BadgeCheck className="h-5 w-5 text-emerald-400" />
+                  ) : (
+                    <LockKeyhole className="h-5 w-5" />
+                  )}
                 </div>
                 <h2 className="text-2xl font-black tracking-tight">
-                  {activeTab === 'forgot' ? 'Reset password' : activeTab === 'signup' ? 'Request access' : 'Secure sign in'}
+                  {activeTab === 'forgot'
+                    ? 'Reset Password'
+                    : activeTab === 'signup'
+                    ? 'Create New Account'
+                    : activeTab === 'otp'
+                    ? 'Enter 4-Digit OTP'
+                    : activeTab === 'pending_notice'
+                    ? 'Account Staged for Approval'
+                    : 'Secure Sign In'}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 font-medium">
-                  {activeTab === 'forgot' ? 'Enter your work email to receive a password reset link.' : 'Use an approved Firebase account to enter the Xperte workspace.'}
+                  {activeTab === 'forgot'
+                    ? 'Enter your work email to receive a password reset link.'
+                    : activeTab === 'signup'
+                    ? 'Fill your details to receive an auto-generated 4-digit OTP in your Gmail inbox.'
+                    : activeTab === 'otp'
+                    ? `A 4-digit verification code has been dispatched to ${email || 'your Gmail'}. Please check your inbox or spam folder.`
+                    : activeTab === 'pending_notice'
+                    ? 'Your email is verified. Your registration is in temporary staging awaiting Administrator approval.'
+                    : 'Use your approved enterprise credentials to enter the workspace.'}
                 </p>
               </div>
 
@@ -229,7 +339,79 @@ const Login = () => {
                 </div>
               )}
 
-              {activeTab === 'forgot' ? (
+              {activeTab === 'pending_notice' ? (
+                <div className="space-y-5 text-center py-2">
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-left space-y-2 text-xs">
+                    <div className="flex items-center gap-2 text-amber-900 font-extrabold text-sm">
+                      <span>⏳</span>
+                      <span>Temporary Staging Confirmation</span>
+                    </div>
+                    <p className="text-amber-800 font-medium leading-relaxed">
+                      Your registered email (<strong className="font-bold text-slate-900">{email}</strong>) has been verified and saved temporarily.
+                    </p>
+                    <p className="text-amber-700 text-[11px] leading-normal border-t border-amber-200/60 pt-2">
+                      The System Administrator has received a real-time notification. Once approved with your assigned role and location scope, your account will be activated permanently.
+                    </p>
+                  </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      switchTab('signin');
+                      setPassword('');
+                    }}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold shadow-md"
+                  >
+                    Back to Sign In
+                  </Button>
+                </div>
+              ) : activeTab === 'otp' ? (
+                <form onSubmit={handleVerifyOtpSubmit} className="space-y-6">
+                  <div>
+                    <label className="block text-center text-xs font-black uppercase tracking-wider text-slate-600 mb-3">
+                      4-Digit Verification Code
+                    </label>
+                    <div className="flex justify-center items-center gap-3">
+                      {otpDigits.map((digit, index) => (
+                        <input
+                          key={index}
+                          id={`otp-input-${index}`}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={digit}
+                          onChange={(e) => handleOtpDigitChange(index, e.target.value)}
+                          onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                          onPaste={handleOtpPaste}
+                          className="h-14 w-14 text-center text-2xl font-black rounded-xl border border-slate-300 bg-slate-50 text-slate-900 shadow-sm focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button type="submit" isLoading={isLoading} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold shadow-lg shadow-blue-600/30 text-sm">
+                    Verify Code &amp; Submit
+                  </Button>
+
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-500 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => switchTab('signup')}
+                      className="hover:text-slate-800 transition-colors font-medium"
+                    >
+                      ← Change Email / Back
+                    </button>
+                    <button
+                      type="button"
+                      disabled={resendCooldown > 0 || isLoading}
+                      onClick={handleResendOtp}
+                      className={`font-bold transition-colors ${resendCooldown > 0 ? 'text-slate-400 cursor-not-allowed' : 'text-blue-600 hover:underline'}`}
+                    >
+                      {resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
+                    </button>
+                  </div>
+                </form>
+              ) : activeTab === 'forgot' ? (
                 <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Work email</label>
@@ -243,29 +425,29 @@ const Login = () => {
                     Send password reset link
                   </Button>
                   <Button type="button" variant="outline" onClick={() => switchTab('signin')} className="w-full py-2.5">
-                    Back to sign in
+                    Back to Sign In
                   </Button>
                 </form>
               ) : (
                 <>
                   <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
-                    <button type="button" onClick={() => switchTab('signin')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signin' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Sign in</button>
-                    <button type="button" onClick={() => switchTab('signup')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Request access</button>
+                    <button type="button" onClick={() => switchTab('signin')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signin' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Sign In</button>
+                    <button type="button" onClick={() => switchTab('signup')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Create New Account</button>
                   </div>
 
                   <form onSubmit={activeTab === 'signin' ? handleSignInSubmit : handleSignUpSubmit} className="space-y-4">
                     {activeTab === 'signup' && (
                       <div>
-                        <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Full name</label>
-                        <input className={`${inputClass} mt-1`} value={username} onChange={(e) => setUsername(e.target.value)} />
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Full Name</label>
+                        <input className={`${inputClass} mt-1`} placeholder="e.g. John Doe" value={username} onChange={(e) => setUsername(e.target.value)} />
                         {errors.username && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.username}</p>}
                       </div>
                     )}
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Work email</label>
+                      <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Gmail / Work Email</label>
                       <div className="relative mt-1">
                         <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                        <input type="email" className={`${inputClass} pl-9`} value={email} onChange={(e) => setEmail(e.target.value)} />
+                        <input type="email" placeholder="e.g. user@gmail.com" className={`${inputClass} pl-9`} value={email} onChange={(e) => setEmail(e.target.value)} />
                       </div>
                       {errors.email && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.email}</p>}
                     </div>
@@ -278,24 +460,29 @@ const Login = () => {
                           </button>
                         )}
                       </div>
-                      <input type="password" className={`${inputClass} mt-1`} value={password} onChange={(e) => setPassword(e.target.value)} />
+                      <input type="password" placeholder="••••••••" className={`${inputClass} mt-1`} value={password} onChange={(e) => setPassword(e.target.value)} />
                       {errors.password && <p className="mt-1 text-xs font-semibold text-rose-600">{errors.password}</p>}
                     </div>
                     {activeTab === 'signup' && (
                       <div>
-                        <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Requested role</label>
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Requested Role</label>
                         <select className={`${inputClass} mt-1`} value={role} onChange={(e) => setRole(e.target.value)}>
                           <option value="Viewer">Viewer</option>
                           <option value="Inventory">Inventory</option>
+                          <option value="Inventory Manager">Inventory Manager</option>
                           <option value="Production">Production</option>
+                          <option value="Production Manager">Production Manager</option>
                           <option value="Warehouse">Warehouse</option>
+                          <option value="Warehouse Operator">Warehouse Operator</option>
                           <option value="Planner">Planner</option>
+                          <option value="Purchaser">Purchaser</option>
+                          <option value="QC Inspector">QC Inspector</option>
                           <option value="Admin">Admin</option>
                         </select>
                       </div>
                     )}
                     <Button type="submit" isLoading={isLoading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold shadow-md">
-                      {activeTab === 'signin' ? 'Enter workspace' : 'Submit access request'}
+                      {activeTab === 'signin' ? 'Enter Workspace' : 'Create Account & Send 4-Digit OTP'}
                     </Button>
                   </form>
 

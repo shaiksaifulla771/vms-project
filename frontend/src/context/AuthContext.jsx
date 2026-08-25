@@ -245,7 +245,7 @@ export const AuthProvider = ({ children }) => {
   const registerWithEmailPassword = async (username, email, password, requestedRole = 'Viewer') => {
     setError(null);
 
-    // 1. Try Backend Registration
+    // 1. Try Backend Registration (Staged with 4-Digit OTP)
     try {
       const res = await api.post('/auth/register', {
         username,
@@ -258,7 +258,9 @@ export const AuthProvider = ({ children }) => {
       if (res.data && res.data.success) {
         return {
           success: true,
-          message: res.data.message || 'Account created successfully! Check your email for OTP verification.'
+          requireOtp: true,
+          email,
+          message: res.data.message || 'A 4-digit verification code has been dispatched to your Gmail address.'
         };
       }
     } catch (backendErr) {
@@ -269,7 +271,7 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // 2. Try Firebase Registration
+    // 2. Try Firebase Registration Fallback
     try {
       if (auth && typeof createUserWithEmailAndPassword === 'function') {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -303,6 +305,37 @@ export const AuthProvider = ({ children }) => {
 
     setError('Registration failed.');
     return { success: false, error: 'Registration failed.' };
+  };
+
+  const verifyRegistrationOtp = async (email, otp) => {
+    setError(null);
+    try {
+      const res = await api.post('/auth/verify-otp', { email, otp });
+      if (res.data && res.data.success) {
+        return {
+          success: true,
+          message: res.data.message || '4-digit OTP verified successfully! Access request pending administrator approval.'
+        };
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'OTP verification failed';
+      setError(errMsg);
+      return { success: false, error: errMsg };
+    }
+  };
+
+  const resendRegistrationOtp = async (email) => {
+    setError(null);
+    try {
+      const res = await api.post('/auth/resend-otp', { email });
+      return {
+        success: true,
+        message: res.data?.message || 'A new 4-digit code has been dispatched to your Gmail address.'
+      };
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Could not resend OTP';
+      return { success: false, error: errMsg };
+    }
   };
 
   const sendVerificationEmail = async () => {
@@ -362,7 +395,9 @@ export const AuthProvider = ({ children }) => {
       error, 
       loginWithEmailPassword, 
       loginWithGoogle, 
-      registerWithEmailPassword, 
+      registerWithEmailPassword,
+      verifyRegistrationOtp,
+      resendRegistrationOtp,
       sendVerificationEmail, 
       sendPasswordReset, 
       logout, 
