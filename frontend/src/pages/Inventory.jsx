@@ -130,24 +130,25 @@ export default function Inventory() {
       const query = {};
       if (activeSiteId) query.siteId = activeSiteId;
       if (activeWarehouseId && activeWarehouseId !== 'all') query.warehouseId = activeWarehouseId;
-      if (searchQuery && searchQuery.trim() !== '') query.search = searchQuery.trim();
-      if (statusFilter !== 'ALL') query.status = statusFilter;
 
-      const [balRes, txRes, adjRes, trfRes, matRes, whRes, siteRes] = await Promise.all([
-        api.get('/api/inventory', { params: query }),
-        api.get('/api/inventory/ledger', { params: query }),
-        api.get('/api/inventory/adjustments'),
-        api.get('/api/transfers'),
-        api.get('/api/materials'),
-        api.get('/api/warehouses'),
-        api.get('/api/sites')
-      ]);
-
+      // Tier 1: Fetch primary inventory balances immediately
+      const balRes = await api.get('/api/inventory', { params: query });
       const balData = balRes.data?.data || [];
       setBalances(balData);
       if (balRes.data?.summary) {
         setSummary(balRes.data.summary);
       }
+      setLoading(false);
+
+      // Tier 2: Fetch secondary and modal data in background
+      const [txRes, adjRes, trfRes, matRes, whRes, siteRes] = await Promise.all([
+        api.get('/api/inventory/ledger', { params: query }).catch(() => ({ data: { data: [] } })),
+        api.get('/api/inventory/adjustments').catch(() => ({ data: { data: [] } })),
+        api.get('/api/transfers').catch(() => ({ data: { data: [] } })),
+        api.get('/api/materials').catch(() => ({ data: { data: [] } })),
+        api.get('/api/warehouses').catch(() => ({ data: { data: [] } })),
+        api.get('/api/sites').catch(() => ({ data: { data: [] } }))
+      ]);
 
       setTransactions(txRes.data?.data || []);
       setAdjustments(adjRes.data?.data || []);
@@ -181,10 +182,9 @@ export default function Inventory() {
     } catch (err) {
       console.error('Failed to load inventory data:', err);
       setToastMsg({ type: 'error', text: err.response?.data?.error || err.message || 'Failed to load inventory data' });
-    } finally {
       setLoading(false);
     }
-  }, [activeSiteId, activeWarehouseId, filteredWarehouses, searchQuery, statusFilter]);
+  }, [activeSiteId, activeWarehouseId, filteredWarehouses]);
 
   useEffect(() => {
     fetchInventoryData();
@@ -507,14 +507,6 @@ export default function Inventory() {
           >
             <ArrowRightLeft className="h-4 w-4" />
             <span>Inter-Warehouse Transfer</span>
-          </button>
-
-          <button
-            onClick={fetchInventoryData}
-            className="p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl shadow-xs transition-colors"
-            title="Refresh Inventory Data"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
@@ -1086,7 +1078,7 @@ export default function Inventory() {
 
       {/* MODAL 1: CREATE STOCK ADJUSTMENT */}
       {isAdjModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -1212,7 +1204,7 @@ export default function Inventory() {
 
       {/* MODAL 2: CREATE INTER-WAREHOUSE TRANSFER */}
       {isTrfModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -1325,7 +1317,7 @@ export default function Inventory() {
 
       {/* MODAL: STOCK OUT OVER-WITHDRAWAL DEFICIT POPUP */}
       {stockOutWarningModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white border border-rose-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scaleUp">
             <div className="flex items-center gap-3 pb-3 border-b border-rose-100">
               <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">

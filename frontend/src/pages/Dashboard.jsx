@@ -4,118 +4,62 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSiteContext } from '../context/SiteContext';
 import usePageMeta from '../hooks/usePageMeta';
-import useSSE from '../hooks/useSSE';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
 import {
-  LayoutDashboard,
   Boxes,
   Factory,
   Cpu,
   ShoppingBag,
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Clock,
-  ArrowRight,
   IndianRupee,
-  Activity,
-  Users,
-  Radio,
-  Zap,
-  CheckCircle,
-  Building2,
-  Warehouse
+  Clock,
+  RefreshCw,
+  ArrowRight,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function Dashboard() {
-  usePageMeta('Executive Dashboard', 'Real-time manufacturing KPIs, inventory valuation, and active production metrics.');
+  usePageMeta('Dashboard', 'Operational overview.');
   const navigate = useNavigate();
   const { user } = useAuth();
   const { activeSiteId, activeWarehouseId } = useSiteContext();
   const [loading, setLoading] = useState(true);
-  const [toastMsg, setToastMsg] = useState(null);
-  const [actionLoadingId, setActionLoadingId] = useState(null);
 
-  // Executive Metrics (Matching Image 1 KPI Cards)
   const [metrics, setMetrics] = useState({
-    totalSites: 0,
-    totalWarehouses: 0,
     totalMaterials: 0,
     totalStockUnits: 0,
     totalStockValuation: 0,
     activeProductionOrders: 0,
     scheduledPlans: 0,
-    unscheduledPlans: 0,
     pendingApprovalsCount: 0
   });
 
-  // Approvals & Telemetry Data
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [pendingAdjustments, setPendingAdjustments] = useState([]);
-  const [pendingAppointments, setPendingAppointments] = useState([]);
-  const [recentPlans, setRecentPlans] = useState([]);
-  const [recentTransactions, setRecentTransactions] = useState([]);
-  const [todaysActivities, setTodaysActivities] = useState([]);
-  const [activeUsersList, setActiveUsersList] = useState([]);
-  const [liveTasksFeed, setLiveTasksFeed] = useState([
-    { id: 'task-1', name: 'MRP Background Netting Engine', status: 'Running', timestamp: new Date(), progress: 100 },
-    { id: 'task-2', name: 'Inventory Valuation Sync', status: 'Idle', timestamp: new Date(), progress: 100 },
-    { id: 'task-3', name: 'Redis Real-time Pub/Sub Broker', status: 'Running', timestamp: new Date(), progress: 100 }
-  ]);
 
-  const fetchDashboardData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const query = {};
       if (activeSiteId) query.siteId = activeSiteId;
       if (activeWarehouseId && activeWarehouseId !== 'all') query.warehouseId = activeWarehouseId;
 
-      const [
-        sitesRes,
-        whRes,
-        matRes,
-        invRes,
-        plansRes,
-        ordersRes,
-        transfersRes,
-        adjRes,
-        apptRes,
-        txRes,
-        activeUsersRes,
-        auditRes
-      ] = await Promise.all([
-        api.get('/api/sites').catch(() => ({ data: { data: [] } })),
-        api.get('/api/warehouses').catch(() => ({ data: { data: [] } })),
+      const [matRes, invRes, plansRes, ordersRes, trfRes, adjRes] = await Promise.all([
         api.get('/api/materials').catch(() => ({ data: { data: [] } })),
-        api.get('/api/inventory', { params: query }).catch(() => ({ data: { data: [], summary: {} } })),
+        api.get('/api/inventory', { params: query }).catch(() => ({ data: { data: [] } })),
         api.get('/api/production-plans', { params: query }).catch(() => ({ data: { data: [] } })),
         api.get('/api/production-orders', { params: query }).catch(() => ({ data: { data: [] } })),
         api.get('/api/transfers/pending').catch(() => ({ data: { data: [] } })),
-        api.get('/api/stock-adjustments/pending').catch(() => ({ data: { data: [] } })),
-        api.get('/api/appointments/pending').catch(() => ({ data: { data: [] } })),
-        api.get('/api/inventory/transactions', { params: { limit: 8, ...query } }).catch(() => ({ data: { data: [] } })),
-        api.get('/api/admin/active-users').catch(() => ({ data: { activeUsers: [] } })),
-        api.get('/api/admin/audit-logs', { params: { limit: 10 } }).catch(() => ({ data: { logs: [] } }))
+        api.get('/api/stock-adjustments/pending').catch(() => ({ data: { data: [] } }))
       ]);
 
-      const sitesData = sitesRes.data?.data || sitesRes.data || [];
-      const whData = whRes.data?.data || whRes.data || [];
       const matData = matRes.data?.data || matRes.data || [];
       const invData = invRes.data?.data || invRes.data || [];
       const plansData = plansRes.data?.data || plansRes.data || [];
       const ordersData = ordersRes.data?.data || ordersRes.data || [];
-      const transfersData = transfersRes.data?.data || transfersRes.data || [];
+      const trfData = trfRes.data?.data || trfRes.data || [];
       const adjData = adjRes.data?.data || adjRes.data || [];
-      const apptData = apptRes.data?.data || apptRes.data || [];
-      const txData = txRes.data?.data || txRes.data || [];
-      const activeUsersData = activeUsersRes.data?.activeUsers || [];
-      const auditData = auditRes.data?.logs || [];
 
-      // Calculate total stock units and valuation
-      let totalUnits = 0;
-      let totalVal = 0;
+      let totalUnits = 0, totalVal = 0;
       invData.forEach(item => {
         const bal = Number(item.balance || 0);
         const cost = Number(item.materialId?.unitCost || item.unitCost || 120);
@@ -123,514 +67,173 @@ export default function Dashboard() {
         totalVal += bal * cost;
       });
 
-      const schedPlans = plansData.filter(p => p.status === 'SCHEDULED').length;
-      const unschedPlans = plansData.filter(p => p.status !== 'SCHEDULED').length;
-      const activeOrders = ordersData.filter(o => ['PLANNED', 'IN_PROGRESS', 'RELEASED'].includes(o.status)).length;
-      const pendingTotal = transfersData.length + adjData.length + apptData.length;
-
       setMetrics({
-        totalSites: sitesData.length,
-        totalWarehouses: whData.length,
         totalMaterials: matData.length,
         totalStockUnits: totalUnits,
         totalStockValuation: totalVal,
-        activeProductionOrders: activeOrders,
-        scheduledPlans: schedPlans,
-        unscheduledPlans: unschedPlans,
-        pendingApprovalsCount: pendingTotal
+        activeProductionOrders: ordersData.filter(o => ['PLANNED', 'IN_PROGRESS', 'RELEASED'].includes(o.status)).length,
+        scheduledPlans: plansData.filter(p => p.status === 'SCHEDULED').length,
+        pendingApprovalsCount: trfData.length + adjData.length
       });
 
-      setPendingTransfers(transfersData);
+      setPendingTransfers(trfData);
       setPendingAdjustments(adjData);
-      setPendingAppointments(apptData);
-      setRecentPlans(plansData.slice(0, 5));
-      setRecentTransactions(txData);
-      setTodaysActivities(auditData);
-      setActiveUsersList(activeUsersData);
-
     } catch (err) {
-      console.error('Failed to load executive dashboard telemetry:', err);
+      console.error('Dashboard fetch error:', err);
     } finally {
       setLoading(false);
     }
   }, [activeSiteId, activeWarehouseId]);
 
-  // Real-Time SSE Stream Integration
-  const { isConnected } = useSSE({
-    'ACTIVITY_LOGGED': (event) => {
-      fetchDashboardData();
-      if (event?.data?.taskName) {
-        setLiveTasksFeed(prev => [
-          { id: `task-${Date.now()}`, name: event.data.taskName, status: 'Running', timestamp: new Date(), progress: 100 },
-          ...prev.slice(0, 4)
-        ]);
-      }
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const kpis = [
+    {
+      label: 'Inventory',
+      value: metrics.totalStockUnits.toLocaleString(),
+      sub: `${metrics.totalMaterials} SKUs`,
+      icon: Boxes,
+      color: 'text-blue-600 bg-blue-50 border-blue-200',
+      onClick: () => navigate('/inventory')
     },
-    'TASK_RUNNING': (event) => {
-      if (event?.data) {
-        setLiveTasksFeed(prev => [
-          { id: `task-${Date.now()}`, name: event.data.name || 'Background Operation', status: 'Running', timestamp: new Date(), progress: 100 },
-          ...prev.slice(0, 4)
-        ]);
-      }
+    {
+      label: 'Valuation',
+      value: `₹${metrics.totalStockValuation.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+      sub: 'Standard cost',
+      icon: IndianRupee,
+      color: 'text-purple-600 bg-purple-50 border-purple-200',
+      onClick: () => navigate('/inventory')
     },
-    'USER_APPROVED': () => fetchDashboardData(),
-    'WAREHOUSE_TRANSFERRED': () => fetchDashboardData()
-  });
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
-
-  const handleApproveAdjustment = async (id, adjNum) => {
-    setActionLoadingId(id);
-    try {
-      await api.post(`/api/stock-adjustments/${id}/approve`);
-      setToastMsg({ type: 'success', text: `Stock Adjustment ${adjNum} approved.` });
-      fetchDashboardData();
-    } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Approval failed.' });
-    } finally {
-      setActionLoadingId(null);
+    {
+      label: 'Plans',
+      value: metrics.scheduledPlans,
+      sub: 'Scheduled',
+      icon: Cpu,
+      color: 'text-orange-600 bg-orange-50 border-orange-200',
+      onClick: () => navigate('/planning')
+    },
+    {
+      label: 'Production',
+      value: metrics.activeProductionOrders,
+      sub: 'Active orders',
+      icon: Factory,
+      color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+      onClick: () => navigate('/production')
+    },
+    {
+      label: 'Approvals',
+      value: metrics.pendingApprovalsCount,
+      sub: metrics.pendingApprovalsCount > 0 ? 'Pending' : 'All clear',
+      icon: Clock,
+      color: metrics.pendingApprovalsCount > 0
+        ? 'text-amber-600 bg-amber-50 border-amber-200'
+        : 'text-slate-500 bg-slate-50 border-slate-200',
+      onClick: () => navigate('/admin/control-center')
     }
-  };
-
-  const handleApproveTransfer = async (id, trfNum) => {
-    setActionLoadingId(id);
-    try {
-      await api.post(`/api/transfers/${id}/approve`);
-      setToastMsg({ type: 'success', text: `Transfer ${trfNum} approved.` });
-      fetchDashboardData();
-    } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Approval failed.' });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  const handleApproveAppointment = async (id, num) => {
-    setActionLoadingId(id);
-    try {
-      await api.post(`/api/appointments/${id}/approve`);
-      setToastMsg({ type: 'success', text: `Appointment approved.` });
-      fetchDashboardData();
-    } catch (err) {
-      setToastMsg({ type: 'error', text: err.response?.data?.error || 'Approval failed.' });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
+  ];
 
   return (
-    <div className="space-y-5 font-sans text-slate-900 bg-slate-50/60 min-h-screen p-3 md:p-6">
-      {/* HEADER SECTION (Matching Image 1: Current User + Refresh Button) */}
-      <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-slate-900 text-white rounded-md flex items-center gap-1">
-                <LayoutDashboard className="h-3.5 w-3.5" /> Executive Operations
-              </span>
-              <span className="text-xs text-slate-500 font-medium">● Enterprise Platform Overview</span>
-            </div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              Dashboard
-              <span className="text-xs font-bold text-slate-400">/ feature-dev</span>
-            </h1>
-            <p className="text-xs text-slate-500 max-w-3xl">
-              High-level operational overview across inventory valuation, production status, pending authorizations, and live system activity.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* CURRENT USER BADGE (Matching Image 1) */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <div className="text-left">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">Current User</span>
-                <span className="font-extrabold text-slate-800">{user?.username || user?.email || 'System Admin'}</span>
-                <span className="text-[10px] font-semibold text-purple-600 ml-1">({user?.role || 'Admin'})</span>
-              </div>
-            </div>
-
-            {/* LIVE REAL-TIME SSE STATUS */}
-            <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${isConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-              <Radio className="h-3.5 w-3.5" />
-              <span>{isConnected ? 'Real-Time Live' : 'Polling'}</span>
-            </div>
-
-            {/* REFRESH BUTTON (Matching Image 1) */}
-            <button
-              onClick={fetchDashboardData}
-              className="p-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl shadow-sm transition-colors flex items-center gap-1.5 text-xs font-bold"
-              title="Refresh Dashboard"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* 5 TOP EXECUTIVE KEY METRICS TILES (Matching Image 1 KPI Cards) */}
-      <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-5">
-        {/* 1. Inventory Stock */}
-        <div
-          onClick={() => navigate('/inventory')}
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-1 hover:border-blue-300 transition-colors cursor-pointer"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider">Inventory Stock</span>
-            <Boxes className="h-4 w-4 text-blue-600" />
-          </div>
-          <p className="text-2xl font-black text-slate-900">{metrics.totalStockUnits.toLocaleString()} <span className="text-xs font-normal text-slate-500">units</span></p>
-          <p className="text-[11px] text-slate-500 font-medium">Across {metrics.totalMaterials} Material SKUs</p>
-        </div>
-
-        {/* 2. Stock Valuation */}
-        <div
-          onClick={() => navigate('/inventory')}
-          className="rounded-2xl border border-purple-200 bg-purple-50/40 p-4 shadow-sm space-y-1 hover:border-purple-300 transition-colors cursor-pointer"
-        >
-          <div className="flex items-center justify-between text-purple-700">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider">Stock Valuation</span>
-            <IndianRupee className="h-4 w-4 text-purple-600" />
-          </div>
-          <p className="text-2xl font-black text-purple-900">₹{metrics.totalStockValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-          <p className="text-[11px] text-purple-600/80 font-medium">Standard Cost Inventory Valuation</p>
-        </div>
-
-        {/* 3. MRP Production Plans */}
-        <div
-          onClick={() => navigate('/planning')}
-          className="rounded-2xl border border-orange-200 bg-orange-50/40 p-4 shadow-sm space-y-1 hover:border-orange-300 transition-colors cursor-pointer"
-        >
-          <div className="flex items-center justify-between text-orange-700">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider">MRP Production Plans</span>
-            <Cpu className="h-4 w-4 text-orange-600" />
-          </div>
-          <p className="text-2xl font-black text-orange-900">{metrics.scheduledPlans + metrics.unscheduledPlans} <span className="text-xs font-normal text-orange-600">plans</span></p>
-          <p className="text-[11px] text-orange-600/80 font-medium">{metrics.scheduledPlans} Scheduled &bull; {metrics.unscheduledPlans} Unscheduled</p>
-        </div>
-
-        {/* 4. Production Orders */}
-        <div
-          onClick={() => navigate('/production')}
-          className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm space-y-1 hover:border-blue-300 transition-colors cursor-pointer"
-        >
-          <div className="flex items-center justify-between text-blue-700">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider">Production Orders</span>
-            <Factory className="h-4 w-4 text-blue-600" />
-          </div>
-          <p className="text-2xl font-black text-blue-900">{metrics.activeProductionOrders} <span className="text-xs font-normal text-blue-600">active</span></p>
-          <p className="text-[11px] text-blue-600/80 font-medium">Shop Floor Manufacturing Orders</p>
-        </div>
-
-        {/* 5. Pending Approvals */}
-        <div
-          onClick={() => navigate('/admin/control-center')}
-          className={`rounded-2xl border p-4 shadow-sm space-y-1 cursor-pointer transition-colors ${metrics.pendingApprovalsCount > 0
-              ? 'bg-amber-50/60 border-amber-200 text-amber-800 hover:border-amber-300'
-              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-            }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider">Pending Approvals</span>
-            <Clock className={`h-4 w-4 ${metrics.pendingApprovalsCount > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
-          </div>
-          <p className="text-2xl font-black">{metrics.pendingApprovalsCount}</p>
-          <p className="text-[11px] font-medium">
-            {metrics.pendingApprovalsCount > 0 ? 'Authorizations Require Action' : 'All Clear — No Pending Requests'}
+    <div className="space-y-4 font-sans text-slate-900">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900 tracking-tight">
+            Dashboard
+          </h1>
+          <p className="text-[11px] text-slate-400 font-medium">
+            Welcome, {user?.username || 'Admin'} — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
         </div>
       </div>
 
-      {/* MAIN DASHBOARD GRID */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* LEFT 2 COLUMNS */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* LIVE FEED PANEL (Matching Image 1: "Live Feed - Running tasks will be shown") */}
-          <Card className="bg-white border-slate-200 shadow-sm rounded-2xl overflow-hidden">
-            <CardHeader className="bg-slate-900 text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-amber-400" />
-                <CardTitle className="text-xs font-black uppercase tracking-wider text-white">
-                  Live Feed — Running Tasks
-                </CardTitle>
+      {/* KPI Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        {kpis.map(kpi => {
+          const Icon = kpi.icon;
+          return (
+            <button
+              key={kpi.label}
+              onClick={kpi.onClick}
+              className={`rounded-xl border p-3 text-left transition-all hover:shadow-sm hover:-translate-y-0.5 ${kpi.color}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">{kpi.label}</span>
+                <Icon className="h-3.5 w-3.5 opacity-60" />
               </div>
-              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400 text-[10px] font-extrabold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Active Telemetry
-              </Badge>
-            </CardHeader>
-            <CardContent className="p-4 space-y-2.5">
-              {liveTasksFeed.map(task => (
-                <div key={task.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-blue-100 text-blue-700 font-bold">
-                      <Cpu className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="font-extrabold text-slate-900">{task.name}</p>
-                      <p className="text-[10px] text-slate-500">Auto-triggered via Redis Worker &bull; {new Date(task.timestamp).toLocaleTimeString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800">
-                      {task.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* PENDING APPROVALS HUB */}
-          {metrics.pendingApprovalsCount > 0 && (
-            <Card className="bg-white border-amber-200 shadow-sm rounded-2xl overflow-hidden">
-              <CardHeader className="bg-amber-50/50 border-b border-amber-100 p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-amber-600" />
-                  <CardTitle className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Authorizations Pending Action ({metrics.pendingApprovalsCount})
-                  </CardTitle>
-                </div>
-                <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-900 text-[10px] font-extrabold">
-                  Requires Review
-                </Badge>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                {/* Pending Stock Adjustments */}
-                {pendingAdjustments.map(adj => (
-                  <div key={adj._id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono font-bold text-blue-600">{adj.adjNumber}</span>
-                        <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded text-[9px] font-bold uppercase">Stock Adjustment</span>
-                      </div>
-                      <p className="font-extrabold text-slate-900">{adj.materialId?.name} &bull; {adj.adjustmentType} {adj.quantity} {adj.materialId?.unit || 'pcs'}</p>
-                      <p className="text-[10px] text-slate-500">Warehouse: {adj.warehouseId?.name} &bull; Reason: {adj.reason}</p>
-                    </div>
-                    <button
-                      onClick={() => handleApproveAdjustment(adj._id, adj.adjNumber)}
-                      disabled={actionLoadingId === adj._id}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors shrink-0"
-                    >
-                      Approve
-                    </button>
-                  </div>
-                ))}
-
-                {/* Pending Stock Transfers */}
-                {pendingTransfers.map(trf => (
-                  <div key={trf._id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono font-bold text-indigo-600">{trf.transferNumber}</span>
-                        <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded text-[9px] font-bold uppercase">Inter-Warehouse Transfer</span>
-                      </div>
-                      <p className="font-extrabold text-slate-900">{trf.materialId?.name} &bull; {trf.quantity} {trf.materialId?.unit || 'pcs'}</p>
-                      <p className="text-[10px] text-slate-500">{trf.fromWarehouseId?.name} &rarr; {trf.toWarehouseId?.name}</p>
-                    </div>
-                    <button
-                      onClick={() => handleApproveTransfer(trf._id, trf.transferNumber)}
-                      disabled={actionLoadingId === trf._id}
-                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors shrink-0"
-                    >
-                      Approve
-                    </button>
-                  </div>
-                ))}
-
-                {/* Pending Appointments */}
-                {pendingAppointments.map(appt => (
-                  <div key={appt._id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono font-bold text-slate-700">{appt.appointmentNumber || 'APPT'}</span>
-                        <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded text-[9px] font-bold uppercase">Visitor Gate Pass</span>
-                      </div>
-                      <p className="font-extrabold text-slate-900">{appt.visitorName || appt.name} &bull; Host: {appt.hostName || 'Staff'}</p>
-                    </div>
-                    <button
-                      onClick={() => handleApproveAppointment(appt._id, appt.appointmentNumber)}
-                      disabled={actionLoadingId === appt._id}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors shrink-0"
-                    >
-                      Approve
-                    </button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* ACTIVE MRP PLANS */}
-          <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
-            <CardHeader className="border-b border-slate-100 p-4 flex items-center justify-between">
-              <CardTitle className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <Cpu className="h-4 w-4 text-orange-600" />
-                <span>Production Plans & Manufacturing Orders</span>
-              </CardTitle>
-              <button
-                onClick={() => navigate('/planning')}
-                className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
-              >
-                <span>View Workbench</span> <ArrowRight className="h-3 w-3" />
-              </button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="p-3.5">Plan Code & Name</th>
-                      <th className="p-3.5">Target Product</th>
-                      <th className="p-3.5 text-center">Available / Total</th>
-                      <th className="p-3.5 text-center">Status</th>
-                      <th className="p-3.5 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {recentPlans.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-400 text-xs italic">
-                          No production plans generated yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      recentPlans.map(plan => (
-                        <tr key={plan._id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3.5 font-mono font-bold text-blue-600">
-                            {plan.planNumber}
-                            <span className="block text-[11px] font-sans text-slate-900 font-bold">{plan.planName || 'Plan'}</span>
-                          </td>
-                          <td className="p-3.5">
-                            <p className="font-extrabold text-slate-900">{plan.productId?.name || plan.productName}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">{plan.productId?.code || plan.productCode}</p>
-                          </td>
-                          <td className="p-3.5 text-center font-mono font-bold">
-                            <span className="text-emerald-700">{plan.availablePlans ?? plan.quantity}</span>
-                            <span className="text-slate-400"> / </span>
-                            <span className="text-slate-800">{plan.totalPlans || plan.quantity}</span>
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className="px-2 py-0.5 rounded font-extrabold text-[10px] uppercase bg-slate-100 text-slate-700">
-                              {plan.status || 'UNSCHEDULED'}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-right">
-                            <button
-                              onClick={() => navigate('/planning')}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-lg text-[10px]"
-                            >
-                              Open
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* RIGHT COLUMN (Matching Image 1: Activities Done Today & Currently Logged Users) */}
-        <div className="space-y-4">
-          {/* ACTIVITIES DONE TODAY (Matching Image 1: "Activities done todays") */}
-          <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Activity className="h-4 w-4 text-purple-600" />
-                <span>Activities Done Today</span>
-              </h3>
-              <Badge variant="outline" className="text-[10px] font-extrabold bg-purple-50 text-purple-700 border-purple-200">
-                {todaysActivities.length} Events
-              </Badge>
-            </div>
-            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-              {todaysActivities.length === 0 ? (
-                <p className="text-slate-400 text-xs italic text-center py-4">No events logged today yet.</p>
-              ) : (
-                todaysActivities.slice(0, 6).map((log, idx) => (
-                  <div key={log._id || idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
-                    <div className="flex justify-between items-center text-[10px] text-slate-500">
-                      <span className="font-extrabold uppercase font-mono text-purple-700">{log.action || 'ACTION'}</span>
-                      <span>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <p className="font-bold text-slate-900 text-[11px] leading-tight">{log.reason || log.changes?.text || 'Operation executed'}</p>
-                    <p className="text-[10px] text-slate-400">By: {log.userName || 'Admin'}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-
-          {/* CURRENTLY LOGGED USERS & STATUS (Matching Image 1: "Currently logged user and their activities and status") */}
-          <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Users className="h-4 w-4 text-blue-600" />
-                <span>Currently Logged Users</span>
-              </h3>
-              <span className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                {activeUsersList.filter(u => u.isOnline).length || 1} Online
-              </span>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {activeUsersList.length === 0 ? (
-                <div className="p-3 bg-slate-50 rounded-xl text-xs flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <div>
-                    <p className="font-extrabold text-slate-900">{user?.username || 'Shaik Saifulla'}</p>
-                    <p className="text-[10px] text-slate-500">{user?.role || 'Admin'} &bull; Active Now</p>
-                  </div>
-                </div>
-              ) : (
-                activeUsersList.map((u, i) => (
-                  <div key={u._id || i} className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${u.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                      <div>
-                        <p className="font-extrabold text-slate-900">{u.username || u.email}</p>
-                        <p className="text-[10px] text-slate-400">{u.role} &bull; {u.siteIds?.length ? `${u.siteIds.length} Site(s)` : 'Universal Scope'}</p>
-                      </div>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${u.isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                      {u.isOnline ? 'Online' : 'Offline'}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </div>
+              <p className="text-xl font-black leading-tight">{kpi.value}</p>
+              <p className="text-[10px] font-medium opacity-60 mt-0.5">{kpi.sub}</p>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Toast Notification */}
-      {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
-          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start justify-between gap-3 backdrop-blur-md ${toastMsg.type === 'success'
-            ? 'bg-slate-900/95 text-white border-emerald-500/40'
-            : 'bg-slate-900/95 text-white border-rose-500/40'
-            }`}>
-            <div className="flex items-start gap-3">
-              <div className={`p-2 rounded-xl mt-0.5 ${toastMsg.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                {toastMsg.type === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertTriangle className="h-5 w-5 shrink-0" />}
-              </div>
-              <div>
-                <div className={`text-xs font-black uppercase tracking-wider ${toastMsg.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {toastMsg.type === 'success' ? 'Action Completed' : 'Notice'}
+      {/* Pending Approvals — only show if there are any */}
+      {metrics.pendingApprovalsCount > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Pending Approvals ({metrics.pendingApprovalsCount})
+            </h2>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {pendingTransfers.slice(0, 5).map(t => (
+              <div key={t._id} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/60">
+                <div>
+                  <span className="font-bold text-slate-800">{t.transferNumber || 'Transfer'}</span>
+                  <span className="text-slate-400 ml-2">{t.materialId?.name || 'Material'} — Qty {t.quantity || 0}</span>
                 </div>
-                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{toastMsg.text}</div>
+                <button
+                  onClick={async () => {
+                    try { await api.post(`/api/transfers/${t._id}/approve`); fetchData(); } catch (e) {}
+                  }}
+                  className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-md font-bold text-[10px] uppercase border border-emerald-200"
+                >
+                  Approve
+                </button>
               </div>
-            </div>
-            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+            ))}
+            {pendingAdjustments.slice(0, 5).map(a => (
+              <div key={a._id} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/60">
+                <div>
+                  <span className="font-bold text-slate-800">{a.adjustmentNumber || 'Adjustment'}</span>
+                  <span className="text-slate-400 ml-2">{a.materialId?.name || 'Material'} — {a.adjustmentType} {a.quantity || 0}</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    try { await api.post(`/api/stock-adjustments/${a._id}/approve`); fetchData(); } catch (e) {}
+                  }}
+                  className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-md font-bold text-[10px] uppercase border border-emerald-200"
+                >
+                  Approve
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* Quick Navigation */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { label: 'Materials', path: '/masters', icon: Boxes },
+          { label: 'BOM & Recipes', path: '/bom', icon: ShoppingBag },
+          { label: 'Inventory', path: '/inventory', icon: Boxes },
+          { label: 'Purchasing', path: '/purchasing', icon: ShoppingBag }
+        ].map(link => {
+          const Icon = link.icon;
+          return (
+            <button
+              key={link.label}
+              onClick={() => navigate(link.path)}
+              className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/30 transition-all group"
+            >
+              <Icon className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-500" />
+              <span>{link.label}</span>
+              <ArrowRight className="h-3 w-3 ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-blue-400" />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

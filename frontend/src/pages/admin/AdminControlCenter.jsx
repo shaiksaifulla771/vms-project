@@ -12,7 +12,13 @@ import {
   Building2,
   Warehouse,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Users,
+  BarChart3,
+  PieChart,
+  Sparkles,
+  Activity,
+  Shield
 } from 'lucide-react';
 
 const AdminControlCenter = () => {
@@ -183,16 +189,8 @@ const AdminControlCenter = () => {
             disabled={isChecking}
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
           >
-            <i className={`ti ti-shield-check fs-5 ${isChecking ? 'animate-spin' : ''}`}></i>
+            <ShieldCheck className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
             <span>{isChecking ? 'Checking...' : 'Run Gate Check'}</span>
-          </button>
-
-          <button
-            onClick={fetchDashboardData}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs rounded-lg shadow-2xs transition-colors"
-          >
-            <i className={`ti ti-refresh fs-5 ${loading ? 'animate-spin' : ''}`}></i>
-            <span>Refresh</span>
           </button>
         </div>
       </div>
@@ -212,20 +210,20 @@ const AdminControlCenter = () => {
       {notice && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs font-medium">
           <div className="flex items-center space-x-2">
-            <i className="ti ti-circle-check fs-4 text-emerald-600"></i>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span><strong>{notice.title}:</strong> {notice.message}</span>
           </div>
           <button onClick={() => setNotice(null)} className="font-bold underline text-emerald-700">Dismiss</button>
         </div>
       )}
 
-      {/* VMS REAL-TIME KPI CARDS WITH TABLER ICONS & OPACITY TINTS */}
+      {/* VMS REAL-TIME KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Visitor Appointments Today */}
         <div className="card p-4 bg-orange-500/10 border border-orange-500/25 rounded-xl space-y-2">
           <div className="flex items-center gap-3">
-            <div className="icon-shape icon-md bg-orange-500 text-white rounded-lg flex items-center justify-center">
-              <i className="ti ti-users fs-3"></i>
+            <div className="icon-shape icon-md bg-orange-500 text-white rounded-lg flex items-center justify-center p-2">
+              <Users className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Today's Visitors</h2>
@@ -238,8 +236,8 @@ const AdminControlCenter = () => {
         {/* Card 2: Verified Vendors & Onboarding */}
         <div className="card p-4 bg-emerald-500/10 border border-emerald-500/25 rounded-xl space-y-2">
           <div className="flex items-center gap-3">
-            <div className="icon-shape icon-md bg-emerald-500 text-white rounded-lg flex items-center justify-center">
-              <i className="ti ti-building-store fs-3"></i>
+            <div className="icon-shape icon-md bg-emerald-500 text-white rounded-lg flex items-center justify-center p-2">
+              <Building2 className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Verified Vendors</h2>
@@ -252,8 +250,8 @@ const AdminControlCenter = () => {
         {/* Card 3: Active Locations & Storage Depots */}
         <div className="card p-4 bg-cyan-500/10 border border-cyan-500/25 rounded-xl space-y-2">
           <div className="flex items-center gap-3">
-            <div className="icon-shape icon-md bg-cyan-500 text-white rounded-lg flex items-center justify-center">
-              <i className="ti ti-building fs-3"></i>
+            <div className="icon-shape icon-md bg-cyan-500 text-white rounded-lg flex items-center justify-center p-2">
+              <Warehouse className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Active Locations</h2>
@@ -266,8 +264,8 @@ const AdminControlCenter = () => {
         {/* Card 4: Security Gate Passes Issued */}
         <div className="card p-4 bg-amber-500/10 border border-amber-500/25 rounded-xl space-y-2">
           <div className="flex items-center gap-3">
-            <div className="icon-shape icon-md bg-amber-500 text-white rounded-lg flex items-center justify-center">
-              <i className="ti ti-id-badge-2 fs-3"></i>
+            <div className="icon-shape icon-md bg-amber-500 text-white rounded-lg flex items-center justify-center p-2">
+              <Shield className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-xs font-semibold text-slate-600 uppercase">Gate Activities Today</h2>
@@ -284,7 +282,7 @@ const AdminControlCenter = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h3 className="text-sm font-bold text-slate-900 flex items-center">
-              <i className="ti ti-chart-bar me-2 text-orange-500 fs-4"></i> System Operational Metrics
+              <BarChart3 className="w-4 h-4 mr-2 text-orange-500" /> System Operational Metrics
             </h3>
           </div>
           <Chart options={visitorTrafficOptions} series={visitorTrafficSeries} type="bar" height={260} />
@@ -294,7 +292,7 @@ const AdminControlCenter = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h3 className="text-sm font-bold text-slate-900 flex items-center">
-              <i className="ti ti-chart-pie me-2 text-emerald-500 fs-4"></i> Vendor Status Breakdown
+              <PieChart className="w-4 h-4 mr-2 text-emerald-500" /> Vendor Status Breakdown
             </h3>
           </div>
           <Chart options={vendorStatusOptions} series={vendorStatusSeries} type="donut" height={260} />
@@ -311,7 +309,7 @@ const AdminControlCenter = () => {
                 : 'border-transparent text-slate-400 hover:text-slate-600'
               }`}
           >
-            <i className="ti ti-id-badge fs-5"></i>
+            <Activity className="w-4 h-4" />
             <span>Real Audit & Gate Activity Stream</span>
           </button>
           <button
@@ -321,7 +319,7 @@ const AdminControlCenter = () => {
                 : 'border-transparent text-slate-400 hover:text-slate-600'
               }`}
           >
-            <i className="ti ti-sparkles fs-5"></i>
+            <Sparkles className="w-4 h-4" />
             <span>System Health & Status</span>
           </button>
         </div>

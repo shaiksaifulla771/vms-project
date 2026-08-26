@@ -26,19 +26,19 @@ export const Dialog = ({ isOpen, onClose, title, children, className = '' }) => 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md"
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"
         >
           {/* Backdrop click closer */}
           <div className="absolute inset-0" onClick={onClose} />
           
           {/* Dialog container */}
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={{ opacity: 0, scale: 0.98, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className={`relative bg-white/90 backdrop-blur-xl w-full ${className.includes('max-w-') ? '' : 'max-w-lg'} rounded-xl shadow-2xl shadow-slate-900/20 border border-white/60 overflow-hidden ${className}`}
+            exit={{ opacity: 0, scale: 0.98, y: 10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className={`relative bg-white w-full ${className.includes('max-w-') ? '' : 'max-w-lg'} rounded-xl shadow-xl border border-slate-200 overflow-hidden ${className}`}
           >
         
         {/* Header */}

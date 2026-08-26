@@ -50,6 +50,28 @@ body {
   overflow-x: hidden;
 }
 
+/* High-contrast crystal clear text selection */
+::selection {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+::-moz-selection {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+/* Ensure native dropdown options are always crisp black on white */
+select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+select option:checked {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
 /* InApp Template Icon Shape & Avatar Helpers */
 .icon-shape {
   display: inline-flex;
@@ -396,31 +418,23 @@ body {
   }
 }
 
-/* PRESERVED TOKENS */
+/* CLEAN CRISP ENTERPRISE PANELS (Non-Glassmorphic) */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
 }
 
 .glass-panel-dark {
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 .table-row-hover {
-  transition: all 0.2s ease-in-out;
+  transition: background-color 0.1s ease-in-out;
 }
 
 .table-row-hover:hover {
-  background-color: rgba(241, 245, 249, 0.8);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
-  z-index: 10;
-  position: relative;
+  background-color: #f8fafc;
 }

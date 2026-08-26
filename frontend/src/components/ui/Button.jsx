@@ -61,10 +61,6 @@ export const Button = ({
         if (result instanceof Promise) {
           setInternalLoading(true);
           await result;
-          if (type !== 'submit') { // Don't show generic success for submits typically, unless requested
-             setToast({ type: 'success', message: 'Action completed successfully' });
-             setTimeout(() => setToast(null), 2500);
-          }
         }
       } catch (error) {
         setToast({ type: 'error', message: error?.message || 'An error occurred' });
@@ -76,16 +72,16 @@ export const Button = ({
     }
   };
 
-  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none relative overflow-hidden';
+  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-1 disabled:opacity-50 disabled:pointer-events-none relative overflow-hidden';
   
   const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 focus:ring-blue-500 border border-transparent',
-    secondary: 'bg-white/80 backdrop-blur hover:bg-white text-slate-800 focus:ring-slate-400 border border-slate-200/50 shadow-sm',
-    outline: 'bg-white/50 backdrop-blur hover:bg-white text-slate-700 border border-slate-200 focus:ring-slate-300',
-    destructive: 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/20 focus:ring-rose-500 border border-transparent',
-    danger: 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/20 focus:ring-rose-500 border border-transparent',
-    ghost: 'hover:bg-slate-100/50 text-slate-600 focus:ring-slate-200',
-    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 focus:ring-emerald-500 border border-transparent'
+    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xs focus:ring-blue-500 border border-transparent',
+    secondary: 'bg-white hover:bg-slate-50 text-slate-800 focus:ring-slate-300 border border-slate-200 shadow-2xs',
+    outline: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 focus:ring-slate-300',
+    destructive: 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs focus:ring-rose-500 border border-transparent',
+    danger: 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs focus:ring-rose-500 border border-transparent',
+    ghost: 'hover:bg-slate-100 text-slate-600 focus:ring-slate-200',
+    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs focus:ring-emerald-500 border border-transparent'
   };
 
   const sizes = {

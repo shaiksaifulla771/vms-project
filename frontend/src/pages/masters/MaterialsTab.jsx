@@ -372,7 +372,9 @@ const MaterialsTab = () => {
   const [columnFilters, setColumnFilters] = useState({});
   const [tempFilters, setTempFilters] = useState({});
   const [filterSearchText, setFilterSearchText] = useState({});
-  // Form State
+  // Pagination & Form State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
@@ -958,25 +960,15 @@ const MaterialsTab = () => {
     return maxCounter + 1;
   };
 
-  const handleOpenAddModal = async () => {
+  const handleOpenAddModal = () => {
     setEditingId(null);
     setCurrentDraftId(null);
     setFormErrors({});
 
-    let nextCodeStr = getNextManualCode();
-    try {
-      const res = await api.get('/api/materials/sequence-peek');
-      if (res.data && res.data.nextCode) {
-        const rawCode = String(res.data.nextCode);
-        nextCodeStr = rawCode.startsWith('M') ? rawCode : `M${rawCode}`;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch sequence peek", e);
-    }
-
+    const initialCode = getNextManualCode();
     setFormData({
       name: '',
-      code: nextCodeStr,
+      code: initialCode,
       unit: 'pcs',
       type: 'Raw Material',
       subcategory: 'Fresh',
@@ -984,6 +976,16 @@ const MaterialsTab = () => {
       description: ''
     });
     setIsModalOpen(true);
+
+    api.get('/api/materials/sequence-peek')
+      .then(res => {
+        if (res.data && res.data.nextCode) {
+          const rawCode = String(res.data.nextCode);
+          const nextCodeStr = rawCode.startsWith('M') ? rawCode : `M${rawCode}`;
+          setFormData(prev => ({ ...prev, code: nextCodeStr }));
+        }
+      })
+      .catch(e => console.warn("Failed to fetch sequence peek", e));
   };
 
   const handleExportData = () => {
@@ -1932,20 +1934,27 @@ const MaterialsTab = () => {
     });
   })();
 
+  const totalPages = Math.ceil(filteredMaterials.length / pageSize) || 1;
+  const paginatedMaterials = React.useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredMaterials.slice(start, start + pageSize);
+  }, [filteredMaterials, currentPage, pageSize]);
+
   const isEditSelectedActive = React.useMemo(() => {
     return selectedRowIds.size > 0;
   }, [selectedRowIds]);
 
-  // Reset row selection when filters change
+  // Reset row selection & page when filters change
   React.useEffect(() => {
     setSelectedMaterialId(null);
     setSelectedRowIds(new Set());
+    setCurrentPage(1);
   }, [search, typeFilter, status, sourceFilter, columnFilters]);
 
   return (
     <div className="space-y-3 w-full">
       {/* Search & Filters */}
-      <Card className="shadow-none border overflow-visible relative z-10 glass-panel">
+      <Card className="shadow-none border border-slate-200 overflow-visible relative z-10 bg-white">
         <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-10">
           <div className="flex items-center space-x-2 w-full md:w-auto">
             <div className="relative w-48">
@@ -2224,7 +2233,7 @@ const MaterialsTab = () => {
 
       {/* Drafts List Card */}
       {showDraftsList && (
-        <Card className="bg-slate-50/50 shadow-none border glass-panel">
+        <Card className="bg-white shadow-none border border-slate-200">
           <CardHeader className="py-1 px-2.5 border-b border-slate-200 flex items-center justify-end">
             <button
               onClick={() => setShowDraftsList(false)}
@@ -2248,7 +2257,7 @@ const MaterialsTab = () => {
                 </TableHeader>
                 <TableBody>
                   {drafts.map((d) => (
-                    <TableRow key={d.id} className="hover:bg-slate-50/50 border-b border-slate-200">
+                    <TableRow key={d.id} className="hover:bg-slate-50 border-b border-slate-200">
                       <TableCell className="!px-2.5 !py-1 font-semibold text-xs text-slate-800 text-left capitalize border-r border-slate-200">
                         {d.data.name ? d.data.name.toLowerCase() : <span className="text-slate-400 italic">untitled material</span>}
                       </TableCell>
@@ -2280,7 +2289,7 @@ const MaterialsTab = () => {
       )}
 
       {/* Grid */}
-      <Card className="shadow-none border overflow-visible glass-panel">
+      <Card className="shadow-none border border-slate-200 overflow-visible bg-white">
         <CardContent className="p-0 overflow-visible">
           {error && <div className="p-5 text-center text-sm font-semibold text-red-500 bg-red-50">{error}</div>}
 
@@ -2623,6 +2632,36 @@ const MaterialsTab = () => {
                   ))}
                 </TableBody>
               </Table>
+
+              {/* Pagination Controls */}
+              <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600 gap-2">
+                <div>
+                  Showing {filteredMaterials.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredMaterials.length)} of {filteredMaterials.length} Materials
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage <= 1 || loading}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    className="h-7 px-2.5 bg-white font-bold"
+                  >
+                    Previous
+                  </Button>
+                  <span className="px-2 font-mono font-bold text-slate-800">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage >= totalPages || loading}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    className="h-7 px-2.5 bg-white font-bold"
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </>
           )}
         </CardContent>

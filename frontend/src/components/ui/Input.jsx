@@ -25,8 +25,8 @@ export const Input = ({
     <input
       type={type}
       id={id}
-      className={`w-full bg-white/50 backdrop-blur-sm border border-slate-200 shadow-inner text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${paddingClass} ${
-        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
+      className={`w-full bg-white border border-slate-300 shadow-2xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-colors ${paddingClass} ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
       } ${className}`}
       {...props}
     />
@@ -37,7 +37,7 @@ export const Input = ({
   return (
     <div className="w-full flex flex-col space-y-1.5">
       {label && (
-        <label htmlFor={id} className="text-xs font-semibold text-slate-600">
+        <label htmlFor={id} className="text-xs font-semibold text-slate-700">
           {label}
         </label>
       )}
@@ -61,8 +61,8 @@ export const TextArea = ({
     <textarea
       id={id}
       rows={rows}
-      className={`w-full bg-white/50 backdrop-blur-sm border border-slate-200 shadow-inner text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all ${paddingClass} ${
-        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
+      className={`w-full bg-white border border-slate-300 shadow-2xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-colors ${paddingClass} ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
       } ${className}`}
       {...props}
     />
@@ -73,7 +73,7 @@ export const TextArea = ({
   return (
     <div className="w-full flex flex-col space-y-1.5">
       {label && (
-        <label htmlFor={id} className="text-xs font-semibold text-slate-600">
+        <label htmlFor={id} className="text-xs font-semibold text-slate-700">
           {label}
         </label>
       )}
@@ -98,8 +98,8 @@ export const Select = ({
   const selectEl = (
     <select
       id={id}
-      className={`w-full bg-white/50 backdrop-blur-sm border border-slate-200 shadow-inner text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer ${paddingClass} ${
-        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/50' : ''
+      className={`w-full bg-white border border-slate-300 shadow-2xs text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-colors cursor-pointer ${paddingClass} ${
+        error ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
       } ${className}`}
       {...props}
     >
@@ -107,9 +107,9 @@ export const Select = ({
         children
       ) : (
         <>
-          {placeholder && <option value="" disabled>{placeholder}</option>}
+          {placeholder && <option value="" disabled className="text-slate-400 bg-white">{placeholder}</option>}
           {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={opt.value} value={opt.value} className="text-slate-900 bg-white">
               {opt.label}
             </option>
           ))}

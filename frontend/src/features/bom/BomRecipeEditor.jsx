@@ -347,6 +347,7 @@ export default function BomRecipeEditor({
   };
 
   // Prepare combined options for SearchableSelect: MPNs + Raw Materials with self-dependency guard
+  // Prepare combined options for SearchableSelect: ALL material types + MPNs
   const ingredientOptions = useMemo(() => {
     const options = [];
     const usedMatIds = new Set();
@@ -368,26 +369,32 @@ export default function BomRecipeEditor({
           value: m._id,
           label: `${matName}${matCode} — [${m.mpnCode || 'MPN'}]`,
           subLabel: isSelf
-            ? '⚠️ SELF-REFERENCE: Assembly Product cannot be an ingredient'
+            ? '⚠️ SELF-REFERENCE: Finished Product cannot be an ingredient of itself'
             : `Vendor: ${vendorName} | Mfr: ${mfrName} | Price: ₹${m.price || 0}`,
           disabled: isSelf
         });
       });
 
-    // 2. Add raw/semi-finished materials directly
+    // 2. Add all raw, packaging, semi-finished, and finished materials directly
     materials
-      .filter(mat => mat.status === 'Active' && mat.type !== 'Finished')
+      .filter(mat => mat.status === 'Active')
       .forEach(mat => {
         const matId = String(mat._id);
         const isSelf = Boolean(productId && String(matId) === String(productId));
         const hasExistingMpnOption = usedMatIds.has(matId);
 
         if (!hasExistingMpnOption) {
+          const typeLabel = mat.type === 'Packaged Material' || mat.type === 'Packing Material' ? 'Packaging'
+            : mat.type === 'Raw Material' || mat.type === 'Raw' ? 'Raw Material'
+            : mat.type === 'Semi-Finished' ? 'Semi-Finished'
+            : mat.type === 'Finished' ? 'Finished Good'
+            : mat.type || 'Material';
+
           options.push({
             value: mat._id,
-            label: `${mat.name} (${mat.code}) — [Raw Material]`,
+            label: `${mat.name} (${mat.code}) — [${typeLabel}]`,
             subLabel: isSelf
-              ? '⚠️ SELF-REFERENCE: Assembly Product cannot be an ingredient'
+              ? '⚠️ SELF-REFERENCE: Finished Product cannot be an ingredient of itself'
               : `Mfr: ${mat.manufacturer || mat.manufacturerName || 'Standard'} | Unit: ${mat.unit} | Price: ₹${mat.basePrice || 0}`,
             disabled: isSelf
           });
@@ -398,39 +405,39 @@ export default function BomRecipeEditor({
   }, [mpns, materials, productId]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex justify-between items-start">
-        <div className="flex flex-col gap-4 w-full">
+        <div className="flex flex-col gap-2 w-full">
           {!isNew && (
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
                 Edit: {initialData?.productId?.name || 'Recipe'}
-              </h1>
+              </h2>
             </div>
           )}
           
-          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-1">
+          {/* Dense Fit-To-Screen Top Form Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 p-3 bg-white border border-slate-200 rounded-xl shadow-2xs">
             <div className="flex flex-col xl:col-span-2">
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Assembly Product *</label>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Finished Product *</label>
               <SearchableSelect 
-                options={materials.filter(m => m.type === 'Finished' || m.type === 'Semi-Finished' || m.type === 'Finished Good' || m.makeOrBuy === 'MAKE').map(m => ({
+                options={materials.filter(m => (m.type === 'Finished' || m.type === 'Finished Goods' || m.type === 'Finished Good') && m.status !== 'Deleted').map(m => ({
                   value: m._id, label: `${m.name} (${m.code})`
                 }))}
                 value={productId} 
                 onChange={v => {
                   setProductId(v);
+                  setErrors(prev => {
+                    const next = { ...prev };
+                    delete next.productId;
+                    delete next.general;
+                    return next;
+                  });
                   const selectedMat = materials.find(m => String(m._id) === String(v));
                   if (selectedMat) {
-                    // 1. Auto-fetch and set Batch UOM
+                    // 1. Auto-fetch and set Batch UOM from master data
                     if (selectedMat.unit) {
-                      const unitLower = selectedMat.unit.toLowerCase();
-                      if (['kg', 'gm', 'pouches', 'packs', 'pieces'].includes(unitLower)) {
-                        setBatchUOM(unitLower);
-                      } else if (unitLower === 'pcs') {
-                        setBatchUOM('pieces');
-                      } else {
-                        setBatchUOM(selectedMat.unit);
-                      }
+                      setBatchUOM(selectedMat.unit);
                     }
 
                     // 2. Auto-fetch and set Manufacturer immediately
@@ -455,304 +462,278 @@ export default function BomRecipeEditor({
                     }
                   });
                 }} 
-                className="w-full shadow-sm rounded-lg text-sm"
-                placeholder="Search Manufactured Product..."
+                className="w-full text-xs"
+                placeholder="Select Finished Product..."
               />
-              {errors.productId && <p className="text-red-500 text-sm mt-1 font-semibold">{errors.productId}</p>}
+              {errors.productId && <p className="text-red-500 text-[11px] mt-0.5 font-semibold">{errors.productId}</p>}
             </div>
 
             <div className="flex flex-col xl:col-span-1">
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Code</label>
-              <Input value={batchCode} onChange={e => setBatchCode(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" placeholder="Optional..." />
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Batch Code</label>
+              <Input value={batchCode} onChange={e => setBatchCode(e.target.value)} className="w-full h-8 text-xs font-mono font-semibold" placeholder="Optional..." />
             </div>
 
             <div className="flex flex-col xl:col-span-1">
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Manufacturer</label>
-              <Input value={manufacturer} onChange={e => setManufacturer(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm font-semibold text-slate-800" placeholder="Auto-fetched or custom..." />
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Manufacturer</label>
+              <Input value={manufacturer} onChange={e => setManufacturer(e.target.value)} className="w-full h-8 text-xs font-semibold text-slate-900" placeholder="Auto or custom..." />
             </div>
 
             <div className="flex flex-col xl:col-span-1">
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Batch Size</label>
-              <div className="flex space-x-2">
-                <Input type="number" min="0.001" step="any" value={batchSize} onChange={e => setBatchSize(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm flex-1 font-bold" />
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Batch Size & UOM</label>
+              <div className="flex space-x-1">
+                <Input type="number" min="0.001" step="any" value={batchSize} onChange={e => setBatchSize(e.target.value)} className="w-full h-8 text-xs font-bold text-slate-900 flex-1" />
                 <select 
                   value={batchUOM} 
                   onChange={e => setBatchUOM(e.target.value)} 
-                  className="w-24 h-9 px-2 bg-white border border-slate-300 rounded-lg shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold"
+                  className="w-24 h-8 px-1.5 bg-white border border-slate-300 rounded-md text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
                 >
-                  <option value="kg">kg</option>
-                  <option value="gm">gm</option>
-                  <option value="pouches">pouches</option>
-                  <option value="packs">packs</option>
-                  <option value="pieces">pieces</option>
+                  {batchUOM && !['pieces', 'pcs', 'kg', 'gm', 'g', 'L', 'ml', 'pouches', 'packs', 'boxes', 'units'].includes(batchUOM.toLowerCase()) && (
+                    <option value={batchUOM} className="text-slate-900 bg-white font-bold">{batchUOM}</option>
+                  )}
+                  <option value="pieces" className="text-slate-900 bg-white font-semibold">pieces</option>
+                  <option value="pcs" className="text-slate-900 bg-white font-semibold">pcs</option>
+                  <option value="kg" className="text-slate-900 bg-white font-semibold">kg</option>
+                  <option value="gm" className="text-slate-900 bg-white font-semibold">gm</option>
+                  <option value="g" className="text-slate-900 bg-white font-semibold">g</option>
+                  <option value="L" className="text-slate-900 bg-white font-semibold">L</option>
+                  <option value="ml" className="text-slate-900 bg-white font-semibold">ml</option>
+                  <option value="pouches" className="text-slate-900 bg-white font-semibold">pouches</option>
+                  <option value="packs" className="text-slate-900 bg-white font-semibold">packs</option>
+                  <option value="boxes" className="text-slate-900 bg-white font-semibold">boxes</option>
+                  <option value="units" className="text-slate-900 bg-white font-semibold">units</option>
                 </select>
               </div>
-              {(errors.batchSize || errors.batchUOM) && <p className="text-red-500 text-sm mt-1 font-semibold">{errors.batchSize || errors.batchUOM}</p>}
+              {(errors.batchSize || errors.batchUOM) && <p className="text-red-500 text-[11px] mt-0.5 font-semibold">{errors.batchSize || errors.batchUOM}</p>}
             </div>
 
             <div className="flex flex-col xl:col-span-1">
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide mb-1.5">Effective Date</label>
-              <Input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className="w-full h-9 shadow-sm rounded-lg text-sm" />
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Effective Date</label>
+              <Input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className="w-full h-8 text-xs font-semibold" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex justify-end space-x-2 border-t border-slate-200 pt-4">
-        <Button onClick={() => {
-          if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return;
-          onCancel();
-        }} variant="outline" className="h-9">Cancel</Button>
-        <Button onClick={handleSave} className="h-9 shadow-sm btn-premium">Save BOM</Button>
+      {/* Top Action Save / Cancel Bar */}
+      <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="text-xs text-slate-600 font-semibold">
+          {components.length} ingredient(s) configured
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" size="sm" onClick={onCancel} className="text-xs h-8 px-3 font-semibold">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSave} className="text-xs h-8 px-4 font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs">
+            Save BOM
+          </Button>
+        </div>
       </div>
 
-      {/* Save Intercept Modal for Manufacturer Change */}
-      {showSaveModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
-            <div className="p-6">
-              <h2 className="text-lg font-bold text-slate-900 mb-2">Manufacturer Updated</h2>
-              <p className="text-sm text-slate-600 mb-4">
-                Manufacturer name has changed from <span className="font-semibold text-slate-800">"{originalManufacturer}"</span> to <span className="font-semibold text-slate-800">"{manufacturer}"</span>.
-                <br /><br />
-                Do you want to change this only in the current BOM, or update the ERP system (Master Material & MPN) too?
-              </p>
-              <div className="flex flex-col gap-3">
-                <Button 
-                  onClick={() => handleConfirmSave(false)}
-                  variant="outline"
-                  className="w-full text-blue-700 border-blue-200 hover:bg-blue-50 font-semibold"
-                >
-                  Only BOM
-                </Button>
-                <Button 
-                  onClick={() => handleConfirmSave(true)}
-                  className="w-full font-semibold btn-premium"
-                >
-                  Update ERP System
-                </Button>
-                <Button 
-                  onClick={() => { setShowSaveModal(false); setPendingSavePayload(null); }}
-                  variant="ghost"
-                  className="w-full mt-2 text-slate-500"
-                >
-                  Cancel Save
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Warnings & Errors */}
       {errors.general && (
-        <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm font-semibold flex items-center shadow-sm">
-          <AlertTriangle className="w-4 h-4 mr-2" /> {errors.general}
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-lg flex items-center shadow-2xs">
+          <AlertTriangle className="w-4 h-4 mr-2 shrink-0 text-red-500" />
+          <span className="font-semibold">{errors.general}</span>
         </div>
       )}
 
-      <Card className="shadow-xl overflow-visible /95 backdrop-blur-sm rounded-xl glass-panel">
-        <CardHeader className="bg-slate-50/80 backdrop-blur-md border-b border-slate-200 py-3 px-4 sticky top-0 z-20 rounded-t-xl">
-          <div className="flex flex-row justify-between items-center w-full">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Recipe Components / Ingredients</h3>
-            <Button onClick={addRow} size="sm" className="h-9 px-3 shadow-sm transition-all rounded font-bold text-sm btn-premium">
-              <Plus className="w-3 h-3 mr-1" /> Add Ingredient
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="w-full">
-            <Table className="min-w-[1100px] w-full" wrapperClassName="overflow-x-auto pb-32">
-              <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-tight border-b border-slate-300 select-none">
-                <tr>
-                  <th className="w-10 px-2 py-2 text-center font-mono border-r border-slate-200">#</th>
-                  <th className="px-2.5 py-2 w-[280px] border-r border-slate-200">Ingredient / MPN Select</th>
-                  <th className="px-2.5 py-2 min-w-[160px] border-r border-slate-200">Material Name</th>
-                  <th className="px-2.5 py-2 min-w-[160px] border-r border-slate-200">Vendor / Mfr</th>
-                  <th className="px-2.5 py-2 w-28 text-right border-r border-slate-200">Price (₹)</th>
-                  <th className="px-2.5 py-2 w-28 text-right border-r border-slate-200">Quantity</th>
-                  <th className="px-2.5 py-2 w-16 text-center border-r border-slate-200">UOM</th>
-                  <th className="px-2.5 py-2 w-20 text-right border-r border-slate-200">Loss %</th>
-                  <th className="px-2.5 py-2 w-32 text-right border-r border-slate-200">Line Cost (₹)</th>
-                  <th className="px-2.5 py-2 w-12 text-center">Actions</th>
-                </tr>
-              </thead>
-              <TableBody>
-                {totals.lines.map((comp, idx) => {
-                  const mpnObj = comp.mpn;
-                  const matObj = comp.material;
-                  const activeKey = comp.mpnId || comp.materialId || '';
-                  const isDeactivated = mpnObj && mpnObj.status !== 'Active' && mpnObj.status !== 'Draft';
-                  const isLoading = loadingPrice === idx;
-                  
-                  const displayName = mpnObj?.materialId?.name || matObj?.name || comp.materialId?.name || '—';
-                  const displayVendorMfr = mpnObj?.vendorId?.name 
-                    ? `${mpnObj.vendorId.name}${mpnObj.manufacturerName ? ` (${mpnObj.manufacturerName})` : ''}`
-                    : (matObj?.manufacturer || matObj?.manufacturerName || 'Standard Material');
-                  const displayUom = mpnObj?.priceUOM || mpnObj?.materialId?.unit || matObj?.unit || 'pcs';
-                  
-                  return (
-                    <tr key={idx} id={`row-${idx}`} className={`hover:bg-slate-50/80 transition-colors border-b border-slate-200 ${errors[`row_${idx}`] ? 'bg-red-50/40' : ''}`}>
-                      <td className="px-2 py-1.5 text-center font-mono text-slate-400 font-semibold text-sm border-r border-slate-200 bg-slate-50/50">
-                        {idx + 1}
-                      </td>
-                      <td className="px-2 py-1.5 relative border-r border-slate-200" style={{ zIndex: 50 - idx }}>
-                        <SearchableSelect 
-                          options={ingredientOptions}
-                          value={activeKey}
-                          onChange={(v) => updateRow(idx, 'selectionKey', v)}
-                          placeholder="Search Raw Material or MPN..."
-                          disabled={isDeactivated}
-                          className="w-full"
-                        />
-                        {errors[`row_${idx}`] && <span className="text-sm text-red-500 font-semibold mt-1 block">{errors[`row_${idx}`]}</span>}
-                        {isLoading && (
-                          <span className="text-sm text-blue-600 font-medium flex items-center mt-1">
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Loading Price...
-                          </span>
-                        )}
-                      </td>
-                      
-                      <td className="px-2.5 py-1.5 border-r border-slate-200">
-                        <div className="text-sm font-semibold text-slate-800 truncate max-w-[170px]" title={displayName}>
-                          {displayName}
-                        </div>
-                        {matObj?.code && (
-                          <div className="text-[10px] font-mono text-slate-400">{matObj.code}</div>
-                        )}
-                      </td>
-                      
-                      <td className="px-2.5 py-1.5 border-r border-slate-200">
-                        <div className="text-xs text-slate-700 truncate max-w-[170px]" title={displayVendorMfr}>
-                          {displayVendorMfr}
-                        </div>
-                      </td>
-
-                      <td className="px-2.5 py-1.5 text-right font-mono text-sm text-slate-800 border-r border-slate-200 font-medium">
-                        {comp.resolvedPrice !== undefined && comp.resolvedPrice !== null ? `₹${Number(comp.resolvedPrice).toFixed(2)}` : '—'}
-                      </td>
-
-                      <td className="px-2.5 py-1.5 text-right border-r border-slate-200">
-                        <Input
-                          type="number"
-                          min="0.001"
-                          step="any"
-                          value={comp.qty}
-                          onChange={(e) => updateRow(idx, 'qty', e.target.value)}
-                          disabled={isDeactivated}
-                          className="text-sm text-right font-mono h-9 px-2 border-slate-200 font-bold text-slate-900"
-                        />
-                      </td>
-
-                      <td className="px-2.5 py-1.5 text-center border-r border-slate-200">
-                        <div className="text-xs font-bold text-slate-600 uppercase">
-                          {displayUom}
-                        </div>
-                      </td>
-
-                      <td className="px-2.5 py-1.5 text-right border-r border-slate-200">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="99"
-                          value={comp.lossPercent}
-                          onChange={(e) => updateRow(idx, 'lossPercent', e.target.value)}
-                          disabled={isDeactivated}
-                          className="w-20 min-w-[80px] text-sm text-right font-mono h-9 px-2 border-slate-200 font-semibold text-amber-700 ml-auto"
-                        />
-                      </td>
-
-                      <td className="px-2.5 py-1.5 text-right border-r border-slate-200">
-                        <div className="flex items-center justify-end group/tooltip relative">
-                          <span className="text-sm font-mono font-bold text-slate-900">
-                            ₹{(comp.lineCost || 0).toFixed(2)}
-                          </span>
-                          {comp.formula && (
-                            <div className="ml-1 text-slate-400 hover:text-blue-600 cursor-help transition-colors">
-                              <Info className="w-3.5 h-3.5" />
-                              <div className="absolute hidden group-hover/tooltip:block z-[9999] right-0 top-6 w-48 bg-slate-900 text-slate-50 text-xs font-mono p-3 rounded shadow-2xl whitespace-pre-wrap text-left border border-slate-700/50 transition-opacity opacity-0 group-hover/tooltip:opacity-100 duration-200">
-                                {`${comp.formula.qty} ${displayUom} × ₹${(comp.formula.price || 0).toFixed(2)}\n= ₹${(comp.formula.baseCost || 0).toFixed(2)}\n\nLoss: ${comp.formula.loss}%\nFinal Cost: ₹${(comp.formula.finalCost || 0).toFixed(2)}`}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-2 py-1.5 text-center">
-                        <button onClick={() => removeRow(idx)} className="p-1 text-slate-400 hover:text-red-600 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {components.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center text-slate-400 text-sm font-semibold border-b-0">
-                      No ingredients in recipe. Click "+ Add Ingredient" to start composing.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Compact Cost Breakdown Summary Card */}
-      <Card className="overflow-hidden rounded-lg mt-4 glass-panel">
-        <CardHeader className="bg-slate-900 border-b border-slate-800 py-2.5 px-4">
-          <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center">
-            <AlertTriangle className="w-3 h-3 mr-1.5 text-indigo-400" /> Cost Breakdown Dashboard
+      {/* Universal Ingredients & Packaging Components Table */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+        <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+            Recipe Ingredients & Packaging Components
           </h3>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="grid grid-cols-1 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
-            <div className="p-3 lg:col-span-3 grid grid-cols-2 gap-3">
-              <div className="flex justify-between items-center text-sm p-2 bg-slate-50 rounded">
-                <span className="text-slate-600 font-bold">Raw Material</span>
-                <span className="font-mono font-black text-slate-800">₹{totals.breakdown.rawMaterialCost.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded transition-colors">
-                <span className="text-slate-600 font-bold">Packaging</span>
-                <Input 
-                  type="number" min="0" step="any" 
-                  value={packagingCost} 
-                  onChange={e => { setPackagingCost(e.target.value); setIsDirty(true); }}
-                  className="w-20 h-9 text-sm text-right font-mono font-bold shadow-sm rounded" 
-                />
-              </div>
-              <div className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded transition-colors">
-                <span className="text-slate-600 font-bold">Processing</span>
-                <Input 
-                  type="number" min="0" step="any" 
-                  value={processingCost} 
-                  onChange={e => { setProcessingCost(e.target.value); setIsDirty(true); }}
-                  className="w-20 h-9 text-sm text-right font-mono font-bold shadow-sm rounded" 
-                />
-              </div>
-              <div className="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded transition-colors">
-                <span className="text-slate-600 font-bold">Overhead</span>
-                <Input 
-                  type="number" min="0" step="any" 
-                  value={overheadCost} 
-                  onChange={e => { setOverheadCost(e.target.value); setIsDirty(true); }}
-                  className="w-20 h-9 text-sm text-right font-mono font-bold shadow-sm rounded" 
-                />
-              </div>
-            </div>
-            <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 lg:col-span-2 flex flex-col justify-center space-y-3">
-              <div className="flex justify-between items-end border-b border-indigo-200/50 pb-2">
-                <span className="text-sm font-black text-indigo-900 uppercase">Total Cost</span>
-                <span className="text-lg font-black text-indigo-700 font-mono">₹{totals.totalCost.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-end">
-                <span className="text-sm font-black text-indigo-900/70 uppercase">Cost per Unit <span className="lowercase">({batchUOM})</span></span>
-                <span className="text-base font-black text-blue-600 font-mono">₹{totals.costPerUnit.toFixed(4)}</span>
-              </div>
-            </div>
+          <Button 
+            size="sm" 
+            onClick={addRow} 
+            className="text-xs h-7 px-2.5 font-bold flex items-center space-x-1 bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Ingredient</span>
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <table className="w-full text-xs text-left border-collapse table-fixed">
+            <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] border-b border-slate-200 sticky top-0 z-20 shadow-2xs">
+              <tr>
+                <th className="w-8 px-2 py-1.5 text-center font-mono border-r border-slate-200">#</th>
+                <th className="w-[30%] px-2.5 py-1.5 border-r border-slate-200">Ingredient / MPN Select</th>
+                <th className="w-[18%] px-2.5 py-1.5 border-r border-slate-200">Material Name</th>
+                <th className="w-[18%] px-2.5 py-1.5 border-r border-slate-200">Vendor / Mfr</th>
+                <th className="w-20 px-2 py-1.5 text-right border-r border-slate-200">Price (₹)</th>
+                <th className="w-20 px-2 py-1.5 text-right border-r border-slate-200">Quantity</th>
+                <th className="w-16 px-2 py-1.5 text-center border-r border-slate-200">UOM</th>
+                <th className="w-16 px-2 py-1.5 text-right border-r border-slate-200">Loss %</th>
+                <th className="w-24 px-2 py-1.5 text-right border-r border-slate-200">Line Cost (₹)</th>
+                <th className="w-12 px-1 py-1.5 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {totals.lines.map((comp, idx) => {
+                const mpnObj = comp.mpn;
+                const matObj = comp.material;
+                const activeKey = comp.mpnId || comp.materialId || '';
+                const isDeactivated = mpnObj && mpnObj.status !== 'Active' && mpnObj.status !== 'Draft';
+                const isLoading = loadingPrice === idx;
+                
+                const displayName = mpnObj?.materialId?.name || matObj?.name || comp.materialId?.name || '—';
+                const displayVendorMfr = mpnObj?.vendorId?.name 
+                  ? `${mpnObj.vendorId.name}${mpnObj.manufacturerName ? ` (${mpnObj.manufacturerName})` : ''}`
+                  : (matObj?.manufacturer || matObj?.manufacturerName || 'Standard Material');
+                const displayUom = mpnObj?.priceUOM || mpnObj?.materialId?.unit || matObj?.unit || comp.materialId?.unit || 'pcs';
+                
+                return (
+                  <tr key={idx} id={`row-${idx}`} className={`hover:bg-slate-50/70 transition-colors ${errors[`row_${idx}`] ? 'bg-red-50/30' : ''}`}>
+                    <td className="px-2 py-1 text-center font-mono text-slate-400 font-semibold text-xs border-r border-slate-200 bg-slate-50/30">
+                      {idx + 1}
+                    </td>
+                    <td className="px-2 py-1 relative border-r border-slate-200" style={{ zIndex: 50 - idx }}>
+                      <SearchableSelect 
+                        options={ingredientOptions}
+                        value={activeKey}
+                        onChange={(v) => updateRow(idx, 'selectionKey', v)}
+                        placeholder="Search Ingredient / MPN..."
+                        disabled={isDeactivated}
+                        className="w-full text-xs"
+                      />
+                      {errors[`row_${idx}`] && <span className="text-[10px] text-red-500 font-semibold mt-0.5 block">{errors[`row_${idx}`]}</span>}
+                      {isLoading && (
+                        <span className="text-[10px] text-blue-600 font-medium flex items-center mt-0.5">
+                          <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" /> Loading Price...
+                        </span>
+                      )}
+                    </td>
+                    
+                    <td className="px-2 py-1 border-r border-slate-200">
+                      <div className="text-xs font-bold text-slate-800 truncate max-w-[150px]" title={displayName}>
+                        {displayName}
+                      </div>
+                      {matObj?.code && (
+                        <div className="text-[9px] font-mono text-slate-400">{matObj.code}</div>
+                      )}
+                    </td>
+                    
+                    <td className="px-2 py-1 border-r border-slate-200">
+                      <div className="text-[11px] text-slate-600 truncate max-w-[140px]" title={displayVendorMfr}>
+                        {displayVendorMfr}
+                      </div>
+                    </td>
+
+                    <td className="px-2 py-1 text-right font-mono text-xs text-slate-800 border-r border-slate-200 font-semibold">
+                      {comp.resolvedPrice !== undefined && comp.resolvedPrice !== null ? `₹${Number(comp.resolvedPrice).toFixed(2)}` : '—'}
+                    </td>
+
+                    <td className="px-2 py-1 text-right border-r border-slate-200">
+                      <input
+                        type="number"
+                        min="0.001"
+                        step="any"
+                        value={comp.qty}
+                        onChange={(e) => updateRow(idx, 'qty', e.target.value)}
+                        disabled={isDeactivated}
+                        className="w-20 text-xs text-right font-mono h-7 px-1.5 border border-slate-300 rounded font-bold text-slate-900 focus:outline-none focus:border-blue-600"
+                      />
+                    </td>
+
+                    <td className="px-2 py-1 text-center border-r border-slate-200 bg-slate-50/40">
+                      <span className="text-xs font-bold font-mono text-slate-900 uppercase">
+                        {displayUom}
+                      </span>
+                    </td>
+
+                    <td className="px-2 py-1 text-right border-r border-slate-200">
+                      <input
+                        type="number"
+                        min="0"
+                        max="99"
+                        value={comp.lossPercent}
+                        onChange={(e) => updateRow(idx, 'lossPercent', e.target.value)}
+                        disabled={isDeactivated}
+                        className="w-14 text-xs text-right font-mono h-7 px-1 border border-slate-300 rounded font-semibold text-amber-700 focus:outline-none focus:border-amber-600"
+                      />
+                    </td>
+
+                    <td className="px-2 py-1 text-right border-r border-slate-200">
+                      <div className="flex items-center justify-end group/tooltip relative">
+                        <span className="text-xs font-mono font-bold text-slate-900">
+                          ₹{(comp.lineCost || 0).toFixed(2)}
+                        </span>
+                        {comp.formula && (
+                          <div className="ml-1 text-slate-400 hover:text-blue-600 cursor-help transition-colors">
+                            <Info className="w-3 h-3" />
+                            <div className="absolute hidden group-hover/tooltip:block z-[9999] right-0 top-5 w-44 bg-slate-900 text-slate-50 text-[10px] font-mono p-2 rounded shadow-xl whitespace-pre-wrap text-left border border-slate-700">
+                              {`${comp.formula.qty} ${displayUom} × ₹${(comp.formula.price || 0).toFixed(2)}\n= ₹${(comp.formula.baseCost || 0).toFixed(2)}\n\nLoss: ${comp.formula.loss}%\nFinal Cost: ₹${(comp.formula.finalCost || 0).toFixed(2)}`}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-1 py-1 text-center">
+                      <button onClick={() => removeRow(idx)} className="p-1 text-slate-400 hover:text-rose-600 transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {components.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="h-24 text-center text-slate-400 text-xs font-medium">
+                    No ingredients in recipe. Click "+ Add Ingredient" to begin.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Compact Cost Breakdown Strip */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Raw Materials</span>
+            <span className="text-sm font-black text-slate-800 font-mono">₹{totals.breakdown.rawMaterialCost.toFixed(2)}</span>
           </div>
-        </CardContent>
-      </Card>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Packaging (₹)</span>
+            <input 
+              type="number" min="0" step="any" 
+              value={packagingCost} 
+              onChange={e => { setPackagingCost(e.target.value); setIsDirty(true); }}
+              className="w-full h-6 text-xs text-right font-mono font-bold border border-slate-200 rounded px-1" 
+            />
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Processing (₹)</span>
+            <input 
+              type="number" min="0" step="any" 
+              value={processingCost} 
+              onChange={e => { setProcessingCost(e.target.value); setIsDirty(true); }}
+              className="w-full h-6 text-xs text-right font-mono font-bold border border-slate-200 rounded px-1" 
+            />
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Overhead (₹)</span>
+            <input 
+              type="number" min="0" step="any" 
+              value={overheadCost} 
+              onChange={e => { setOverheadCost(e.target.value); setIsDirty(true); }}
+              className="w-full h-6 text-xs text-right font-mono font-bold border border-slate-200 rounded px-1" 
+            />
+          </div>
+          <div className="p-2 bg-indigo-50/60 rounded-lg border border-indigo-100">
+            <span className="text-[10px] font-bold text-indigo-500 uppercase block">Total Recipe Cost</span>
+            <span className="text-sm font-black text-indigo-900 font-mono">₹{totals.totalCost.toFixed(2)}</span>
+          </div>
+          <div className="p-2 bg-blue-50/60 rounded-lg border border-blue-100">
+            <span className="text-[10px] font-bold text-blue-500 uppercase block">Cost / Unit ({batchUOM})</span>
+            <span className="text-sm font-black text-blue-700 font-mono">₹{totals.costPerUnit.toFixed(4)}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

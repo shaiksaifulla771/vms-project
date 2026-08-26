@@ -28,7 +28,7 @@ export const Drawer = ({ isOpen, onClose, title, children, className = '' }) => 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-900/60"
             onClick={onClose}
           />
           
@@ -38,8 +38,8 @@ export const Drawer = ({ isOpen, onClose, title, children, className = '' }) => 
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className={`w-screen max-w-md bg-white/90 backdrop-blur-xl shadow-2xl border-l border-white/60 flex flex-col ${className}`}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className={`w-screen max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col ${className}`}
             >
           
           {/* Header */}

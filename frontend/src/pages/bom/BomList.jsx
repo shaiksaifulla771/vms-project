@@ -105,18 +105,18 @@ export default function BomList() {
 
   return (
     <BomPageWrapper>
-      <div className="flex justify-between items-end mb-6">
+      <div className="flex justify-between items-center mb-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Bill of Materials</h1>
-          <p className="text-sm text-slate-500 font-medium mt-1">Manage assembly recipes, components, and costs.</p>
+          <h1 className="text-base font-bold text-slate-900 tracking-tight">Bill of Materials</h1>
+          <p className="text-[10px] text-slate-400 font-medium">Manage assembly recipes, components, and costs.</p>
         </div>
-        <Button onClick={() => navigate('/bom/new', { state: { returnTo: location.pathname + location.search } })} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-10">
-          <Plus className="w-4 h-4 mr-2" /> Create BOM
+        <Button onClick={() => navigate('/bom/new', { state: { returnTo: location.pathname + location.search } })} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-8 text-xs px-3">
+          <Plus className="w-3.5 h-3.5 mr-1.5" /> Create BOM
         </Button>
       </div>
 
-      <Card className="border-slate-200 shadow-xl rounded-xl overflow-hidden bg-white/95 backdrop-blur-sm">
-        <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-3">
+      <Card className="border-slate-200 shadow-2xs rounded-xl overflow-hidden bg-white">
+        <CardHeader className="bg-slate-50 border-b border-slate-200 p-2.5">
           <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="relative w-[300px]">
@@ -143,7 +143,7 @@ export default function BomList() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto custom-scrollbar pb-64 min-h-[500px]">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-xs text-left border-collapse min-w-[950px]">
               <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase tracking-tight border-b border-slate-300 select-none">
                 <tr>
@@ -188,12 +188,22 @@ export default function BomList() {
                     >
                       <td className="px-2 py-1.5 text-center font-mono text-slate-400 font-semibold text-[11px] border-r border-slate-200 bg-slate-50/50">
                         {index + 1}
-                      </td>
+                      </td>                      
                       <td className="px-2.5 py-1.5 text-xs font-bold text-slate-800 border-r border-slate-200">
-                        {bom.productId?.name}
+                        <button 
+                          onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })}
+                          className="hover:text-blue-600 font-bold text-left focus:outline-none"
+                        >
+                          {bom.productId?.name}
+                        </button>
                       </td>
                       <td className="px-2.5 py-1.5 text-xs text-blue-700 font-mono font-bold border-r border-slate-200">
-                        {bom.productId?.code || '—'}
+                        <button 
+                          onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })}
+                          className="hover:underline text-left focus:outline-none"
+                        >
+                          {bom.productId?.code || '—'}
+                        </button>
                       </td>
                       <td className="px-2.5 py-1.5 text-xs border-r border-slate-200">
                         {editBatchCodeId === bom._id ? (
@@ -269,7 +279,7 @@ export default function BomList() {
                       <td className="px-2.5 py-1.5 text-xs text-center font-mono font-bold text-slate-900 border-r border-slate-200">
                         {bom.batchSize}
                       </td>
-                      <td className="px-2.5 py-1.5 text-xs text-center font-mono font-semibold text-slate-600 uppercase border-r border-slate-200">
+                      <td className="px-2.5 py-1.5 text-xs text-center font-mono font-bold text-slate-900 uppercase border-r border-slate-200">
                         {bom.batchUOM || '—'}
                       </td>
                       <td className="px-2.5 py-1.5 text-right font-mono font-bold text-slate-900 border-r border-slate-200">
@@ -279,12 +289,12 @@ export default function BomList() {
                         {(() => {
                           const displayStatus = bom.status === 'Obsolete' ? 'Deleted' : bom.status;
                           return (
-                            <span className={`font-bold ${
+                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                               displayStatus === 'Active'
-                                ? 'text-emerald-700'
+                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                                 : displayStatus === 'Draft'
-                                ? 'text-amber-700'
-                                : 'text-slate-700'
+                                ? 'text-amber-700 bg-amber-50 border border-amber-200'
+                                : 'text-slate-700 bg-slate-100 border border-slate-200'
                             }`}>
                               {displayStatus}
                             </span>
@@ -295,10 +305,6 @@ export default function BomList() {
                         <div className="flex items-center justify-center space-x-1">
                           {bom.status !== 'Deleted' && bom.status !== 'Obsolete' ? (
                             <>
-                              <button onClick={() => navigate(`/bom/${bom._id}`, { state: { returnTo: location.pathname + location.search } })} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="View Detail">
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
-                              
                               <button onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Recipe">
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
@@ -334,36 +340,34 @@ export default function BomList() {
           </div>
 
           {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600">
-              <div>
-                Showing {(page - 1) * limit + 1} to {Math.min(page * limit, totalCount)} of {totalCount} BOMs
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={page <= 1 || loading}
-                  onClick={() => handlePageChange(page - 1)}
-                  className="h-7 px-2.5 bg-white font-bold"
-                >
-                  Previous
-                </Button>
-                <span className="px-2 font-mono font-bold text-slate-800">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={page >= totalPages || loading}
-                  onClick={() => handlePageChange(page + 1)}
-                  className="h-7 px-2.5 bg-white font-bold"
-                >
-                  Next
-                </Button>
-              </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600 gap-2">
+            <div>
+              Showing {totalCount > 0 ? (page - 1) * limit + 1 : 0} to {Math.min(page * limit, totalCount)} of {totalCount} BOMs
             </div>
-          )}
+            <div className="flex items-center space-x-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1 || loading}
+                onClick={() => handlePageChange(page - 1)}
+                className="h-7 px-2.5 bg-white font-bold"
+              >
+                Previous
+              </Button>
+              <span className="px-2 font-mono font-bold text-slate-800">
+                Page {page} of {Math.max(1, totalPages)}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages || loading}
+                onClick={() => handlePageChange(page + 1)}
+                className="h-7 px-2.5 bg-white font-bold"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </BomPageWrapper>

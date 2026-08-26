@@ -73,14 +73,16 @@ export default function BomEdit() {
 
   return (
     <BomPageWrapper>
-      <div className="mb-4">
-        <button onClick={() => navigate(returnTo)} className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-blue-600 transition-colors">
-          <ChevronLeft className="w-4 h-4 mr-1" /> Back
+      <div className="mb-3">
+        <button onClick={() => navigate(returnTo)} className="inline-flex items-center text-[11px] font-semibold text-slate-400 hover:text-blue-600 transition-colors mb-2">
+          ← Back to BOM List
         </button>
+        <h1 className="text-base font-bold text-slate-900 tracking-tight">Edit Recipe</h1>
+        <p className="text-[10px] text-slate-400 font-medium">BOM: {initialData?.bomNumber || id}</p>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm font-semibold">
+        <div className="mb-3 bg-red-50 border border-red-200 text-red-600 p-2.5 rounded-lg text-xs font-semibold">
           {error}
         </div>
       )}

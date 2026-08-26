@@ -55,6 +55,8 @@ const VendorsTab = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
 
@@ -1383,32 +1385,19 @@ const VendorsTab = () => {
     return `V${maxCounter + 1}`;
   };
 
-  const handleOpenAddModal = async () => {
+  const handleOpenAddModal = () => {
     setEditingId(null);
     vendorDraftIdRef.current = null;
     setCurrentDraftId(null);
-    setCurrentDraftId(null); // Clear active draft pointer
     setFormErrors({});
 
-    let nextCodeStr = getNextVendorAutoCode();
-    try {
-      const res = await api.get('/api/vendors/sequence-peek');
-      if (res.data && res.data.nextCode) {
-        const serverCode = res.data.nextCode.startsWith('V') ? res.data.nextCode : `V${res.data.nextCode}`;
-        const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
-        if (!activeCodes.has(serverCode.toUpperCase())) {
-          nextCodeStr = serverCode;
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to fetch sequence peek", e);
-    }
-
+    const initialCode = getNextVendorAutoCode();
     setFormData({
-      vendorId: nextCodeStr,
+      vendorId: initialCode,
       name: '', company: '', email: '', phone: '', address: '', address2: '',
       zipCode: '', city: '', state: '', country: '',
       gstin: '', gstList: [{ state: '', gstin: '' }], hasNoGst: false,
+      contacts: [],
       secondaryAddresses: [],
 
       contactQualityName: '', contactQualityPhone: '',
@@ -1422,6 +1411,18 @@ const VendorsTab = () => {
     });
 
     setIsModalOpen(true);
+
+    api.get('/api/vendors/sequence-peek')
+      .then(res => {
+        if (res.data && res.data.nextCode) {
+          const serverCode = res.data.nextCode.startsWith('V') ? res.data.nextCode : `V${res.data.nextCode}`;
+          const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
+          if (!activeCodes.has(serverCode.toUpperCase())) {
+            setFormData(prev => ({ ...prev, vendorId: serverCode }));
+          }
+        }
+      })
+      .catch(e => console.warn("Failed to fetch sequence peek", e));
   };
 
   const handleOpenEditModal = (vendor) => {
@@ -1889,6 +1890,16 @@ const VendorsTab = () => {
       return true;
     });
   })();
+
+  const totalPages = Math.ceil(filteredVendors.length / pageSize) || 1;
+  const paginatedVendors = React.useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredVendors.slice(start, start + pageSize);
+  }, [filteredVendors, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [category, status, search, columnFilters]);
 
   const handlePrintPdf = () => {
     if (!viewingVendor) return;
@@ -2375,7 +2386,7 @@ const VendorsTab = () => {
   return (
     <div className="space-y-3">
       {/* Search & Filters */}
-      <Card className="shadow-none border overflow-visible relative z-50 glass-panel">
+      <Card className="shadow-none border border-slate-200 overflow-visible relative z-50 bg-white">
         <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-50">
           <div className="relative w-64">
             <input
@@ -2652,7 +2663,7 @@ const VendorsTab = () => {
 
       {/* Drafts List Card */}
       {showDraftsList && (
-        <Card className="bg-slate-50/50 shadow-none border glass-panel">
+        <Card className="bg-white shadow-none border border-slate-200">
           <CardHeader className="py-1 px-2.5 border-b border-slate-200 flex items-center justify-end">
             <button
               onClick={() => setShowDraftsList(false)}
@@ -2838,7 +2849,7 @@ const VendorsTab = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-slate-150 text-[13px] text-slate-700 font-normal">
-                  {filteredVendors.map((v) => (
+                  {paginatedVendors.map((v) => (
                     <TableRow
                       key={v._id}
                       onClick={() => setSelectedVendor(selectedVendor?._id === v._id ? null : v)}
@@ -2980,16 +2991,34 @@ const VendorsTab = () => {
           )}
         </CardContent>
 
-        {/* 3. BOTTOM BOUNDARY STATUS BAR CLOSURE */}
-        <div className="px-3 py-1.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-[11px] font-medium text-slate-500">
+        {/* 3. BOTTOM BOUNDARY STATUS BAR CLOSURE & PAGINATION */}
+        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold text-slate-600 gap-2">
           <div className="flex items-center space-x-4">
-            <span>Total Records: <strong className="text-slate-700">{filteredVendors.length} Rows Listed</strong></span>
+            <span>Showing {filteredVendors.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredVendors.length)} of <strong className="text-slate-800">{filteredVendors.length} Vendors</strong></span>
             {selectedVendorRowIds.size > 0 && <span>Selected: <strong className="text-blue-600">{selectedVendorRowIds.size}</strong></span>}
           </div>
-          <div className="flex items-center space-x-1.5 text-[10px]">
-            <span className="text-slate-400">Page 1 of 1</span>
-            <button className="px-1.5 py-0.5 border border-slate-300 rounded bg-white text-slate-400 cursor-not-allowed" disabled>◀</button>
-            <button className="px-1.5 py-0.5 border border-slate-300 rounded bg-white text-slate-400 cursor-not-allowed" disabled>▶</button>
+          <div className="flex items-center space-x-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage <= 1 || loading}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              className="h-7 px-2.5 bg-white font-bold text-xs"
+            >
+              Previous
+            </Button>
+            <span className="px-2 font-mono font-bold text-slate-800">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage >= totalPages || loading}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              className="h-7 px-2.5 bg-white font-bold text-xs"
+            >
+              Next
+            </Button>
           </div>
         </div>
       </div>
@@ -3070,155 +3099,177 @@ const VendorsTab = () => {
             </div>
           </div>
 
-          {/* Section 2: Contact List */}
-          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+          {/* Section 2: Contact List (Flat, simple & clear table without Department) */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+            <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Contacts Directory</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    contacts: [...(formData.contacts || []), { role: 'Primary', name: '', phone: '', email: '' }]
+                  });
+                }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add Contact</span>
+              </button>
             </div>
-            <div className="p-4 bg-white space-y-4">
-              <div className="space-y-3">
-                {(formData.contacts || []).length === 0 && (
-                  <div className="text-xs text-slate-400 italic py-2">No contacts added yet.</div>
-                )}
-                {(formData.contacts || []).map((contact, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-3 bg-slate-50 p-3 rounded-md border border-slate-200 items-end">
-                    <div className="col-span-2 flex flex-col space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Role</label>
-                      <select
-                        value={contact.role || 'Primary'}
-                        onChange={(e) => {
-                          const updated = [...(formData.contacts || [])];
-                          updated[idx] = { ...updated[idx], role: e.target.value };
-                          setFormData({ ...formData, contacts: updated });
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 cursor-pointer"
-                      >
-                        <option value="Primary">Primary</option>
-                        <option value="Secondary">Secondary</option>
-                        <option value="Quality">Quality</option>
-                        <option value="Accounts">Accounts</option>
-                        <option value="Logistics">Logistics</option>
-                        <option value="Sales">Sales</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="px-2.5 py-1.5 w-32 border-r border-slate-200">Role</th>
+                    <th className="px-2.5 py-1.5 min-w-[160px] border-r border-slate-200">Name</th>
+                    <th className="px-2.5 py-1.5 w-36 border-r border-slate-200">Phone</th>
+                    <th className="px-2.5 py-1.5 min-w-[180px] border-r border-slate-200">Email</th>
+                    <th className="px-2 py-1.5 w-16 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(formData.contacts || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-3 text-center text-xs text-slate-400 italic">
+                        No contacts added yet. Click "+ Add Contact" to add vendor representatives.
+                      </td>
+                    </tr>
+                  ) : (
+                    (formData.contacts || []).map((contact, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/70">
+                        <td className="p-1.5 border-r border-slate-200">
+                          <select
+                            value={contact.role || 'Primary'}
+                            onChange={(e) => {
+                              const updated = [...(formData.contacts || [])];
+                              updated[idx] = { ...updated[idx], role: e.target.value };
+                              setFormData({ ...formData, contacts: updated });
+                            }}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-900 focus:outline-none h-7.5 font-medium"
+                          >
+                            <option value="Primary">Primary</option>
+                            <option value="Secondary">Secondary</option>
+                            <option value="Quality">Quality</option>
+                            <option value="Accounts">Accounts</option>
+                            <option value="Logistics">Logistics</option>
+                            <option value="Sales">Sales</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </td>
 
-                    <div className="col-span-2 flex flex-col space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Department</label>
-                      <select
-                        value={contact.department || 'Sourcing'}
-                        onChange={(e) => {
-                          const updated = [...(formData.contacts || [])];
-                          updated[idx] = { ...updated[idx], department: e.target.value };
-                          setFormData({ ...formData, contacts: updated });
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 cursor-pointer"
-                      >
-                        <option value="Sourcing">Sourcing</option>
-                        <option value="Quality">Quality</option>
-                        <option value="Finance / Accounts">Finance / Accounts</option>
-                        <option value="Logistics">Logistics</option>
-                        <option value="Sales">Sales</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
+                        <td className="p-1.5 border-r border-slate-200">
+                          <input
+                            type="text"
+                            placeholder="Contact Name"
+                            value={contact.name || ''}
+                            onChange={(e) => {
+                              const updated = [...(formData.contacts || [])];
+                              updated[idx] = { ...updated[idx], name: e.target.value };
+                              setFormData({ ...formData, contacts: updated });
+                            }}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-900 focus:outline-none h-7.5"
+                          />
+                        </td>
 
-                    <div className="col-span-3 flex flex-col space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Name</label>
-                      <input
-                        type="text"
-                        value={contact.name || ''}
-                        onChange={(e) => {
-                          const updated = [...(formData.contacts || [])];
-                          updated[idx] = { ...updated[idx], name: e.target.value };
-                          setFormData({ ...formData, contacts: updated });
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5"
-                      />
-                    </div>
+                        <td className="p-1.5 border-r border-slate-200">
+                          <input
+                            type="text"
+                            placeholder="Phone #"
+                            value={contact.phone || ''}
+                            onChange={(e) => {
+                              const updated = [...(formData.contacts || [])];
+                              updated[idx] = { ...updated[idx], phone: e.target.value };
+                              setFormData({ ...formData, contacts: updated });
+                            }}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-900 focus:outline-none h-7.5 font-mono"
+                          />
+                        </td>
 
-                    <div className="col-span-2 flex flex-col space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
-                      <input
-                        type="text"
-                        value={contact.phone || ''}
-                        onChange={(e) => {
-                          const updated = [...(formData.contacts || [])];
-                          updated[idx] = { ...updated[idx], phone: e.target.value };
-                          setFormData({ ...formData, contacts: updated });
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
-                      />
-                    </div>
+                        <td className="p-1.5 border-r border-slate-200">
+                          <input
+                            type="email"
+                            placeholder="Email Address"
+                            value={contact.email || ''}
+                            onChange={(e) => {
+                              const updated = [...(formData.contacts || [])];
+                              updated[idx] = { ...updated[idx], email: e.target.value };
+                              setFormData({ ...formData, contacts: updated });
+                            }}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-900 focus:outline-none h-7.5 font-mono"
+                          />
+                        </td>
 
-                    <div className="col-span-2 flex flex-col space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Email Address</label>
-                      <input
-                        type="email"
-                        value={contact.email || ''}
-                        onChange={(e) => {
-                          const updated = [...(formData.contacts || [])];
-                          updated[idx] = { ...updated[idx], email: e.target.value };
-                          setFormData({ ...formData, contacts: updated });
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none h-8.5 font-mono"
-                      />
-                    </div>
-
-                    <div className="col-span-1 flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = [...(formData.contacts || [])];
-                          updated.splice(idx, 1);
-                          setFormData({ ...formData, contacts: updated });
-                        }}
-                        className="text-red-500 hover:text-red-700 text-xs font-bold pb-2"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormData({
-                      ...formData,
-                      contacts: [...(formData.contacts || []), { role: 'Primary', department: 'Sourcing', name: '', phone: '', email: '' }]
-                    });
-                  }}
-                  className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Add Contact</span>
-                </button>
-              </div>
+                        <td className="p-1.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(formData.contacts || [])];
+                              updated.splice(idx, 1);
+                              setFormData({ ...formData, contacts: updated });
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs font-bold"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
           {/* Section 3: Location Details */}
-          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
+          <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex justify-between items-center">
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Address & Location Details</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    secondaryAddresses: [
+                      ...(formData.secondaryAddresses || []),
+                      { locationName: '', address: '', address2: '', zipCode: '', city: '', state: '', country: 'India', gstin: '' }
+                    ]
+                  });
+                }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add Another Address & Location</span>
+              </button>
             </div>
             <div className="p-4 bg-white">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
                 {/* Primary Location Box */}
-                <div className="border border-blue-150 rounded-lg overflow-hidden bg-slate-50/30">
-                  <div className="bg-blue-50 border-b border-blue-150 px-3 py-1.5 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Primary Location (Default)</span>
+                <div className="border border-blue-200 rounded-lg overflow-hidden bg-white">
+                  <div className="bg-blue-50 border-b border-blue-200 px-3 py-1.5 flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Primary Location (Default)</span>
                     <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1.5 py-0.2 rounded-full">Required</span>
                   </div>
-                  <div className="p-3 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input label="Address Line 1" id="vaddress1" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="!text-xs !h-9" />
-                      <Input label="Address Line 2" id="vaddress2" value={formData.address2} onChange={(e) => setFormData({ ...formData, address2: e.target.value })} className="!text-xs !h-9" />
+                  <div className="p-3 space-y-2.5">
+                    {/* Manual Address Name / Location Label on top */}
+                    <div>
+                      <Input 
+                        label="Address / Location Name" 
+                        id="vaddressName" 
+                        placeholder="e.g. Headquarters, Main Plant, Warehouse 1"
+                        value={formData.addressName || ''} 
+                        onChange={(e) => setFormData({ ...formData, addressName: e.target.value })} 
+                        className="!text-xs !h-8 font-semibold text-slate-900" 
+                      />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <Input label="Address Line 1" id="vaddress1" placeholder="Street / Building / Area" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="!text-xs !h-8" />
+                      <Input label="Address Line 2" id="vaddress2" placeholder="Landmark / Suite" value={formData.address2} onChange={(e) => setFormData({ ...formData, address2: e.target.value })} className="!text-xs !h-8" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
                       <Input
                         label="Zip Code (PIN)"
                         id="vzip"
@@ -3231,20 +3282,20 @@ const VendorsTab = () => {
                           }
                         }}
                         onBlur={() => { if (formData.zipCode && formData.zipCode.length === 6) handleZipCodeBlur(formData.zipCode); }}
-                        className="!text-xs !h-9 font-mono"
+                        className="!text-xs !h-8 font-mono"
                       />
-                      <Input label="City" id="vcity" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="!text-xs !h-9" />
+                      <Input label="City" id="vcity" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} className="!text-xs !h-8" />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input label="State" id="vstate" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-9" />
-                      <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-9" />
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <Input label="State" id="vstate" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-8" />
+                      <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-8" />
                     </div>
 
-                    {/* Default Address GSTIN Field */}
-                    <div className="border-t border-blue-150 pt-2.5 mt-1">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Primary Address GSTIN</label>
+                    {/* Manual GSTIN Field (Simple & Clean) */}
+                    <div className="border-t border-slate-200 pt-2 mt-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">GSTIN / Tax Identification</label>
                         <label className="flex items-center space-x-1.5 cursor-pointer">
                           <input
                             type="checkbox"
@@ -3266,24 +3317,18 @@ const VendorsTab = () => {
 
                       {!formData.hasNoGst && (
                         <Input
-                          label="Default GSTIN Code"
                           id="vgstin"
-                          placeholder="15-character GSTIN (e.g. 27ABCDE1234F1Z5)"
-                          value={formData.gstin || (formData.gstList && formData.gstList[0] ? formData.gstList[0].gstin : '')}
+                          placeholder="Manual GSTIN (e.g. 27ABCDE1234F1Z5)"
+                          value={formData.gstin || ''}
                           onChange={(e) => {
                             const val = e.target.value.toUpperCase().trim();
-                            let detectedState = formData.state;
-                            if (val.length >= 2) {
-                              const prefix = val.substring(0, 2);
-                              if (gstStateMap[prefix]) {
-                                detectedState = gstStateMap[prefix];
-                              }
-                            }
-                            const updatedGstList = [...(formData.gstList || [])];
-                            updatedGstList[0] = { state: detectedState || formData.state || '', gstin: val };
-                            setFormData({ ...formData, gstin: val, state: detectedState || formData.state, gstList: updatedGstList });
+                            setFormData({ 
+                              ...formData, 
+                              gstin: val, 
+                              gstList: [{ state: formData.state || '', gstin: val }] 
+                            });
                           }}
-                          className="!text-xs !h-9 font-mono uppercase"
+                          className="!text-xs !h-8 font-mono uppercase font-bold text-slate-900"
                         />
                       )}
                     </div>
@@ -3292,7 +3337,7 @@ const VendorsTab = () => {
 
                 {/* Secondary Locations loop */}
                 {(formData.secondaryAddresses || []).map((addr, idx) => (
-                  <div key={idx} className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50/30">
+                  <div key={idx} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
                     <div className="bg-slate-100 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between">
                       <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Secondary Location #{idx + 1}</span>
                       <button
@@ -3308,8 +3353,24 @@ const VendorsTab = () => {
                         <span>Remove</span>
                       </button>
                     </div>
-                    <div className="p-3 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 space-y-2.5">
+                      {/* Manual Address Name / Location Label on top */}
+                      <div>
+                        <Input
+                          label="Address / Location Name"
+                          id={`vsecaddressName_${idx}`}
+                          placeholder="e.g. Branch Office, Warehouse B, Plant 2"
+                          value={addr.locationName || ''}
+                          onChange={(e) => {
+                            const updated = [...(formData.secondaryAddresses || [])];
+                            updated[idx] = { ...updated[idx], locationName: e.target.value };
+                            setFormData({ ...formData, secondaryAddresses: updated });
+                          }}
+                          className="!text-xs !h-8 font-semibold text-slate-900"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
                         <Input
                           label="Address Line 1"
                           id={`vsecaddress1_${idx}`}
@@ -3320,7 +3381,7 @@ const VendorsTab = () => {
                             updated[idx] = { ...updated[idx], address: e.target.value };
                             setFormData({ ...formData, secondaryAddresses: updated });
                           }}
-                          className="!text-xs !h-9"
+                          className="!text-xs !h-8"
                         />
                         <Input
                           label="Address Line 2"

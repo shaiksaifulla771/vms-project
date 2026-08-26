@@ -6,7 +6,12 @@ import {
   Eye,
   UserCheck,
   XCircle,
-  CheckCircle2
+  CheckCircle2,
+  Plus,
+  RefreshCw,
+  GitFork,
+  Warehouse,
+  History
 } from 'lucide-react';
 
 const NetworkAndSites = () => {
@@ -296,7 +301,7 @@ const NetworkAndSites = () => {
               onClick={() => setShowAddSiteModal(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
-              <i className="ti ti-plus fs-5"></i>
+              <Plus className="w-3.5 h-3.5" />
               <span>Add Site</span>
             </button>
           )}
@@ -306,7 +311,7 @@ const NetworkAndSites = () => {
               onClick={() => setShowAddWarehouseModal(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
-              <i className="ti ti-plus fs-5"></i>
+              <Plus className="w-3.5 h-3.5" />
               <span>Add Warehouse</span>
             </button>
           )}
@@ -316,18 +321,10 @@ const NetworkAndSites = () => {
               onClick={() => setShowAddUserModal(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors"
             >
-              <i className="ti ti-plus fs-5"></i>
+              <Plus className="w-3.5 h-3.5" />
               <span>Add User</span>
             </button>
           )}
-
-          <button
-            onClick={fetchData}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs rounded-lg shadow-2xs transition-colors"
-          >
-            <i className={`ti ti-refresh fs-5 ${loading ? 'animate-spin' : ''}`}></i>
-            <span>Refresh</span>
-          </button>
         </div>
       </div>
 
@@ -356,7 +353,7 @@ const NetworkAndSites = () => {
             : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
         >
-          <i className="ti ti-git-fork fs-5"></i>
+          <GitFork className="w-4 h-4" />
           <span>Facility Hierarchy</span>
         </button>
 
@@ -367,7 +364,7 @@ const NetworkAndSites = () => {
             : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
         >
-          <i className="ti ti-building fs-5"></i>
+          <Building2 className="w-4 h-4" />
           <span>Sites</span>
         </button>
 
@@ -378,7 +375,7 @@ const NetworkAndSites = () => {
             : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
         >
-          <i className="ti ti-home-2 fs-5"></i>
+          <Warehouse className="w-4 h-4" />
           <span>Warehouses</span>
         </button>
 
@@ -389,7 +386,7 @@ const NetworkAndSites = () => {
             : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
         >
-          <i className="ti ti-user-check fs-5"></i>
+          <UserCheck className="w-4 h-4" />
           <span>User Access Scopes</span>
         </button>
 
@@ -400,7 +397,7 @@ const NetworkAndSites = () => {
             : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
         >
-          <i className="ti ti-history fs-5"></i>
+          <History className="w-4 h-4" />
           <span>Audit Logs</span>
         </button>
       </div>
@@ -592,7 +589,7 @@ const NetworkAndSites = () => {
                       onClick={() => setActiveTab('hierarchyTree')}
                       className="px-3 py-1 bg-white hover:bg-slate-100 text-blue-600 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs flex items-center justify-center gap-1 mx-auto"
                     >
-                      <i className="ti ti-git-fork fs-5"></i> Manage in Tree
+                      <GitFork className="w-3.5 h-3.5" /> Manage in Tree
                     </button>
                   </td>
                 </tr>
@@ -633,7 +630,7 @@ const NetworkAndSites = () => {
                       onClick={() => setActiveTab('hierarchyTree')}
                       className="px-3 py-1 bg-white hover:bg-slate-100 text-blue-600 font-bold text-xs rounded-lg border border-slate-200 shadow-2xs flex items-center justify-center gap-1 mx-auto"
                     >
-                      <i className="ti ti-git-fork fs-5"></i> Manage in Tree
+                      <GitFork className="w-3.5 h-3.5" /> Manage in Tree
                     </button>
                   </td>
                 </tr>

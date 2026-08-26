@@ -13,7 +13,7 @@ export default function BomPageWrapper({ children, className = '' }) {
   };
 
   const isFullscreenMode = location.pathname === '/bom/new' || location.pathname.match(/^\/bom\/[a-f0-9]+\/edit$/i);
-  const containerClass = isFullscreenMode ? 'p-8 max-w-7xl mx-auto min-h-screen' : '';
+  const containerClass = isFullscreenMode ? 'w-full max-w-full' : '';
 
   return (
     <motion.div

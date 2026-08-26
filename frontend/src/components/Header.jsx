@@ -80,14 +80,14 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToP
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 sm:px-5 fixed left-0 right-0 top-0 z-30 shadow-xs">
-      <div className="flex items-center space-x-3">
+    <header className="bg-white border-b border-slate-200 h-12 flex items-center justify-between px-3 sm:px-4 fixed left-0 right-0 top-0 z-30 shadow-2xs">
+      <div className="flex items-center space-x-2.5">
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+          className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded-md text-xs font-bold transition-colors"
           title="Open Modules Menu"
         >
-          <Menu className="h-4 w-4" />
+          <Menu className="h-3.5 w-3.5" />
           <span>Modules</span>
         </button>
 
@@ -212,15 +212,6 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToP
             )}
           </div>
         )}
-
-        <button
-          onClick={handleRefresh}
-          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors flex items-center space-x-1.5 px-2.5 text-xs font-bold border border-slate-200"
-          title="Refresh Data & View"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
 
         <div className="h-6 border-l border-slate-200 hidden sm:block"></div>
 

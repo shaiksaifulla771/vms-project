@@ -35,11 +35,9 @@ export default function MPNMaster() {
   const [manufacturers, setManufacturers] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // 4 Filter states
+  // Filter states
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [materialFilter, setMaterialFilter] = useState('');
-  const [vendorFilter, setVendorFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
 
   // Modal states
@@ -92,48 +90,48 @@ export default function MPNMaster() {
         api.get(endpoint, {
           params: {
             status: statusFilter,
-            materialId: materialFilter,
-            vendorId: vendorFilter,
           },
         }),
-        fetchAllPages('/api/materials'),
-        fetchAllPages('/api/vendors'),
-        api.get('/api/mpns/manufacturers'),
+        materials.length > 0 ? Promise.resolve(null) : fetchAllPages('/api/materials'),
+        vendors.length > 0 ? Promise.resolve(null) : fetchAllPages('/api/vendors'),
+        manufacturers.length > 0 ? Promise.resolve(null) : api.get('/api/mpns/manufacturers'),
       ]);
 
       const mpnList = Array.isArray(mpnRes.data?.data) ? mpnRes.data.data : Array.isArray(mpnRes.data) ? mpnRes.data : [];
-      const mfrList = Array.isArray(mfrRes.data?.data) ? mfrRes.data.data : Array.isArray(mfrRes.data) ? mfrRes.data : [];
-
       setRows(mpnList);
-      setMaterials(matList);
-      setVendors(venList);
-      setManufacturers(mfrList);
+
+      if (matList) setMaterials(matList);
+      if (venList) setVendors(venList);
+      if (mfrRes) {
+        const mfrList = Array.isArray(mfrRes.data?.data) ? mfrRes.data.data : Array.isArray(mfrRes.data) ? mfrRes.data : [];
+        setManufacturers(mfrList);
+      }
     } catch (err) {
       console.error('[MPNMaster] fetchAll error:', err);
       showToast(err.response?.data?.error || 'Failed to load MPN data', 'error');
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, materialFilter, vendorFilter]);
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
 
   // ---------- Add modal: auto-populate next sequence code ----------
-  const openAddModal = async () => {
+  const openAddModal = () => {
     setIsEdit(false);
     setFormErrors({});
     setForm(EMPTY_FORM);
     setModalOpen(true);
-    try {
-      const res = await api.get('/api/mpns/sequence-peek');
-      if (res.data && res.data.nextCode) {
-        setForm((prev) => ({ ...prev, mpnCode: res.data.nextCode }));
-      }
-    } catch {
-      // Non-fatal
-    }
+
+    api.get('/api/mpns/sequence-peek')
+      .then(res => {
+        if (res.data && res.data.nextCode) {
+          setForm((prev) => ({ ...prev, mpnCode: res.data.nextCode }));
+        }
+      })
+      .catch(() => {});
   };
 
   const openEditModal = (row) => {
@@ -432,7 +430,7 @@ export default function MPNMaster() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, materialFilter, vendorFilter]);
+  }, [search, statusFilter]);
 
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -440,11 +438,11 @@ export default function MPNMaster() {
   }, [filteredRows, currentPage, pageSize]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Toast alert */}
       {toast.show && (
         <div
-          className={`p-3 rounded-lg text-xs font-semibold text-white shadow-md flex justify-between items-center ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
+          className={`p-2.5 rounded-lg text-xs font-semibold text-white shadow-md flex justify-between items-center ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
             }`}
         >
           <span>{toast.message}</span>
@@ -452,67 +450,35 @@ export default function MPNMaster() {
         </div>
       )}
 
-      {/* Toolbar & 4 Search/Filter Controls Bar */}
-      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Left: Search & Filter Selects */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 flex-1">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+      {/* Toolbar — Compact, Simple, Neat & Clear */}
+      <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs space-y-0">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+          {/* Left: Unified Search & Status Filter */}
+          <div className="flex items-center gap-2 flex-1">
+            {/* Unified Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
               <Input
                 type="text"
-                placeholder="Search MPN ID, part #, material..."
+                placeholder="Search MPN ID, part #, material, vendor..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 h-9 text-xs"
+                className="pl-8 h-8 text-xs w-full bg-slate-50/50 border-slate-200"
               />
             </div>
 
             {/* Status Filter */}
-            <div>
+            <div className="w-36 shrink-0">
               <Select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-9 text-xs"
+                className="h-8 text-xs bg-slate-50/50 border-slate-200"
               >
                 <option value="All">All Statuses</option>
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
                 <option value="Draft">Draft</option>
-                <option value="Deleted">Deleted (Restore History)</option>
-              </Select>
-            </div>
-
-            {/* Material Filter */}
-            <div>
-              <Select
-                value={materialFilter}
-                onChange={(e) => setMaterialFilter(e.target.value)}
-                className="h-9 text-xs"
-              >
-                <option value="">All Materials</option>
-                {materials.map((m) => (
-                  <option key={m._id} value={m._id}>
-                    {m.name} ({m.code})
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            {/* Vendor Filter */}
-            <div>
-              <Select
-                value={vendorFilter}
-                onChange={(e) => setVendorFilter(e.target.value)}
-                className="h-9 text-xs"
-              >
-                <option value="">All Vendors</option>
-                {vendors.map((v) => (
-                  <option key={v._id} value={v._id}>
-                    {v.name} {v.company ? `(${v.company})` : ''}
-                  </option>
-                ))}
+                <option value="Deleted">Deleted (History)</option>
               </Select>
             </div>
           </div>
@@ -558,19 +524,15 @@ export default function MPNMaster() {
               </>
             )}
 
-            <Button variant="outline" size="sm" onClick={handleExportExcel} className="text-xs h-9">
+            <Button variant="outline" size="sm" onClick={handleExportExcel} className="text-xs h-8">
               <Download className="h-3.5 w-3.5 mr-1" />
-              Export to Excel
+              Export
             </Button>
-            <Button variant="outline" size="sm" onClick={fetchAll} className="text-xs h-9">
-              <RefreshCw className="h-3.5 w-3.5 mr-1" />
-              Refresh
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setBulkModalOpen(true)} className="text-xs h-9 bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm">
+            <Button variant="outline" size="sm" onClick={() => setBulkModalOpen(true)} className="text-xs h-8 bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-2xs">
               <FileSpreadsheet className="h-3.5 w-3.5 mr-1 text-slate-500" />
               Bulk Create
             </Button>
-            <Button variant="primary" size="sm" onClick={openAddModal} className="text-xs h-9">
+            <Button variant="primary" size="sm" onClick={openAddModal} className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold">
               <Plus className="h-3.5 w-3.5 mr-1" />
               Add MPN
             </Button>

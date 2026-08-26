@@ -1,52 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SiteProvider } from './context/SiteContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Masters from './pages/Masters';
-import Vendors from './pages/Vendors';
-import Planning from './pages/Planning';
-import Inventory from './pages/Inventory';
-import Purchasing from './pages/Purchasing';
-import Manufacturing from './pages/Manufacturing';
-import Quality from './pages/Quality';
-import Reports from './pages/Reports';
-import Settings from './pages/Settings';
-import Warehouse from './pages/Warehouse';
-import Scheduling from './pages/Scheduling';
-
 import ErrorBoundary from './components/ErrorBoundary';
-import Sites from './pages/Sites';
-import MRP from './pages/MRP';
-import VMSWorkbench from './pages/VMSWorkbench';
-import EmailTemplates from './pages/EmailTemplates';
-import Workflows from './pages/Workflows';
-import Plugins from './pages/Plugins';
 
-import AdminControlCenter from './pages/admin/AdminControlCenter';
-import NetworkAndSites from './pages/admin/NetworkAndSites';
-import AuditAndActivity from './pages/admin/AuditAndActivity';
-import UsersAndAccessScope from './pages/admin/UsersAndAccessScope';
+// Route-level code splitting — each module loads only when navigated to
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Masters = lazy(() => import('./pages/Masters'));
+const Vendors = lazy(() => import('./pages/Vendors'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const Purchasing = lazy(() => import('./pages/Purchasing'));
+const Manufacturing = lazy(() => import('./pages/Manufacturing'));
+const Quality = lazy(() => import('./pages/Quality'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Warehouse = lazy(() => import('./pages/Warehouse'));
+const Scheduling = lazy(() => import('./pages/Scheduling'));
+const Sites = lazy(() => import('./pages/Sites'));
+const MRP = lazy(() => import('./pages/MRP'));
+const VMSWorkbench = lazy(() => import('./pages/VMSWorkbench'));
+const EmailTemplates = lazy(() => import('./pages/EmailTemplates'));
+const Workflows = lazy(() => import('./pages/Workflows'));
+const Plugins = lazy(() => import('./pages/Plugins'));
+const AdminControlCenter = lazy(() => import('./pages/admin/AdminControlCenter'));
+const NetworkAndSites = lazy(() => import('./pages/admin/NetworkAndSites'));
+const AuditAndActivity = lazy(() => import('./pages/admin/AuditAndActivity'));
+const UsersAndAccessScope = lazy(() => import('./pages/admin/UsersAndAccessScope'));
+const BOMRoutes = lazy(() => import('./pages/bom/BOMRoutes'));
+const ProductionRoutes = lazy(() => import('./pages/production/ProductionRoutes'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/legal/TermsOfService'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
-// New Routed BOM Module
-import BOMRoutes from './pages/bom/BOMRoutes';
-import ProductionRoutes from './pages/production/ProductionRoutes';
-
-// AI Chat Integration
-import ChatPanel from './features/chat/ChatPanel';
-import { Sparkles } from 'lucide-react';
-
-// Legal, Recovery & Trust Components
-import NotFound from './pages/NotFound';
-import PrivacyPolicy from './pages/legal/PrivacyPolicy';
-import TermsOfService from './pages/legal/TermsOfService';
+// Eagerly loaded lightweight components
 import CookieBanner from './components/CookieBanner';
 import SupportModal from './components/SupportModal';
 
-import ResetPassword from './pages/ResetPassword';
+// Loading fallback
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-[300px]">
+    <div className="animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-blue-500"></div>
+  </div>
+);
 
 // Role-based Route Guard Component
 const ProtectedRoute = ({ roles, children }) => {
@@ -80,8 +79,7 @@ const AppContent = () => {
   const { user, loading, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // Full screen mode by default
-  const [chatOpen, setChatOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [supportOpen, setSupportOpen] = useState(false);
 
   if (loading) {
@@ -95,12 +93,12 @@ const AppContent = () => {
 
   // Support link-based Password Reset
   if (location.pathname === '/reset-password') {
-    return <ResetPassword />;
+    return <Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>;
   }
 
   // Auto-login fallback if user is null
   if (!user) {
-    return <Login />;
+    return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
   }
 
   // Handle non-ACTIVE account statuses cleanly
@@ -189,66 +187,64 @@ const AppContent = () => {
         setSidebarCollapsed={setSidebarCollapsed}
       />
 
-      {/* Central content area - natural smooth window scrolling */}
-      <main className="flex-1 pt-20 px-4 sm:px-6 lg:px-8 pb-28 w-full max-w-7xl mx-auto min-w-0">
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard/*" element={<Dashboard />} />
-          <Route path="/admin/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-          <Route path="/admin/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-          <Route path="/admin/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-          <Route path="/admin/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
-          <Route path="/admin/audit-logs/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
-          <Route path="/admin/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-          <Route path="/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-          <Route path="/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-          <Route path="/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-          <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-          <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
-          <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
-          <Route path="/masters/*" element={<Masters />} />
-          <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
-          <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator']}><Warehouse /></ProtectedRoute>} />
-          <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
-          <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
-          <Route path="/bom/*" element={<BOMRoutes />} />
-          <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
-          <Route path="/scheduling/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Production', 'Production Manager', 'Planner']}><Scheduling /></ProtectedRoute>} />
-          <Route path="/purchasing/*" element={<ProtectedRoute roles={['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']}><Purchasing /></ProtectedRoute>} />
-          <Route path="/workflows/*" element={<ProtectedRoute roles={['Admin']}><Workflows /></ProtectedRoute>} />
-          <Route path="/email/*" element={<ProtectedRoute roles={['Admin']}><EmailTemplates /></ProtectedRoute>} />
-          <Route path="/plugins/*" element={<ProtectedRoute roles={['Admin']}><Plugins /></ProtectedRoute>} />
-          <Route path="/quality/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector']}><Quality /></ProtectedRoute>} />
-          <Route path="/reports/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector', 'Finance']}><Reports /></ProtectedRoute>} />
-          <Route path="/settings/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
-          
-          {/* Trust, Legal & Custom 404 Recovery Routes */}
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/terms-of-service" element={<TermsOfService />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+      {/* Central content area — full-screen, fit-to-screen data density */}
+      <main className="flex-1 pt-14 px-2 sm:px-4 pb-6 w-full max-w-full mx-auto min-w-0">
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard/*" element={<Dashboard />} />
+            <Route path="/admin/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+            <Route path="/admin/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+            <Route path="/admin/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
+            <Route path="/admin/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+            <Route path="/admin/audit-logs/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
+            <Route path="/admin/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+            <Route path="/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+            <Route path="/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
+            <Route path="/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
+            <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
+            <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+            <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
+            <Route path="/masters/*" element={<Masters />} />
+            <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+            <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator']}><Warehouse /></ProtectedRoute>} />
+            <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
+            <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+            <Route path="/bom/*" element={<BOMRoutes />} />
+            <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
+            <Route path="/scheduling/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Production', 'Production Manager', 'Planner']}><Scheduling /></ProtectedRoute>} />
+            <Route path="/purchasing/*" element={<ProtectedRoute roles={['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']}><Purchasing /></ProtectedRoute>} />
+            <Route path="/workflows/*" element={<ProtectedRoute roles={['Admin']}><Workflows /></ProtectedRoute>} />
+            <Route path="/email/*" element={<ProtectedRoute roles={['Admin']}><EmailTemplates /></ProtectedRoute>} />
+            <Route path="/plugins/*" element={<ProtectedRoute roles={['Admin']}><Plugins /></ProtectedRoute>} />
+            <Route path="/quality/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector']}><Quality /></ProtectedRoute>} />
+            <Route path="/reports/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector', 'Finance']}><Reports /></ProtectedRoute>} />
+            <Route path="/settings/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
+            
+            {/* Trust, Legal & Custom 404 Recovery Routes */}
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
 
         {/* Global Enterprise Trust & Compliance Footer */}
-        <footer className="mt-16 pt-6 border-t border-slate-800/80 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <footer className="mt-10 pt-4 border-t border-slate-200 text-[10px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
-            &copy; {new Date().getFullYear()} VendorOS Enterprise ERP &bull; Production v2.4
+            &copy; {new Date().getFullYear()} VendorOS Enterprise ERP &bull; v2.4
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setSupportOpen(true)}
-              className="text-slate-400 hover:text-blue-400 transition-colors cursor-pointer"
+              className="text-slate-400 hover:text-blue-500 transition-colors cursor-pointer"
             >
-              Support & Help
+              Support
             </button>
             <span>&bull;</span>
-            <a href="/privacy-policy" className="text-slate-400 hover:text-blue-400 transition-colors">
-              Privacy Policy
-            </a>
+            <a href="/privacy-policy" className="text-slate-400 hover:text-blue-500 transition-colors">Privacy</a>
             <span>&bull;</span>
-            <a href="/terms-of-service" className="text-slate-400 hover:text-blue-400 transition-colors">
-              Terms of Service
-            </a>
+            <a href="/terms-of-service" className="text-slate-400 hover:text-blue-500 transition-colors">Terms</a>
           </div>
         </footer>
       </main>
@@ -258,20 +254,6 @@ const AppContent = () => {
 
       {/* Support & Health Modal */}
       <SupportModal isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
-
-      {/* Floating AI Chat Button */}
-      {user && (
-        <button
-          onClick={() => setChatOpen(true)}
-          className="fixed bottom-6 right-6 p-4 bg-blue-600 text-white rounded-full shadow-2xl hover:bg-blue-700 hover:shadow-blue-500/50 hover:-translate-y-1 transition-all z-50 flex items-center justify-center group"
-          title="Open AI Assistant"
-        >
-          <Sparkles className="w-6 h-6 group-hover:scale-110 transition-transform" />
-        </button>
-      )}
-
-      {/* AI Chat Panel */}
-      <ChatPanel isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 };

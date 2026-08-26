@@ -26,13 +26,16 @@ export default function BomNew() {
 
   return (
     <BomPageWrapper>
-      <div className="mb-6">
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Create New Recipe</h1>
-        <p className="text-sm text-slate-500 font-medium mt-1">Define the assembly product and ingredients.</p>
+      <div className="mb-3">
+        <button onClick={() => navigate(returnTo)} className="inline-flex items-center text-[11px] font-semibold text-slate-400 hover:text-blue-600 transition-colors mb-2">
+          ← Back to BOM List
+        </button>
+        <h1 className="text-base font-bold text-slate-900 tracking-tight">Create New Recipe</h1>
+        <p className="text-[10px] text-slate-400 font-medium">Define the assembly product and ingredients.</p>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm font-semibold">
+        <div className="mb-3 bg-red-50 border border-red-200 text-red-600 p-2.5 rounded-lg text-xs font-semibold">
           {error}
         </div>
       )}

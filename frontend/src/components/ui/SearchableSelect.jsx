@@ -19,7 +19,8 @@ export default function SearchableSelect({
 
   const [dropdownCoords, setDropdownCoords] = useState({ top: 0, left: 0, width: 0 });
 
-  const selectedOption = options.find((opt) => opt.value === value);
+  const valStr = String(value?._id || value || '');
+  const selectedOption = options.find((opt) => String(opt.value) === valStr);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -67,19 +68,23 @@ export default function SearchableSelect({
         }`}
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
-        <div className="truncate flex-1 font-medium">
-          {selectedOption ? selectedOption.label : <span className="text-slate-400">{placeholder}</span>}
+        <div className="truncate flex-1">
+          {selectedOption ? (
+            <span className="text-slate-900 font-bold text-xs">{selectedOption.label}</span>
+          ) : (
+            <span className="text-slate-400 font-normal text-xs">{placeholder}</span>
+          )}
         </div>
-        <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-2" />
+        <ChevronDown className="w-3.5 h-3.5 text-slate-500 ml-2" />
       </div>
 
       {isOpen && createPortal(
         <div 
           ref={dropdownRef}
-          className="absolute z-[9999] mt-1 bg-white border border-slate-200 rounded-md shadow-2xl glass-panel"
+          className="absolute z-[9999] mt-1 bg-white border border-slate-300 rounded-md shadow-lg"
           style={{ top: dropdownCoords.top, left: dropdownCoords.left, width: dropdownCoords.width }}
         >
-          <div className="p-2 border-b border-slate-100 flex items-center bg-slate-50/50">
+          <div className="p-2 border-b border-slate-200 flex items-center bg-slate-50">
             <Search className="w-3.5 h-3.5 text-slate-400 mr-2" />
             <Input
               autoFocus
