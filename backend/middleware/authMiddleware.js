@@ -8,6 +8,7 @@ const scopeResolver = require('../utils/scopeResolver');
 // In-Memory Live User Status Cache (8-second bounded TTL across multi-instance nodes)
 const statusCache = new Map(); // Key: userId (String) -> { status, role, expiresAt }
 const STATUS_CACHE_TTL_MS = 8000;
+const STATUS_CACHE_MAX_SIZE = 2000;
 
 /**
  * Invalidate user status cache immediately on write operations (deactivate, approve, suspend)
@@ -127,6 +128,9 @@ exports.protect = async (req, res, next) => {
       role: liveCheck.role,
       expiresAt: now + STATUS_CACHE_TTL_MS
     };
+    if (statusCache.size >= STATUS_CACHE_MAX_SIZE) {
+      statusCache.clear();
+    }
     statusCache.set(userIdStr, cachedStatus);
   }
 

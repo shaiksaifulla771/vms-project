@@ -66,9 +66,9 @@ const issueAuthTokens = async (res, user, req) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Strict',
+    sameSite: 'Lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: '/api/auth'
+    path: '/'
   });
 
   return token;
@@ -675,9 +675,9 @@ exports.refresh = async (req, res, next) => {
     res.cookie('refreshToken', newRefreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Strict',
+      sameSite: 'Lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/api/auth'
+      path: '/'
     });
 
     res.status(200).json({ success: true, token });
@@ -686,23 +686,38 @@ exports.refresh = async (req, res, next) => {
   }
 };
 
-// @desc    Logout user
+// @desc    Logout user (Revokes session and clears auth cookies cleanly)
 // @route   POST /api/auth/logout
-// @access  Private
+// @access  Public / Private
 exports.logout = async (req, res, next) => {
   try {
+    const refreshToken = req.cookies ? req.cookies.refreshToken : null;
+    
+    // Revoke user by session if authenticated
     if (req.user && req.user._id) {
       await User.updateOne(
         { _id: req.user._id },
         { $inc: { tokenVersion: 1 }, $unset: { refreshTokenHash: 1 } }
       );
+    } else if (refreshToken) {
+      // Or revoke by refresh token hash if present
+      const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      await User.updateOne(
+        { refreshTokenHash: hashedToken },
+        { $inc: { tokenVersion: 1 }, $unset: { refreshTokenHash: 1 } }
+      );
     }
-    res.cookie('refreshToken', 'none', {
-      expires: new Date(Date.now() + 5 * 1000),
+
+    const cookieOpts = {
       httpOnly: true,
-      path: '/api/auth'
-    });
-    res.status(200).json({ success: true, data: {} });
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax'
+    };
+
+    res.clearCookie('refreshToken', { ...cookieOpts, path: '/' });
+    res.clearCookie('refreshToken', { ...cookieOpts, path: '/api/auth' });
+    
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
   } catch (err) {
     next(err);
   }
