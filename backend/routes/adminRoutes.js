@@ -16,7 +16,8 @@ const {
   getAuditLogs,
   getActiveUsersAndSessions,
   updateUserAccess,
-  toggleUserAccountStatus
+  toggleUserAccountStatus,
+  bootstrapMasterData
 } = require('../controllers/adminController');
 
 // All admin routes require Admin role
@@ -55,6 +56,9 @@ router.get('/active-users', getActiveUsersAndSessions);
 router.put('/users/:userId/access', updateUserAccess);
 router.put('/users/:userId/access-scope', updateUserAccess);
 router.put('/users/:userId/toggle-status', toggleUserAccountStatus);
+
+// 7. Master Data Catalog Bootstrap
+router.post('/bootstrap-master-data', bootstrapMasterData);
 
 module.exports = router;
 

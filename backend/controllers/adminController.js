@@ -714,6 +714,22 @@ exports.toggleUserAccountStatus = async (req, res) => {
   }
 };
 
+// 7. Master Data Catalog Bootstrap & Sync
+exports.bootstrapMasterData = async (req, res) => {
+  try {
+    const MasterDataBootstrapService = require('../services/masterDataBootstrapService');
+    const result = await MasterDataBootstrapService.bootstrapMasterData(true);
+    await createAuditRecord({
+      action: 'BOOTSTRAP_MASTER_DATA',
+      reason: 'Admin re-synchronized and bootstrapped all master data catalogs',
+      module: 'Master Configuration'
+    }, req);
+    res.json({ success: true, message: 'Master Data successfully restored and synchronized.', result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 exports.createAuditRecord = createAuditRecord;
 
 

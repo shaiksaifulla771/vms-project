@@ -30,47 +30,14 @@ async function startServer() {
     // Start the background queue worker
     require('./worker');
 
-    // Seed default templates, workflows, and plugins
+    // Seed default templates, workflows, plugins, and master data (Sites, Warehouses, Materials, BOMs, Vendors)
     try {
       await require('./services/emailTemplateService').seedDefaultTemplates();
       await require('./services/workflowEngineService').seedDefaultWorkflows();
       await require('./services/pluginManagerService').seedDefaultPlugins();
       
-      // Auto-ensure Master Admin and Dev Admin credentials exist & active
-      const User = require('./models/User');
-      const masterEmail = 'shaiksaifulla771@gmail.com';
-      let masterUser = await User.findOne({ email: masterEmail });
-      if (!masterUser) {
-        await User.create({
-          username: 'Shaik Saifulla',
-          email: masterEmail,
-          password: 'Saif@2005',
-          role: 'Admin',
-          accountStatus: 'ACTIVE',
-          approvalStatus: 'APPROVED',
-          isVerified: true,
-          emailVerified: true,
-          fieldSecurityLevel: 'Restricted'
-        });
-        console.log('[VMS] Master Admin initialized: ' + masterEmail);
-      }
-
-      const defaultAdminEmail = 'admin@vms.com';
-      let defaultAdmin = await User.findOne({ email: defaultAdminEmail });
-      if (!defaultAdmin) {
-        await User.create({
-          username: 'System Admin',
-          email: defaultAdminEmail,
-          password: 'admin123',
-          role: 'Admin',
-          accountStatus: 'ACTIVE',
-          approvalStatus: 'APPROVED',
-          isVerified: true,
-          emailVerified: true,
-          fieldSecurityLevel: 'Restricted'
-        });
-        console.log('[VMS] Default Admin initialized: ' + defaultAdminEmail);
-      }
+      const MasterDataBootstrapService = require('./services/masterDataBootstrapService');
+      await MasterDataBootstrapService.bootstrapMasterData();
     } catch (err) {
       console.error('[VMS] Initial Seeding Error:', err.message);
     }
