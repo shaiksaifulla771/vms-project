@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 
+const path = require('path');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
@@ -8,7 +9,8 @@ const errorHandler = require('./middleware/errorHandler');
 // Models removed - seeding moved to scripts/seed.js
 const { detectTransactionSupport } = require('./utils/transaction');
 
-// Load environment variables
+// Load environment variables (supports root and backend directory launches)
+dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config();
 
 // Validate JWT secret & production guards at server boot time
@@ -33,6 +35,42 @@ async function startServer() {
       await require('./services/emailTemplateService').seedDefaultTemplates();
       await require('./services/workflowEngineService').seedDefaultWorkflows();
       await require('./services/pluginManagerService').seedDefaultPlugins();
+      
+      // Auto-ensure Master Admin and Dev Admin credentials exist & active
+      const User = require('./models/User');
+      const masterEmail = 'shaiksaifulla771@gmail.com';
+      let masterUser = await User.findOne({ email: masterEmail });
+      if (!masterUser) {
+        await User.create({
+          username: 'Shaik Saifulla',
+          email: masterEmail,
+          password: 'Saif@2005',
+          role: 'Admin',
+          accountStatus: 'ACTIVE',
+          approvalStatus: 'APPROVED',
+          isVerified: true,
+          emailVerified: true,
+          fieldSecurityLevel: 'Restricted'
+        });
+        console.log('[VMS] Master Admin initialized: ' + masterEmail);
+      }
+
+      const defaultAdminEmail = 'admin@vms.com';
+      let defaultAdmin = await User.findOne({ email: defaultAdminEmail });
+      if (!defaultAdmin) {
+        await User.create({
+          username: 'System Admin',
+          email: defaultAdminEmail,
+          password: 'admin123',
+          role: 'Admin',
+          accountStatus: 'ACTIVE',
+          approvalStatus: 'APPROVED',
+          isVerified: true,
+          emailVerified: true,
+          fieldSecurityLevel: 'Restricted'
+        });
+        console.log('[VMS] Default Admin initialized: ' + defaultAdminEmail);
+      }
     } catch (err) {
       console.error('[VMS] Initial Seeding Error:', err.message);
     }

@@ -127,6 +127,7 @@ export const AuthProvider = ({ children }) => {
     setError(null);
 
     // 1. Try Backend Direct Login (Supports MongoDB users e.g. admin@vms.com / admin123)
+    let backendErrData = null;
     try {
       const res = await api.post('/auth/login', { email, password });
       if (res.data && res.data.success) {
@@ -137,11 +138,12 @@ export const AuthProvider = ({ children }) => {
         return { success: true, user: userData };
       }
     } catch (backendErr) {
-      // If backend login returned specific invalid credentials, don't ignore if not 401
-      const errMsg = backendErr.response?.data?.error || backendErr.response?.data?.message;
-      if (errMsg && backendErr.response?.status !== 401) {
-        setError(errMsg);
-        return { success: false, error: errMsg };
+      backendErrData = backendErr.response?.data;
+      if (backendErrData?.requireOtp) {
+        return { success: false, requireOtp: true, error: backendErrData.error };
+      }
+      if (backendErrData?.requireApproval) {
+        return { success: false, requireApproval: true, error: backendErrData.error };
       }
     }
 
@@ -163,8 +165,9 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: msg };
     }
 
-    setError('Invalid email or password.');
-    return { success: false, error: 'Invalid email or password.' };
+    const fallbackMsg = backendErrData?.error || backendErrData?.message || 'Invalid email or password.';
+    setError(fallbackMsg);
+    return { success: false, error: fallbackMsg };
   };
 
   const loginWithGoogle = async () => {

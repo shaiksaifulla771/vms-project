@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { isFirebaseConfigured } from '../config/firebase';
@@ -48,6 +49,7 @@ const Xperte3DLogo = ({ size = "h-11 w-11" }) => (
 
 const Login = () => {
   usePageMeta('Sign In & Authentication', 'Secure enterprise authentication portal for VendorOS.');
+  const navigate = useNavigate();
   const { loginWithEmailPassword, loginWithGoogle, registerWithEmailPassword, verifyRegistrationOtp, resendRegistrationOtp, sendPasswordReset } = useAuth();
   const [activeTab, setActiveTab] = useState('signin'); // 'signin', 'signup', 'forgot', 'otp', 'pending_notice'
   const [username, setUsername] = useState('');
@@ -94,7 +96,9 @@ const Login = () => {
     const res = await loginWithEmailPassword(email, password);
     setIsLoading(false);
 
-    if (!res.success) {
+    if (res.success) {
+      navigate('/dashboard');
+    } else {
       if (res.requireOtp) {
         setSuccessMsg('Account requires OTP verification. Please enter the 4-digit code.');
         setActiveTab('otp');
@@ -219,7 +223,9 @@ const Login = () => {
     const res = await loginWithGoogle();
     setIsLoading(false);
 
-    if (!res.success && res.error !== 'Sign in cancelled') {
+    if (res.success) {
+      navigate('/dashboard');
+    } else if (res.error !== 'Sign in cancelled') {
       setErrors({ form: res.error || 'Google sign-in failed.' });
     }
   };

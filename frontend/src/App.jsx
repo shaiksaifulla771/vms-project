@@ -192,7 +192,8 @@ const AppContent = () => {
       {/* Central content area - natural smooth window scrolling */}
       <main className="flex-1 pt-20 px-4 sm:px-6 lg:px-8 pb-28 w-full max-w-7xl mx-auto min-w-0">
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard/*" element={<Dashboard />} />
           <Route path="/admin/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
           <Route path="/admin/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
