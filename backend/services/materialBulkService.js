@@ -50,19 +50,6 @@ class MaterialBulkService {
       }
     });
 
-    // Create corresponding InventoryItem documents for newly inserted items
-    const upsertedIds = Object.values(syncResult.result.upsertedIds || {});
-    if (upsertedIds.length > 0) {
-      const invOps = upsertedIds.map(id => ({
-        insertOne: {
-          document: {
-            materialId: id,
-            balance: 0
-          }
-        }
-      }));
-      await InventoryItem.bulkWrite(invOps);
-    }
 
     // Update sequence based on inserted valid items
     if (validItems.length > 0) {
@@ -230,18 +217,6 @@ class MaterialBulkService {
       }
     });
 
-    const upsertedIds = Object.values(syncResult.result?.upsertedIds || {});
-    if (upsertedIds.length > 0) {
-      const invOps = upsertedIds.map(id => ({
-        insertOne: {
-          document: {
-            materialId: id,
-            balance: 0
-          }
-        }
-      }));
-      await InventoryItem.bulkWrite(invOps);
-    }
 
     return {
       success: true,

@@ -10,7 +10,7 @@ class VendorService {
    */
   static async createVendor(vendorData, user, session) {
     const { 
-      name, company, email, phone, address, address2, zipCode, city, state, country,
+      name, company, email, phone, addressName, address, address2, zipCode, city, state, country,
       gstin, gstList, hasNoGst,
       primaryContactName, primaryContactPhone, primaryContactDesignation, notes, 
       contacts, category, subCategory, 
@@ -62,6 +62,7 @@ class VendorService {
 
     const vendor = new Vendor({
       vendorId, name, company: company || name, email, phone: phone || '', 
+      addressName: addressName || '',
       address: address || '', address2, zipCode, city, state, country,
       gstin, gstList: gstList || [], hasNoGst: hasNoGst || false,
       primaryContactName, primaryContactPhone, primaryContactDesignation, notes,

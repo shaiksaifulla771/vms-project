@@ -31,6 +31,11 @@ const VendorSchema = new mongoose.Schema({
     default: '',
     trim: true,
   },
+  addressName: {
+    type: String,
+    default: '',
+    trim: true,
+  },
   address: {
     type: String,
     default: '',
@@ -127,6 +132,7 @@ const VendorSchema = new mongoose.Schema({
   secondaryGstin: { type: String, default: '', trim: true },
   secondaryAddresses: [
     {
+      locationName: { type: String, default: '', trim: true },
       address: { type: String, default: '', trim: true },
       address2: { type: String, default: '', trim: true },
       zipCode: { type: String, default: '', trim: true },

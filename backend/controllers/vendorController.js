@@ -192,18 +192,18 @@ exports.peekNextVendorCode = async (req, res, next) => {
 
 exports.createVendorsBatch = async (req, res, next) => {
   try {
-    const { vendors, importSource } = req.body;
-    if (!Array.isArray(vendors) || vendors.length === 0) {
+    const rawVendors = req.body.vendors || req.body.items || (Array.isArray(req.body) ? req.body : null);
+    const importSource = req.body.importSource;
+    if (!Array.isArray(rawVendors) || rawVendors.length === 0) {
       return res.status(400).json({ success: false, error: 'Please provide an array of vendors' });
     }
 
     const errors = [];
     const validItems = [];
-    const existingVendors = await Vendor.find({});
     
     // Quick validation
-    for (let i = 0; i < vendors.length; i++) {
-      const item = vendors[i];
+    for (let i = 0; i < rawVendors.length; i++) {
+      const item = rawVendors[i];
       if (!item.name) {
         errors.push(`Row ${i + 1}: Name is required.`);
         continue;
@@ -251,6 +251,8 @@ exports.createVendorsBatch = async (req, res, next) => {
         }
       }
     }
+
+    await cacheService.invalidatePattern('vendors:*');
 
     res.status(200).json({
       success: true,

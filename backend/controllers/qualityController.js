@@ -88,28 +88,64 @@ exports.inspectProduction = async (req, res, next) => {
 
     // If Passed, add finished product to Inventory
     if (status === 'Passed') {
+      const Warehouse = require('../models/Warehouse');
       const bom = await BOM.findById(order.bomId);
       const finishedProduct = bom.productId;
 
-      // Find or initialize inventory item for the finished product
-      let stockItem = await InventoryItem.findOne({ materialId: finishedProduct });
-      if (!stockItem) {
-        stockItem = await InventoryItem.create({ materialId: finishedProduct, balance: 0 });
+      const targetWarehouseId = order.destinationWarehouseId || order.warehouseId || (await Warehouse.findOne({ isDefault: true }))?._id || (await Warehouse.findOne({ status: 'Active' }))?._id || (await Warehouse.findOne())?._id;
+      let targetSiteId = order.siteId;
+      if (!targetSiteId && targetWarehouseId) {
+        const whDoc = await Warehouse.findById(targetWarehouseId).select('siteId').lean();
+        if (whDoc) targetSiteId = whDoc.siteId;
       }
 
-      // Add finished good to stock balance
-      stockItem.balance += order.quantity;
-      stockItem.updatedAt = Date.now();
-      await stockItem.save();
+      if (targetWarehouseId) {
+        const InventoryLedgerService = require('../services/inventoryLedgerService');
+        try {
+          await InventoryLedgerService.recordTransaction({
+            warehouseId: targetWarehouseId,
+            siteId: targetSiteId,
+            materialId: finishedProduct,
+            type: 'PRODUCTION_IN',
+            quantity: order.quantity,
+            sourceDocType: 'ProductionOrder',
+            sourceDocId: order._id.toString(),
+            notes: `Production lot received from completed run #${order._id.toString().slice(-6).toUpperCase()}`,
+            userId: req.user._id
+          });
+        } catch (ledgerErr) {
+          console.warn('[QualityController] Ledger service fallback to direct scoped update:', ledgerErr.message);
+          let stockItem = await InventoryItem.findOne({ materialId: finishedProduct, warehouseId: targetWarehouseId });
+          if (!stockItem) {
+            stockItem = await InventoryItem.create({
+              materialId: finishedProduct,
+              warehouseId: targetWarehouseId,
+              siteId: targetSiteId,
+              balance: 0,
+              onHand: 0,
+              available: 0
+            });
+          }
 
-      // Log stock transaction
-      await InventoryTransaction.create({
-        materialId: finishedProduct,
-        quantity: order.quantity,
-        type: 'production',
-        referenceId: order._id.toString(),
-        notes: `Production lot received from completed run #${order._id.toString().slice(-6).toUpperCase()}`
-      });
+          // Add finished good to stock balance
+          stockItem.balance = (stockItem.balance || 0) + order.quantity;
+          stockItem.onHand = (stockItem.onHand || 0) + order.quantity;
+          stockItem.available = (stockItem.available || 0) + order.quantity;
+          stockItem.updatedAt = Date.now();
+          await stockItem.save();
+
+          // Log stock transaction
+          await InventoryTransaction.create({
+            materialId: finishedProduct,
+            warehouseId: targetWarehouseId,
+            siteId: targetSiteId,
+            quantity: order.quantity,
+            type: 'production',
+            referenceId: order._id.toString(),
+            notes: `Production lot received from completed run #${order._id.toString().slice(-6).toUpperCase()}`
+          });
+        }
+      }
     }
 
     // Save Quality Record

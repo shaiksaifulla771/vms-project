@@ -352,6 +352,65 @@ const MaterialsTab = () => {
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
   const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   const [hasInitializedSourceFilter, setHasInitializedSourceFilter] = useState(false);
+
+  // Central Master Data -> Warehouse Allocation State
+  const [isAssignWarehouseModalOpen, setIsAssignWarehouseModalOpen] = useState(false);
+  const [assignTargetMaterialIds, setAssignTargetMaterialIds] = useState([]);
+  const [availableWarehouses, setAvailableWarehouses] = useState([]);
+  const [selectedWarehouseIds, setSelectedWarehouseIds] = useState([]);
+  const [assignMinStock, setAssignMinStock] = useState(0);
+  const [assignMaxStock, setAssignMaxStock] = useState(1000);
+  const [assignReorderPoint, setAssignReorderPoint] = useState(100);
+  const [assignLoading, setAssignLoading] = useState(false);
+
+  const handleOpenAssignWarehouseModal = async (materialIds = []) => {
+    setAssignTargetMaterialIds(materialIds);
+    setSelectedWarehouseIds([]);
+    setIsAssignWarehouseModalOpen(true);
+    try {
+      const res = await api.get('/api/warehouses');
+      if (res.data && res.data.data) {
+        setAvailableWarehouses(res.data.data.filter(w => w.status !== 'Inactive' && w.status !== 'Deleted'));
+      }
+    } catch (err) {
+      console.error('Failed to load warehouses:', err);
+    }
+  };
+
+  const handleBulkAssignToWarehousesSubmit = async () => {
+    if (!assignTargetMaterialIds.length) {
+      showToast("Please select at least one material to assign.", "error");
+      return;
+    }
+    if (!selectedWarehouseIds.length) {
+      showToast("Please select at least one target warehouse.", "error");
+      return;
+    }
+
+    setAssignLoading(true);
+    try {
+      const res = await api.post('/api/warehouse-materials/bulk-assign', {
+        materialIds: assignTargetMaterialIds,
+        warehouseIds: selectedWarehouseIds,
+        minStock: Number(assignMinStock) || 0,
+        maxStock: Number(assignMaxStock) || 0,
+        reorderPoint: Number(assignReorderPoint) || 0
+      });
+
+      if (res.data && res.data.success) {
+        showToast(`🎉 ${res.data.message}`, "success");
+        setIsAssignWarehouseModalOpen(false);
+        setSelectedRowIds(new Set());
+      }
+    } catch (err) {
+      console.error(err);
+      const errMsg = err.response?.data?.error || err.message || "Failed to assign materials to warehouse.";
+      showToast(errMsg, "error");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
   const uniqueImportSources = React.useMemo(() => {
     const sources = new Set();
     materials.forEach(m => {
@@ -1496,7 +1555,8 @@ const MaterialsTab = () => {
       }
     } catch (err) {
       console.error(err);
-      showToast('Failed to save batch to database', 'error');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to save batch to database';
+      showToast(errMsg, 'error');
     } finally {
       setSubmitLoading(false);
     }
@@ -2010,6 +2070,22 @@ const MaterialsTab = () => {
               >
                 <Edit2 className="h-3.5 w-3.5" />
                 <span>Edit Selected ({selectedRowIds.size})</span>
+              </button>
+            )}
+
+            {isSelectionMode && selectedRowIds.size > 0 && status !== 'Deleted' && (
+              <button
+                onClick={() => {
+                  const targetIds = Array.from(selectedRowIds).map(idOrCode => {
+                    const found = materials.find(m => (m._id === idOrCode || m.code === idOrCode));
+                    return found ? found._id : idOrCode;
+                  });
+                  handleOpenAssignWarehouseModal(targetIds);
+                }}
+                className="h-7 flex items-center space-x-1.5 rounded-md px-3 font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-xs transition-colors"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>Assign to Warehouse ({selectedRowIds.size})</span>
               </button>
             )}
 
@@ -3912,6 +3988,101 @@ const MaterialsTab = () => {
           </div>
         ))}
       </div>
+
+      {/* Allocate / Assign to Warehouse Modal */}
+      <Dialog
+        isOpen={isAssignWarehouseModalOpen}
+        onClose={() => setIsAssignWarehouseModalOpen(false)}
+        title="Allocate Master Data to Operational Warehouse(s)"
+        className="!max-w-[560px] !w-[560px] !rounded-xl"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-950">
+            <p className="font-bold text-indigo-900 mb-1">Central Master Catalog Allocation</p>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              Assigning <strong>{assignTargetMaterialIds.length}</strong> master item(s) to operational warehouse facilities. This authorizes the selected facilities to stock, receive GRNs, and transfer these materials.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 mb-1.5">Select Target Operational Warehouse(s):</label>
+            <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100 bg-white p-1">
+              {availableWarehouses.length === 0 ? (
+                <div className="p-3 text-center text-slate-400 text-xs">No active warehouses available.</div>
+              ) : (
+                availableWarehouses.map(wh => {
+                  const isChecked = selectedWarehouseIds.includes(wh._id);
+                  return (
+                    <label key={wh._id} className="flex items-center space-x-2.5 p-2 hover:bg-slate-50 cursor-pointer rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedWarehouseIds([...selectedWarehouseIds, wh._id]);
+                          } else {
+                            setSelectedWarehouseIds(selectedWarehouseIds.filter(id => id !== wh._id));
+                          }
+                        }}
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-bold text-slate-800">{wh.name}</span>
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200">{wh.code || 'WH'}</span>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 pt-1">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Min Safety Stock</label>
+              <Input
+                type="number"
+                value={assignMinStock}
+                onChange={(e) => setAssignMinStock(e.target.value)}
+                className="h-8 text-xs font-semibold"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Max Stock Cap</label>
+              <Input
+                type="number"
+                value={assignMaxStock}
+                onChange={(e) => setAssignMaxStock(e.target.value)}
+                className="h-8 text-xs font-semibold"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Reorder Point</label>
+              <Input
+                type="number"
+                value={assignReorderPoint}
+                onChange={(e) => setAssignReorderPoint(e.target.value)}
+                className="h-8 text-xs font-semibold"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+            <Button variant="outline" size="sm" onClick={() => setIsAssignWarehouseModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleBulkAssignToWarehousesSubmit}
+              isLoading={assignLoading}
+              disabled={selectedWarehouseIds.length === 0 || assignTargetMaterialIds.length === 0}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4"
+            >
+              Confirm Allocation
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* Confirm Delete Dialog */}
       <ConfirmDeleteDialog

@@ -3,7 +3,8 @@ const {
   getAssignedMaterials,
   assignMaterialToWarehouse,
   updateAssignedMaterial,
-  unassignMaterialFromWarehouse
+  unassignMaterialFromWarehouse,
+  bulkAssignMaterials
 } = require('../controllers/warehouseMaterialController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -18,6 +19,7 @@ router.route('/')
 const assignmentRoles = ['Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator'];
 
 router.post('/assign', authorize(assignmentRoles), assignMaterialToWarehouse);
+router.post('/bulk-assign', authorize(assignmentRoles), bulkAssignMaterials);
 
 router.route('/:id')
   .put(authorize(assignmentRoles), updateAssignedMaterial)

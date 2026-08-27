@@ -137,3 +137,76 @@ exports.unassignMaterialFromWarehouse = asyncHandler(async (req, res) => {
 
   res.status(200).json({ success: true, message: 'Material unassigned from warehouse successfully' });
 });
+
+// @desc    Bulk assign materials from Central Master Catalog to multiple warehouses
+// @route   POST /api/warehouse-materials/bulk-assign
+// @access  Private
+exports.bulkAssignMaterials = asyncHandler(async (req, res) => {
+  const { materialIds, warehouseIds, minStock, maxStock, reorderPoint } = req.body;
+
+  if (!Array.isArray(materialIds) || materialIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'Please provide an array of materialIds' });
+  }
+
+  if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'Please provide an array of warehouseIds' });
+  }
+
+  const materials = await Material.find({ _id: { $in: materialIds } }).select('_id name code');
+  const warehouses = await Warehouse.find({ _id: { $in: warehouseIds } }).select('_id name code siteId');
+
+  if (materials.length === 0) {
+    return res.status(404).json({ success: false, error: 'No matching materials found in Master Catalog' });
+  }
+
+  if (warehouses.length === 0) {
+    return res.status(404).json({ success: false, error: 'No matching warehouses found' });
+  }
+
+  let assignedCount = 0;
+  let updatedCount = 0;
+
+  for (const wh of warehouses) {
+    // 3-Level Access Scope Governance Enforcement
+    if (!(await checkWarehouseScope(req.user, wh._id))) {
+      continue;
+    }
+
+    for (const mat of materials) {
+      let assignment = await WarehouseMaterial.findOne({ materialId: mat._id, warehouseId: wh._id });
+      if (assignment) {
+        assignment.status = 'Active';
+        if (minStock !== undefined) assignment.minStock = Number(minStock);
+        if (maxStock !== undefined) assignment.maxStock = Number(maxStock);
+        if (reorderPoint !== undefined) assignment.reorderPoint = Number(reorderPoint);
+        assignment.updatedAt = Date.now();
+        await assignment.save();
+        updatedCount++;
+      } else {
+        await WarehouseMaterial.create({
+          materialId: mat._id,
+          warehouseId: wh._id,
+          siteId: wh.siteId,
+          minStock: minStock !== undefined ? Number(minStock) : 0,
+          maxStock: maxStock !== undefined ? Number(maxStock) : 0,
+          reorderPoint: reorderPoint !== undefined ? Number(reorderPoint) : 0,
+          assignedBy: req.user ? req.user.id : null,
+          status: 'Active'
+        });
+        assignedCount++;
+      }
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `Allocated ${materials.length} master materials across ${warehouses.length} warehouses (${assignedCount} new, ${updatedCount} updated).`,
+    data: {
+      assignedCount,
+      updatedCount,
+      totalMaterials: materials.length,
+      totalWarehouses: warehouses.length
+    }
+  });
+});
+

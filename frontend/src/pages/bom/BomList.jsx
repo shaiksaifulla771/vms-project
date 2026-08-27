@@ -6,7 +6,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Plus, Trash2, Edit2, Copy, Search, Eye, Scale, Check, X, Loader2, RotateCcw, MoreVertical } from 'lucide-react';
+import { Plus, Trash2, Edit2, Copy, Search, Eye, Scale, Check, X, Loader2, RotateCcw, MoreVertical, Power, PowerOff } from 'lucide-react';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
 
 export default function BomList() {
@@ -308,7 +308,19 @@ export default function BomList() {
                         <div className="flex items-center justify-center space-x-1">
                           {bom.status !== 'Deleted' && bom.status !== 'Obsolete' ? (
                             <>
-                              <button onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Recipe">
+                              <button 
+                                onClick={() => navigate(`/bom/${bom._id}`, { state: { returnTo: location.pathname + location.search } })} 
+                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" 
+                                title="View Recipe / Breakdown"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button 
+                                onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })} 
+                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" 
+                                title="Edit Recipe"
+                              >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
 
@@ -324,19 +336,21 @@ export default function BomList() {
                                     console.error('Failed to toggle status:', err);
                                   }
                                 }} 
-                                className={`p-1 rounded text-xs font-bold transition-colors ${
+                                className={`p-1 rounded transition-colors ${
                                   bom.status === 'Active' 
                                     ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
                                     : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
                                 }`} 
                                 title={bom.status === 'Active' ? 'Deactivate BOM (Set Inactive)' : 'Activate BOM (Set Active)'}
                               >
-                                <span className="text-[10px] font-mono font-bold px-1 py-0.5 rounded border border-slate-200 bg-slate-50">
-                                  {bom.status === 'Active' ? 'Deact' : 'Act'}
-                                </span>
+                                {bom.status === 'Active' ? (
+                                  <PowerOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Power className="w-3.5 h-3.5 text-emerald-600" />
+                                )}
                               </button>
 
-                              <button onClick={() => handleDelete(bom)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                              <button onClick={() => handleDelete(bom)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete BOM">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </>

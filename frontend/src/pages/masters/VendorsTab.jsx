@@ -1099,7 +1099,8 @@ const VendorsTab = () => {
       setIsVendorImportModalOpen(false);
     } catch (err) {
       console.error(err);
-      showToast("Failed to save batch to database", "error");
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Failed to save batch to database";
+      showToast(errMsg, "error");
     } finally {
       setSubmitLoading(false);
     }
@@ -1404,7 +1405,8 @@ const VendorsTab = () => {
     const initialCode = getNextVendorAutoCode();
     setFormData({
       vendorId: initialCode,
-      name: '', company: '', email: '', phone: '', address: '', address2: '',
+      name: '', company: '', email: '', phone: '', 
+      addressName: '', address: '', address2: '',
       zipCode: '', city: '', state: '', country: '',
       gstin: '', gstList: [{ state: '', gstin: '' }], hasNoGst: false,
       contacts: [],
@@ -1444,6 +1446,7 @@ const VendorsTab = () => {
       company: vendor.company || '',
       email: vendor.email || '',
       phone: vendor.phone || '',
+      addressName: vendor.addressName || '',
       address: vendor.address || '',
       address2: vendor.address2 || '',
       zipCode: vendor.zipCode || '',
@@ -1462,6 +1465,7 @@ const VendorsTab = () => {
         email: c.email || ''
       })),
       secondaryAddresses: (vendor.secondaryAddresses || []).map(addr => ({
+        locationName: addr.locationName || '',
         address: addr.address || '',
         address2: addr.address2 || '',
         zipCode: addr.zipCode || '',
@@ -2036,7 +2040,7 @@ const VendorsTab = () => {
  ${viewingVendor.secondaryAddresses && viewingVendor.secondaryAddresses.length > 0
         ? viewingVendor.secondaryAddresses.map((addr, idx) => `
  <div style="margin-bottom: 6px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 4px; font-weight: normal; font-size: 10px;">
- <strong>Location #${idx + 1}:</strong> ${addr.address || ''} ${addr.address2 ? `, ${addr.address2}` : ''} ${addr.city ? `, ${addr.city}` : ''} ${addr.state ? `, ${addr.state}` : ''} ${addr.zipCode ? `- ${addr.zipCode}` : ''}
+ <strong>${addr.locationName || `Location #${idx + 1}`}:</strong> ${addr.address || ''} ${addr.address2 ? `, ${addr.address2}` : ''} ${addr.city ? `, ${addr.city}` : ''} ${addr.state ? `, ${addr.state}` : ''} ${addr.zipCode ? `- ${addr.zipCode}` : ''}
  ${addr.gstOption === 'separate' && addr.gstin ? `<span style="font-family: monospace; color: #2563eb; font-weight: bold; margin-left: 10px;">[GSTIN: ${addr.gstin} (${addr.gstState})]</span>` : ''}
  </div>
  `).join('')
@@ -3782,7 +3786,9 @@ const VendorsTab = () => {
 
             <div className="grid grid-cols-2 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
               <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Primary Plant / Office Address</span>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">
+                  Primary Plant / Office Address {viewingVendor.addressName ? `(${viewingVendor.addressName})` : ''}
+                </span>
                 <span className="text-xs text-slate-700 font-medium">{viewingVendor.address || 'N/A'} {viewingVendor.address2 ? `, ${viewingVendor.address2}` : ''} {viewingVendor.city ? `, ${viewingVendor.city}` : ''} {viewingVendor.state ? `, ${viewingVendor.state}` : ''} {viewingVendor.zipCode ? `- ${viewingVendor.zipCode}` : ''}</span>
               </div>
               <div>
@@ -3791,7 +3797,7 @@ const VendorsTab = () => {
                   {viewingVendor.secondaryAddresses && viewingVendor.secondaryAddresses.length > 0 ? (
                     viewingVendor.secondaryAddresses.map((addr, idx) => (
                       <div key={idx} className="text-xs text-slate-700 font-medium border-b border-slate-100 pb-1 mb-1 last:border-0 last:pb-0 last:mb-0">
-                        <span className="font-semibold text-slate-500">#{idx + 1}: </span>
+                        <span className="font-semibold text-slate-600">{addr.locationName || `Location #${idx + 1}`}: </span>
                         {addr.address || ''} {addr.address2 ? `, ${addr.address2}` : ''} {addr.city ? `, ${addr.city}` : ''} {addr.state ? `, ${addr.state}` : ''} {addr.zipCode ? `- ${addr.zipCode}` : ''}
                         {addr.gstOption === 'separate' && addr.gstin && (
                           <div className="text-[9px] text-slate-500 font-mono mt-0.5">GSTIN: {addr.gstin} ({addr.gstState})</div>

@@ -738,7 +738,7 @@ export default function MPNMaster() {
         className="max-w-5xl w-[95vw] max-h-[92vh]"
       >
         <div className="space-y-5 pt-2">
-          {/* Section 1: Basic Identifiers & Status */}
+          {/* Section 1: Basic Identifiers & Status & GSTIN */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/60 p-3.5 rounded-xl border border-slate-200">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -755,7 +755,7 @@ export default function MPNMaster() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Status <span className="text-blue-600 text-[10px] font-normal">(Controls Validation)</span>
+                Status
               </label>
               <Select
                 value={form.status}
@@ -764,12 +764,78 @@ export default function MPNMaster() {
               >
                 {STATUS_OPTIONS.map((s) => (
                   <option key={s} value={s}>
-                    {s} {s === 'Draft' ? '(Required checks skipped)' : '(Full validation)'}
+                    {s}
                   </option>
                 ))}
               </Select>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                GSTIN <span className="text-slate-400 font-normal">{isVendorGstinPresent ? '(From Vendor)' : '(Manual Fallback)'}</span>
+              </label>
+              <Input
+                type="text"
+                maxLength={15}
+                value={isVendorGstinPresent ? (selectedVendorObj?.gstin || '') : form.gstin}
+                onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
+                disabled={isVendorGstinPresent}
+                placeholder={isVendorGstinPresent ? 'Auto-filled from Vendor' : 'e.g. 27AAAAA0000A1Z5'}
+                className={`text-xs font-mono font-bold ${isVendorGstinPresent ? 'bg-slate-100 text-slate-600' : ''}`}
+              />
+              {formErrors.gstin && (
+                <p className="text-[11px] text-amber-600 font-medium mt-1">{formErrors.gstin}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Section 2: Links */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Linked Material <span className="text-red-500">*</span>
+              </label>
+              <Select
+                value={form.materialId}
+                onChange={(e) => handleChange('materialId', e.target.value)}
+                className="text-xs"
+              >
+                <option value="">-- Select Material --</option>
+                {materials.map((m) => (
+                  <option key={m._id} value={m._id}>
+                    {m.name} ({m.code})
+                  </option>
+                ))}
+              </Select>
+              {formErrors.materialId && (
+                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.materialId}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Linked Vendor <span className="text-red-500">*</span>
+              </label>
+              <Select
+                value={form.vendorId}
+                onChange={(e) => handleVendorChange(e.target.value)}
+                className="text-xs"
+              >
+                <option value="">-- Select Vendor --</option>
+                {vendors.map((v) => (
+                  <option key={v._id} value={v._id}>
+                    {v.name} {v.company ? `— ${v.company}` : ''}
+                  </option>
+                ))}
+              </Select>
+              {formErrors.vendorId && (
+                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.vendorId}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Section 3: Manufacturer & MPN Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Same as Vendor Checkbox & Manufacturer Combo Box */}
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -830,55 +896,7 @@ export default function MPNMaster() {
                 <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.manufacturerName}</p>
               )}
             </div>
-          </div>
 
-          {/* Section 2: Links */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Linked Material <span className="text-red-500">*</span>
-              </label>
-              <Select
-                value={form.materialId}
-                onChange={(e) => handleChange('materialId', e.target.value)}
-                className="text-xs"
-              >
-                <option value="">-- Select Material --</option>
-                {materials.map((m) => (
-                  <option key={m._id} value={m._id}>
-                    {m.name} ({m.code})
-                  </option>
-                ))}
-              </Select>
-              {formErrors.materialId && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.materialId}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Linked Vendor <span className="text-red-500">*</span>
-              </label>
-              <Select
-                value={form.vendorId}
-                onChange={(e) => handleVendorChange(e.target.value)}
-                className="text-xs"
-              >
-                <option value="">-- Select Vendor --</option>
-                {vendors.map((v) => (
-                  <option key={v._id} value={v._id}>
-                    {v.name} {v.company ? `— ${v.company}` : ''}
-                  </option>
-                ))}
-              </Select>
-              {formErrors.vendorId && (
-                <p className="text-[11px] text-red-500 font-medium mt-1">{formErrors.vendorId}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Section 3: Commercial Terms */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 MPN Name <span className="text-slate-400 font-normal">(Optional)</span>
@@ -890,24 +908,6 @@ export default function MPNMaster() {
                 placeholder="e.g. High-Temp Ceramic Resistor (Optional)"
                 className="text-xs"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                GSTIN <span className="text-slate-400 font-normal">{isVendorGstinPresent ? '(From Vendor)' : '(Manual Fallback)'}</span>
-              </label>
-              <Input
-                type="text"
-                maxLength={15}
-                value={isVendorGstinPresent ? (selectedVendorObj?.gstin || '') : form.gstin}
-                onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-                disabled={isVendorGstinPresent}
-                placeholder={isVendorGstinPresent ? 'Auto-filled from Vendor' : 'e.g. 27AAAAA0000A1Z5'}
-                className={`text-xs font-mono font-bold ${isVendorGstinPresent ? 'bg-slate-100 text-slate-600' : ''}`}
-              />
-              {formErrors.gstin && (
-                <p className="text-[11px] text-amber-600 font-medium mt-1">{formErrors.gstin}</p>
-              )}
             </div>
           </div>
           
