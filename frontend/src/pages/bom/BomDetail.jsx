@@ -4,11 +4,9 @@ import api from '../../services/api';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Edit2, Copy, Scale, ChevronLeft, History, Layers, X } from 'lucide-react';
-import { Dialog } from '../../components/ui/Dialog';
+import { Edit2, ChevronLeft } from 'lucide-react';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
 import PriceDriftBanner from '../../features/bom/PriceDriftBanner';
-import BomRevisionHistory from '../../components/bom/BomRevisionHistory';
 
 export default function BomDetail() {
   const { id } = useParams();
@@ -18,26 +16,6 @@ export default function BomDetail() {
   const [bom, setBom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showExplosion, setShowExplosion] = useState(false);
-  const [explosionData, setExplosionData] = useState(null);
-  const [explosionLoading, setExplosionLoading] = useState(false);
-
-  const fetchExplosion = async () => {
-    setShowExplosion(true);
-    if (explosionData) return;
-    setExplosionLoading(true);
-    try {
-      const res = await api.get(`/api/boms/${id}/explosion`);
-      if (res.data.success) {
-        setExplosionData(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load BOM explosion:', err);
-    } finally {
-      setExplosionLoading(false);
-    }
-  };
 
   useEffect(() => {
     const fetchBom = async () => {
@@ -89,24 +67,9 @@ export default function BomDetail() {
         </button>
         <div className="flex space-x-2">
           {bom.status !== 'Deleted' && (
-            <>
-              {bom.status === 'Active' && (
-                <>
-                  <Button onClick={fetchExplosion} variant="outline" className="h-9 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:text-blue-800">
-                    <Layers className="w-4 h-4 mr-2" /> Multi-Level Tree
-                  </Button>
-                  <Button onClick={() => navigate(`/bom/${id}/edit`, { state: { returnTo: location.pathname } })} variant="outline" className="h-9">
-                    <Edit2 className="w-4 h-4 mr-2" /> Edit Recipe
-                  </Button>
-                  <Button onClick={() => navigate(`/bom/${id}/scale`, { state: { returnTo: location.pathname } })} variant="outline" className="h-9">
-                    <Scale className="w-4 h-4 mr-2" /> Scale
-                  </Button>
-                  <Button onClick={() => setShowHistory(true)} variant="outline" className="h-9 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800">
-                    <History className="w-4 h-4 mr-2" /> Revision History
-                  </Button>
-                </>
-              )}
-            </>
+            <Button onClick={() => navigate(`/bom/${id}/edit`, { state: { returnTo: location.pathname } })} variant="outline" className="h-8 text-xs font-bold bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:text-blue-800">
+              <Edit2 className="w-3.5 h-3.5 mr-1.5" /> Edit Recipe
+            </Button>
           )}
         </div>
       </div>
@@ -294,88 +257,6 @@ export default function BomDetail() {
           </CardContent>
         </Card>
       </div>
-
-      <BomRevisionHistory 
-        isOpen={showHistory} 
-        onClose={() => setShowHistory(false)} 
-        currentBomId={bom._id} 
-      />
-
-      {/* Multi-Level Exploded BOM Modal */}
-      <Dialog
-        isOpen={showExplosion}
-        onClose={() => setShowExplosion(false)}
-        title="Multi-Level Flattened BOM Explosion"
-        className="!max-w-[850px] !w-[850px]"
-      >
-        <div className="space-y-4">
-          <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
-            <div>
-              <span className="font-bold text-slate-800">Finished Product: </span>
-              <span className="font-semibold text-blue-700">{bom.productId?.name}</span>
-            </div>
-            <div className="flex items-center space-x-3 font-mono font-bold">
-              <span>Batch: {bom.batchSize} {bom.batchUOM}</span>
-              <span className="text-emerald-700">Total: ₹{(explosionData?.totalCost || bom.liveTotalCost || 0).toFixed(2)}</span>
-            </div>
-          </div>
-
-          {explosionLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-          ) : explosionData && explosionData.nodes && explosionData.nodes.length > 0 ? (
-            <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100 font-bold text-slate-700 uppercase border-b border-slate-200 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2">Level</th>
-                    <th className="px-3 py-2">Material / Part</th>
-                    <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-3 py-2 text-center">UOM</th>
-                    <th className="px-3 py-2 text-right">Unit Price</th>
-                    <th className="px-3 py-2 text-right">Line Cost</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {explosionData.nodes.map((node, idx) => (
-                    <tr key={idx} className={node.level > 1 ? 'bg-indigo-50/30' : 'bg-white'}>
-                      <td className="px-3 py-2 font-mono font-bold text-slate-500">
-                        {node.level === 1 ? '• L1' : `↳ L${node.level}`}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="font-semibold text-slate-800" style={{ paddingLeft: `${(node.level - 1) * 12}px` }}>
-                          {node.materialName || '—'}
-                          <span className="ml-2 font-mono text-[10px] text-slate-400">({node.materialCode})</span>
-                          {node.isSubassembly && (
-                            <span className="ml-2 px-1.5 py-0.5 text-[9px] bg-blue-100 text-blue-700 font-bold rounded">
-                              Subassembly
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-slate-600 font-medium">{node.materialType}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">{node.quantity}</td>
-                      <td className="px-3 py-2 text-center text-slate-500 uppercase">{node.unit}</td>
-                      <td className="px-3 py-2 text-right font-mono text-slate-700">₹{(node.unitCost || 0).toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">₹{(node.lineCost || 0).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-6 text-xs text-slate-500">
-              No exploded nodes found for this bill of materials.
-            </div>
-          )}
-
-          <div className="flex justify-end pt-2 border-t">
-            <Button size="sm" variant="outline" onClick={() => setShowExplosion(false)}>Close</Button>
-          </div>
-        </div>
-      </Dialog>
     </BomPageWrapper>
   );
 }

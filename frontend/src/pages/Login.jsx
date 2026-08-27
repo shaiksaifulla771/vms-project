@@ -311,22 +311,22 @@ const Login = () => {
                   {activeTab === 'forgot'
                     ? 'Reset Password'
                     : activeTab === 'signup'
-                    ? 'Create New Account'
+                    ? 'Create Account'
                     : activeTab === 'otp'
-                    ? 'Enter 4-Digit OTP'
+                    ? 'Verify Email'
                     : activeTab === 'pending_notice'
-                    ? 'Account Staged for Approval'
+                    ? 'Account Awaiting Approval'
                     : 'Secure Sign In'}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 font-medium">
                   {activeTab === 'forgot'
                     ? 'Enter your work email to receive a password reset link.'
                     : activeTab === 'signup'
-                    ? 'Fill your details to receive an auto-generated 4-digit OTP in your Gmail inbox.'
+                    ? 'Enter your details to register for enterprise workspace access.'
                     : activeTab === 'otp'
-                    ? `A 4-digit verification code has been dispatched to ${email || 'your Gmail'}. Please check your inbox or spam folder.`
+                    ? `Enter the 4-digit verification code sent to ${email || 'your email'}.`
                     : activeTab === 'pending_notice'
-                    ? 'Your email is verified. Your registration is in temporary staging awaiting Administrator approval.'
+                    ? 'Your email is verified. Your registration is awaiting Administrator approval.'
                     : 'Use your approved enterprise credentials to enter the workspace.'}
                 </p>
               </div>
@@ -396,7 +396,7 @@ const Login = () => {
                   </div>
 
                   <Button type="submit" isLoading={isLoading} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold shadow-lg shadow-blue-600/30 text-sm">
-                    Verify Code &amp; Submit
+                    Verify &amp; Create Account
                   </Button>
 
                   <div className="flex items-center justify-between text-xs font-semibold text-slate-500 pt-1">
@@ -438,7 +438,7 @@ const Login = () => {
                 <>
                   <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
                     <button type="button" onClick={() => switchTab('signin')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signin' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Sign In</button>
-                    <button type="button" onClick={() => switchTab('signup')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Create New Account</button>
+                    <button type="button" onClick={() => switchTab('signup')} className={`rounded-lg px-3 py-2 text-sm font-bold transition ${activeTab === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Create Account</button>
                   </div>
 
                   <form onSubmit={activeTab === 'signin' ? handleSignInSubmit : handleSignUpSubmit} className="space-y-4">
@@ -472,23 +472,15 @@ const Login = () => {
                     {activeTab === 'signup' && (
                       <div>
                         <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Requested Role</label>
-                        <select className={`${inputClass} mt-1`} value={role} onChange={(e) => setRole(e.target.value)}>
-                          <option value="Viewer">Viewer</option>
-                          <option value="Inventory">Inventory</option>
-                          <option value="Inventory Manager">Inventory Manager</option>
-                          <option value="Production">Production</option>
-                          <option value="Production Manager">Production Manager</option>
-                          <option value="Warehouse">Warehouse</option>
-                          <option value="Warehouse Operator">Warehouse Operator</option>
-                          <option value="Planner">Planner</option>
-                          <option value="Purchaser">Purchaser</option>
-                          <option value="QC Inspector">QC Inspector</option>
-                          <option value="Admin">Admin</option>
+                        <select className={`${inputClass} mt-1 font-semibold text-slate-800`} value={role} onChange={(e) => setRole(e.target.value)}>
+                          <option value="Viewer">Viewer (Read-only access)</option>
+                          <option value="Editor">Editor (Create &amp; edit access)</option>
+                          <option value="Admin">Admin (Full administrative control)</option>
                         </select>
                       </div>
                     )}
                     <Button type="submit" isLoading={isLoading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold shadow-md">
-                      {activeTab === 'signin' ? 'Enter Workspace' : 'Create Account & Send 4-Digit OTP'}
+                      {activeTab === 'signin' ? 'Enter Workspace' : 'Create Account'}
                     </Button>
                   </form>
 

@@ -234,7 +234,7 @@ class MasterDataBootstrapService {
 
       const createdUsers = {};
       for (const u of userDefs) {
-        let userDoc = await User.findOne({ email: u.email });
+        let userDoc = await User.findOne({ email: u.email }).select('+password');
         if (userDoc) {
           userDoc.username = u.username;
           userDoc.role = u.role;
@@ -244,6 +244,9 @@ class MasterDataBootstrapService {
           userDoc.emailVerified = true;
           userDoc.siteIds = allSiteIds;
           userDoc.warehouseIds = allWarehouseIds;
+          if (!userDoc.password) {
+            userDoc.password = u.password;
+          }
           await userDoc.save();
         } else {
           userDoc = await User.create(u);

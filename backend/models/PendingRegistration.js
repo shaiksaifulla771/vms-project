@@ -15,8 +15,8 @@ const PendingRegistrationSchema = new mongoose.Schema({
   requestedRole: {
     type: String,
     enum: [
-      'Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 
-      'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 
+      'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 
+      'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 
       'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'
     ],
     default: 'Viewer'

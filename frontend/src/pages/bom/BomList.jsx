@@ -137,6 +137,7 @@ export default function BomList() {
               >
                 <option value="All">All Status</option>
                 <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
                 <option value="Deleted">Deleted</option>
               </Select>
             </div>
@@ -285,17 +286,19 @@ export default function BomList() {
                       <td className="px-2.5 py-1.5 text-right font-mono font-bold text-slate-900 border-r border-slate-200">
                         ₹{bom.liveTotalCost?.toFixed(2) || '0.00'}
                       </td>
-                      <td className="px-2.5 py-1.5 text-xs font-semibold border-r border-slate-200">
+                      <td className="px-2.5 py-1.5 text-xs font-bold border-r border-slate-200">
                         {(() => {
                           const displayStatus = bom.status === 'Obsolete' ? 'Deleted' : bom.status;
                           return (
-                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                            <span className={
                               displayStatus === 'Active'
-                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                ? 'text-emerald-700 font-bold'
+                                : displayStatus === 'Inactive'
+                                ? 'text-slate-500 font-bold'
                                 : displayStatus === 'Draft'
-                                ? 'text-amber-700 bg-amber-50 border border-amber-200'
-                                : 'text-slate-700 bg-slate-100 border border-slate-200'
-                            }`}>
+                                ? 'text-amber-700 font-bold'
+                                : 'text-red-600 font-bold'
+                            }>
                               {displayStatus}
                             </span>
                           );
@@ -307,6 +310,30 @@ export default function BomList() {
                             <>
                               <button onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })} className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Recipe">
                                 <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button 
+                                onClick={async () => {
+                                  try {
+                                    const nextStatus = bom.status === 'Active' ? 'Inactive' : 'Active';
+                                    const res = await api.put(`/api/boms/${bom._id}`, { status: nextStatus });
+                                    if (res.data.success) {
+                                      fetchBoms(page, search);
+                                    }
+                                  } catch (err) {
+                                    console.error('Failed to toggle status:', err);
+                                  }
+                                }} 
+                                className={`p-1 rounded text-xs font-bold transition-colors ${
+                                  bom.status === 'Active' 
+                                    ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
+                                    : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                }`} 
+                                title={bom.status === 'Active' ? 'Deactivate BOM (Set Inactive)' : 'Activate BOM (Set Active)'}
+                              >
+                                <span className="text-[10px] font-mono font-bold px-1 py-0.5 rounded border border-slate-200 bg-slate-50">
+                                  {bom.status === 'Active' ? 'Deact' : 'Act'}
+                                </span>
                               </button>
 
                               <button onClick={() => handleDelete(bom)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Delete">

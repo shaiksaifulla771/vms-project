@@ -14,6 +14,16 @@ import ConfirmDeleteDialog from '../../components/ui/ConfirmDeleteDialog';
 import BulkVendorUploadGrid from '../../components/BulkVendorUploadGrid';
 import MPNMaster from './MPNMaster';
 
+const INDIAN_STATES_LIST = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
+  "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", 
+  "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
+  "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", 
+  "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", 
+  "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", 
+  "Lakshadweep", "Puducherry"
+];
+
 // VENDORS TAB COMPONENT (Reused from our previous VMS build)
 // -------------------------------------------------------------
 const VendorsTab = () => {
@@ -3042,59 +3052,65 @@ const VendorsTab = () => {
             <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Basic Information</h4>
             </div>
-            <div className="p-4 grid grid-cols-2 gap-4 bg-white">
-              <Input
-                label="Vendor ID"
-                id="vvendorId"
-                value={formData.vendorId || ''}
-                disabled={true}
-                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md font-mono text-slate-500 bg-slate-50 cursor-not-allowed font-bold"
-              />
-              <Input
-                label="Vendor Name"
-                id="vname"
-                placeholder="e.g. Acme Supplies Ltd"
-                value={formData.name}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
-                  setFormData({ ...formData, name: val });
-                }}
-                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
-                required
-              />
-              <div className="flex flex-col space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 uppercase">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9"
-                >
-                  <option value="Food Processor">Food Processor</option>
-                  <option value="Contract Manufacturer">Contract Manufacturer</option>
-                  <option value="Retail Brand">Retail Brand</option>
-                  <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                  <option value="Other">Other</option>
-                </select>
+            <div className="p-4 space-y-3 bg-white">
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Vendor ID"
+                  id="vvendorId"
+                  value={formData.vendorId || ''}
+                  disabled={true}
+                  className="!text-xs !py-1.5 !px-2.5 !h-8 !rounded font-mono text-slate-500 bg-slate-50 cursor-not-allowed font-bold"
+                />
+                <Input
+                  label="Vendor Name"
+                  id="vname"
+                  placeholder="e.g. Acme Supplies Ltd"
+                  value={formData.name}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/(^\w|\s\w)/g, c => c.toUpperCase());
+                    setFormData({ ...formData, name: val });
+                  }}
+                  className="!text-xs !py-1.5 !px-2.5 !h-8 !rounded"
+                  required
+                />
               </div>
-              <Input
-                label="Sub-Category"
-                id="vsubcategory"
-                placeholder="e.g. Packaged Material, Raw Material"
-                value={formData.subCategory}
-                onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
-                className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
-              />
-              <div className="flex flex-col space-y-1.5 col-span-2">
-                <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9 w-full"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                  <option value="Draft">Draft</option>
-                </select>
+
+              {/* Compact 3-Column Row: Category, Sub-Category, Status */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase">Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:outline-none focus:border-blue-500 h-8"
+                  >
+                    <option value="Food Processor">Food Processor</option>
+                    <option value="Contract Manufacturer">Contract Manufacturer</option>
+                    <option value="Retail Brand">Retail Brand</option>
+                    <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <Input
+                  label="Sub-Category"
+                  id="vsubcategory"
+                  placeholder="e.g. Raw Material, Packaging"
+                  value={formData.subCategory}
+                  onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                  className="!text-xs !py-1.5 !px-2.5 !h-8 !rounded"
+                />
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:outline-none focus:border-blue-500 h-8 w-full font-bold"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Draft">Draft</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -3288,7 +3304,27 @@ const VendorsTab = () => {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2.5">
-                      <Input label="State" id="vstate" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} className="!text-xs !h-8" />
+                      <div className="flex flex-col space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 uppercase">State</label>
+                        <select
+                          id="vstate"
+                          value={formData.state || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setFormData({
+                              ...formData,
+                              state: val,
+                              gstList: formData.hasNoGst ? [] : [{ state: val, gstin: formData.gstin || '' }]
+                            });
+                          }}
+                          className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 h-8 font-medium"
+                        >
+                          <option value="">Select State</option>
+                          {INDIAN_STATES_LIST.map((st) => (
+                            <option key={st} value={st}>{st}</option>
+                          ))}
+                        </select>
+                      </div>
                       <Input label="Country" id="vcountry" value={formData.country} onChange={(e) => setFormData({ ...formData, country: e.target.value })} className="!text-xs !h-8" />
                     </div>
 
@@ -3429,17 +3465,24 @@ const VendorsTab = () => {
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
-                        <Input
-                          label="State"
-                          id={`vsecstate_${idx}`}
-                          value={addr.state || ''}
-                          onChange={(e) => {
-                            const updated = [...(formData.secondaryAddresses || [])];
-                            updated[idx] = { ...updated[idx], state: e.target.value };
-                            setFormData({ ...formData, secondaryAddresses: updated });
-                          }}
-                          className="!text-xs !h-9"
-                        />
+                        <div className="flex flex-col space-y-1">
+                          <label className="text-[11px] font-bold text-slate-600 uppercase">State</label>
+                          <select
+                            id={`vsecstate_${idx}`}
+                            value={addr.state || ''}
+                            onChange={(e) => {
+                              const updated = [...(formData.secondaryAddresses || [])];
+                              updated[idx] = { ...updated[idx], state: e.target.value };
+                              setFormData({ ...formData, secondaryAddresses: updated });
+                            }}
+                            className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 h-9 font-medium"
+                          >
+                            <option value="">Select State</option>
+                            {INDIAN_STATES_LIST.map((st) => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </div>
                         <Input
                           label="Country"
                           id={`vseccountry_${idx}`}

@@ -48,6 +48,7 @@ export default function BomRecipeEditor({
  const [batchCode, setBatchCode] = useState(initialData?.batchCode || '');
  const [manufacturer, setManufacturer] = useState(initialData?.manufacturer || '');
  const [originalManufacturer, setOriginalManufacturer] = useState(initialData?.manufacturer || '');
+ const [status, setStatus] = useState(initialData?.status || 'Active');
  
  // State for the Save Intercept Modal
  const [showSaveModal, setShowSaveModal] = useState(false);
@@ -312,6 +313,7 @@ export default function BomRecipeEditor({
       productId,
       batchSize: Number(batchSize),
       batchUOM,
+      status: status || 'Active',
       effectiveDate,
       components: components.map(c => ({
         mpnId: c.mpnId?._id || c.mpnId || undefined,
@@ -509,6 +511,19 @@ export default function BomRecipeEditor({
             <div className="flex flex-col xl:col-span-1">
               <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Effective Date</label>
               <Input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} className="w-full h-8 text-xs font-semibold" />
+            </div>
+
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Status</label>
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value)}
+                className="w-full h-8 px-2 bg-white border border-slate-300 rounded-md text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Draft">Draft</option>
+              </select>
             </div>
           </div>
         </div>

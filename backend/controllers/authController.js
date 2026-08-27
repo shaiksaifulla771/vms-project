@@ -32,8 +32,8 @@ const pickRegistrationOtp = () => {
 
 const getValidRequestedRole = (role) => {
   const validRequestedRoles = [
-    'Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 
-    'Warehouse', 'Viewer', 'ProcurementManager', 'Vendor', 'Planner', 
+    'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 
+    'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 
     'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'
   ];
   return validRequestedRoles.includes(role) ? role : 'Viewer';
