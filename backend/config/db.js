@@ -6,11 +6,13 @@ const { detectTransactionSupport } = require('../utils/transaction');
 try {
   dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
 } catch (dnsErr) {
-  // Ignored if custom DNS cannot be set
+  // Ignored if custom DNS cannot be set in current environment
 }
 
 let connectionPromise = null;
 let sessionPolyfillInstalled = false;
+let isReconnecting = false;
+let reconnectTimer = null;
 
 /**
  * Installs graceful fallback polyfill for standalone/non-replica MongoDB instances
@@ -28,7 +30,6 @@ function installSessionPolyfill() {
     const isStandalone = topologyType === 'Single' || topologyType === 'Unknown';
 
     if (isStandalone) {
-      const originalStartTx = session.startTransaction ? session.startTransaction.bind(session) : null;
       session.startTransaction = function () {
         // Gracefully ignore startTransaction on standalone instances without crashing
       };
@@ -40,21 +41,56 @@ function installSessionPolyfill() {
   };
 }
 
+/**
+ * Automatic Auto-Reconnect Watchdog
+ */
+function scheduleAutoReconnect() {
+  if (isReconnecting || mongoose.connection.readyState === 1 || mongoose.connection.readyState === 2) {
+    return;
+  }
+  isReconnecting = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+
+  console.log('[MongoDB Watchdog] Connection lost. Scheduling auto-reconnect in 5s...');
+  reconnectTimer = setTimeout(async () => {
+    try {
+      if (mongoose.connection.readyState === 0) {
+        console.log('[MongoDB Watchdog] Attempting automatic reconnection to cluster...');
+        await connectDB();
+      }
+    } catch (err) {
+      console.warn('[MongoDB Watchdog] Reconnect attempt failed:', err.message);
+    } finally {
+      isReconnecting = false;
+      if (mongoose.connection.readyState === 0) {
+        scheduleAutoReconnect();
+      }
+    }
+  }, 5000);
+}
+
 // Attach connection lifecycle event handlers once
+mongoose.connection.on('connected', () => {
+  console.log(`[MongoDB Event] Connected to MongoDB host: ${mongoose.connection.host} (DB: ${mongoose.connection.name})`);
+});
+
 mongoose.connection.on('disconnected', () => {
   console.warn('[MongoDB Event] Disconnected from MongoDB cluster.');
+  scheduleAutoReconnect();
 });
+
 mongoose.connection.on('reconnected', () => {
-  console.log('[MongoDB Event] Reconnected to MongoDB cluster.');
+  console.log('[MongoDB Event] Reconnected to MongoDB cluster successfully.');
 });
+
 mongoose.connection.on('error', (err) => {
   console.error(`[MongoDB Event] Connection error: ${err.message}`);
 });
 
 const connectDB = async () => {
   try {
-    // If already connected (1) or connecting (2), reuse the active connection
-    if (mongoose.connection.readyState === 1 || mongoose.connection.readyState === 2) {
+    // If already connected (1) or connecting (2), reuse active connection
+    if (mongoose.connection.readyState === 1) {
       installSessionPolyfill();
       return connectionPromise || mongoose.connection;
     }
@@ -83,6 +119,9 @@ const connectDB = async () => {
       socketTimeoutMS: 45000,
       heartbeatFrequencyMS: 10000,
       family: 4,
+      retryWrites: true,
+      retryReads: true,
+      autoIndex: true
     };
     
     try {
@@ -99,7 +138,7 @@ const connectDB = async () => {
       connectionPromise = conn;
       return conn;
     } catch (primaryErr) {
-      if (!isProd && (primaryErr.message.includes('ECONNREFUSED') || primaryErr.message.includes('test database fallback') || primaryErr.name === 'MongooseServerSelectionError')) {
+      if (!isProd && (primaryErr.message.includes('ECONNREFUSED') || primaryErr.message.includes('ENOTFOUND') || primaryErr.message.includes('test database fallback') || primaryErr.name === 'MongooseServerSelectionError' || primaryErr.name === 'MongoServerSelectionError')) {
         console.warn(`[MongoDB] Primary connection unavailable (${primaryErr.message}). Falling back to mongodb-memory-server...`);
         if (mongoose.connection.readyState !== 0) {
           await mongoose.disconnect().catch(() => {});
@@ -125,11 +164,10 @@ const connectDB = async () => {
   } catch (error) {
     console.error(`Database Connection Fatal Error: ${error.message}`);
     if (process.env.NODE_ENV !== 'test') {
-      process.exit(1);
+      scheduleAutoReconnect();
     }
     throw error;
   }
 };
 
 module.exports = connectDB;
-

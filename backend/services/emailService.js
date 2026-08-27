@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const EmailQueue = require('../models/EmailQueue');
 const EmailLog = require('../models/EmailLog');
 const EmailTemplate = require('../models/EmailTemplate');
@@ -412,6 +413,9 @@ class EmailService {
    * Process email queue in background
    */
   async processEmailQueue() {
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return;
+    }
     try {
       const now = new Date();
       const items = await EmailQueue.find({

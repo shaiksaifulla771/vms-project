@@ -13,6 +13,10 @@ import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, 
 import BulkVendorUploadGrid from '../../components/BulkVendorUploadGrid';
 import MPNMaster from './MPNMaster';
 import ConfirmDeleteDialog from '../../components/ui/ConfirmDeleteDialog';
+import { AnimatePresence } from 'framer-motion';
+import MasterPageWrapper from '../../components/masters/MasterPageWrapper';
+import MaterialDetailView from './materials/MaterialDetailView';
+import MaterialEditView from './materials/MaterialEditView';
 
 // -------------------------------------------------------------
 let toastIdCounter = 0;
@@ -352,6 +356,36 @@ const MaterialsTab = () => {
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
   const [showVendorFunctionList, setShowVendorFunctionList] = useState(false);
   const [hasInitializedSourceFilter, setHasInitializedSourceFilter] = useState(false);
+
+  // Full-Page Transition & View States (BOM Experience)
+  const [activeMasterView, setActiveMasterView] = useState('list'); // 'list' | 'detail' | 'edit' | 'new'
+  const [selectedMaterialForView, setSelectedMaterialForView] = useState(null);
+  const [selectedMaterialForEdit, setSelectedMaterialForEdit] = useState(null);
+
+  const handleSaveMaterialFromView = async (formValues) => {
+    setSubmitLoading(true);
+    try {
+      if (selectedMaterialForEdit?._id) {
+        const res = await api.put(`/api/materials/${selectedMaterialForEdit._id}`, formValues);
+        if (res.data && res.data.success) {
+          showToast(`Material "${formValues.name}" updated successfully!`, 'success');
+          fetchMaterials();
+          setActiveMasterView('list');
+        }
+      } else {
+        const res = await api.post('/api/materials', formValues);
+        if (res.data && res.data.success) {
+          showToast(`Material "${formValues.name}" registered successfully!`, 'success');
+          fetchMaterials();
+          setActiveMasterView('list');
+        }
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to save material record', 'error');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
 
   // Central Master Data -> Warehouse Allocation State
   const [isAssignWarehouseModalOpen, setIsAssignWarehouseModalOpen] = useState(false);
@@ -736,8 +770,8 @@ const MaterialsTab = () => {
   };
 
   const handleViewDetails = (mat) => {
-    setViewingMaterial(mat);
-    setIsViewModalOpen(true);
+    setSelectedMaterialForView(mat);
+    setActiveMasterView('detail');
   };
 
   const toggleFilterPopup = (col, e) => {
@@ -1020,31 +1054,8 @@ const MaterialsTab = () => {
   };
 
   const handleOpenAddModal = () => {
-    setEditingId(null);
-    setCurrentDraftId(null);
-    setFormErrors({});
-
-    const initialCode = getNextManualCode();
-    setFormData({
-      name: '',
-      code: initialCode,
-      unit: 'pcs',
-      type: 'Raw Material',
-      subcategory: 'Fresh',
-      status: 'Active',
-      description: ''
-    });
-    setIsModalOpen(true);
-
-    api.get('/api/materials/sequence-peek')
-      .then(res => {
-        if (res.data && res.data.nextCode) {
-          const rawCode = String(res.data.nextCode);
-          const nextCodeStr = rawCode.startsWith('M') ? rawCode : `M${rawCode}`;
-          setFormData(prev => ({ ...prev, code: nextCodeStr }));
-        }
-      })
-      .catch(e => console.warn("Failed to fetch sequence peek", e));
+    setSelectedMaterialForEdit(null);
+    setActiveMasterView('new');
   };
 
   const handleExportData = () => {
@@ -1606,27 +1617,8 @@ const MaterialsTab = () => {
   };
 
   const handleOpenEditModal = (mat) => {
-    setIsEditingDeletedRecord(!!mat.isDeletedHistoryItem);
-    setEditingId(mat._id);
-    const normalizedType = mat.type === 'Raw' || mat.type === 'Raw Material' ? 'Raw Material'
-      : mat.type === 'Finished' || mat.type === 'Finished Goods' ? 'Finished'
-        : mat.type === 'Packing' || mat.type === 'Packing Material' || mat.type === 'Packaged Material' ? 'Packaged Material' : 'Raw Material';
-
-    const subcats = subcategoryMap[normalizedType] || [];
-    const matched = subcats.find(s => s.value.toLowerCase() === (mat.subcategory || '').toLowerCase());
-    const finalSubcat = matched ? matched.value : (subcats.length > 0 ? subcats[0].value : '');
-
-    setFormData({
-      name: mat.name,
-      code: mat.code,
-      unit: mat.unit,
-      type: normalizedType,
-      subcategory: finalSubcat,
-      status: mat.status || 'Active',
-      description: mat.description || ''
-    });
-    setFormErrors({});
-    setIsModalOpen(true);
+    setSelectedMaterialForEdit(mat);
+    setActiveMasterView('edit');
   };
 
   const handleCloseModal = () => {
@@ -2012,9 +2004,12 @@ const MaterialsTab = () => {
   }, [search, typeFilter, status, sourceFilter, columnFilters]);
 
   return (
-    <div className="space-y-3 w-full">
-      {/* Search & Filters */}
-      <Card className="shadow-none border border-slate-200 overflow-visible relative z-10 bg-white">
+    <div className="w-full">
+      <AnimatePresence mode="wait">
+        {activeMasterView === 'list' && (
+          <MasterPageWrapper key="materials-list-view" direction={1} className="space-y-3 w-full">
+            {/* Search & Filters */}
+            <Card className="shadow-none border border-slate-200 overflow-visible relative z-10 bg-white">
         <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-10">
           <div className="flex items-center space-x-2 w-full md:w-auto">
             <div className="relative w-48">
@@ -2398,316 +2393,331 @@ const MaterialsTab = () => {
             <div className="p-20 text-center text-slate-400 font-medium">No materials registered.</div>
           ) : (
             <>
-              <Table className="border border-slate-200 w-full table-fixed text-xs">
-                <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
-                  <TableRow>
-                    {(isSelectionMode || status === "Deleted") && (
-                      <TableHead className="!px-2.5 !py-1.5 w-[40px] max-w-[40px] text-center border-r border-slate-200 relative z-20">
-                        <input
-                          type="checkbox"
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
-                          checked={filteredMaterials.length > 0 && filteredMaterials.every(m => selectedRowIds.has(m._id || m.code || m.name))}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedRowIds(new Set(filteredMaterials.map(m => m._id || m.code || m.name)));
-                            } else {
-                              setSelectedRowIds(new Set());
-                            }
-                          }}
-                        />
-                      </TableHead>
-                    )}
+              <div className="w-full overflow-x-auto bg-white">
+                <Table className="border-collapse w-full table-fixed text-xs select-none">
+                  {/* Explicit Column Sizing Definitions: Compact Categories & Expanded Description */}
+                  <colgroup>
+                    {(isSelectionMode || status === "Deleted") && <col className="w-[3%]" />}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[21%]" : "w-[22%]"} /> {/* Material Name */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[8%]" : "w-[8%]"} />   {/* Code */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[5%]" : "w-[5%]"} />   {/* UOM */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[10%]" : "w-[10%]"} /> {/* Category (Compact) */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[11%]" : "w-[11%]"} /> {/* Sub-Category (Compact) */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[7%]" : "w-[7%]"} />   {/* Status */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[27%]" : "w-[29%]"} /> {/* Description (Wider) */}
+                    <col className={(isSelectionMode || status === "Deleted") ? "w-[8%]" : "w-[8%]"} />   {/* Actions */}
+                  </colgroup>
 
-                    {/* 1. Material Name */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>Material Name</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('name', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter Material Name"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'name' && (
-                        <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('name')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 2. Code */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[80px] max-w-[80px] whitespace-nowrap relative group ${activeFilterCol === 'code' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>Code</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('code', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['code'] && columnFilters['code'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter Code"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'code' && (
-                        <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('code')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 3. UOM */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[65px] max-w-[65px] whitespace-nowrap relative group ${activeFilterCol === 'unit' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>UOM</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('unit', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['unit'] && columnFilters['unit'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter UOM"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'unit' && (
-                        <div className="absolute left-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('unit')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 4. Category */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[110px] max-w-[110px] whitespace-nowrap relative group ${activeFilterCol === 'type' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>Category</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('type', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['type'] && columnFilters['type'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter Category"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'type' && (
-                        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('type')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 5. Sub-Category */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[130px] max-w-[130px] whitespace-nowrap relative group ${activeFilterCol === 'subcategory' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>Sub-Category</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('subcategory', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['subcategory'] && columnFilters['subcategory'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter Sub-Category"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'subcategory' && (
-                        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('subcategory')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 6. Status */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-[75px] max-w-[75px] whitespace-nowrap relative group ${activeFilterCol === 'status' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>Status</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('status', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter Status"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'status' && (
-                        <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('status')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 7. Description */}
-                    <TableHead className={`!px-2 !py-0.5 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 w-auto relative group ${activeFilterCol === 'description' ? 'z-50' : 'z-10'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>Description</span>
-                        <button
-                          onClick={(e) => toggleFilterPopup('description', e)}
-                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['description'] && columnFilters['description'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title="Filter Description"
-                        >
-                          <Filter className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {activeFilterCol === 'description' && (
-                        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
-                          {renderFilterPopupContent('description')}
-                        </div>
-                      )}
-                    </TableHead>
-
-                    {/* 8. Actions */}
-                    <TableHead className="!px-2 !py-0.5 text-center text-slate-600 font-bold text-[11px] w-[110px] max-w-[110px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredMaterials.map((mat) => (
-                    <TableRow
-                      key={mat._id}
-                      onClick={() => setSelectedMaterialId(selectedMaterialId === mat._id ? null : mat._id)}
-                      className={`hover:bg-slate-50/50 border-b border-slate-200 cursor-pointer transition-all ${selectedRowIds.has(mat._id || mat.code || mat.name)
-                        ? 'bg-blue-50/40 hover:bg-blue-50/50'
-                        : selectedMaterialId === mat._id ? 'bg-blue-50/40 hover:bg-blue-50/50 border-l-2 border-l-blue-600' : ''
-                        } ${(mat.status === 'Deleted' || status === 'Deleted') ? 'bg-red-50/70 hover:bg-red-100/80 border-l-[4px] border-l-red-600 text-red-900 font-semibold' : ''
-                        }`}
-                    >
+                  <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
+                    <TableRow>
                       {(isSelectionMode || status === "Deleted") && (
-                        <TableCell className="!px-2.5 !py-1.5 text-left border-r border-slate-200 w-[40px] max-w-[40px] text-center" onClick={(e) => { e.stopPropagation(); handleRowSelect(mat._id || mat.code || mat.name); }}>
-                          <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedRowIds.has(mat._id || mat.code || mat.name)} onClick={(e) => e.stopPropagation()} onChange={() => handleRowSelect(mat._id || mat.code || mat.name)} />
-                        </TableCell>
+                        <TableHead className="!px-2 !py-1 text-center border-r border-slate-200 relative z-20">
+                          <input
+                            type="checkbox"
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+                            checked={filteredMaterials.length > 0 && filteredMaterials.every(m => selectedRowIds.has(m._id || m.code || m.name))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedRowIds(new Set(filteredMaterials.map(m => m._id || m.code || m.name)));
+                              } else {
+                                setSelectedRowIds(new Set());
+                              }
+                            }}
+                          />
+                        </TableHead>
                       )}
 
                       {/* 1. Material Name */}
-                      <TableCell className="!px-2 !py-0.5 text-left border-r border-slate-200 w-[160px] max-w-[160px] whitespace-nowrap">
-                        <div className="relative group min-w-0 flex-1">
-                          <span className="block truncate text-xs text-slate-700 font-semibold cursor-pointer capitalize" title={mat.name || ''}>
-                            {(mat.name || '').toLowerCase()}
-                          </span>
-                          {mat.name && (
-                            <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
-                              {mat.name}
-                            </div>
-                          )}
+                      <TableHead className={`!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'name' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>Material Name</span>
+                          <button
+                            onClick={(e) => toggleFilterPopup('name', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['name'] && columnFilters['name'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter Material Name"
+                          >
+                            <Filter className="h-2.5 w-2.5" />
+                          </button>
                         </div>
-                      </TableCell>
+                        {activeFilterCol === 'name' && (
+                          <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('name')}
+                          </div>
+                        )}
+                      </TableHead>
 
                       {/* 2. Code */}
-                      <TableCell className="!px-2 !py-0.5 font-mono text-[11px] border-r border-slate-200 w-[80px] max-w-[80px] whitespace-nowrap">
-                        <div className="relative group max-w-[80px]">
+                      <TableHead className={`!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'code' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>Code</span>
                           <button
-                            onClick={() => handleViewDetails(mat)}
-                            className="block truncate text-blue-600 font-bold hover:underline focus:outline-none text-left w-full text-[11px] cursor-pointer"
-                            title="View material details"
+                            onClick={(e) => toggleFilterPopup('code', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['code'] && columnFilters['code'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter Code"
                           >
-                            {mat.code}
+                            <Filter className="h-2.5 w-2.5" />
                           </button>
-                          <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none font-sans capitalize-none">
-                            {mat.code}
-                          </div>
                         </div>
-                      </TableCell>
+                        {activeFilterCol === 'code' && (
+                          <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('code')}
+                          </div>
+                        )}
+                      </TableHead>
 
                       {/* 3. UOM */}
-                      <TableCell className="!px-2 !py-0.5 font-semibold text-xs text-slate-600 border-r border-slate-200 w-[65px] max-w-[65px] truncate whitespace-nowrap">{mat.unit}</TableCell>
+                      <TableHead className={`!px-2 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'unit' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>UOM</span>
+                          <button
+                            onClick={(e) => toggleFilterPopup('unit', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['unit'] && columnFilters['unit'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter UOM"
+                          >
+                            <Filter className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                        {activeFilterCol === 'unit' && (
+                          <div className="absolute left-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('unit')}
+                          </div>
+                        )}
+                      </TableHead>
 
                       {/* 4. Category */}
-                      <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[110px] max-w-[110px] truncate whitespace-nowrap">
-                        <span className="text-xs text-slate-700 capitalize block truncate" title={mat.type}>
-                          {mat.type}
-                        </span>
-                      </TableCell>
+                      <TableHead className={`!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'type' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>Category</span>
+                          <button
+                            onClick={(e) => toggleFilterPopup('type', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['type'] && columnFilters['type'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter Category"
+                          >
+                            <Filter className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                        {activeFilterCol === 'type' && (
+                          <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('type')}
+                          </div>
+                        )}
+                      </TableHead>
 
                       {/* 5. Sub-Category */}
-                      <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[130px] max-w-[130px] truncate whitespace-nowrap">
-                        {mat.subcategory ? (
-                          <span className="text-xs text-slate-700 capitalize block truncate cursor-pointer text-left" title={mat.subcategory}>
-                            {mat.subcategory}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 italic text-xs block text-left pl-2">-</span>
+                      <TableHead className={`!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'subcategory' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>Sub-Category</span>
+                          <button
+                            onClick={(e) => toggleFilterPopup('subcategory', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['subcategory'] && columnFilters['subcategory'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter Sub-Category"
+                          >
+                            <Filter className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                        {activeFilterCol === 'subcategory' && (
+                          <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('subcategory')}
+                          </div>
                         )}
-                      </TableCell>
+                      </TableHead>
 
                       {/* 6. Status */}
-                      <TableCell className="!px-2 !py-0.5 border-r border-slate-200 w-[75px] max-w-[75px] truncate whitespace-nowrap">
-                        {mat.status === 'Active' ? (
-                          <span className="text-green-600 font-semibold text-xs">Active</span>
-                        ) : mat.status === 'Inactive' ? (
-                          <span className="text-slate-500 font-semibold text-xs">Inactive</span>
-                        ) : mat.status === 'Draft' ? (
-                          <span className="text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[10px]">Draft</span>
-                        ) : (
-                          <span className="text-slate-500 font-medium text-xs">{mat.status || 'Active'}</span>
+                      <TableHead className={`!px-2 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'status' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>Status</span>
+                          <button
+                            onClick={(e) => toggleFilterPopup('status', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['status'] && columnFilters['status'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter Status"
+                          >
+                            <Filter className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                        {activeFilterCol === 'status' && (
+                          <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('status')}
+                          </div>
                         )}
-                      </TableCell>
+                      </TableHead>
 
                       {/* 7. Description */}
-                      <TableCell className="!px-2 !py-0.5 text-xs text-slate-500 border-r border-slate-200 w-auto whitespace-nowrap">
-                        <div className="relative group w-full">
-                          <span className="block truncate cursor-pointer text-xs text-slate-500" title={mat.description || ''}>
-                            {mat.description || '-'}
-                          </span>
-                          {mat.description && (
-                            <div className="absolute hidden group-hover:block bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none">
-                              {mat.description}
-                            </div>
-                          )}
+                      <TableHead className={`!px-2.5 !py-1 text-left text-slate-600 font-bold text-[11px] border-r border-slate-200 whitespace-nowrap relative group ${activeFilterCol === 'description' ? 'z-50' : 'z-10'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>Description</span>
+                          <button
+                            onClick={(e) => toggleFilterPopup('description', e)}
+                            className={`p-0.5 rounded hover:bg-slate-200 transition-colors ml-1 ${(columnFilters['description'] && columnFilters['description'].length > 0) ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            title="Filter Description"
+                          >
+                            <Filter className="h-2.5 w-2.5" />
+                          </button>
                         </div>
-                      </TableCell>
-
-                      {/* 8. Actions */}
-                      <TableCell className="!px-2 !py-0.5 text-center border-r border-slate-200 w-[110px] max-w-[110px]">
-                        {(mat.isDeletedHistoryItem || mat.status === 'Deleted' || status === 'Deleted') ? (
-                          <div className="flex items-center justify-center space-x-2 text-slate-400">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleViewDetails(mat); }}
-                              className="hover:text-blue-600 transition-colors"
-                              title="View Material Details"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
-                              className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 p-1 rounded font-bold text-xs flex items-center space-x-1 transition-colors"
-                              title="Restore Material"
-                            >
-                              <RefreshCw className="h-3.5 w-3.5 text-emerald-600" />
-                              <span className="text-[10px]">Restore</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center space-x-3 text-slate-400">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleViewDetails(mat); }}
-                              className="hover:text-blue-600 transition-colors"
-                              title="View Material Details"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleOpenEditModal(mat); }}
-                              disabled={!!importSummary}
-                              className={`hover:text-blue-600 transition-colors ${!!importSummary ? 'cursor-not-allowed opacity-50' : ''}`}
-                              title={!!importSummary ? "Edit disabled in Bulk Entry mode" : "Edit Record"}
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDeleteMaterial(mat._id); }}
-                              className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                              title="Delete Material"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                        {activeFilterCol === 'description' && (
+                          <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-2 text-left font-normal normal-case">
+                            {renderFilterPopupContent('description')}
                           </div>
                         )}
-                      </TableCell>
+                      </TableHead>
+
+                      {/* 8. Actions */}
+                      <TableHead className="!px-2 !py-1 text-center text-slate-600 font-bold text-[11px] whitespace-nowrap">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMaterials.map((mat) => (
+                      <TableRow
+                        key={mat._id}
+                        onClick={() => setSelectedMaterialId(selectedMaterialId === mat._id ? null : mat._id)}
+                        className={`hover:bg-slate-50/50 border-b border-slate-200 cursor-pointer transition-all ${selectedRowIds.has(mat._id || mat.code || mat.name)
+                          ? 'bg-blue-50/40 hover:bg-blue-50/50'
+                          : selectedMaterialId === mat._id ? 'bg-blue-50/40 hover:bg-blue-50/50 border-l-2 border-l-blue-600' : ''
+                          } ${(mat.status === 'Deleted' || status === 'Deleted') ? 'bg-red-50/70 hover:bg-red-100/80 border-l-[4px] border-l-red-600 text-red-900 font-semibold' : ''
+                          }`}
+                      >
+                        {(isSelectionMode || status === "Deleted") && (
+                          <TableCell className="!px-2 !py-1 text-center border-r border-slate-200" onClick={(e) => { e.stopPropagation(); handleRowSelect(mat._id || mat.code || mat.name); }}>
+                            <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer" checked={selectedRowIds.has(mat._id || mat.code || mat.name)} onClick={(e) => e.stopPropagation()} onChange={() => handleRowSelect(mat._id || mat.code || mat.name)} />
+                          </TableCell>
+                        )}
+
+                        {/* 1. Material Name */}
+                        <TableCell className="!px-2.5 !py-1 text-left border-r border-slate-200 whitespace-nowrap">
+                          <div className="relative group min-w-0 flex-1">
+                            <span className="block truncate text-xs text-slate-700 font-semibold cursor-pointer capitalize" title={mat.name || ''}>
+                              {(mat.name || '').toLowerCase()}
+                            </span>
+                            {mat.name && (
+                              <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none capitalize">
+                                {mat.name}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {/* 2. Code */}
+                        <TableCell className="!px-2.5 !py-1 font-mono text-[11px] border-r border-slate-200 whitespace-nowrap">
+                          <div className="relative group">
+                            <button
+                              onClick={() => handleViewDetails(mat)}
+                              className="block truncate text-blue-600 font-bold hover:underline focus:outline-none text-left w-full text-[11px] cursor-pointer"
+                              title="View material details"
+                            >
+                              {mat.code}
+                            </button>
+                            <div className="absolute hidden group-hover:block left-full ml-2 top-1/2 -translate-y-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none font-sans capitalize-none">
+                              {mat.code}
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* 3. UOM */}
+                        <TableCell className="!px-2 !py-1 font-semibold text-xs text-slate-600 border-r border-slate-200 truncate whitespace-nowrap">{mat.unit}</TableCell>
+
+                        {/* 4. Category */}
+                        <TableCell className="!px-2.5 !py-1 border-r border-slate-200 truncate whitespace-nowrap">
+                          <span className="text-xs text-slate-700 capitalize block truncate" title={mat.type}>
+                            {mat.type}
+                          </span>
+                        </TableCell>
+
+                        {/* 5. Sub-Category */}
+                        <TableCell className="!px-2.5 !py-1 border-r border-slate-200 truncate whitespace-nowrap">
+                          {mat.subcategory ? (
+                            <span className="text-xs text-slate-700 capitalize block truncate cursor-pointer text-left" title={mat.subcategory}>
+                              {mat.subcategory}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic text-xs block text-left">-</span>
+                          )}
+                        </TableCell>
+
+                        {/* 6. Status */}
+                        <TableCell className="!px-2 !py-1 border-r border-slate-200 truncate whitespace-nowrap">
+                          {mat.status === 'Active' ? (
+                            <span className="text-green-600 font-semibold text-xs">Active</span>
+                          ) : mat.status === 'Inactive' ? (
+                            <span className="text-slate-500 font-semibold text-xs">Inactive</span>
+                          ) : mat.status === 'Draft' ? (
+                            <span className="text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[10px]">Draft</span>
+                          ) : (
+                            <span className="text-slate-500 font-medium text-xs">{mat.status || 'Active'}</span>
+                          )}
+                        </TableCell>
+
+                        {/* 7. Description */}
+                        <TableCell className="!px-2.5 !py-1 text-xs text-slate-500 border-r border-slate-200 whitespace-nowrap">
+                          <div className="relative group w-full">
+                            <span className="block truncate cursor-pointer text-xs text-slate-500" title={mat.description || ''}>
+                              {mat.description || '-'}
+                            </span>
+                            {mat.description && (
+                              <div className="absolute hidden group-hover:block bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs py-0.5 px-2 rounded border border-slate-800 shadow-md whitespace-nowrap font-semibold pointer-events-none">
+                                {mat.description}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {/* 8. Actions */}
+                        <TableCell className="!px-2 !py-1 text-center whitespace-nowrap">
+                          {(mat.isDeletedHistoryItem || mat.status === 'Deleted' || status === 'Deleted') ? (
+                            <div className="flex items-center justify-center space-x-2 text-slate-400">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleViewDetails(mat); }}
+                                className="hover:text-blue-600 transition-colors"
+                                title="View Material Details"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleRestoreMaterial(mat); }}
+                                className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 p-1 rounded font-bold text-xs flex items-center space-x-1 transition-colors"
+                                title="Restore Material"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5 text-emerald-600" />
+                                <span className="text-[10px]">Restore</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center space-x-2.5 text-slate-400">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleViewDetails(mat); }}
+                                className="hover:text-blue-600 transition-colors p-0.5"
+                                title="View Material Details"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleOpenEditModal(mat); }}
+                                disabled={!!importSummary}
+                                className={`hover:text-blue-600 transition-colors p-0.5 ${!!importSummary ? 'cursor-not-allowed opacity-50' : ''}`}
+                                title={!!importSummary ? "Edit disabled in Bulk Entry mode" : "Edit Record"}
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDeleteMaterial(mat._id); }}
+                                className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Delete Material"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
               {/* Pagination Controls */}
               <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600 gap-2">
@@ -2742,6 +2752,43 @@ const MaterialsTab = () => {
           )}
         </CardContent>
       </Card>
+    </MasterPageWrapper>
+  )}
+
+  {activeMasterView === 'detail' && selectedMaterialForView && (
+    <MaterialDetailView
+      key="material-detail-page"
+      material={selectedMaterialForView}
+      onBack={() => setActiveMasterView('list')}
+      onEdit={(mat) => {
+        setSelectedMaterialForEdit(mat);
+        setActiveMasterView('edit');
+      }}
+    />
+  )}
+
+  {activeMasterView === 'edit' && (
+    <MaterialEditView
+      key="material-edit-page"
+      material={selectedMaterialForEdit}
+      isNew={false}
+      loading={submitLoading}
+      onBack={() => setActiveMasterView('list')}
+      onSave={handleSaveMaterialFromView}
+    />
+  )}
+
+  {activeMasterView === 'new' && (
+    <MaterialEditView
+      key="material-new-page"
+      material={null}
+      isNew={true}
+      loading={submitLoading}
+      onBack={() => setActiveMasterView('list')}
+      onSave={handleSaveMaterialFromView}
+    />
+  )}
+</AnimatePresence>
 
       {/* CRUD Form Modal — Big Screen Format */}
       <Dialog

@@ -7,8 +7,8 @@
   "scripts": {
     "seed": "node scripts/seed.js",
     "start": "node server.js",
-    "dev": "node --watch server.js",
-    "dev:api": "node --watch server.js",
+    "dev": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils server.js",
+    "dev:api": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils server.js",
     "dev:worker": "node worker.js",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",

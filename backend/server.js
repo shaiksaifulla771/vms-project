@@ -56,7 +56,29 @@ async function startServer() {
         console.log('[VMS] Server startup continuing safely');
       }
 
+const { execSync } = require('child_process');
+
+function freePortIfBusy(port) {
+  if (process.platform === 'win32') {
+    try {
+      const output = execSync(`powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"`).toString().trim();
+      if (output) {
+        const pids = output.split(/\r?\n/).map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p) && p > 0 && p !== process.pid);
+        for (const pid of pids) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch (e) {
+            try { execSync(`taskkill /F /PID ${pid}`); } catch (e2) {}
+          }
+        }
+      }
+    } catch (e) {}
+  }
+}
+
       const PORT = process.env.PORT || 5000;
+      freePortIfBusy(PORT);
+
       const server = app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
       });
@@ -67,14 +89,38 @@ async function startServer() {
 
       server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
-          console.error(`[VMS Boot] Port ${PORT} is already in use by another instance. Run: Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force`);
-          process.exit(1);
+          console.warn(`[VMS Boot] Port ${PORT} occupied, automatically releasing port and retrying...`);
+          freePortIfBusy(PORT);
+          setTimeout(() => {
+            try {
+              server.close();
+            } catch (e) {}
+            app.listen(PORT, () => {
+              console.log(`Server running on port ${PORT}`);
+            });
+          }, 1000);
+          return;
         }
+        console.error(`[VMS Server Error]:`, err.message);
       });
 
-      // Server restart trigger on unhandled rejections
+      // Server resilience on unhandled rejections
       process.on('unhandledRejection', (err) => {
-        console.error(`Unhandled Rejection Error: ${err.message}`);
+        const isDbNetworkError = err && (
+          err.name === 'MongoServerSelectionError' ||
+          err.name === 'MongoNetworkError' ||
+          err.name === 'MongooseServerSelectionError' ||
+          err.message?.includes('ENOTFOUND') ||
+          err.message?.includes('ECONNREFUSED') ||
+          err.message?.includes('buffering timed out')
+        );
+
+        if (isDbNetworkError) {
+          console.warn(`[MongoDB Watchdog] Handled transient network rejection: ${err.message}. Connection recovery active.`);
+          return;
+        }
+
+        console.error(`Unhandled Rejection Error: ${err?.message || err}`);
         server.close(() => process.exit(1));
       });
     }, 1000);

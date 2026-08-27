@@ -49,6 +49,15 @@ module.exports = (err, req, res, next) => {
     });
   }
 
+  // MongoDB Connection/Network errors
+  if (err.name === 'MongoServerSelectionError' || err.name === 'MongoNetworkError' || err.name === 'MongooseServerSelectionError') {
+    return res.status(503).json({
+      success: false,
+      errorType: 'DatabaseUnavailableError',
+      message: 'Database connection is re-establishing. Please retry in a few seconds.',
+    });
+  }
+
   // Default: 500 internal server error — no stack trace to client
   return res.status(err.status || 500).json({
     success: false,

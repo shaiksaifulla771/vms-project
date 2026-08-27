@@ -85,7 +85,9 @@ async function startWorker() {
     const emailService = require('./services/emailService');
     setInterval(async () => {
       try {
-        await emailService.processEmailQueue();
+        if (mongoose.connection.readyState === 1) {
+          await emailService.processEmailQueue();
+        }
       } catch (err) {
         // Silently continue — email queue errors should not crash the server
       }
