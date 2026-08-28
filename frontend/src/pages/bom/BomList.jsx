@@ -381,21 +381,33 @@ export default function BomList() {
           </div>
 
           {/* Pagination Controls */}
-          <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600 gap-2">
-            <div>
-              Showing {totalCount > 0 ? (page - 1) * limit + 1 : 0} to {Math.min(page * limit, totalCount)} of {totalCount} BOMs
-            </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between px-3 py-1.5 bg-slate-100/90 border-t border-slate-300 text-[11px] font-semibold text-slate-600 gap-1.5">
             <div className="flex items-center space-x-2">
+              <span>
+                Showing {totalCount > 0 ? (page - 1) * limit + 1 : 0} to {Math.min(page * limit, totalCount)} of <strong className="text-slate-800">{totalCount} BOMs</strong>
+              </span>
+              <select
+                value={limit}
+                onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); fetchBoms(1, search); }}
+                className="h-6 px-1 text-[11px] font-semibold border border-slate-300 rounded bg-white text-slate-700 cursor-pointer focus:outline-none"
+              >
+                <option value={10}>10 / page</option>
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
+            </div>
+            <div className="flex items-center space-x-1">
               <Button
                 size="sm"
                 variant="outline"
                 disabled={page <= 1 || loading}
                 onClick={() => handlePageChange(page - 1)}
-                className="h-7 px-2.5 bg-white font-bold"
+                className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
               >
                 Previous
               </Button>
-              <span className="px-2 font-mono font-bold text-slate-800">
+              <span className="px-1.5 text-[11px] font-mono font-bold text-slate-800">
                 Page {page} of {Math.max(1, totalPages)}
               </span>
               <Button
@@ -403,7 +415,7 @@ export default function BomList() {
                 variant="outline"
                 disabled={page >= totalPages || loading}
                 onClick={() => handlePageChange(page + 1)}
-                className="h-7 px-2.5 bg-white font-bold"
+                className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
               >
                 Next
               </Button>

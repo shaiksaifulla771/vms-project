@@ -15,7 +15,7 @@ router.route('/:id')
 
 router.post('/:id/enable', authorize('Admin'), workflowController.enableWorkflow);
 router.post('/:id/disable', authorize('Admin'), workflowController.disableWorkflow);
-router.get('/executions/all', workflowController.getExecutions);
-router.post('/execute', workflowController.executeWorkflow);
+router.get('/executions/all', authorize('Admin'), workflowController.getExecutions);
+router.post('/execute', authorize('Admin', 'Manager'), workflowController.executeWorkflow);
 
 module.exports = router;

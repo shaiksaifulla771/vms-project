@@ -3,12 +3,12 @@ const {
   getQualityRecords,
   inspectProduction
 } = require('../controllers/qualityController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 router.route('/')
   .get(protect, getQualityRecords)
-  .post(protect, inspectProduction);
+  .post(protect, authorize('Admin', 'QC Inspector', 'Production Manager'), inspectProduction);
 
 module.exports = router;

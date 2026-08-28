@@ -1,16 +1,12 @@
 const mongoose = require('mongoose');
+const connectDB = require('../../config/db');
 const AuditLog = require('../../models/AuditLog');
 const auditService = require('../../services/auditService');
 
 describe('Session 3 — Audit Engine Hardening Unit Tests', () => {
-  const TEST_URI = process.env.MONGO_URI_TEST || 'mongodb://127.0.0.1:27017/vms_test_audit';
-
   beforeAll(async () => {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-    }
-    await mongoose.connect(TEST_URI);
-  });
+    await connectDB();
+  }, 30000);
 
   afterAll(async () => {
     await AuditLog.collection.deleteMany({});

@@ -7,9 +7,12 @@
   "scripts": {
     "seed": "node scripts/seed.js",
     "start": "node server.js",
-    "dev": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils server.js",
-    "dev:api": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils server.js",
+    "predev": "node scripts/predev.js",
+    "dev": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils --watch-path=events server.js",
+    "predev:api": "node scripts/predev.js",
+    "dev:api": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils --watch-path=events server.js",
     "dev:worker": "node worker.js",
+    "clean:port": "node ../scripts/free_port.js 5000",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
     "test:e2e": "jest tests/e2e_erp_workflow.test.js",
@@ -51,6 +54,7 @@
   "devDependencies": {
     "cross-env": "^10.1.0",
     "jest": "^30.4.2",
+    "kill-port": "^2.0.1",
     "mongodb-memory-server": "^11.2.0",
     "start-server-and-test": "^3.0.12",
     "supertest": "^7.2.2"

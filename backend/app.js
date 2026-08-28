@@ -176,7 +176,7 @@ app.use((req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 10. Rate Limiting & Auth Middleware
 // ─────────────────────────────────────────────────────────────────────────────
-const { unauthenticatedIpLimiter, writeLimiter, readLimiter, vmsVisitorLimiter, vmsMcpLimiter, vmsEmailLimiter, botProtection } = require('./middleware/rateLimiter');
+const { unauthenticatedIpLimiter, writeLimiter, readLimiter, vmsVisitorLimiter, vmsMcpLimiter, vmsEmailLimiter, botProtection, webhookLimiter } = require('./middleware/rateLimiter');
 const { protect } = require('./middleware/authMiddleware');
 
 // Global Bot Protection
@@ -190,7 +190,7 @@ app.use('/api', (req, res, next) => {
 
 // Mount public auth and webhook routes BEFORE global protect middleware
 app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/webhooks', require('./routes/webhookRoutes'));
+app.use('/api/webhooks', webhookLimiter, require('./routes/webhookRoutes'));
 
 // Global Firebase ID Token authentication (all /api/* routes except /api/auth/* and /api/webhooks/*)
 app.use('/api', (req, res, next) => {

@@ -1,11 +1,34 @@
 const rateLimit = require('express-rate-limit');
+const { getClient, getRedisStatus } = require('../config/redis');
+
+let RedisStore = null;
+try {
+  RedisStore = require('rate-limit-redis').default || require('rate-limit-redis').RedisStore || require('rate-limit-redis');
+} catch (e) {
+  // rate-limit-redis optional
+}
 
 const defaultMessage = { success: false, error: 'Too many requests. Please try again later.' };
 
 const isProd = process.env.NODE_ENV === 'production';
 
 const createLimiter = (options) => {
+  let store = undefined;
+  if (isProd && getRedisStatus() && RedisStore) {
+    try {
+      const client = getClient();
+      if (client && typeof client.call === 'function') {
+        store = new RedisStore({
+          sendCommand: (...args) => client.call(...args),
+        });
+      }
+    } catch (err) {
+      // Memory store fallback
+    }
+  }
+
   return rateLimit({
+    store,
     ...options,
     standardHeaders: true,
     legacyHeaders: false,
@@ -100,3 +123,9 @@ exports.vmsEmailLimiter = createLimiter({
   windowMs: 15 * 60 * 1000,
   max: isProd ? 20 : 200
 });
+
+exports.webhookLimiter = createLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: isProd ? 100 : 1000
+});
+

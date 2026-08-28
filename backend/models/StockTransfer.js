@@ -97,7 +97,8 @@ StockTransferSchema.pre('save', function (next) {
 });
 
 StockTransferSchema.index({ status: 1 });
-StockTransferSchema.index({ fromWarehouseId: 1 });
-StockTransferSchema.index({ toWarehouseId: 1 });
+StockTransferSchema.index({ fromWarehouseId: 1, toWarehouseId: 1, status: 1 });
+StockTransferSchema.index({ fromSiteId: 1, toSiteId: 1, status: 1 });
+StockTransferSchema.index({ materialId: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('StockTransfer', StockTransferSchema);

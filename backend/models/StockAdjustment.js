@@ -101,5 +101,8 @@ StockAdjustmentSchema.pre('save', function (next) {
 
 StockAdjustmentSchema.index({ status: 1 });
 StockAdjustmentSchema.index({ warehouseId: 1, materialId: 1 });
+StockAdjustmentSchema.index({ warehouseId: 1, status: 1, createdAt: -1 });
+StockAdjustmentSchema.index({ siteId: 1, status: 1, createdAt: -1 });
+StockAdjustmentSchema.index({ materialId: 1, warehouseId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('StockAdjustment', StockAdjustmentSchema);

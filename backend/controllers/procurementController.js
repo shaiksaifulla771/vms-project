@@ -5,6 +5,7 @@ const PlanningRequirement = require('../models/PlanningRequirement');
 const Sequence = require('../models/Sequence');
 const asyncHandler = require('../middleware/asyncHandler');
 const ProcurementAutomationService = require('../services/procurementAutomationService');
+const { escapeRegex } = require('../utils/security');
 
 // @desc    Get all Purchase Requirements (from MRP and manual reorders)
 // @route   GET /api/procurement/requirements
@@ -26,10 +27,11 @@ exports.getPurchaseRequirements = asyncHandler(async (req, res) => {
   }
 
   if (search && search.trim() !== '') {
+    const q = escapeRegex(search.trim());
     filter.$or = [
-      { requirementNumber: { $regex: search.trim(), $options: 'i' } },
-      { materialCode: { $regex: search.trim(), $options: 'i' } },
-      { materialName: { $regex: search.trim(), $options: 'i' } },
+      { requirementNumber: { $regex: q, $options: 'i' } },
+      { materialCode: { $regex: q, $options: 'i' } },
+      { materialName: { $regex: q, $options: 'i' } },
     ];
   }
 

@@ -8,6 +8,7 @@ const StockAdjustment = require('../models/StockAdjustment');
 const Sequence = require('../models/Sequence');
 const BOM = require('../models/BOM');
 const MPN = require('../models/MPN');
+const { escapeRegex } = require('../utils/regex');
 
 /**
  * Resolves BOM Unit Costs & Pricing for an array of materials.
@@ -148,7 +149,7 @@ exports.getInventoryBalances = async (req, res, next) => {
 
     // 4. Search Filter (material name, code, batch, lot)
     if (req.query.search && req.query.search.trim() !== '') {
-      const q = req.query.search.trim();
+      const q = escapeRegex(req.query.search.trim());
       const matchingMaterials = await Material.find({
         $or: [
           { name: { $regex: q, $options: 'i' } },

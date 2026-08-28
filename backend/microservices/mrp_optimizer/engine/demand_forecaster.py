@@ -54,3 +54,27 @@ class DemandForecaster:
 
         safety_stock = z_factor * std_dev * lead_time_factor
         return round(safety_stock, 2)
+
+    @classmethod
+    def forecast(cls, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Runs Holt's double exponential smoothing and calculates safety stock buffer recommendations.
+        """
+        material_id = request_data.get("material_id", "")
+        series = [float(x) for x in request_data.get("historical_consumption", [])]
+        periods_ahead = int(request_data.get("periods_ahead", 6))
+        alpha = float(request_data.get("alpha", 0.3))
+        beta = float(request_data.get("beta", 0.1))
+        lead_time_days = int(request_data.get("lead_time_days", 7))
+
+        forecast_vals = cls.double_exponential_smoothing(series, periods_ahead, alpha, beta)
+        safety_stock = cls.calculate_recommended_safety_stock(series, lead_time_days)
+
+        return {
+            "success": True,
+            "material_id": material_id,
+            "forecast": forecast_vals,
+            "recommended_safety_stock": safety_stock,
+            "periods_ahead": periods_ahead,
+            "model": "Double Exponential Smoothing (Holt-Winters Linear Trend)"
+        }

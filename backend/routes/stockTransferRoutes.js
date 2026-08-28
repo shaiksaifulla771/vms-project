@@ -7,7 +7,7 @@ const {
   receiveStockTransfer,
   rejectStockTransfer,
 } = require('../controllers/stockTransferController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -15,11 +15,11 @@ router.use(protect);
 
 router.route('/')
   .get(getStockTransfers)
-  .post(createStockTransfer);
+  .post(authorize('Admin', 'Inventory Manager', 'Warehouse', 'Planner', 'Warehouse Operator'), createStockTransfer);
 
-router.post('/:id/approve', approveStockTransfer);
-router.post('/:id/dispatch', dispatchStockTransfer);
-router.post('/:id/receive', receiveStockTransfer);
-router.post('/:id/reject', rejectStockTransfer);
+router.post('/:id/approve', authorize('Admin', 'Inventory Manager', 'Manager'), approveStockTransfer);
+router.post('/:id/dispatch', authorize('Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator'), dispatchStockTransfer);
+router.post('/:id/receive', authorize('Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator'), receiveStockTransfer);
+router.post('/:id/reject', authorize('Admin', 'Inventory Manager', 'Manager'), rejectStockTransfer);
 
 module.exports = router;

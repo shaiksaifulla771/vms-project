@@ -120,8 +120,22 @@ def health_check():
 @app.post("/api/mrp/optimize")
 def optimize_mrp(payload: MRPOptimizeBody, token_valid: bool = Depends(verify_jwt_token)):
     req_dict = payload.model_dump()
-    result = MRPSolver.solve(req_dict)
-    return result
+    schedule_results = MRPSolver.solve(req_dict)
+    schedule_list = [r.model_dump() if hasattr(r, "model_dump") else r for r in schedule_results]
+    total_shortages = sum(1 for r in schedule_list if r.get("shortage_qty", 0) > 0)
+    
+    return {
+        "success": True,
+        "product_id": req_dict.get("product_id", ""),
+        "total_components_evaluated": len(schedule_list),
+        "total_shortages": total_shortages,
+        "optimal_schedule": schedule_list,
+        "summary": {
+            "target_quantity": req_dict.get("target_quantity", 0),
+            "required_date": req_dict.get("required_date", ""),
+            "engine": "Python-MRPSolver-Native"
+        }
+    }
 
 
 @app.post("/api/mrp/forecast")

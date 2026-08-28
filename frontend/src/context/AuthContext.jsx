@@ -178,15 +178,22 @@ export const AuthProvider = ({ children }) => {
       if (auth && googleProvider && typeof signInWithPopup === 'function') {
         const result = await signInWithPopup(auth, googleProvider);
         const fbUser = result.user;
+        const idToken = await fbUser.getIdToken(true);
 
-        // Register or sync Google account with MongoDB backend
+        // Register or sync Google account with MongoDB backend using Firebase ID Token
         let syncedUser = null;
         try {
-          const syncRes = await api.post('/auth/register-sync', {
-            username: fbUser.displayName || fbUser.email.split('@')[0],
-            email: fbUser.email,
-            requestedRole: 'Viewer'
-          });
+          const syncRes = await api.post(
+            '/auth/register-sync',
+            {
+              username: fbUser.displayName || fbUser.email.split('@')[0],
+              email: fbUser.email,
+              requestedRole: 'Viewer'
+            },
+            {
+              headers: { Authorization: `Bearer ${idToken}` }
+            }
+          );
           if (syncRes.data?.token) {
             setToken(syncRes.data.token);
           }
@@ -194,55 +201,26 @@ export const AuthProvider = ({ children }) => {
             syncedUser = syncRes.data.user;
           }
         } catch (syncErr) {
-          // User already exists
+          // User may already exist or is awaiting approval
         }
 
         const backendUser = await syncBackendUser(fbUser);
         const finalUser = backendUser || syncedUser;
         if (finalUser) setUser(finalUser);
         return { success: true, firebaseUser: fbUser, user: finalUser };
+      } else {
+        const errorMsg = 'Google Authentication is not configured in this environment.';
+        setError(errorMsg);
+        return { success: false, error: errorMsg };
       }
     } catch (err) {
-      if (err.code === 'auth/popup-closed-by-user') {
-        return { success: false, error: 'Sign in cancelled' };
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return { success: false, error: 'Google sign-in was cancelled.' };
       }
-      console.warn('[Google Auth] Popup auth falling back to local Google demo login:', err.message);
+      const errorMsg = err.message || 'Google sign-in could not be completed.';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
     }
-
-    // 2. Seamless Local Google SSO Fallback (Simulates Google SSO in dev without remote API keys)
-    try {
-      const syncRes = await api.post('/auth/register-sync', {
-        username: 'Google Enterprise User',
-        email: 'google-user@vms.com',
-        requestedRole: 'Admin'
-      });
-
-      if (syncRes.data?.token) {
-        setToken(syncRes.data.token);
-      }
-
-      if (syncRes.data && syncRes.data.user) {
-        const fallbackUser = syncRes.data.user;
-        setUser(fallbackUser);
-        return { success: true, user: fallbackUser };
-      }
-    } catch (fallbackErr) {
-      // If already registered, perform direct dev signin
-      try {
-        const devRes = await api.post('/auth/login', {
-          email: 'admin@vms.com',
-          password: 'admin123'
-        });
-        if (devRes.data && devRes.data.success) {
-          setToken(devRes.data.token);
-          setUser(devRes.data.user);
-          return { success: true, user: devRes.data.user };
-        }
-      } catch (e) {}
-    }
-
-    setError('Google sign-in could not be completed.');
-    return { success: false, error: 'Google sign-in could not be completed.' };
   };
 
   const registerWithEmailPassword = async (username, email, password, requestedRole = 'Viewer') => {

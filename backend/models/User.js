@@ -109,6 +109,7 @@ const UserSchema = new mongoose.Schema({
   tokenVersion: { type: Number, default: 0 },
   mfaEnabled: { type: Boolean, default: false },
   mfaSecret: { type: String, select: false },
+  tempMfaSecret: { type: String, select: false },
   lastLoginAt: Date,
   lastLoginIp: String,
   lastActivityAt: { type: Date, default: Date.now },
@@ -124,6 +125,7 @@ const UserSchema = new mongoose.Schema({
       delete ret.resetPasswordExpires;
       delete ret.refreshTokenHash;
       delete ret.mfaSecret;
+      delete ret.tempMfaSecret;
       delete ret.__v;
       return ret;
     }
@@ -137,6 +139,7 @@ const UserSchema = new mongoose.Schema({
       delete ret.resetPasswordExpires;
       delete ret.refreshTokenHash;
       delete ret.mfaSecret;
+      delete ret.tempMfaSecret;
       delete ret.__v;
       return ret;
     }

@@ -1,17 +1,13 @@
 const mongoose = require('mongoose');
+const connectDB = require('../../config/db');
 const InventoryItem = require('../../models/InventoryItem');
 const InventoryTransaction = require('../../models/InventoryTransaction');
 const InventoryLedgerService = require('../../services/inventoryLedgerService');
 
 describe('Session 4 — Inventory Ledger Unit Tests', () => {
-  const TEST_URI = process.env.MONGO_URI_TEST || 'mongodb://127.0.0.1:27017/vms_test_ledger';
-
   beforeAll(async () => {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-    }
-    await mongoose.connect(TEST_URI);
-  });
+    await connectDB();
+  }, 30000);
 
   afterAll(async () => {
     await InventoryItem.deleteMany({});

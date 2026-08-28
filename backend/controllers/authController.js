@@ -9,6 +9,7 @@ const emailService = require('../services/emailService');
 const NotificationService = require('../services/notificationService');
 const { admin, auth } = require('../config/firebaseAdmin');
 const { generateNextUserCode } = require('../utils/userCodeGenerator');
+const { generateSecret, generateTOTP, verifyTOTP, generateKeyUri } = require('../utils/totp');
 
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const OTP_TTL_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES, 10) || 10;
@@ -430,6 +431,21 @@ exports.login = async (req, res, next) => {
       });
     }
 
+    // Google Authenticator 2FA Verification Check
+    if (user.mfaEnabled) {
+      const mfaTicket = jwt.sign(
+        { id: user._id, type: '2FA_CHALLENGE' },
+        getJwtSecret(),
+        { expiresIn: '5m' }
+      );
+      return res.status(200).json({
+        success: true,
+        require2fa: true,
+        mfaTicket,
+        message: 'Google Authenticator 2FA code required. Please submit your 6-digit code.'
+      });
+    }
+
     const token = await issueAuthTokens(res, user, req);
 
     res.status(200).json({
@@ -497,13 +513,7 @@ exports.registerSync = async (req, res, next) => {
           emailVerified = decodedToken.email_verified || false;
         }
       } catch (fbErr) {
-        // Continue to native JWT / body fallback
-      }
-    }
-
-    // 2. Native JWT or Direct Request Body Fallback
-    if (!uid || !email) {
-      if (token) {
+        // Fallback: Native JWT Verification
         try {
           const decoded = jwt.verify(token, getJwtSecret());
           if (decoded && decoded.id) {
@@ -516,16 +526,20 @@ exports.registerSync = async (req, res, next) => {
           }
         } catch (jwtErr) {}
       }
-
-      if (!email && req.body.email) {
-        email = String(req.body.email).trim().toLowerCase();
-        uid = req.body.uid || ('sso_' + Buffer.from(email).toString('hex').slice(0, 16));
-        emailVerified = true;
-      }
     }
 
+    // In testing environment only: allow simulated test headers/payload
     if (!uid || !email) {
-      return res.status(400).json({ success: false, error: 'Authentication token or valid email address required for registration.' });
+      if (process.env.NODE_ENV === 'test' && req.body.email && req.headers['x-test-auth'] === 'true') {
+        email = String(req.body.email).trim().toLowerCase();
+        uid = req.body.uid || ('test_' + Buffer.from(email).toString('hex').slice(0, 16));
+        emailVerified = true;
+      } else {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication failed: Valid Firebase ID Token or Authorization Bearer token is required.'
+        });
+      }
     }
 
     const { username, requestedRole } = req.body;
@@ -547,6 +561,17 @@ exports.registerSync = async (req, res, next) => {
         user.emailVerified = emailVerified;
         await user.save();
       }
+
+      const normalizedStatus = (user.accountStatus || '').toUpperCase();
+      if (normalizedStatus !== 'ACTIVE' && normalizedStatus !== 'APPROVED') {
+        return res.status(403).json({
+          success: false,
+          error: 'Account access denied: Account is pending administrator approval or inactive.',
+          accountStatus: user.accountStatus,
+          user: buildAuthUser(user)
+        });
+      }
+
       const authToken = getSignedJwtToken(user._id, user.tokenVersion || 0);
       return res.status(200).json({
         success: true,
@@ -558,7 +583,7 @@ exports.registerSync = async (req, res, next) => {
 
     // Create new MongoDB user
     const newUserCode = await generateNextUserCode();
-    const isDevAdmin = email === 'shaiksaifulla771@gmail.com';
+    const isDevAdmin = email === 'shaiksaifulla771@gmail.com' && process.env.NODE_ENV !== 'production';
 
     user = await User.create({
       firebaseUid: uid,
@@ -1073,3 +1098,177 @@ exports.revokeUser = async (req, res, next) => {
     next(err);
   }
 };
+
+// @desc    Generate TOTP secret and QR key URI for Google Authenticator
+// @route   POST /api/auth/2fa/generate
+// @access  Private
+exports.generate2FA = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const secret = generateSecret(20);
+    const keyUri = generateKeyUri(user.email, 'VendorOS VMS', secret);
+
+    user.tempMfaSecret = secret;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      secret,
+      keyUri,
+      message: 'Scan the QR code or enter this secret key into Google Authenticator, then confirm with a 6-digit code.'
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Verify and activate Google Authenticator 2FA
+// @route   POST /api/auth/2fa/verify
+// @access  Private
+exports.verify2FA = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ success: false, error: '6-digit verification code is required.' });
+    }
+
+    const user = await User.findById(req.user._id).select('+tempMfaSecret');
+    if (!user || !user.tempMfaSecret) {
+      return res.status(400).json({ success: false, error: 'No pending 2FA setup found. Please generate a new secret first.' });
+    }
+
+    const isValid = verifyTOTP(code, user.tempMfaSecret);
+    if (!isValid) {
+      return res.status(400).json({ success: false, error: 'Invalid verification code. Please check Google Authenticator and try again.' });
+    }
+
+    user.mfaEnabled = true;
+    user.mfaSecret = user.tempMfaSecret;
+    user.tempMfaSecret = undefined;
+    await user.save();
+
+    await AuthAuditLog.create({
+      action: '2FA_ENABLED',
+      targetUserId: user._id,
+      targetEmail: user.email,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] || 'Browser'
+    }).catch(() => {});
+
+    res.status(200).json({
+      success: true,
+      message: 'Google Authenticator 2FA has been successfully enabled for your account.',
+      mfaEnabled: true
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Validate Google Authenticator 2FA TOTP code on login
+// @route   POST /api/auth/2fa/validate
+// @access  Public
+exports.validate2FA = async (req, res, next) => {
+  try {
+    const { mfaTicket, code } = req.body;
+    if (!mfaTicket || !code) {
+      return res.status(400).json({ success: false, error: 'MFA ticket and 6-digit TOTP code are required.' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(mfaTicket, getJwtSecret());
+    } catch (err) {
+      return res.status(401).json({ success: false, error: '2FA verification session expired. Please log in again.' });
+    }
+
+    if (!decoded || decoded.type !== '2FA_CHALLENGE' || !decoded.id) {
+      return res.status(401).json({ success: false, error: 'Invalid 2FA ticket.' });
+    }
+
+    const user = await User.findById(decoded.id).select('+mfaSecret');
+    if (!user || !user.mfaEnabled || !user.mfaSecret) {
+      return res.status(400).json({ success: false, error: '2FA is not configured for this user.' });
+    }
+
+    const isTotpValid = verifyTOTP(code, user.mfaSecret);
+    if (!isTotpValid) {
+      return res.status(400).json({ success: false, error: 'Invalid 2FA code. Please check your Google Authenticator app.' });
+    }
+
+    const token = await issueAuthTokens(res, user, req);
+    res.status(200).json({
+      success: true,
+      token,
+      user: buildAuthUser(user)
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Disable Google Authenticator 2FA
+// @route   POST /api/auth/2fa/disable
+// @access  Private
+exports.disable2FA = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const { code, password } = req.body;
+    const user = await User.findById(req.user._id).select('+mfaSecret +password');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (!user.mfaEnabled) {
+      return res.status(400).json({ success: false, error: '2FA is not currently enabled.' });
+    }
+
+    let isAuthorized = false;
+    if (code && user.mfaSecret && verifyTOTP(code, user.mfaSecret)) {
+      isAuthorized = true;
+    } else if (password && user.password && (await user.matchPassword(password))) {
+      isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+      return res.status(400).json({ success: false, error: 'Invalid 2FA code or password.' });
+    }
+
+    user.mfaEnabled = false;
+    user.mfaSecret = undefined;
+    user.tempMfaSecret = undefined;
+    await user.save();
+
+    await AuthAuditLog.create({
+      action: '2FA_DISABLED',
+      targetUserId: user._id,
+      targetEmail: user.email,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] || 'Browser'
+    }).catch(() => {});
+
+    res.status(200).json({
+      success: true,
+      message: 'Google Authenticator 2FA has been disabled.',
+      mfaEnabled: false
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+

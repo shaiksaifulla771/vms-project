@@ -1,14 +1,12 @@
 const mongoose = require('mongoose');
+const connectDB = require('../../config/db');
 const emailTemplateService = require('../../services/emailTemplateService');
 const emailService = require('../../services/emailService');
 
 describe('VMS Email Service & Template Engine Unit Tests', () => {
   beforeAll(async () => {
-    const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(MONGO_URI);
-    }
-  });
+    await connectDB();
+  }, 30000);
 
   afterAll(async () => {
     await mongoose.disconnect();

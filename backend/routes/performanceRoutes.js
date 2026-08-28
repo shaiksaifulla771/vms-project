@@ -5,13 +5,13 @@ const {
   getPerformanceAnalytics,
   getVendorPerformanceSummary
 } = require('../controllers/performanceController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 router.route('/')
   .get(protect, getRatings)
-  .post(protect, createRating);
+  .post(protect, authorize('Admin', 'ProcurementManager', 'Purchaser', 'Buyer', 'Manager'), createRating);
 
 router.get('/analytics', protect, getPerformanceAnalytics);
 router.get('/vendor/:vendorId', protect, getVendorPerformanceSummary);

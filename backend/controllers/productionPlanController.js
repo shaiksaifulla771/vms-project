@@ -13,6 +13,7 @@ const ProductionPlanInstance = require('../models/ProductionPlanInstance');
 const ProductionPlanningEngine = require('../services/productionPlanningEngine');
 const { nextSeqNumber } = require('../services/sequenceService');
 const { eventBus, EVENTS } = require('../events/eventBus');
+const { escapeRegex } = require('../utils/regex');
 
 
 // @desc    Get all production plans with filters and pagination
@@ -24,7 +25,7 @@ exports.getProductionPlans = asyncHandler(async (req, res, next) => {
   
   if (req.query.status && req.query.status !== 'ALL') {
     const statusVal = req.query.status;
-    query.status = { $regex: new RegExp(`^${statusVal}$`, 'i') };
+    query.status = { $regex: new RegExp(`^${escapeRegex(statusVal)}$`, 'i') };
   }
 
   if (req.query.siteId && req.query.siteId !== 'ALL' && req.query.siteId !== '') {
@@ -53,14 +54,14 @@ exports.getProductionPlans = asyncHandler(async (req, res, next) => {
     });
   }
   if (req.query.priority) {
-    query.priority = { $regex: new RegExp(`^${req.query.priority}$`, 'i') };
+    query.priority = { $regex: new RegExp(`^${escapeRegex(req.query.priority)}$`, 'i') };
   }
   if (req.query.source || req.query.planSource) {
     const src = req.query.source || req.query.planSource;
     andConditions.push({
       $or: [
-        { source: { $regex: new RegExp(`^${src}$`, 'i') } },
-        { planSource: { $regex: new RegExp(`^${src}$`, 'i') } }
+        { source: { $regex: new RegExp(`^${escapeRegex(src)}$`, 'i') } },
+        { planSource: { $regex: new RegExp(`^${escapeRegex(src)}$`, 'i') } }
       ]
     });
   }

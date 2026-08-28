@@ -13,10 +13,6 @@ import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, 
 import ConfirmDeleteDialog from '../../components/ui/ConfirmDeleteDialog';
 import BulkVendorUploadGrid from '../../components/BulkVendorUploadGrid';
 import MPNMaster from './MPNMaster';
-import { AnimatePresence } from 'framer-motion';
-import MasterPageWrapper from '../../components/masters/MasterPageWrapper';
-import VendorDetailView from './vendors/VendorDetailView';
-import VendorEditView from './vendors/VendorEditView';
 
 const INDIAN_STATES_LIST = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
@@ -66,42 +62,13 @@ const VendorsTab = () => {
   const [viewingVendor, setViewingVendor] = useState(null);
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
-
-  // Full-Page Transition & View States (BOM Experience)
-  const [activeVendorView, setActiveVendorView] = useState('list'); // 'list' | 'detail' | 'edit' | 'new'
-  const [selectedVendorForView, setSelectedVendorForView] = useState(null);
-  const [selectedVendorForEdit, setSelectedVendorForEdit] = useState(null);
-
-  const handleSaveVendorFromView = async (formValues) => {
-    setSubmitLoading(true);
-    try {
-      if (selectedVendorForEdit?._id) {
-        const res = await api.put(`/api/vendors/${selectedVendorForEdit._id}`, formValues);
-        if (res.data && res.data.success) {
-          showToast(`Vendor "${formValues.name}" updated successfully!`, 'success');
-          fetchVendors();
-          setActiveVendorView('list');
-        }
-      } else {
-        const res = await api.post('/api/vendors', formValues);
-        if (res.data && res.data.success) {
-          showToast(`Vendor "${formValues.name}" onboarded successfully!`, 'success');
-          fetchVendors();
-          setActiveVendorView('list');
-        }
-      }
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to save vendor record', 'error');
-    } finally {
-      setSubmitLoading(false);
-    }
-  };
 
   const [isVendorImportModalOpen, setIsVendorImportModalOpen] = useState(false);
   const [isVendorAutoEntry, setIsVendorAutoEntry] = useState(false);
@@ -1187,8 +1154,9 @@ const VendorsTab = () => {
 
 
   const handleViewDetails = (vendor) => {
-    setSelectedVendorForView(vendor);
-    setActiveVendorView('detail');
+    setViewingVendor(vendor);
+    setSelectedVendor(vendor);
+    setIsViewModalOpen(true);
   };
 
 
@@ -1429,13 +1397,102 @@ const VendorsTab = () => {
   };
 
   const handleOpenAddModal = () => {
-    setSelectedVendorForEdit(null);
-    setActiveVendorView('new');
+    setEditingId(null);
+    vendorDraftIdRef.current = null;
+    setCurrentDraftId(null);
+    setFormErrors({});
+
+    const initialCode = getNextVendorAutoCode();
+    setFormData({
+      vendorId: initialCode,
+      name: '', company: '', email: '', phone: '', 
+      addressName: '', address: '', address2: '',
+      zipCode: '', city: '', state: '', country: '',
+      gstin: '', gstList: [{ state: '', gstin: '' }], hasNoGst: false,
+      contacts: [],
+      secondaryAddresses: [],
+
+      contactQualityName: '', contactQualityPhone: '',
+      contactAccountsName: '', contactAccountsPhone: '',
+      contactLogisticsName: '', contactLogisticsPhone: '',
+      notes: '', category: 'Food Processor', subCategory: '',
+      ffsc2200: false, ffsc2200Expiry: '', ffsc2200Qty: '',
+      fssai: false, fssaiExpiry: '', fssaiQty: '',
+      bankAccountHolder: '', bankAccountNumber: '', bankName: '', ifscCode: '',
+      status: 'Active'
+    });
+
+    setIsModalOpen(true);
+
+    api.get('/api/vendors/sequence-peek')
+      .then(res => {
+        if (res.data && res.data.nextCode) {
+          const serverCode = res.data.nextCode.startsWith('V') ? res.data.nextCode : `V${res.data.nextCode}`;
+          const activeCodes = new Set(vendors.map(v => (v.vendorId || '').toUpperCase().trim()));
+          if (!activeCodes.has(serverCode.toUpperCase())) {
+            setFormData(prev => ({ ...prev, vendorId: serverCode }));
+          }
+        }
+      })
+      .catch(e => console.warn("Failed to fetch sequence peek", e));
   };
 
   const handleOpenEditModal = (vendor) => {
-    setSelectedVendorForEdit(vendor);
-    setActiveVendorView('edit');
+    setIsEditingDeletedRecord(!!vendor.isDeletedHistoryItem);
+    setEditingId(vendor._id);
+    setFormData({
+      vendorId: vendor.vendorId || '',
+      name: vendor.name || '',
+      company: vendor.company || '',
+      email: vendor.email || '',
+      phone: vendor.phone || '',
+      addressName: vendor.addressName || '',
+      address: vendor.address || '',
+      address2: vendor.address2 || '',
+      zipCode: vendor.zipCode || '',
+      city: vendor.city || '',
+      state: vendor.state || '',
+      country: vendor.country || '',
+      gstin: vendor.gstin || '',
+      gstList: vendor.gstList && vendor.gstList.length > 0 ? vendor.gstList : [{ state: '', gstin: '' }],
+      hasNoGst: vendor.hasNoGst || false,
+
+      contacts: (vendor.contacts || []).map(c => ({
+        role: c.role || 'Primary',
+        department: c.department || 'Sourcing',
+        name: c.name || '',
+        phone: c.phone || '',
+        email: c.email || ''
+      })),
+      secondaryAddresses: (vendor.secondaryAddresses || []).map(addr => ({
+        locationName: addr.locationName || '',
+        address: addr.address || '',
+        address2: addr.address2 || '',
+        zipCode: addr.zipCode || '',
+        city: addr.city || '',
+        state: addr.state || '',
+        country: addr.country || 'India',
+        gstOption: addr.gstOption || 'same',
+        gstState: addr.gstState || '',
+        gstin: addr.gstin || ''
+      })),
+      notes: vendor.notes || '',
+      category: vendor.category || 'Food Processor',
+      subCategory: vendor.subCategory || '',
+      ffsc2200: vendor.ffsc2200 || false,
+      ffsc2200Expiry: vendor.ffsc2200Expiry ? vendor.ffsc2200Expiry.substring(0, 10) : '',
+      ffsc2200Qty: vendor.ffsc2200Qty || '',
+      fssai: vendor.fssai || false,
+      fssaiExpiry: vendor.fssaiExpiry ? vendor.fssaiExpiry.substring(0, 10) : '',
+      fssaiQty: vendor.fssaiQty || '',
+      bankAccountHolder: vendor.bankAccountHolder || '',
+      bankAccountNumber: vendor.bankAccountNumber || '',
+      bankName: vendor.bankName || '',
+      ifscCode: vendor.ifscCode || '',
+      status: vendor.status || 'Active'
+    });
+    setFormErrors({});
+    setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
@@ -2341,12 +2398,9 @@ const VendorsTab = () => {
   };
 
   return (
-    <div className="w-full">
-      <AnimatePresence mode="wait">
-        {activeVendorView === 'list' && (
-          <MasterPageWrapper key="vendors-list-view" direction={1} className="space-y-3">
-            {/* Search & Filters */}
-            <Card className="shadow-none border border-slate-200 overflow-visible relative z-50 bg-white">
+    <div className="space-y-3">
+      {/* Search & Filters */}
+      <Card className="shadow-none border border-slate-200 overflow-visible relative z-50 bg-white">
         <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-50">
           <div className="relative w-64">
             <input
@@ -2982,43 +3036,6 @@ const VendorsTab = () => {
           </div>
         </div>
       </div>
-    </MasterPageWrapper>
-  )}
-
-  {activeVendorView === 'detail' && selectedVendorForView && (
-    <VendorDetailView
-      key="vendor-detail-page"
-      vendor={selectedVendorForView}
-      onBack={() => setActiveVendorView('list')}
-      onEdit={(v) => {
-        setSelectedVendorForEdit(v);
-        setActiveVendorView('edit');
-      }}
-    />
-  )}
-
-  {activeVendorView === 'edit' && (
-    <VendorEditView
-      key="vendor-edit-page"
-      vendor={selectedVendorForEdit}
-      isNew={false}
-      loading={submitLoading}
-      onBack={() => setActiveVendorView('list')}
-      onSave={handleSaveVendorFromView}
-    />
-  )}
-
-  {activeVendorView === 'new' && (
-    <VendorEditView
-      key="vendor-new-page"
-      vendor={null}
-      isNew={true}
-      loading={submitLoading}
-      onBack={() => setActiveVendorView('list')}
-      onSave={handleSaveVendorFromView}
-    />
-  )}
-</AnimatePresence>
 
       {/* CRUD Form Modal */}
       <Dialog

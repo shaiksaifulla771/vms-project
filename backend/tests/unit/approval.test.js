@@ -1,17 +1,13 @@
 const mongoose = require('mongoose');
+const connectDB = require('../../config/db');
 const ApprovalWorkflow = require('../../models/ApprovalWorkflow');
 const ApprovalRequest = require('../../models/ApprovalRequest');
 const approvalEngine = require('../../services/approvalEngine');
 
 describe('Session 2 — Approval Engine & SoD Unit Tests', () => {
-  const TEST_URI = process.env.MONGO_URI_TEST || 'mongodb://127.0.0.1:27017/vms_test_approval';
-
   beforeAll(async () => {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-    }
-    await mongoose.connect(TEST_URI);
-  });
+    await connectDB();
+  }, 30000);
 
   afterAll(async () => {
     await ApprovalWorkflow.deleteMany({});

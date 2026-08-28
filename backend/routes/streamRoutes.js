@@ -22,8 +22,8 @@ router.post('/token', protect, (req, res) => {
   connectionTokens.set(token, {
     userId: req.user._id,
     role: req.user.role,
-    siteId: req.user.siteId,
-    warehouseId: req.user.warehouseId,
+    siteIds: (req.user.siteIds || []).map(String),
+    warehouseIds: (req.user.warehouseIds || []).map(String),
     expiresAt: Date.now() + 30000 // 30 seconds to establish connection
   });
 
@@ -86,9 +86,12 @@ router.get('/', (req, res) => {
     try {
       const payload = JSON.parse(message);
       
-      // Scope Check
-      if (payload.siteId && sessionData.siteId && payload.siteId.toString() !== sessionData.siteId.toString()) {
+      // Scope Check: Filter by user assigned sites if user is not global admin
+      const isGlobalAdmin = sessionData.role === 'Admin';
+      if (!isGlobalAdmin && payload.siteId && sessionData.siteIds?.length > 0) {
+        if (!sessionData.siteIds.includes(payload.siteId.toString())) {
           return; // Drop event, user not in scope
+        }
       }
 
       const eventName = channel.replace('domain:', '');

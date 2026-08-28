@@ -12,13 +12,18 @@ router.post('/brevo', async (req, res) => {
   try {
     const event = req.body;
     
-    // Optional secret token verification if configured in environment
-    if (process.env.BREVO_WEBHOOK_SECRET) {
-      const authHeader = req.headers['x-brevo-webhook-secret'] || req.headers['authorization'];
-      if (authHeader !== process.env.BREVO_WEBHOOK_SECRET) {
+    // Secret token verification (mandatory in production)
+    const webhookSecret = process.env.BREVO_WEBHOOK_SECRET;
+    const authHeader = req.headers['x-brevo-webhook-secret'] || req.headers['authorization'];
+
+    if (webhookSecret) {
+      if (authHeader !== webhookSecret && authHeader !== `Bearer ${webhookSecret}`) {
         logger.warn('BrevoWebhook', `Unauthorized webhook attempt from IP: ${req.ip}`);
         return res.status(401).json({ success: false, error: 'Unauthorized webhook' });
       }
+    } else if (process.env.NODE_ENV === 'production') {
+      logger.warn('BrevoWebhook', `Blocked unauthenticated webhook in production (BREVO_WEBHOOK_SECRET not configured)`);
+      return res.status(403).json({ success: false, error: 'Webhook processing disabled: Secret not configured.' });
     }
 
     const { event: eventName, email, message_id, 'message-id': altMessageId, date } = event;

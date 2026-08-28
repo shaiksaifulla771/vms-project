@@ -1,13 +1,11 @@
 const mongoose = require('mongoose');
+const connectDB = require('../../config/db');
 const workflowEngineService = require('../../services/workflowEngineService');
 
 describe('VMS Workflow Engine Unit Tests', () => {
   beforeAll(async () => {
-    const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(MONGO_URI);
-    }
-  });
+    await connectDB();
+  }, 30000);
 
   afterAll(async () => {
     await mongoose.disconnect();

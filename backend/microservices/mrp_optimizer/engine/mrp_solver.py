@@ -48,15 +48,44 @@ class MRPSolver:
     @classmethod
     def solve(
         cls,
-        target_quantity: float,
-        required_date: str,
-        components: List[BOMComponent],
+        target_quantity: Any = 0.0,
+        required_date: str = "",
+        components: Any = None,
+        **kwargs
     ) -> List[NetRequirementResult]:
+        # Handle if first parameter is a dict or model object
+        if isinstance(target_quantity, dict):
+            req_dict = target_quantity
+            t_qty = float(req_dict.get("target_quantity", 0.0))
+            req_date = str(req_dict.get("required_date", ""))
+            raw_comps = req_dict.get("components", [])
+        elif hasattr(target_quantity, "target_quantity"):
+            t_qty = float(target_quantity.target_quantity)
+            req_date = str(target_quantity.required_date)
+            raw_comps = getattr(target_quantity, "components", [])
+        else:
+            t_qty = float(target_quantity)
+            req_date = str(required_date)
+            raw_comps = components or []
+
+        parsed_components: List[BOMComponent] = []
+        for c in raw_comps:
+            if isinstance(c, BOMComponent):
+                parsed_components.append(c)
+            elif isinstance(c, dict):
+                # Filter matching fields for BOMComponent
+                comp_fields = {k: v for k, v in c.items() if hasattr(BOMComponent, k) or k in BOMComponent.__dataclass_fields__}
+                parsed_components.append(BOMComponent(**comp_fields))
+            elif hasattr(c, "model_dump"):
+                parsed_components.append(BOMComponent(**c.model_dump()))
+            else:
+                parsed_components.append(c)
+
         results: List[NetRequirementResult] = []
 
-        for comp in components:
+        for comp in parsed_components:
             # 1. Demand & BOM quantities
-            demand_qty = float(target_quantity)
+            demand_qty = float(t_qty)
             bom_qty = float(comp.qty_per_unit)
             scrap_factor = max(0.0, float(getattr(comp, 'scrap_factor', 0.0) or 0.0))
             gross_required = round(bom_qty * demand_qty * (1.0 + scrap_factor), 4)
@@ -101,8 +130,9 @@ class MRPSolver:
                 optimal_lot = round(batches * lot, 4)
 
             # 9. Backward scheduling
+            comp_req_date = comp.requirement_date or req_date
             release_date = cls.calculate_release_date(
-                comp.requirement_date or required_date,
+                comp_req_date,
                 comp.lead_time_days
             )
 

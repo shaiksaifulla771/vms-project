@@ -50,8 +50,30 @@ class CacheService {
       const client = getClient();
       if (!client) return false;
 
-      // Handle redis-mock vs real ioredis
-      if (typeof client.keys === 'function') {
+      // Handle redis-mock vs live ioredis non-blocking scan
+      if (typeof client.scanStream === 'function') {
+        const stream = client.scanStream({ match: pattern, count: 100 });
+        const keysToDelete = [];
+
+        await new Promise((resolve, reject) => {
+          stream.on('data', (resultKeys) => {
+            for (const k of resultKeys) {
+              keysToDelete.push(k);
+            }
+          });
+          stream.on('end', () => resolve());
+          stream.on('error', (err) => reject(err));
+        });
+
+        if (keysToDelete.length > 0) {
+          // Delete in batches of 100
+          for (let i = 0; i < keysToDelete.length; i += 100) {
+            const batch = keysToDelete.slice(i, i + 100);
+            await client.del(...batch);
+          }
+        }
+      } else if (typeof client.keys === 'function') {
+        // Fallback for in-memory mock engine
         const keys = await client.keys(pattern);
         if (keys && keys.length > 0) {
           await client.del(...keys);

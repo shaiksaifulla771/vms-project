@@ -1,16 +1,12 @@
 const mongoose = require('mongoose');
+const connectDB = require('../../config/db');
 const Sequence = require('../../models/Sequence');
 const sequenceService = require('../../services/sequenceService');
 
 describe('Session 6 — Number Sequence Service Unit Tests', () => {
-  const TEST_URI = process.env.MONGO_URI_TEST || 'mongodb://127.0.0.1:27017/vms_test_sequence';
-
   beforeAll(async () => {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-    }
-    await mongoose.connect(TEST_URI);
-  });
+    await connectDB();
+  }, 30000);
 
   afterAll(async () => {
     await Sequence.deleteMany({});

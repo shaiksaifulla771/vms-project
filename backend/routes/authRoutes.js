@@ -1,5 +1,23 @@
 const express = require('express');
-const { register, login, getMe, verifyOtp, resendOtp, refresh, logout, revokeUser, registerSync, verifyEmailSync, migrateLegacy, forgotPassword, resetPassword } = require('../controllers/authController');
+const {
+  register,
+  login,
+  getMe,
+  verifyOtp,
+  resendOtp,
+  refresh,
+  logout,
+  revokeUser,
+  registerSync,
+  verifyEmailSync,
+  migrateLegacy,
+  forgotPassword,
+  resetPassword,
+  generate2FA,
+  verify2FA,
+  validate2FA,
+  disable2FA
+} = require('../controllers/authController');
 const { protect, checkRole, authorize } = require('../middleware/authMiddleware');
 const { loginLimiter, otpLimiter, registerLimiter, passwordResetLimiter } = require('../middleware/rateLimiter');
 
@@ -16,17 +34,23 @@ router.use((req, res, next) => {
 
 router.post('/register', registerLimiter, register);
 router.post('/register-sync', registerLimiter, registerSync);
-router.post('/verify-email-sync', verifyEmailSync);
+router.post('/verify-email-sync', registerLimiter, verifyEmailSync);
 router.post('/migrate-legacy', loginLimiter, migrateLegacy);
 router.post('/verify-otp', otpLimiter, verifyOtp);
 router.post('/resend-otp', otpLimiter, resendOtp);
 router.post('/forgot-password', passwordResetLimiter, forgotPassword);
 router.post('/reset-password', passwordResetLimiter, resetPassword);
 router.post('/login', loginLimiter, login);
-router.post('/refresh', refresh);
+router.post('/refresh', loginLimiter, refresh);
 router.post('/logout', logout); // Clears cookies reliably regardless of JWT expiry
 router.post('/revoke/:userId', protect, authorize('Admin'), revokeUser);
 router.get('/me', protect, getMe);
+
+// Google Authenticator 2FA Routes
+router.post('/2fa/generate', protect, otpLimiter, generate2FA);
+router.post('/2fa/verify', protect, otpLimiter, verify2FA);
+router.post('/2fa/validate', otpLimiter, validate2FA);
+router.post('/2fa/disable', protect, otpLimiter, disable2FA);
 
 // QA Test Route for RBAC
 router.get('/admin-only', protect, checkRole('Admin'), (req, res) => {

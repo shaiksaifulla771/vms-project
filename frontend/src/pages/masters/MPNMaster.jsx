@@ -9,10 +9,6 @@ import { Dialog } from '../../components/ui/Dialog';
 import { Search, Plus, Edit2, Trash2, Save, Filter, RefreshCw, Cpu, Download, Eye, RotateCcw, Printer, CheckSquare, Square, X, AlertTriangle, ShieldAlert, FileSpreadsheet } from 'lucide-react';
 import ConfirmDeleteDialog from '../../components/ui/ConfirmDeleteDialog';
 import MpnBulkModal from '../../components/mpn/MpnBulkModal';
-import { AnimatePresence } from 'framer-motion';
-import MasterPageWrapper from '../../components/masters/MasterPageWrapper';
-import MPNDetailView from './mpns/MPNDetailView';
-import MPNEditView from './mpns/MPNEditView';
 
 const STATUS_OPTIONS = ['Active', 'Inactive', 'Draft'];
 
@@ -53,26 +49,6 @@ export default function MPNMaster() {
   const [deleteConfirmState, setDeleteConfirmState] = useState({ isOpen: false, itemIds: [] });
   const [form, setForm] = useState(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState({});
-
-  // Full-Page Transition & View States (BOM Experience)
-  const [activeMPNView, setActiveMPNView] = useState('list'); // 'list' | 'detail' | 'edit' | 'new'
-  const [selectedMPNForView, setSelectedMPNForView] = useState(null);
-  const [selectedMPNForEdit, setSelectedMPNForEdit] = useState(null);
-
-  const handleViewMPNDetails = (row) => {
-    setSelectedMPNForView(row);
-    setActiveMPNView('detail');
-  };
-
-  const handleOpenEditMPN = (row) => {
-    setSelectedMPNForEdit(row);
-    setActiveMPNView('edit');
-  };
-
-  const handleOpenAddMPN = () => {
-    setSelectedMPNForEdit(null);
-    setActiveMPNView('new');
-  };
 
   // Auto-complete suggestion dropdown visibility
   const [mfrSuggestionsOpen, setMfrSuggestionsOpen] = useState(false);
@@ -279,42 +255,6 @@ export default function MPNMaster() {
     }
   };
 
-  const handleSaveMPNFromView = async (formData) => {
-    try {
-      setLoading(true);
-      const isVendorGstin = Boolean(vendors.find(v => (v._id || v.id) === formData.vendor)?.gstin);
-      const body = {
-        manufacturerPartNumber: formData.mpnNumber,
-        mpnName: formData.mpnNumber,
-        manufacturerName: formData.manufacturerName,
-        isDirectFromManufacturer: Boolean(formData.isDirectFromManufacturer),
-        materialId: formData.material,
-        vendorId: formData.vendor,
-        price: Number(formData.unitPrice || 0),
-        moq: formData.moq === '' ? 1 : Number(formData.moq),
-        leadTimeDays: Number(formData.leadTimeDays || 0),
-        partDescription: formData.description || '',
-        status: formData.status || 'Active',
-        gstin: isVendorGstin ? '' : (formData.gstin ? formData.gstin.trim().toUpperCase() : ''),
-      };
-
-      if (activeMPNView === 'edit' && selectedMPNForEdit?._id) {
-        await api.put(`/api/mpns/${selectedMPNForEdit._id}`, body);
-        showToast('MPN updated successfully');
-      } else {
-        await api.post('/api/mpns', body);
-        showToast('MPN created successfully');
-      }
-
-      await fetchAll();
-      setActiveMPNView('list');
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Save failed', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleInlinePriceUpdate = async (id, newPrice) => {
     try {
       if (!newPrice || Number(newPrice) <= 0) {
@@ -484,7 +424,7 @@ export default function MPNMaster() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(50);
   const totalPages = Math.ceil(filteredRows.length / pageSize) || 1;
 
   // Reset page when filters change
@@ -498,110 +438,107 @@ export default function MPNMaster() {
   }, [filteredRows, currentPage, pageSize]);
 
   return (
-    <div className="w-full">
-      <AnimatePresence mode="wait">
-        {activeMPNView === 'list' && (
-          <MasterPageWrapper key="mpn-list-view" direction={1} className="space-y-3">
-            {/* Toast alert */}
-            {toast.show && (
-              <div
-                className={`p-2.5 rounded-lg text-xs font-semibold text-white shadow-md flex justify-between items-center ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
-                  }`}
+    <div className="space-y-1.5 w-full">
+      {/* Toast alert */}
+      {toast.show && (
+        <div
+          className={`p-2.5 rounded-lg text-xs font-semibold text-white shadow-md flex justify-between items-center ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
+            }`}
+        >
+          <span>{toast.message}</span>
+          <button onClick={() => setToast({ show: false, message: '', type: 'success' })}>✕</button>
+        </div>
+      )}
+
+      {/* Toolbar — Compact, Simple, Neat & Clear */}
+      <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs space-y-0">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+          {/* Left: Unified Search & Status Filter */}
+          <div className="flex items-center gap-2 flex-1">
+            {/* Unified Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search MPN ID, part #, material, vendor..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8 h-8 text-xs w-full bg-slate-50/50 border-slate-200"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div className="w-36 shrink-0">
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-8 text-xs bg-slate-50/50 border-slate-200"
               >
-                <span>{toast.message}</span>
-                <button onClick={() => setToast({ show: false, message: '', type: 'success' })}>✕</button>
-              </div>
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Draft">Draft</option>
+                <option value="Deleted">Deleted (History)</option>
+              </Select>
+            </div>
+          </div>
+
+          {/* Right: Actions & Select Mode */}
+          <div className="flex items-center space-x-2 shrink-0 justify-end">
+            <Button
+              variant={selectMode ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={toggleSelectMode}
+              className="text-xs h-9"
+            >
+              {selectMode ? (
+                <>
+                  <CheckSquare className="h-3.5 w-3.5 mr-1 text-blue-600" />
+                  Cancel Selection
+                </>
+              ) : (
+                <>
+                  <Square className="h-3.5 w-3.5 mr-1" />
+                  Select
+                </>
+              )}
+            </Button>
+
+            {selectMode && (
+              <>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={selectedIds.length === 0}
+                  onClick={handleBatchDelete}
+                  className="text-xs h-9"
+                  title={
+                    selectedIds.length === 0
+                      ? 'Select 1 or more records to delete'
+                      : `Soft delete ${selectedIds.length} selected record(s)`
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete ({selectedIds.length})
+                </Button>
+              </>
             )}
 
-            {/* Toolbar — Compact, Simple, Neat & Clear */}
-            <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs space-y-0">
-              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
-                {/* Left: Unified Search & Status Filter */}
-                <div className="flex items-center gap-2 flex-1">
-                  {/* Unified Search */}
-                  <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
-                    <Input
-                      type="text"
-                      placeholder="Search MPN ID, part #, material, vendor..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-8 h-8 text-xs w-full bg-slate-50/50 border-slate-200"
-                    />
-                  </div>
-
-                  {/* Status Filter */}
-                  <div className="w-36 shrink-0">
-                    <Select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="h-8 text-xs bg-slate-50/50 border-slate-200"
-                    >
-                      <option value="All">All Statuses</option>
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                      <option value="Draft">Draft</option>
-                      <option value="Deleted">Deleted (History)</option>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Right: Actions & Select Mode */}
-                <div className="flex items-center space-x-2 shrink-0 justify-end">
-                  <Button
-                    variant={selectMode ? 'secondary' : 'outline'}
-                    size="sm"
-                    onClick={toggleSelectMode}
-                    className="text-xs h-9"
-                  >
-                    {selectMode ? (
-                      <>
-                        <CheckSquare className="h-3.5 w-3.5 mr-1 text-blue-600" />
-                        Cancel Selection
-                      </>
-                    ) : (
-                      <>
-                        <Square className="h-3.5 w-3.5 mr-1" />
-                        Select
-                      </>
-                    )}
-                  </Button>
-
-                  {selectMode && (
-                    <>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        disabled={selectedIds.length === 0}
-                        onClick={handleBatchDelete}
-                        className="text-xs h-9"
-                        title={
-                          selectedIds.length === 0
-                            ? 'Select 1 or more records to delete'
-                            : `Soft delete ${selectedIds.length} selected record(s)`
-                        }
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" />
-                        Delete ({selectedIds.length})
-                      </Button>
-                    </>
-                  )}
-
-                  <Button variant="outline" size="sm" onClick={handleExportExcel} className="text-xs h-8">
-                    <Download className="h-3.5 w-3.5 mr-1" />
-                    Export
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setBulkModalOpen(true)} className="text-xs h-8 bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-2xs">
-                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                    Bulk Create
-                  </Button>
-                  <Button variant="primary" size="sm" onClick={handleOpenAddMPN} className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold">
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    Add MPN
-                  </Button>
-                </div>
-              </div>
-            </div>
+            <Button variant="outline" size="sm" onClick={handleExportExcel} className="text-xs h-8">
+              <Download className="h-3.5 w-3.5 mr-1" />
+              Export
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setBulkModalOpen(true)} className="text-xs h-8 bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-2xs">
+              <FileSpreadsheet className="h-3.5 w-3.5 mr-1 text-slate-500" />
+              Bulk Create
+            </Button>
+            <Button variant="primary" size="sm" onClick={openAddModal} className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold">
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add MPN
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Data Table Card - Excel Spreadsheet Formatting */}
       <Card className="border border-slate-300 shadow-sm rounded-xl overflow-hidden">
@@ -707,8 +644,8 @@ export default function MPNMaster() {
                       <td className="px-2 py-1.5 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           <button
-                            onClick={() => handleViewMPNDetails(row)}
-                            className="p-1 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
+                            onClick={() => openViewModal(row)}
+                            className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                             title="View MPN Details"
                           >
                             <Eye className="h-3.5 w-3.5" />
@@ -716,15 +653,15 @@ export default function MPNMaster() {
                           {row.status !== 'Deleted' ? (
                             <>
                               <button
-                                onClick={() => handleOpenEditMPN(row)}
-                                className="p-1 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
+                                onClick={() => openEditModal(row)}
+                                className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                                 title="Edit MPN"
                               >
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDelete(row._id)}
-                                className="p-1 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                                className="p-1 text-slate-400 hover:text-red-600 transition-colors"
                                 title="Soft Delete MPN"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -733,7 +670,7 @@ export default function MPNMaster() {
                           ) : (
                             <button
                               onClick={() => handleRestore(row._id)}
-                              className="p-1 text-emerald-600 hover:text-emerald-700 transition-colors flex items-center cursor-pointer"
+                              className="p-1 text-emerald-600 hover:text-emerald-700 transition-colors flex items-center"
                               title="Restore Record"
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
@@ -751,21 +688,34 @@ export default function MPNMaster() {
       </Card>
 
       {/* Pagination Footer */}
-      <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50 gap-2">
-        <div className="text-xs text-slate-500 font-medium">
-          Showing <span className="font-bold text-slate-800">{filteredRows.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</span> to <span className="font-bold text-slate-800">{Math.min(currentPage * pageSize, filteredRows.length)}</span> of <span className="font-bold text-slate-800">{filteredRows.length}</span> records
-        </div>
+      <div className="flex flex-col sm:flex-row items-center justify-between px-3 py-1.5 border-t border-slate-200 bg-slate-100/90 text-[11px] font-semibold text-slate-600 gap-1.5">
         <div className="flex items-center space-x-2">
+          <span>
+            Showing <strong className="text-slate-800">{filteredRows.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong className="text-slate-800">{Math.min(currentPage * pageSize, filteredRows.length)}</strong> of <strong className="text-slate-800">{filteredRows.length} MPNs</strong>
+          </span>
+          <select
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+            className="h-6 px-1 text-[11px] font-semibold border border-slate-300 rounded bg-white text-slate-700 cursor-pointer focus:outline-none"
+          >
+            <option value={10}>10 / page</option>
+            <option value={25}>25 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
+          {selectedIds.length > 0 && <span className="text-blue-600 font-bold pl-2">Selected: {selectedIds.length}</span>}
+        </div>
+        <div className="flex items-center space-x-1">
           <Button
             variant="outline"
             size="sm"
             disabled={currentPage <= 1}
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            className="text-xs h-8 px-2.5"
+            className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
           >
             Previous
           </Button>
-          <span className="text-xs font-semibold text-slate-600">
+          <span className="px-1.5 text-[11px] font-mono font-bold text-slate-800">
             Page {currentPage} of {totalPages}
           </span>
           <Button
@@ -773,53 +723,12 @@ export default function MPNMaster() {
             size="sm"
             disabled={currentPage >= totalPages}
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            className="text-xs h-8 px-2.5"
+            className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
           >
             Next
           </Button>
         </div>
       </div>
-    </MasterPageWrapper>
-  )}
-
-  {activeMPNView === 'detail' && selectedMPNForView && (
-    <MPNDetailView
-      key="mpn-detail-page"
-      mpn={selectedMPNForView}
-      onBack={() => setActiveMPNView('list')}
-      onEdit={(mpn) => {
-        setSelectedMPNForEdit(mpn);
-        setActiveMPNView('edit');
-      }}
-    />
-  )}
-
-  {activeMPNView === 'edit' && (
-    <MPNEditView
-      key="mpn-edit-page"
-      mpn={selectedMPNForEdit}
-      isNew={false}
-      materials={materials}
-      vendors={vendors}
-      loading={loading}
-      onBack={() => setActiveMPNView('list')}
-      onSave={handleSaveMPNFromView}
-    />
-  )}
-
-  {activeMPNView === 'new' && (
-    <MPNEditView
-      key="mpn-new-page"
-      mpn={null}
-      isNew={true}
-      materials={materials}
-      vendors={vendors}
-      loading={loading}
-      onBack={() => setActiveMPNView('list')}
-      onSave={handleSaveMPNFromView}
-    />
-  )}
-</AnimatePresence>
 
       {/* Full-Screen / Large Viewport Add & Edit Dialog Panel */}
       <Dialog

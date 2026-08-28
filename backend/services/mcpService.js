@@ -109,6 +109,19 @@ class MCPService {
       throw new Error('MCP Security Violation: Destructive command rejected by VMS security guard');
     }
 
+    // Role-based tool access control
+    const userRole = user.role || 'Viewer';
+    const isAdmin = userRole === 'Admin';
+    const isManager = ['Admin', 'Manager', 'Inventory Manager', 'Production Manager', 'Planner'].includes(userRole);
+
+    if (['approve_appointment', 'reject_appointment'].includes(toolName) && !['Admin', 'Planner', 'Warehouse Operator', 'Manager'].includes(userRole)) {
+      throw new Error(`MCP Authorization Error: Role '${userRole}' is not permitted to execute tool '${toolName}'.`);
+    }
+
+    if (['execute_workflow', 'send_email', 'send_template_email'].includes(toolName) && !isManager) {
+      throw new Error(`MCP Authorization Error: Role '${userRole}' is not permitted to execute tool '${toolName}'.`);
+    }
+
     let result = null;
 
     switch (toolName) {

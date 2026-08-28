@@ -418,7 +418,7 @@ export default function MPNMaster() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(50);
   const totalPages = Math.ceil(filteredRows.length / pageSize) || 1;
 
   // Reset page when filters change
