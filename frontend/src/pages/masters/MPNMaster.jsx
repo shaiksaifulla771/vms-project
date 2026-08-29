@@ -684,51 +684,51 @@ export default function MPNMaster() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Footer */}
+          <div className="flex flex-col sm:flex-row items-center justify-between px-3 py-1.5 border-t border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600 gap-1.5">
+            <div className="flex items-center space-x-2">
+              <span>
+                Showing <strong className="text-slate-800">{filteredRows.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong className="text-slate-800">{Math.min(currentPage * pageSize, filteredRows.length)}</strong> of <strong className="text-slate-800">{filteredRows.length} MPNs</strong>
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                className="h-6 px-1 text-[11px] font-semibold border border-slate-300 rounded bg-white text-slate-700 cursor-pointer focus:outline-none"
+              >
+                <option value={10}>10 / page</option>
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
+              {selectedIds.length > 0 && <span className="text-blue-600 font-bold pl-2">Selected: {selectedIds.length}</span>}
+            </div>
+            <div className="flex items-center space-x-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
+              >
+                Previous
+              </Button>
+              <span className="px-1.5 text-[11px] font-mono font-bold text-slate-800">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
-
-      {/* Pagination Footer */}
-      <div className="flex flex-col sm:flex-row items-center justify-between px-3 py-1.5 border-t border-slate-200 bg-slate-100/90 text-[11px] font-semibold text-slate-600 gap-1.5">
-        <div className="flex items-center space-x-2">
-          <span>
-            Showing <strong className="text-slate-800">{filteredRows.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong className="text-slate-800">{Math.min(currentPage * pageSize, filteredRows.length)}</strong> of <strong className="text-slate-800">{filteredRows.length} MPNs</strong>
-          </span>
-          <select
-            value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-            className="h-6 px-1 text-[11px] font-semibold border border-slate-300 rounded bg-white text-slate-700 cursor-pointer focus:outline-none"
-          >
-            <option value={10}>10 / page</option>
-            <option value={25}>25 / page</option>
-            <option value={50}>50 / page</option>
-            <option value={100}>100 / page</option>
-          </select>
-          {selectedIds.length > 0 && <span className="text-blue-600 font-bold pl-2">Selected: {selectedIds.length}</span>}
-        </div>
-        <div className="flex items-center space-x-1">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={currentPage <= 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
-          >
-            Previous
-          </Button>
-          <span className="px-1.5 text-[11px] font-mono font-bold text-slate-800">
-            Page {currentPage} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={currentPage >= totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            className="h-6 px-2 text-[11px] bg-white border-slate-300 font-bold shadow-2xs"
-          >
-            Next
-          </Button>
-        </div>
-      </div>
 
       {/* Full-Screen / Large Viewport Add & Edit Dialog Panel */}
       <Dialog

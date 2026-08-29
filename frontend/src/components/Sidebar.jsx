@@ -21,83 +21,84 @@ import {
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
   const { user, logout } = useAuth();
 
-  const allMenuItems = [
+  const navigationSections = [
     {
-      id: 'dashboard',
-      name: 'Dashboard',
-      icon: LayoutDashboard,
-      roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Viewer']
+      title: 'Master',
+      items: [
+        {
+          id: 'materials',
+          name: 'Materials',
+          icon: Boxes,
+          roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']
+        },
+        {
+          id: 'vendors',
+          name: 'Vendors',
+          icon: Building2,
+          roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']
+        }
+      ]
     },
     {
-      id: 'sites',
-      name: 'Sites & Warehouses',
-      icon: Building2,
-      roles: ['Admin']
+      title: 'Stocks',
+      items: [
+        {
+          id: 'mpns',
+          name: 'MPN',
+          icon: Layers,
+          roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']
+        },
+        {
+          id: 'inventory',
+          name: 'Inventory',
+          icon: Boxes,
+          roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']
+        }
+      ]
     },
     {
-      id: 'masters',
-      name: 'Master Data',
-      icon: Database,
-      roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Viewer']
+      title: 'Engineering & Infra',
+      items: [
+        {
+          id: 'boms',
+          name: 'BOM & Recipes',
+          icon: Layers,
+          roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']
+        },
+        {
+          id: 'planning',
+          name: 'MRP & Planning',
+          icon: Cpu,
+          roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']
+        },
+        {
+          id: 'sites',
+          name: 'Sites & Warehouses',
+          icon: Building2,
+          roles: ['Admin', 'Editor']
+        }
+      ]
     },
     {
-      id: 'boms',
-      name: 'BOM & Recipes',
-      icon: Layers,
-      roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Viewer']
-    },
-    {
-      id: 'inventory',
-      name: 'Inventory',
-      icon: Boxes,
-      roles: ['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']
-    },
-    {
-      id: 'planning',
-      name: 'MRP & Planning',
-      icon: Cpu,
-      roles: ['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']
-    },
-    {
-      id: 'production',
-      name: 'Production',
-      icon: Factory,
-      roles: ['Admin', 'Production', 'Production Manager']
-    },
-    {
-      id: 'purchasing',
-      name: 'Procurement',
-      icon: ShoppingBag,
-      roles: ['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']
-    },
-    {
-      id: 'quality',
-      name: 'Quality & QC',
-      icon: ShieldCheck,
-      roles: ['Admin', 'Production', 'Production Manager', 'QC Inspector']
-    },
-    {
-      id: 'reports',
-      name: 'Reports',
-      icon: BarChart3,
-      roles: ['Admin', 'Production', 'Production Manager', 'QC Inspector', 'Finance']
-    },
-    {
-      id: 'vms',
-      name: 'Visitors',
-      icon: UserCheck,
-      roles: ['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']
-    },
-    {
-      id: 'settings',
-      name: 'System & Audit',
-      icon: Settings,
-      roles: ['Admin']
+      title: 'Settings',
+      items: [
+        {
+          id: 'classifications',
+          name: 'Classifications',
+          icon: Settings,
+          roles: ['Admin', 'Editor', 'Viewer']
+        },
+        {
+          id: 'users',
+          name: 'Users',
+          icon: UserCheck,
+          roles: ['Admin']
+        }
+      ]
     }
   ];
 
   const userRole = user?.role || 'Viewer';
-  const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
 
   const handleSelectModule = (id) => {
     setActivePage(id);
@@ -144,33 +145,43 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
           </button>
         </div>
 
-        {/* Navigation links */}
-        <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
-          <p className="px-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1">
-            Modules
-          </p>
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              activePage === item.id ||
-              (activePage === 'admin' && item.id === 'control-center') ||
-              (activePage === 'bom' && item.id === 'boms') ||
-              (activePage === 'warehouse' && item.id === 'sites') ||
-              (activePage === 'mrp' && item.id === 'planning');
+        {/* Navigation links grouped by sections */}
+        <nav className="flex-1 px-2 py-2 space-y-3 overflow-y-auto">
+          {navigationSections.map((section) => {
+            const visibleItems = section.items.filter(item => item.roles.includes(userRole));
+            if (visibleItems.length === 0) return null;
 
             return (
-              <button
-                key={item.id}
-                onClick={() => handleSelectModule(item.id)}
-                className={`w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-sm font-black'
-                    : 'hover:bg-slate-800 text-slate-400 hover:text-slate-100'
-                }`}
-              >
-                <Icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span className="truncate text-left">{item.name}</span>
-              </button>
+              <div key={section.title} className="space-y-0.5">
+                <p className="px-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-500 mb-1">
+                  {section.title}
+                </p>
+                {visibleItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive =
+                    activePage === item.id ||
+                    (item.id === 'materials' && (activePage === 'masters' || activePage === 'master')) ||
+                    (item.id === 'boms' && activePage === 'bom') ||
+                    (item.id === 'planning' && activePage === 'mrp') ||
+                    (item.id === 'sites' && (activePage === 'network-sites' || activePage === 'warehouse')) ||
+                    (item.id === 'users' && (activePage === 'users-access' || activePage === 'admin'));
+
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelectModule(item.id)}
+                      className={`w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-sm font-black'
+                          : 'hover:bg-slate-800 text-slate-400 hover:text-slate-100'
+                      }`}
+                    >
+                      <Icon className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span className="truncate text-left">{item.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>

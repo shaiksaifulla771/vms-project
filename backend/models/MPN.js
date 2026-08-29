@@ -42,6 +42,20 @@ const MPNSchema = new mongoose.Schema({
     required: [true, 'Please provide a price for this MPN'],
     min: [0.0001, 'Price must be greater than 0'],
   },
+  purchasePrice: {
+    type: Number,
+    min: [0, 'Purchase price cannot be negative'],
+  },
+  leadTime: {
+    type: Number,
+    default: 7,
+    min: 0,
+  },
+  isPreferred: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
   priceUOM: {
     type: String,
     trim: true,
@@ -80,6 +94,16 @@ const MPNSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+});
+
+// Pre-save normalization: sync purchasePrice <-> price
+MPNSchema.pre('save', function (next) {
+  if (this.purchasePrice !== undefined && !this.price) {
+    this.price = this.purchasePrice;
+  } else if (this.price !== undefined && !this.purchasePrice) {
+    this.purchasePrice = this.price;
+  }
+  next();
 });
 
 MPNSchema.index({ vendorId: 1, manufacturerName: 1, manufacturerPartNumber: 1 }, { unique: false });

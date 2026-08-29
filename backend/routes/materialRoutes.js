@@ -27,7 +27,10 @@ router.route('/batch-delete-source')
   .post(protect, authorize('Admin'), deleteMaterialsBySource);
 
 router.route('/batch-delete')
-  .post(protect, authorize('Admin'), batchDeleteMaterials);
+  .post(protect, authorize('Admin', 'Manager', 'Inventory Manager'), batchDeleteMaterials);
+
+router.route('/bulk-delete')
+  .post(protect, authorize('Admin', 'Manager', 'Inventory Manager'), batchDeleteMaterials);
 
 router.route('/sequence-peek')
   .get(protect, peekNextMaterialCode);

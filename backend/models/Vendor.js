@@ -19,17 +19,24 @@ const VendorSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    required: [true, 'Please provide vendor email'],
-    unique: true,
-    match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please provide a valid email address',
-    ],
+    sparse: true,
+    trim: true,
   },
   phone: {
     type: String,
     default: '',
     trim: true,
+  },
+  contact: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'VendorClassification',
+    default: null,
+    index: true,
   },
   addressName: {
     type: String,
@@ -160,6 +167,16 @@ const VendorSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+});
+
+// Pre-save normalization: sync contact <-> primaryContactName / phone
+VendorSchema.pre('save', function (next) {
+  if (this.contact && !this.primaryContactName) {
+    this.primaryContactName = this.contact;
+  } else if (this.primaryContactName && !this.contact) {
+    this.contact = this.primaryContactName;
+  }
+  next();
 });
 
 // Performance Indexes for Fast Lookups and Search

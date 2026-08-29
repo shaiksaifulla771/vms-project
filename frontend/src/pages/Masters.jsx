@@ -10,13 +10,17 @@ const tabs = [
   { id: 'mpns', label: 'MPN' }
 ];
 
-const Masters = () => {
-  const [activeTab, setActiveTab] = useState('materials');
+const Masters = ({ initialTab = 'materials' }) => {
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  React.useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   return (
-    <div className="space-y-0 font-sans text-slate-900 min-h-screen">
+    <div className="space-y-1 font-sans text-slate-900 w-full">
       {/* Excel Sheet Tabs */}
-      <div className="flex border-b border-slate-300 bg-slate-100/80 px-2 pt-1 overflow-x-auto gap-1 select-none">
+      <div className="sticky top-12 z-20 flex border-b border-slate-300 bg-slate-100 px-2 pt-1 overflow-x-auto gap-1 select-none shadow-2xs">
         {tabs.map(tab => (
           <button
             key={tab.id}

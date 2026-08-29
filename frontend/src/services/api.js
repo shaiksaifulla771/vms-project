@@ -37,20 +37,19 @@ api.interceptors.request.use(async (config) => {
     config.url = config.url.replace(/^\/api\//, '/');
   }
 
-  let activeToken = null;
+  // 1. Check active session token in memory / storage (set on login)
+  let activeToken = getToken();
 
-  // 1. Prefer live Firebase ID Token if user is logged into Firebase Client SDK
-  if (auth && auth.currentUser) {
+  // 2. Fallback to live Firebase ID Token if user is logged into Firebase Client SDK and no direct token is stored
+  if (!activeToken && auth && auth.currentUser) {
     try {
       activeToken = await auth.currentUser.getIdToken();
+      if (activeToken) {
+        setToken(activeToken);
+      }
     } catch (e) {
       console.warn('[Firebase Auth] Failed to fetch ID token:', e.message);
     }
-  }
-
-  // 2. Fallback to memory / stored session token if available
-  if (!activeToken) {
-    activeToken = getToken();
   }
 
   if (activeToken) {

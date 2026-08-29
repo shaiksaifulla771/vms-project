@@ -522,10 +522,10 @@ const MaterialsTab = () => {
         await api.delete(`/api/materials/${id}`);
         setDeletedMaterialsHistory(prev => [{ ...target, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() }, ...prev]);
         setMaterials(materials.filter(m => m._id !== id));
-        showToast(`Material ${target.code} moved to Deleted Sheets & Rows History.`);
+        showToast(`Material ${target.code || target.name} moved to Deleted Sheets & Rows History.`);
       } else {
         // Bulk delete
-        await api.post('/api/materials/bulk-delete', { materialIds: ids });
+        await api.post('/api/materials/batch-delete', { ids });
         const targets = materials.filter(m => ids.includes(m._id));
         setDeletedMaterialsHistory(prev => [
           ...targets.map(t => ({ ...t, deletionType: 'Deleted Row', deletedAt: new Date().toISOString() })),
@@ -537,7 +537,10 @@ const MaterialsTab = () => {
       }
     } catch (err) {
       console.error('Delete error:', err);
-      showToast('Failed to delete materials.', 'error');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to delete materials.';
+      showToast(errMsg, 'error');
+    } finally {
+      setDeleteConfirmState({ isOpen: false, itemIds: [] });
     }
   };
 
@@ -2012,10 +2015,10 @@ const MaterialsTab = () => {
   }, [search, typeFilter, status, sourceFilter, columnFilters]);
 
   return (
-    <div className="space-y-3 w-full">
+    <div className="space-y-1.5 w-full">
       {/* Search & Filters */}
       <Card className="shadow-none border border-slate-200 overflow-visible relative z-10 bg-white">
-        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-10">
+        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50 overflow-visible relative z-10">
           <div className="flex items-center space-x-2 w-full md:w-auto">
             <div className="relative w-48">
               <input
@@ -2398,7 +2401,8 @@ const MaterialsTab = () => {
             <div className="p-20 text-center text-slate-400 font-medium">No materials registered.</div>
           ) : (
             <>
-              <Table className="border border-slate-200 w-full table-fixed text-xs">
+              <div className="w-full overflow-x-auto bg-white">
+                <Table className="border border-slate-200 w-full table-fixed text-xs">
                 <TableHeader className="bg-slate-50 border-b border-slate-200 relative z-20">
                   <TableRow>
                     {(isSelectionMode || status === "Deleted") && (
@@ -2708,39 +2712,40 @@ const MaterialsTab = () => {
                   ))}
                 </TableBody>
               </Table>
+            </div>
 
-              {/* Pagination Controls */}
-              <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600 gap-2">
-                <div>
-                  Showing {filteredMaterials.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredMaterials.length)} of {filteredMaterials.length} Materials
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={currentPage <= 1 || loading}
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    className="h-7 px-2.5 bg-white font-bold"
-                  >
-                    Previous
-                  </Button>
-                  <span className="px-2 font-mono font-bold text-slate-800">
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={currentPage >= totalPages || loading}
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    className="h-7 px-2.5 bg-white font-bold"
-                  >
-                    Next
-                  </Button>
-                </div>
+            {/* Pagination Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between px-3 py-1.5 bg-slate-50 border-t border-slate-200 text-xs font-semibold text-slate-600 gap-2">
+              <div>
+                Showing {filteredMaterials.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredMaterials.length)} of {filteredMaterials.length} Materials
               </div>
-            </>
-          )}
-        </CardContent>
+              <div className="flex items-center space-x-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage <= 1 || loading}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="h-7 px-2.5 bg-white font-bold"
+                >
+                  Previous
+                </Button>
+                <span className="px-2 font-mono font-bold text-slate-800">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage >= totalPages || loading}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="h-7 px-2.5 bg-white font-bold"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
       </Card>
 
       {/* CRUD Form Modal — Big Screen Format */}

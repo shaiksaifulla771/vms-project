@@ -39,27 +39,21 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed, navigateToP
 
   const getPageTitle = () => {
     switch (activePage) {
-      case 'dashboard': return 'Dashboard';
-      case 'sites': return 'Sites & Warehouses';
+      case 'materials': return 'Materials Master';
+      case 'vendors': return 'Vendors Master';
+      case 'mpns': return 'Manufacturer Part Numbers (MPN)';
       case 'masters': return 'Master Data';
+      case 'inventory': return 'Inventory & Stock';
       case 'bom':
-      case 'boms': return 'Bills of Materials';
+      case 'boms': return 'Bills of Materials (BOM)';
       case 'planning':
-      case 'mrp': return 'MRP & Planning';
-      case 'inventory': return 'Inventory';
-      case 'purchasing': return 'Procurement';
-      case 'production':
-      case 'manufacturing': return 'Production';
-      case 'scheduling': return 'Scheduling';
-      case 'quality': return 'Quality & QC';
-      case 'reports': return 'Reports & Analytics';
-      case 'vms': return 'Visitor Management';
-      case 'users-access': return 'Users & Access';
-      case 'workflows': return 'Workflows';
-      case 'email': return 'Email Templates';
-      case 'plugins': return 'Plugins';
-      case 'settings': return 'System & Audit Logs';
-      default: return 'ERP Platform';
+      case 'mrp': return 'MRP & Material Planning';
+      case 'sites':
+      case 'network-sites': return 'Sites & Warehouses';
+      case 'classifications': return 'Categories & Classifications';
+      case 'users':
+      case 'users-access': return 'User Access & Approval';
+      default: return 'Enterprise VMS';
     }
   };
 

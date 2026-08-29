@@ -3,10 +3,20 @@ const mongoose = require('mongoose');
 // BOM component sub-schema
 // Accepts both qty/quantity and lossPercent/lossPercentage (normalized on save)
 const BOMComponentSchema = new mongoose.Schema({
+  itemType: {
+    type: String,
+    enum: ['material', 'bom'],
+    default: 'material',
+  },
   materialId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Material',
     required: false,
+  },
+  childBomId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BOM',
+    default: null,
   },
   mpnId: {
     type: mongoose.Schema.Types.ObjectId,

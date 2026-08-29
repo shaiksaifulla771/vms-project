@@ -29,13 +29,18 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'],
+    enum: ['admin', 'editor', 'viewer', 'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'],
     default: 'Viewer',
   },
   requestedRole: {
     type: String,
-    enum: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator', null],
+    enum: ['admin', 'editor', 'viewer', 'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator', null],
     default: null,
+  },
+  isActive: {
+    type: Boolean,
+    default: false,
+    index: true,
   },
   accountStatus: {
     type: String,
@@ -146,10 +151,29 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
-// Normalize accountStatus to UPPERCASE before saving
+// Normalize accountStatus, role, and sync isActive before saving
 UserSchema.pre('save', function (next) {
   if (this.accountStatus) {
     this.accountStatus = this.accountStatus.toUpperCase();
+    if (this.accountStatus === 'ACTIVE') {
+      this.isActive = true;
+    } else if (['REJECTED', 'SUSPENDED', 'DISABLED', 'DEACTIVATED'].includes(this.accountStatus)) {
+      this.isActive = false;
+    }
+  } else if (this.isActive !== undefined) {
+    this.accountStatus = this.isActive ? 'ACTIVE' : 'PENDING';
+  }
+
+  // Normalize 3-role system
+  if (this.role) {
+    const r = this.role.toLowerCase();
+    if (r === 'admin' || r === 'administrator') {
+      this.role = 'Admin';
+    } else if (['editor', 'inventory', 'production', 'warehouse', 'purchaser', 'planner', 'qc inspector', 'finance', 'manager'].some(k => r.includes(k))) {
+      this.role = 'Editor';
+    } else {
+      this.role = 'Viewer';
+    }
   }
   next();
 });

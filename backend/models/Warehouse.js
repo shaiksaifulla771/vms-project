@@ -3,10 +3,18 @@ const mongoose = require('mongoose');
 const WarehouseSchema = new mongoose.Schema({
   code: {
     type: String,
-    required: [true, 'Warehouse code is required'],
-    unique: true,
+    required: false,
+    sparse: true,
     trim: true,
     uppercase: true,
+    index: true,
+  },
+  warehouseId: {
+    type: String,
+    sparse: true,
+    trim: true,
+    uppercase: true,
+    index: true,
   },
   name: {
     type: String,
@@ -17,6 +25,13 @@ const WarehouseSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Site',
     required: false,
+    index: true,
+  },
+  parentSiteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+    required: false,
+    index: true,
   },
   type: {
     type: String,
@@ -70,6 +85,21 @@ const WarehouseSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+});
+
+// Pre-save: sync warehouseId <-> code and parentSiteId <-> siteId
+WarehouseSchema.pre('save', function (next) {
+  if (this.warehouseId && !this.code) {
+    this.code = this.warehouseId;
+  } else if (this.code && !this.warehouseId) {
+    this.warehouseId = this.code;
+  }
+  if (this.parentSiteId && !this.siteId) {
+    this.siteId = this.parentSiteId;
+  } else if (this.siteId && !this.parentSiteId) {
+    this.parentSiteId = this.siteId;
+  }
+  next();
 });
 
 // Optimize queries

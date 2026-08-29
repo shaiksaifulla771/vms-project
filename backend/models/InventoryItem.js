@@ -4,7 +4,14 @@ const InventoryItemSchema = new mongoose.Schema({
   materialId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Material',
-    required: [true, 'Material reference is required'],
+    required: false,
+    index: true,
+  },
+  mpnId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MPN',
+    required: false,
+    index: true,
   },
   siteId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -14,6 +21,22 @@ const InventoryItemSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Warehouse',
     required: [true, 'Warehouse reference is required'],
+    index: true,
+  },
+  location: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  quantity: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  reservedQty: {
+    type: Number,
+    default: 0,
+    min: 0,
   },
   batchNumber: {
     type: String,
@@ -80,17 +103,29 @@ const InventoryItemSchema = new mongoose.Schema({
   },
 });
 
-// Sync balance, onHand, and available automatically
+// Sync balance, onHand, quantity, reserved, and available automatically
 InventoryItemSchema.pre('save', function (next) {
+  if (this.quantity !== undefined && this.quantity !== 0 && !this.balance && !this.onHand) {
+    this.balance = this.quantity;
+    this.onHand = this.quantity;
+  }
   if (this.onHand !== undefined) {
     this.balance = this.onHand;
+    this.quantity = this.onHand;
   } else if (this.balance !== undefined) {
     this.onHand = this.balance;
+    this.quantity = this.balance;
+  }
+  if (this.reservedQty !== undefined && this.reservedQty !== 0 && !this.reserved) {
+    this.reserved = this.reservedQty;
+    this.reservedBalance = this.reservedQty;
   }
   if (this.reserved !== undefined) {
     this.reservedBalance = this.reserved;
+    this.reservedQty = this.reserved;
   } else if (this.reservedBalance !== undefined) {
     this.reserved = this.reservedBalance;
+    this.reservedQty = this.reservedBalance;
   }
   const onHand = this.onHand || this.balance || 0;
   const reserved = this.reserved || this.reservedBalance || 0;

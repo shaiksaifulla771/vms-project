@@ -2398,10 +2398,10 @@ const VendorsTab = () => {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-1.5">
       {/* Search & Filters */}
       <Card className="shadow-none border border-slate-200 overflow-visible relative z-50 bg-white">
-        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50/50 overflow-visible relative z-50">
+        <CardContent className="p-1 flex flex-col md:flex-row items-center justify-between gap-2 bg-slate-50 overflow-visible relative z-50">
           <div className="relative w-64">
             <input
               type="text"
@@ -2765,7 +2765,7 @@ const VendorsTab = () => {
           ) : (status === 'Deleted' ? deletedVendorsHistory.length === 0 : vendors.length === 0) ? (
             <div className="p-20 text-center text-slate-400 font-medium">No vendors registered.</div>
           ) : (
-            <div className="w-full overflow-x-auto overflow-y-auto max-h-[500px] bg-white">
+            <div className="w-full overflow-x-auto bg-white">
               <Table className="w-full border-collapse table-fixed select-none text-xs">
                 {/* Explicit Column Sizing Definitions */}
                 <colgroup>
@@ -3006,7 +3006,7 @@ const VendorsTab = () => {
         </CardContent>
 
         {/* 3. BOTTOM BOUNDARY STATUS BAR CLOSURE & PAGINATION */}
-        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold text-slate-600 gap-2">
+        <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold text-slate-600 gap-2">
           <div className="flex items-center space-x-4">
             <span>Showing {filteredVendors.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredVendors.length)} of <strong className="text-slate-800">{filteredVendors.length} Vendors</strong></span>
             {selectedVendorRowIds.size > 0 && <span>Selected: <strong className="text-blue-600">{selectedVendorRowIds.size}</strong></span>}

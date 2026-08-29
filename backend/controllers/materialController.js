@@ -241,7 +241,7 @@ exports.deleteMaterialsBySource = async (req, res, next) => {
 // @access  Private
 exports.batchDeleteMaterials = async (req, res, next) => {
   try {
-    const { ids } = req.body;
+    const ids = req.body.ids || req.body.materialIds;
     const result = await MaterialBulkService.batchDeleteMaterials(ids);
     await cacheService.invalidatePattern('materials:*');
     res.status(200).json(result);

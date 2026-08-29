@@ -29,6 +29,7 @@ const AdminControlCenter = lazy(() => import('./pages/admin/AdminControlCenter')
 const NetworkAndSites = lazy(() => import('./pages/admin/NetworkAndSites'));
 const AuditAndActivity = lazy(() => import('./pages/admin/AuditAndActivity'));
 const UsersAndAccessScope = lazy(() => import('./pages/admin/UsersAndAccessScope'));
+const ClassificationsPage = lazy(() => import('./pages/ClassificationsPage'));
 const BOMRoutes = lazy(() => import('./pages/bom/BOMRoutes'));
 const ProductionRoutes = lazy(() => import('./pages/production/ProductionRoutes'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -161,12 +162,21 @@ const AppContent = () => {
     );
   }
 
-  // Derive activePage from the first URL segment
-  let activePage = location.pathname.split('/')[1] || 'dashboard';
+  // Derive activePage from the first URL segment (default landing: materials)
+  let rawSegment = location.pathname.split('/')[1];
+  let activePage = rawSegment || 'materials';
+  if (activePage === 'masters' || activePage === 'master') activePage = 'materials';
   const sidebarActivePage = activePage === 'bom' ? 'boms' : activePage;
 
   const setActivePage = (page) => {
-    if (page === 'boms') navigate('/bom');
+    if (page === 'boms' || page === 'bom') navigate('/bom');
+    else if (page === 'materials') navigate('/materials');
+    else if (page === 'vendors') navigate('/vendors');
+    else if (page === 'mpns' || page === 'mpn') navigate('/mpns');
+    else if (page === 'planning' || page === 'mrp') navigate('/planning');
+    else if (page === 'sites') navigate('/sites');
+    else if (page === 'classifications') navigate('/classifications');
+    else if (page === 'users') navigate('/users');
     else navigate(`/${page}`);
   };
 
@@ -188,39 +198,39 @@ const AppContent = () => {
       />
 
       {/* Central content area — full-screen, fit-to-screen data density */}
-      <main className="flex-1 pt-14 px-2 sm:px-4 pb-6 w-full max-w-full mx-auto min-w-0">
+      <main className="flex-1 pt-12 px-2 sm:px-3 pb-2 w-full max-w-full mx-auto min-w-0">
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard/*" element={<Dashboard />} />
-            <Route path="/admin/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-            <Route path="/admin/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-            <Route path="/admin/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-            <Route path="/admin/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
-            <Route path="/admin/audit-logs/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
-            <Route path="/admin/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-            <Route path="/control-center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-            <Route path="/control_center/*" element={<ProtectedRoute roles={['Admin']}><AdminControlCenter /></ProtectedRoute>} />
-            <Route path="/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-            <Route path="/sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
-            <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
-            <Route path="/vms/*" element={<ProtectedRoute roles={['Admin', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor']}><VMSWorkbench /></ProtectedRoute>} />
+            {/* Landing & Master Data Routes */}
+            <Route path="/" element={<Navigate to="/materials" replace />} />
+            <Route path="/login" element={<Navigate to="/materials" replace />} />
+            <Route path="/dashboard" element={<Navigate to="/materials" replace />} />
+            <Route path="/materials/*" element={<Masters initialTab="materials" />} />
+            <Route path="/vendors/*" element={<Masters initialTab="vendors" />} />
+            <Route path="/mpns/*" element={<Masters initialTab="mpns" />} />
+            <Route path="/mpn/*" element={<Masters initialTab="mpns" />} />
             <Route path="/masters/*" element={<Masters />} />
-            <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
-            <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator']}><Warehouse /></ProtectedRoute>} />
-            <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
-            <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+
+            {/* Stocks & Inventory */}
+            <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
+
+            {/* Engineering & Infrastructure */}
             <Route path="/bom/*" element={<BOMRoutes />} />
-            <Route path="/production/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager']}><Manufacturing /></ProtectedRoute>} />
-            <Route path="/scheduling/*" element={<ProtectedRoute roles={['Admin', 'Inventory', 'Production', 'Production Manager', 'Planner']}><Scheduling /></ProtectedRoute>} />
-            <Route path="/purchasing/*" element={<ProtectedRoute roles={['Admin', 'ProcurementManager', 'Purchaser', 'Vendor']}><Purchasing /></ProtectedRoute>} />
-            <Route path="/workflows/*" element={<ProtectedRoute roles={['Admin']}><Workflows /></ProtectedRoute>} />
-            <Route path="/email/*" element={<ProtectedRoute roles={['Admin']}><EmailTemplates /></ProtectedRoute>} />
-            <Route path="/plugins/*" element={<ProtectedRoute roles={['Admin']}><Plugins /></ProtectedRoute>} />
-            <Route path="/quality/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector']}><Quality /></ProtectedRoute>} />
-            <Route path="/reports/*" element={<ProtectedRoute roles={['Admin', 'Production', 'Production Manager', 'QC Inspector', 'Finance']}><Reports /></ProtectedRoute>} />
-            <Route path="/settings/*" element={<ProtectedRoute roles={['Admin']}><AuditAndActivity /></ProtectedRoute>} />
+            <Route path="/boms/*" element={<BOMRoutes />} />
+            <Route path="/planning/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+            <Route path="/mrp/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']}><MRP /></ProtectedRoute>} />
+            <Route path="/sites/*" element={<ProtectedRoute roles={['Admin', 'Editor']}><NetworkAndSites /></ProtectedRoute>} />
+            <Route path="/network-sites/*" element={<ProtectedRoute roles={['Admin', 'Editor']}><NetworkAndSites /></ProtectedRoute>} />
+            <Route path="/warehouse/*" element={<ProtectedRoute roles={['Admin', 'Editor']}><NetworkAndSites /></ProtectedRoute>} />
+
+            {/* Settings: Classifications & Users */}
+            <Route path="/classifications/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer']}><ClassificationsPage /></ProtectedRoute>} />
+            <Route path="/users/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+            <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+            <Route path="/admin/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+            <Route path="/admin/network-sites/*" element={<ProtectedRoute roles={['Admin']}><NetworkAndSites /></ProtectedRoute>} />
+            <Route path="/admin/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
+            <Route path="/settings/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer']}><ClassificationsPage /></ProtectedRoute>} />
             
             {/* Trust, Legal & Custom 404 Recovery Routes */}
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
@@ -230,7 +240,7 @@ const AppContent = () => {
         </Suspense>
 
         {/* Global Enterprise Trust & Compliance Footer */}
-        <footer className="mt-10 pt-4 border-t border-slate-200 text-[10px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <footer className="mt-2 pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
           <div>
             &copy; {new Date().getFullYear()} VendorOS Enterprise ERP &bull; v2.4
           </div>

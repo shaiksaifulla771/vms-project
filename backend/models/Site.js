@@ -3,8 +3,15 @@ const mongoose = require('mongoose');
 const SiteSchema = new mongoose.Schema({
   code: {
     type: String,
-    required: [true, 'Site code is required'],
-    unique: true,
+    required: false,
+    sparse: true,
+    uppercase: true,
+    trim: true,
+    index: true,
+  },
+  siteId: {
+    type: String,
+    sparse: true,
     uppercase: true,
     trim: true,
     index: true,
@@ -78,6 +85,11 @@ const SiteSchema = new mongoose.Schema({
 });
 
 SiteSchema.pre('save', function (next) {
+  if (this.siteId && !this.code) {
+    this.code = this.siteId;
+  } else if (this.code && !this.siteId) {
+    this.siteId = this.code;
+  }
   this.updatedAt = Date.now();
   next();
 });

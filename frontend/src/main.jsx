@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
+// Live layout update: sticky master tab headers & fit-to-screen table view
 
 class ErrorBoundary extends React.Component {
   constructor(props) {

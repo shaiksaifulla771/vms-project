@@ -15,13 +15,34 @@ const MaterialSchema = new mongoose.Schema({
   },
   unit: {
     type: String,
-    required: [true, 'Please provide unit of measurement (e.g. kg, pcs, liters)'],
+    required: false,
+    default: 'pcs',
+    trim: true,
+  },
+  uom: {
+    type: String,
+    default: 'pcs',
     trim: true,
   },
   basePrice: {
     type: Number,
     default: 0,
   },
+  price: {
+    type: Number,
+    default: 0,
+  },
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MaterialClassification',
+    default: null,
+    index: true,
+  },
+  vendorIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vendor',
+    index: true,
+  }],
   type: {
     type: String,
     enum: ['Raw Material', 'Packaged Material', 'Semi-Finished', 'Finished'],
@@ -117,6 +138,21 @@ const MaterialSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+});
+
+// Pre-save normalization: sync uom <-> unit and price <-> basePrice
+MaterialSchema.pre('save', function (next) {
+  if (this.uom && !this.unit) {
+    this.unit = this.uom;
+  } else if (this.unit && !this.uom) {
+    this.uom = this.unit;
+  }
+  if (this.price !== undefined && !this.basePrice) {
+    this.basePrice = this.price;
+  } else if (this.basePrice !== undefined && !this.price) {
+    this.price = this.basePrice;
+  }
+  next();
 });
 
 // Performance Indexes for Fast Lookups, Search, and Filtering

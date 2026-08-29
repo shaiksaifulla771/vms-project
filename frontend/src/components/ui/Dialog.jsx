@@ -64,3 +64,5 @@ export const Dialog = ({ isOpen, onClose, title, children, className = '' }) => 
     </AnimatePresence>
   );
 };
+
+export default Dialog;
