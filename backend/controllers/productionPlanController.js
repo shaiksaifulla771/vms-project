@@ -917,14 +917,15 @@ exports.approveProductionPlan = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: transitionCheck.error });
   }
 
-  // 2. Maker-checker policy check (Rev. 2 Part D1)
+  // 2. Maker-checker policy check (Rev. 2 Part D1 & Governance standard)
   const currentUserId = req.user ? (req.user.id || req.user._id) : null;
   const creatorId = plan.createdBy ? (plan.createdBy._id || plan.createdBy) : null;
-  if (plan.requireDifferentApprover && currentUserId && creatorId) {
+  const isGlobalAdmin = req.user && req.user.role === 'Admin';
+  if (!isGlobalAdmin && currentUserId && creatorId) {
     if (String(currentUserId) === String(creatorId)) {
       return res.status(403).json({
         success: false,
-        error: 'Maker-checker policy violation: Approver cannot be the same user who created the plan.',
+        error: 'Maker-checker policy violation: Approver cannot be the same user who created the plan. A distinct Production Manager or Administrator must approve.',
       });
     }
   }

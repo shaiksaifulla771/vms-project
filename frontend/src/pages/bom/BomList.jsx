@@ -1,16 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../../services/api';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
+import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Input, Select } from '../../components/ui/Input';
-import { Badge } from '../../components/ui/Badge';
-import { Plus, Trash2, Edit2, Copy, Search, Eye, Scale, Check, X, Loader2, RotateCcw, MoreVertical, Power, PowerOff } from 'lucide-react';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
+import { Trash2, Edit2, Search, Eye, Check, X, Loader2, MoreVertical } from 'lucide-react';
 
 export default function BomList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [boms, setBoms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('Active');
@@ -105,41 +103,32 @@ export default function BomList() {
 
   return (
     <BomPageWrapper>
-      <div className="flex justify-between items-center mb-3">
-        <div>
-          <h1 className="text-base font-bold text-slate-900 tracking-tight">Bill of Materials</h1>
-          <p className="text-[10px] text-slate-400 font-medium">Manage assembly recipes, components, and costs.</p>
-        </div>
-        <Button onClick={() => navigate('/bom/new', { state: { returnTo: location.pathname + location.search } })} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-8 text-xs px-3">
-          <Plus className="w-3.5 h-3.5 mr-1.5" /> Create BOM
-        </Button>
-      </div>
-
       <Card className="border-slate-200 shadow-2xs rounded-xl overflow-hidden bg-white">
-        <CardHeader className="bg-slate-50 border-b border-slate-200 p-2.5">
+        <CardHeader className="bg-slate-50 border-b border-slate-200 p-2">
           <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="relative w-[300px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
+                <input
+                  type="text"
                   placeholder="Search products..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 text-xs h-8"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
                 />
               </div>
             </div>
             <div className="w-[150px]">
-              <Select
+              <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full text-xs h-8"
+                className="w-full text-xs h-8 px-2.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="All">All Status</option>
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
                 <option value="Deleted">Deleted</option>
-              </Select>
+              </select>
             </div>
           </div>
         </CardHeader>
@@ -209,8 +198,9 @@ export default function BomList() {
                       <td className="px-2.5 py-1.5 text-xs border-r border-slate-200">
                         {editBatchCodeId === bom._id ? (
                           <div className="flex items-center space-x-1">
-                            <Input
+                            <input
                               autoFocus
+                              type="text"
                               data-testid="batch-code-input"
                               value={editBatchCodeValue}
                               onChange={(e) => setEditBatchCodeValue(e.target.value)}
@@ -226,7 +216,7 @@ export default function BomList() {
                                   setEditBatchCodeId(null);
                                 }
                               }}
-                              className="w-24 h-7 text-xs px-2"
+                              className="w-24 h-7 text-xs px-2 bg-slate-50 border border-slate-200 rounded font-mono font-bold"
                               disabled={savingBatchCodeId === bom._id}
                             />
                             {savingBatchCodeId === bom._id ? (
@@ -310,48 +300,22 @@ export default function BomList() {
                             <>
                               <button 
                                 onClick={() => navigate(`/bom/${bom._id}`, { state: { returnTo: location.pathname + location.search } })} 
-                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" 
+                                className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors" 
                                 title="View Recipe / Breakdown"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-4 h-4" />
                               </button>
 
                               <button 
                                 onClick={() => navigate(`/bom/${bom._id}/edit`, { state: { returnTo: location.pathname + location.search } })} 
-                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" 
+                                className="p-1.5 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" 
                                 title="Edit Recipe"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Edit2 className="w-4 h-4" />
                               </button>
 
-                              <button 
-                                onClick={async () => {
-                                  try {
-                                    const nextStatus = bom.status === 'Active' ? 'Inactive' : 'Active';
-                                    const res = await api.put(`/api/boms/${bom._id}`, { status: nextStatus });
-                                    if (res.data.success) {
-                                      fetchBoms(page, search);
-                                    }
-                                  } catch (err) {
-                                    console.error('Failed to toggle status:', err);
-                                  }
-                                }} 
-                                className={`p-1 rounded transition-colors ${
-                                  bom.status === 'Active' 
-                                    ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' 
-                                    : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
-                                }`} 
-                                title={bom.status === 'Active' ? 'Deactivate BOM (Set Inactive)' : 'Activate BOM (Set Active)'}
-                              >
-                                {bom.status === 'Active' ? (
-                                  <PowerOff className="w-3.5 h-3.5" />
-                                ) : (
-                                  <Power className="w-3.5 h-3.5 text-emerald-600" />
-                                )}
-                              </button>
-
-                              <button onClick={() => handleDelete(bom)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete BOM">
-                                <Trash2 className="w-3.5 h-3.5" />
+                              <button onClick={() => handleDelete(bom)} className="p-1.5 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete BOM">
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </>
                           ) : (

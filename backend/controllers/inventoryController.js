@@ -9,6 +9,8 @@ const Sequence = require('../models/Sequence');
 const BOM = require('../models/BOM');
 const MPN = require('../models/MPN');
 const { escapeRegex } = require('../utils/regex');
+const authz = require('../utils/authz');
+const scopeResolver = require('../utils/scopeResolver');
 
 /**
  * Resolves BOM Unit Costs & Pricing for an array of materials.
@@ -116,6 +118,25 @@ async function autoSyncSiteReferences() {
 exports.getInventoryBalances = async (req, res, next) => {
   try {
     const filter = {};
+
+    // 0. Enforce Multi-Site Location Scope for Non-Global Admins
+    if (req.user && !authz.isGlobalAdmin(req.user)) {
+      const { siteIds, warehouseIds } = await scopeResolver.getUserAssignedScopes(req.user);
+      if (warehouseIds && warehouseIds.length > 0) {
+        if (!req.query.warehouseId || req.query.warehouseId === 'ALL') {
+          filter.warehouseId = { $in: warehouseIds };
+        }
+      } else if (siteIds && siteIds.length > 0) {
+        if (!req.query.siteId || req.query.siteId === 'ALL') {
+          const scopedWhs = await Warehouse.find({ siteId: { $in: siteIds } }).select('_id');
+          const scopedWhIds = scopedWhs.map(w => w._id);
+          filter.$or = [
+            { siteId: { $in: siteIds } },
+            { warehouseId: { $in: scopedWhIds } }
+          ];
+        }
+      }
+    }
 
     // 1. Warehouse Filter
     if (req.query.warehouseId && req.query.warehouseId !== '' && req.query.warehouseId !== 'ALL') {

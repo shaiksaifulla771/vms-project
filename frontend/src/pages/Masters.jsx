@@ -6,8 +6,7 @@ import VendorsTab from './masters/VendorsTab';
 
 const tabs = [
   { id: 'materials', label: 'Materials' },
-  { id: 'vendors', label: 'Vendors' },
-  { id: 'mpns', label: 'MPN' }
+  { id: 'vendors', label: 'Vendors' }
 ];
 
 const Masters = ({ initialTab = 'materials' }) => {
@@ -19,7 +18,7 @@ const Masters = ({ initialTab = 'materials' }) => {
 
   return (
     <div className="space-y-1 font-sans text-slate-900 w-full">
-      {/* Excel Sheet Tabs */}
+      {/* Master Tabs */}
       <div className="sticky top-12 z-20 flex border-b border-slate-300 bg-slate-100 px-2 pt-1 overflow-x-auto gap-1 select-none shadow-2xs">
         {tabs.map(tab => (
           <button
@@ -37,12 +36,10 @@ const Masters = ({ initialTab = 'materials' }) => {
       </div>
 
       <div className="bg-white p-0">
-        {activeTab === 'materials' ? (
-          <MaterialsTab />
-        ) : activeTab === 'vendors' ? (
+        {activeTab === 'vendors' ? (
           <VendorsTab />
         ) : (
-          <MPNMaster />
+          <MaterialsTab />
         )}
       </div>
     </div>

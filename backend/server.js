@@ -62,8 +62,12 @@ async function startServer() {
       console.log(`[VMS] Server running on port ${PORT}`);
     });
 
+    let portRetryCount = 0;
+    const MAX_PORT_RETRIES = 5;
+
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
+        portRetryCount++;
         let occupyingPid = null;
         try {
           const { execSync } = require('child_process');
@@ -79,9 +83,38 @@ async function startServer() {
         } catch (e) {}
 
         const pidInfo = occupyingPid ? ` (PID: ${occupyingPid})` : '';
-        console.error(`[VMS Boot Error] Port ${PORT} is already occupied by another running instance${pidInfo}.`);
-        console.error(`Please terminate the process using port ${PORT} or configure a different PORT in .env.`);
-        process.exit(1);
+
+        if (portRetryCount <= MAX_PORT_RETRIES) {
+          // Try to kill the stale process and retry
+          if (occupyingPid) {
+            try {
+              const { execSync } = require('child_process');
+              const pids = occupyingPid.split(',').map(p => p.trim()).filter(Boolean);
+              for (const pid of pids) {
+                if (pid !== String(process.pid)) {
+                  if (process.platform === 'win32') {
+                    execSync(`taskkill /F /PID ${pid} 2>nul`);
+                  } else {
+                    execSync(`kill -9 ${pid} 2>/dev/null`);
+                  }
+                }
+              }
+              console.log(`[VMS] Killed stale process${pidInfo} on port ${PORT}. Retrying in 2s... (attempt ${portRetryCount}/${MAX_PORT_RETRIES})`);
+            } catch (killErr) {
+              console.warn(`[VMS] Could not kill process${pidInfo}: ${killErr.message}`);
+            }
+          } else {
+            console.warn(`[VMS] Port ${PORT} busy. Retrying in 2s... (attempt ${portRetryCount}/${MAX_PORT_RETRIES})`);
+          }
+
+          setTimeout(() => {
+            server.listen(PORT);
+          }, 2000);
+        } else {
+          console.error(`[VMS Boot Error] Port ${PORT} is still occupied after ${MAX_PORT_RETRIES} retries${pidInfo}.`);
+          console.error(`Please terminate the process using port ${PORT} or configure a different PORT in .env.`);
+          process.exit(1);
+        }
       } else {
         console.error(`[VMS Server Error]:`, err.message);
       }
@@ -123,6 +156,17 @@ async function startServer() {
       }
 
       console.error(`Unhandled Rejection Error: ${err?.message || err}`);
+      if (server) {
+        server.close(() => process.exit(1));
+      } else {
+        process.exit(1);
+      }
+    });
+
+    // Catch synchronous uncaught exceptions to prevent silent crash → watch restart loops
+    process.on('uncaughtException', (err) => {
+      console.error(`[VMS] Uncaught Exception: ${err?.message || err}`);
+      console.error(err?.stack || '');
       if (server) {
         server.close(() => process.exit(1));
       } else {

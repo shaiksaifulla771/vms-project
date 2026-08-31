@@ -78,7 +78,7 @@ router.post('/:id/override', authorize('Admin', 'Production Manager', 'Approver'
 router.post('/:id/schedule', authorize('Admin', 'Production Manager', 'Planner'), scheduleProductionPlan);
 router.put('/:id/reschedule', authorize('Admin', 'Production Manager', 'Planner'), rescheduleProductionPlan);
 router.post('/:id/material-check', authorize('Admin', 'Production Manager', 'Planner', 'Inventory Manager'), materialCheckProductionPlan);
-router.post('/:id/approve', authorize('Admin', 'Production Manager', 'Planner'), approveProductionPlan);
+router.post('/:id/approve', authorize('Admin', 'Production Manager'), approveProductionPlan);
 router.post('/:id/release', authorize('Admin', 'Production Manager', 'Planner'), releaseProductionPlan);
 router.post('/:id/use', authorize('Admin', 'Production Manager', 'Planner'), useProductionPlan);
 router.post('/:id/restore', authorize('Admin', 'Production Manager', 'Planner'), restoreProductionPlan);

@@ -13,6 +13,7 @@ let connectionPromise = null;
 let sessionPolyfillInstalled = false;
 let isReconnecting = false;
 let reconnectTimer = null;
+let globalMongoMemoryServer = null;
 
 /**
  * Installs graceful fallback polyfill for standalone/non-replica MongoDB instances
@@ -45,6 +46,9 @@ function installSessionPolyfill() {
  * Automatic Auto-Reconnect Watchdog
  */
 function scheduleAutoReconnect() {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
   if (isReconnecting || mongoose.connection.readyState === 1 || mongoose.connection.readyState === 2) {
     return;
   }
@@ -75,8 +79,11 @@ mongoose.connection.on('connected', () => {
 });
 
 mongoose.connection.on('disconnected', () => {
-  console.warn('[MongoDB Event] Disconnected from MongoDB cluster.');
-  scheduleAutoReconnect();
+  connectionPromise = null;
+  if (process.env.NODE_ENV !== 'test') {
+    console.warn('[MongoDB Event] Disconnected from MongoDB cluster.');
+    scheduleAutoReconnect();
+  }
 });
 
 mongoose.connection.on('reconnected', () => {
@@ -103,35 +110,20 @@ const connectDB = async () => {
       process.exit(1);
     }
 
-    let connStr;
-    if (isTest) {
-      connStr = process.env.TEST_MONGODB_URI || process.env.MONGODB_URI || process.env.MONGO_URI;
-    } else if (isProd) {
-      connStr = process.env.PRODUCTION_MONGODB_URI || process.env.MONGODB_URI || process.env.MONGO_URI;
-    } else {
-      connStr = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vms';
-    }
+    const uri = process.env.TEST_MONGODB_URI || process.env.MONGODB_URI || process.env.MONGO_URI || (isTest ? null : 'mongodb://127.0.0.1:27017/vms_dev');
 
-    const connectionOptions = {
-      maxPoolSize: 50,
-      minPoolSize: 10,
-      serverSelectionTimeoutMS: 15000,
-      socketTimeoutMS: 45000,
-      heartbeatFrequencyMS: 10000,
-      family: 4,
-      retryWrites: true,
-      retryReads: true,
-      autoIndex: true
-    };
-    
     try {
-      if (!connStr && isTest) {
+      if (isTest && !uri) {
         throw new Error('No test URI provided, initiate in-memory test database fallback');
       }
-      const conn = await mongoose.connect(connStr, connectionOptions);
+      const conn = await mongoose.connect(uri, {
+        maxPoolSize: 50,
+        minPoolSize: 10,
+        serverSelectionTimeoutMS: isProd ? 15000 : 3000,
+        heartbeatFrequencyMS: 10000,
+      });
       console.log(`MongoDB Connected: ${conn.connection.host} (DB: ${conn.connection.name})`);
       
-      // Auto-detect replica set / sharded cluster support for transactions
       await detectTransactionSupport();
       installSessionPolyfill();
 
@@ -143,9 +135,11 @@ const connectDB = async () => {
         if (mongoose.connection.readyState !== 0) {
           await mongoose.disconnect().catch(() => {});
         }
-        const { MongoMemoryServer } = require('mongodb-memory-server');
-        const mongoServer = await MongoMemoryServer.create();
-        const mongoUri = mongoServer.getUri();
+        if (!global.__MONGO_MEMORY_SERVER__) {
+          const { MongoMemoryServer } = require('mongodb-memory-server');
+          global.__MONGO_MEMORY_SERVER__ = await MongoMemoryServer.create();
+        }
+        const mongoUri = global.__MONGO_MEMORY_SERVER__.getUri();
         const memConn = await mongoose.connect(mongoUri, {
           maxPoolSize: 50,
           minPoolSize: 10,

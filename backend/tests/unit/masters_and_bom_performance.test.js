@@ -8,17 +8,14 @@ const FlatBOM = require('../../models/FlatBOM');
 const cacheService = require('../../services/cacheService');
 const bomExplosionService = require('../../services/bomExplosionService');
 
-let mongoServer;
+const connectDB = require('../../config/db');
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
-});
+  await connectDB();
+}, 30000);
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
 });
 
 beforeEach(async () => {

@@ -1,65 +1,71 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import {
   Users,
-  ShieldCheck,
+  Search,
+  Plus,
+  RefreshCw,
+  Edit2,
+  UserCheck,
+  UserX,
+  Shield,
   Building2,
   Warehouse,
-  Key,
-  Edit2,
   CheckCircle2,
-  RefreshCw,
-  Search,
-  Filter,
-  Info,
-  Plus,
-  ArrowRight,
-  ArrowLeft,
   AlertTriangle,
-  XCircle,
-  UserX,
-  UserCheck,
-  RotateCcw
+  FileSpreadsheet
 } from 'lucide-react';
 
-const UsersAndAccessScope = () => {
+const ROLE_OPTIONS = [
+  'Admin',
+  'Inventory Manager',
+  'Production Manager',
+  'Warehouse Operator',
+  'QC Inspector',
+  'Planner',
+  'Viewer'
+];
+
+export default function UsersAndAccessScope() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [sites, setSites] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Edit Scope Modal States (Matching Image 7)
+  // Modals & Dialogs
   const [editUserModal, setEditUserModal] = useState(null);
-  const [scopeStep, setScopeStep] = useState(1);
-  const [selectedRole, setSelectedRole] = useState('');
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [confirmToggleUser, setConfirmToggleUser] = useState(null);
+  const [conflictModal, setConflictModal] = useState(null);
+  const [toastNotice, setToastNotice] = useState(null);
+
+  // Edit Scope form state
+  const [selectedRole, setSelectedRole] = useState('Viewer');
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
   const [selectedWarehouseIds, setSelectedWarehouseIds] = useState([]);
   const [mandatoryReason, setMandatoryReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [systemNotice, setSystemNotice] = useState(null);
 
-  // Conflict Resolution Modal State (Matching Image 8)
-  const [conflictModal, setConflictModal] = useState(null);
-
-  // Red Warning Banner State (Matching Image 8)
-  const [redWarningBanner, setRedWarningBanner] = useState(null);
-
-  // Add User Form State
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [newUser, setNewUser] = useState({
+  // Add User form state
+  const [newUserForm, setNewUserForm] = useState({
     username: '',
     email: '',
     role: 'Inventory Manager',
-    password: 'password123'
+    password: 'password123',
+    siteIds: [],
+    warehouseIds: []
   });
+  const [addUserLoading, setAddUserLoading] = useState(false);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      setError(null);
       const [usersRes, sitesRes, warehousesRes] = await Promise.all([
         api.get('/api/users').catch(() => ({ data: { data: [] } })),
         api.get('/api/admin/sites').catch(() => ({ data: [] })),
@@ -72,7 +78,7 @@ const UsersAndAccessScope = () => {
       setWarehouses(Array.isArray(warehousesRes.data) ? warehousesRes.data : warehousesRes.data?.data || []);
     } catch (err) {
       console.error('User access scope fetch error:', err);
-      setError('Unable to load users from database server.');
+      setToastNotice({ type: 'error', text: 'Unable to load user registry.' });
       setUsers([]);
     } finally {
       setLoading(false);
@@ -83,9 +89,59 @@ const UsersAndAccessScope = () => {
     fetchData();
   }, []);
 
+  // Summary Metrics
+  const metrics = useMemo(() => {
+    const total = users.length;
+    const active = users.filter(u => {
+      const st = (u.accountStatus || 'ACTIVE').toUpperCase();
+      return (st === 'ACTIVE' || u.isActive) && st !== 'DEACTIVATED' && st !== 'INACTIVE';
+    }).length;
+    const pending = users.filter(u => (u.accountStatus || '').toUpperCase() === 'PENDING').length;
+    const deactivated = total - active - pending;
+    const adminCount = users.filter(u => u.role === 'Admin' && ((u.accountStatus || 'ACTIVE').toUpperCase() === 'ACTIVE' || u.isActive)).length;
+    return { total, active, pending, deactivated, adminCount };
+  }, [users]);
+
+  // Lookup maps for fast lookup
+  const siteMap = useMemo(() => {
+    const m = new Map();
+    sites.forEach(s => m.set(String(s._id), s.name || s.code || 'Site'));
+    return m;
+  }, [sites]);
+
+  const warehouseMap = useMemo(() => {
+    const m = new Map();
+    warehouses.forEach(w => m.set(String(w._id), w.name || w.code || 'Warehouse'));
+    return m;
+  }, [warehouses]);
+
+  // Filtered Flat Users List (Excel-style)
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = !q ||
+        (u.username || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q);
+
+      const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
+
+      const status = (u.accountStatus || 'ACTIVE').toUpperCase();
+      const isPending = status === 'PENDING';
+      const isDeactivated = status === 'DEACTIVATED' || status === 'INACTIVE' || u.isActive === false;
+      const isActive = !isPending && !isDeactivated;
+
+      const matchesStatus = statusFilter === 'ALL' ? true :
+        statusFilter === 'ACTIVE' ? isActive :
+        statusFilter === 'PENDING' ? isPending :
+        statusFilter === 'DEACTIVATED' ? isDeactivated : true;
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [users, searchQuery, roleFilter, statusFilter]);
+
+  // Scope Handlers
   const handleOpenEdit = (user) => {
     setEditUserModal(user);
-    setScopeStep(1);
     setSelectedRole(user.role || 'Viewer');
     setSelectedSiteIds(user.siteIds ? user.siteIds.map(s => String(s._id || s)) : []);
     setSelectedWarehouseIds(user.warehouseIds ? user.warehouseIds.map(w => String(w._id || w)) : []);
@@ -94,29 +150,19 @@ const UsersAndAccessScope = () => {
 
   const handleToggleSiteScope = (siteId) => {
     const sId = String(siteId);
-    if (selectedSiteIds.includes(sId)) {
-      setSelectedSiteIds(selectedSiteIds.filter(id => id !== sId));
-    } else {
-      setSelectedSiteIds([...selectedSiteIds, sId]);
-    }
+    setSelectedSiteIds(prev => prev.includes(sId) ? prev.filter(id => id !== sId) : [...prev, sId]);
   };
 
   const handleToggleWarehouseScope = (warehouseId) => {
     const wId = String(warehouseId);
-    if (selectedWarehouseIds.includes(wId)) {
-      setSelectedWarehouseIds(selectedWarehouseIds.filter(id => id !== wId));
-    } else {
-      setSelectedWarehouseIds([...selectedWarehouseIds, wId]);
-    }
+    setSelectedWarehouseIds(prev => prev.includes(wId) ? prev.filter(id => id !== wId) : [...prev, wId]);
   };
 
-  // Conflict Detection Logic (Image 8)
   const checkForScopeConflicts = () => {
     if (!editUserModal) return null;
     const currentUserId = String(editUserModal._id);
 
     for (const wId of selectedWarehouseIds) {
-      // Find if another user already holds this warehouse
       const conflictingUser = users.find(u => {
         if (String(u._id) === currentUserId) return false;
         const uWhs = u.warehouseIds ? u.warehouseIds.map(w => String(w._id || w)) : [];
@@ -129,7 +175,7 @@ const UsersAndAccessScope = () => {
           type: 'warehouse',
           resourceName: whObj ? `${whObj.name} (${whObj.code})` : 'Assigned Warehouse',
           resourceId: wId,
-          conflictingUser: conflictingUser,
+          conflictingUser,
           targetUser: editUserModal
         };
       }
@@ -138,19 +184,15 @@ const UsersAndAccessScope = () => {
   };
 
   const handleInitiateSaveScope = () => {
-    if (!mandatoryReason || !mandatoryReason.trim()) {
-      alert('Mandatory audit justification reason is required.');
+    if (!mandatoryReason.trim()) {
+      alert('Audit justification reason is required.');
       return;
     }
-
-    // Run Conflict Detector (Image 8)
     const conflict = checkForScopeConflicts();
     if (conflict) {
       setConflictModal(conflict);
       return;
     }
-
-    // No conflict -> execute direct save
     executeSaveScope(false);
   };
 
@@ -158,7 +200,6 @@ const UsersAndAccessScope = () => {
     setActionLoading(true);
     try {
       if (replaceExisting && conflictInfo) {
-        // Remove the conflicting user's scope on this warehouse
         const prevUser = conflictInfo.conflictingUser;
         const updatedPrevWhs = (prevUser.warehouseIds || [])
           .map(w => String(w._id || w))
@@ -168,19 +209,10 @@ const UsersAndAccessScope = () => {
           role: prevUser.role,
           siteIds: prevUser.siteIds ? prevUser.siteIds.map(s => String(s._id || s)) : [],
           warehouseIds: updatedPrevWhs,
-          reason: `Scope transferred to ${editUserModal.username || editUserModal.email} by Admin. Justification: ${mandatoryReason.trim()}`
-        });
-
-        // Trigger the Prominent Red Warning Banner (Image 8)
-        setRedWarningBanner({
-          removedUser: prevUser,
-          assignedUser: editUserModal,
-          resourceName: conflictInfo.resourceName,
-          timestamp: new Date()
+          reason: `Scope transferred to ${editUserModal.username || editUserModal.email} by Admin.`
         });
       }
 
-      // Update target user's scope
       if ((editUserModal.accountStatus || '').toUpperCase() === 'PENDING') {
         await api.put(`/api/users/${editUserModal._id}/approve`, {
           role: selectedRole,
@@ -196,10 +228,9 @@ const UsersAndAccessScope = () => {
         });
       }
 
-      setSystemNotice({
+      setToastNotice({
         type: 'success',
-        title: 'Access Scope Saved & Enforced',
-        message: `Updated permissions for ${editUserModal.username || editUserModal.email}.`
+        text: `✓ Permissions saved for ${editUserModal.username || editUserModal.email}.`
       });
 
       setConflictModal(null);
@@ -213,249 +244,337 @@ const UsersAndAccessScope = () => {
     }
   };
 
-  const handleRejectRequest = async () => {
-    if (!editUserModal) return;
-    if (!window.confirm(`Are you sure you want to reject the access request for ${editUserModal.username || editUserModal.email}?`)) {
-      return;
-    }
-    setActionLoading(true);
+  // Toggle User Status
+  const handleToggleUserStatus = async () => {
+    if (!confirmToggleUser) return;
     try {
-      await api.put(`/api/users/${editUserModal._id}/reject`, {
-        reason: mandatoryReason || 'Rejected by Administrator'
+      await api.put(`/api/admin/users/${confirmToggleUser._id}/toggle-status`);
+      setToastNotice({
+        type: 'success',
+        text: `✓ User ${confirmToggleUser.username || confirmToggleUser.email} status updated.`
       });
-      setSystemNotice({
-        type: 'warning',
-        title: 'Access Request Rejected',
-        message: `Rejected access request for ${editUserModal.username || editUserModal.email}.`
-      });
-      setEditUserModal(null);
+      setConfirmToggleUser(null);
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.error || err.response?.data?.message || 'Error rejecting user request');
-    } finally {
-      setActionLoading(false);
+      setToastNotice({
+        type: 'error',
+        text: err.response?.data?.message || 'Failed to update user status.'
+      });
     }
   };
 
-  const filteredUsers = users.filter(u => {
-    const matchesSearch = (u.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (u.email || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
-    return matchesSearch && matchesRole;
-  });
+  // Create User
+  const handleCreateNewUser = async (e) => {
+    e.preventDefault();
+    setAddUserLoading(true);
+    try {
+      const res = await api.post('/api/auth/register-sync', {
+        username: newUserForm.username.trim(),
+        email: newUserForm.email.trim().toLowerCase(),
+        password: newUserForm.password,
+        role: newUserForm.role,
+        siteIds: newUserForm.siteIds,
+        warehouseIds: newUserForm.warehouseIds
+      });
+
+      if (res.data?.success || res.status === 201 || res.status === 200) {
+        setToastNotice({
+          type: 'success',
+          text: `✓ User account created for ${newUserForm.email}.`
+        });
+        setShowAddUserModal(false);
+        setNewUserForm({
+          username: '',
+          email: '',
+          role: 'Inventory Manager',
+          password: 'password123',
+          siteIds: [],
+          warehouseIds: []
+        });
+        fetchData();
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to create user');
+    } finally {
+      setAddUserLoading(false);
+    }
+  };
+
+  // Export User Table to CSV
+  const exportUsersCSV = () => {
+    if (!filteredUsers.length) {
+      alert('No user records to export.');
+      return;
+    }
+    const headers = ['#', 'Username', 'Email', 'Role', 'Allowed Sites', 'Allowed Warehouses', 'Status', 'Created At'];
+    const rows = filteredUsers.map((u, i) => {
+      const sNames = (u.siteIds || []).map(s => siteMap.get(String(s._id || s)) || 'Site').join('; ') || 'Global';
+      const wNames = (u.warehouseIds || []).map(w => warehouseMap.get(String(w._id || w)) || 'Warehouse').join('; ') || 'Global';
+      const st = (u.accountStatus || 'ACTIVE').toUpperCase();
+      return [
+        i + 1,
+        `"${u.username || ''}"`,
+        `"${u.email || ''}"`,
+        `"${u.role || ''}"`,
+        `"${sNames}"`,
+        `"${wNames}"`,
+        `"${st}"`,
+        `"${u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : ''}"`
+      ].join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Users_Master_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
-    <div className="space-y-6 font-sans">
-      {/* Top Banner Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl text-white">
-        <div>
-          <div className="flex items-center space-x-3 mb-1">
-            <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg">
-              Security & Scope
-            </span>
-            <span className="text-xs text-slate-400">3-Level Granular Location Scope Governance</span>
+    <div className="space-y-2 font-sans text-slate-900 w-full">
+      {/* 1-ROW COMPACT SUMMARY & CONTROLS */}
+      <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+        {/* Left Metric Strip */}
+        <div className="flex flex-wrap items-center gap-4 text-slate-600 font-medium">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Users:</span>
+            <span className="font-extrabold text-slate-900">{metrics.total}</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight">User Access Scoped Matrix</h1>
+          <div className="h-3 w-px bg-slate-200" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Active:</span>
+            <span className="font-extrabold text-slate-900">{metrics.active}</span>
+          </div>
+          {metrics.pending > 0 && (
+            <>
+              <div className="h-3 w-px bg-slate-200" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase text-slate-500">Pending:</span>
+                <span className="font-extrabold text-slate-900">{metrics.pending}</span>
+              </div>
+            </>
+          )}
+          {metrics.deactivated > 0 && (
+            <>
+              <div className="h-3 w-px bg-slate-200" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase text-slate-500">Deactivated:</span>
+                <span className="font-extrabold text-slate-900">{metrics.deactivated}</span>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="flex items-center space-x-3">
+        {/* Right Search, Filters & Actions */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="relative w-44 sm:w-56">
+            <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search user or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-2.5 py-1 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 font-medium text-xs text-slate-900"
+            />
+          </div>
+
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="py-1 px-2 border border-slate-200 rounded-md text-xs bg-white font-bold text-slate-700 focus:outline-none"
+          >
+            <option value="ALL">All Roles</option>
+            {ROLE_OPTIONS.map(r => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="py-1 px-2 border border-slate-200 rounded-md text-xs bg-white font-bold text-slate-700 focus:outline-none"
+          >
+            <option value="ALL">All Status</option>
+            <option value="ACTIVE">Active</option>
+            <option value="PENDING">Pending</option>
+            <option value="DEACTIVATED">Deactivated</option>
+          </select>
+
+          <button
+            onClick={exportUsersCSV}
+            className="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-1"
+            title="Export CSV"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+
           <button
             onClick={() => setShowAddUserModal(true)}
-            className="flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all"
+            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-md shadow-2xs transition-all flex items-center gap-1"
           >
-            <Plus className="w-4 h-4" />
-            <span>+ Add User</span>
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add User</span>
           </button>
 
           <button
             onClick={fetchData}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors border border-slate-700/60"
-            title="Refresh Users"
+            className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
+            title="Refresh"
+            aria-label="Refresh user registry"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* RED WARNING ALERT BANNER (Matching Image 8) */}
-      {redWarningBanner && (
-        <div className="bg-rose-50 border-2 border-rose-400/80 p-5 rounded-2xl shadow-lg text-rose-950 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slideDown">
-          <div className="flex items-start gap-3.5">
-            <div className="p-2.5 rounded-xl bg-rose-200/80 text-rose-700 shrink-0">
-              <AlertTriangle className="h-6 w-6 text-rose-600" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black uppercase rounded-md tracking-wider">
-                  Access Transferred Warning
-                </span>
-                <span className="text-xs text-rose-600 font-medium">
-                  {new Date(redWarningBanner.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
-              <p className="font-extrabold text-sm text-slate-900 mt-1">
-                You have removed <span className="text-rose-700 underline font-black">{redWarningBanner.removedUser.username || redWarningBanner.removedUser.email}</span>'s access and transferred <span className="font-black text-slate-900">{redWarningBanner.resourceName}</span> to <span className="text-emerald-700 underline font-black">{redWarningBanner.assignedUser.username || redWarningBanner.assignedUser.email}</span>.
-              </p>
-              <p className="text-xs text-slate-600 mt-0.5">
-                {redWarningBanner.removedUser.username || redWarningBanner.removedUser.email} can no longer access or approve transactions in this warehouse.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={() => {
-                handleOpenEdit(redWarningBanner.removedUser);
-                setRedWarningBanner(null);
-              }}
-              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center gap-1.5"
-            >
-              <RotateCcw className="h-4 w-4" />
-              <span>Give Alternate Scope</span>
-            </button>
-            <button
-              onClick={() => setRedWarningBanner(null)}
-              className="p-2 text-slate-400 hover:text-slate-700 text-sm font-bold"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* FILTER & SEARCH BAR */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-        <div className="relative w-full sm:w-80">
-          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by user name or work email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-medium"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="h-4 w-4 text-slate-400" />
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-bold text-slate-700"
-          >
-            <option value="ALL">All Roles</option>
-            <option value="Admin">Admin</option>
-            <option value="Inventory Manager">Inventory Manager</option>
-            <option value="Production Manager">Production Manager</option>
-            <option value="Warehouse Operator">Warehouse Operator</option>
-            <option value="Viewer">Viewer</option>
-          </select>
-        </div>
-      </div>
-
-      {/* SCOPED USER ACCESS TABLE (Matching Image 7 Table Layout) */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
+      {/* SPREADSHEET-STYLE EXCEL DATA GRID */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-2xs overflow-hidden">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left text-xs border-collapse min-w-[950px]">
+            <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300 select-none">
               <tr>
-                <th className="p-4">User Name</th>
-                <th className="p-4">Work E-Mail</th>
-                <th className="p-4">Role</th>
-                <th className="p-4">Allowed Sites</th>
-                <th className="p-4">Allowed Warehouses</th>
-                <th className="p-4 text-right">Manage</th>
+                <th className="px-3 py-2 w-10 text-center border-r border-slate-200">#</th>
+                <th className="px-3 py-2 border-r border-slate-200">User / Username</th>
+                <th className="px-3 py-2 border-r border-slate-200">Work Email</th>
+                <th className="px-3 py-2 border-r border-slate-200">Role</th>
+                <th className="px-3 py-2 border-r border-slate-200">Allowed Sites</th>
+                <th className="px-3 py-2 border-r border-slate-200">Allowed Warehouses</th>
+                <th className="px-3 py-2 text-center border-r border-slate-200 whitespace-nowrap">Status</th>
+                <th className="px-3 py-2 text-center border-r border-slate-200 whitespace-nowrap">Created</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
+            <tbody className="divide-y divide-slate-200 font-medium">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">
-                    No users matching criteria.
+                  <td colSpan={9} className="p-8 text-center text-slate-400 italic text-xs">
+                    {loading ? 'Loading user data...' : 'No users match the specified search or filter criteria.'}
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map(user => {
-                  const userSiteNames = (user.siteIds || []).map(s => {
-                    const sObj = sites.find(site => String(site._id) === String(s._id || s));
-                    return sObj ? sObj.name : 'Site';
-                  });
+                filteredUsers.map((u, index) => {
+                  const status = (u.accountStatus || 'ACTIVE').toUpperCase();
+                  const isPending = status === 'PENDING';
+                  const isDeactivated = status === 'DEACTIVATED' || status === 'INACTIVE' || u.isActive === false;
+                  const isSelf = String(u._id) === String(currentUser?._id);
+                  const isLastAdmin = u.role === 'Admin' && metrics.adminCount <= 1;
 
-                  const userWhNames = (user.warehouseIds || []).map(w => {
-                    const wObj = warehouses.find(wh => String(wh._id) === String(w._id || w));
-                    return wObj ? wObj.name : 'Warehouse';
-                  });
+                  let disabledToggleReason = null;
+                  if (isSelf) disabledToggleReason = 'Cannot deactivate own account';
+                  else if (isLastAdmin && !isDeactivated) disabledToggleReason = 'Cannot deactivate last remaining Administrator';
 
-                  const isAdmin = (user.role || '').toLowerCase() === 'admin';
+                  // Site names
+                  const siteList = (u.siteIds || []).map(s => siteMap.get(String(s._id || s)) || 'Site');
+                  // Warehouse names
+                  const whList = (u.warehouseIds || []).map(w => warehouseMap.get(String(w._id || w)) || 'Warehouse');
+
+                  const formattedDate = u.createdAt
+                    ? new Date(u.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                    : '—';
 
                   return (
-                    <tr key={user._id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-4 font-bold text-slate-900 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 text-[11px]">
-                          {(user.username || user.email || 'U').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <span>{user.username || 'Unnamed'}</span>
-                          {user.accountStatus === 'PENDING' && (
-                            <span className="ml-2 px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[9px] font-black uppercase rounded">
-                              Pending
+                    <tr key={u._id} className="hover:bg-slate-50/90 transition-colors">
+                      {/* Index */}
+                      <td className="px-3 py-1.5 text-center font-mono text-[11px] text-slate-400 border-r border-slate-200 select-none">
+                        {index + 1}
+                      </td>
+
+                      {/* Username */}
+                      <td className="px-3 py-1.5 font-bold text-slate-900 border-r border-slate-200 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px] uppercase shrink-0">
+                            {(u.username || u.email || 'U').charAt(0)}
+                          </span>
+                          <span className="truncate">{u.username || 'Unnamed'}</span>
+                          {isSelf && (
+                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-200 text-slate-700">
+                              You
                             </span>
                           )}
                         </div>
                       </td>
 
-                      <td className="p-4 font-mono text-slate-600">{user.email}</td>
+                      {/* Email */}
+                      <td className="px-3 py-1.5 font-mono text-slate-700 border-r border-slate-200 whitespace-nowrap text-[11px]">
+                        {u.email}
+                      </td>
 
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
-                          isAdmin ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {user.role}
-                        </span>
+                      {/* Role */}
+                      <td className="px-3 py-1.5 border-r border-slate-200 whitespace-nowrap font-bold text-slate-800">
+                        {u.role}
                       </td>
 
                       {/* Allowed Sites */}
-                      <td className="p-4">
-                        {isAdmin ? (
-                          <span className="font-extrabold text-purple-700 text-xs">All Sites (Global)</span>
-                        ) : userSiteNames.length === 0 ? (
-                          <span className="text-slate-400 italic text-[11px]">None assigned</span>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-[11px] text-slate-700 max-w-[200px] truncate" title={siteList.join(', ') || 'All Sites'}>
+                        {siteList.length === 0 ? (
+                          <span className="text-slate-400 italic">All Sites</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {userSiteNames.map((name, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold">
-                                {name}
-                              </span>
-                            ))}
-                          </div>
+                          siteList.join(', ')
                         )}
                       </td>
 
                       {/* Allowed Warehouses */}
-                      <td className="p-4">
-                        {isAdmin ? (
-                          <span className="font-extrabold text-purple-700 text-xs">All Warehouses (Global)</span>
-                        ) : userWhNames.length === 0 ? (
-                          <span className="text-slate-400 italic text-[11px]">None assigned</span>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-[11px] text-slate-700 max-w-[220px] truncate" title={whList.join(', ') || 'All Warehouses'}>
+                        {whList.length === 0 ? (
+                          <span className="text-slate-400 italic">All Warehouses</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {userWhNames.map((name, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold">
-                                {name}
-                              </span>
-                            ))}
-                          </div>
+                          whList.join(', ')
                         )}
                       </td>
 
-                      {/* Manage Button */}
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => handleOpenEdit(user)}
-                          className="px-3 py-1.5 bg-white border border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-purple-700 font-extrabold rounded-xl shadow-xs transition-colors"
-                        >
-                          Edit Scope
-                        </button>
+                      {/* Status */}
+                      <td className="px-3 py-1.5 text-center border-r border-slate-200 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                          isPending
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : isDeactivated
+                              ? 'bg-rose-50 text-rose-800 border-rose-200'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        }`}>
+                          {isPending ? 'Pending' : isDeactivated ? 'Deactivated' : 'Active'}
+                        </span>
+                      </td>
+
+                      {/* Created */}
+                      <td className="px-3 py-1.5 text-center font-mono text-[11px] text-slate-500 border-r border-slate-200 whitespace-nowrap">
+                        {formattedDate}
+                      </td>
+
+                      {/* Inline Actions */}
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1 select-none">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(u)}
+                            className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[10px] flex items-center gap-1 transition-colors"
+                            title={`Edit scope for ${u.username || u.email}`}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                            <span>Edit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setConfirmToggleUser(u)}
+                            disabled={!!disabledToggleReason}
+                            title={disabledToggleReason || (isDeactivated ? 'Activate User' : 'Deactivate User')}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
+                              disabledToggleReason
+                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                : isDeactivated
+                                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                                  : 'bg-rose-100 hover:bg-rose-200 text-rose-800'
+                            }`}
+                          >
+                            {isDeactivated ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                            <span>{isDeactivated ? 'Activate' : 'Deactivate'}</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -466,204 +585,200 @@ const UsersAndAccessScope = () => {
         </div>
       </div>
 
-      {/* EDIT SCOPE MODAL (Matching Image 7 Modal Blueprint) */}
+      {/* CONFIRM STATUS TOGGLE DIALOG */}
+      <ConfirmDialog
+        isOpen={!!confirmToggleUser}
+        onClose={() => setConfirmToggleUser(null)}
+        onConfirm={handleToggleUserStatus}
+        title={((confirmToggleUser?.accountStatus || 'ACTIVE').toUpperCase() === 'ACTIVE' || confirmToggleUser?.isActive) ? 'Deactivate User Account' : 'Activate User Account'}
+        message={`Are you sure you want to change the status of "${confirmToggleUser?.username || confirmToggleUser?.email}"? All audit logs and historical transactions remain intact.`}
+        confirmText="Confirm Change"
+        isDestructive={((confirmToggleUser?.accountStatus || 'ACTIVE').toUpperCase() === 'ACTIVE' || confirmToggleUser?.isActive)}
+      />
+
+      {/* MODAL: EDIT USER ACCESS SCOPE */}
       {editUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-scaleIn">
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-scaleIn">
+            <div className="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="font-black text-slate-900 text-base">Edit User Access Scope</h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  {editUserModal.email} &bull; <span className="font-bold text-purple-700">{editUserModal.role}</span> &bull; <span className="uppercase text-emerald-700 font-bold">{editUserModal.accountStatus}</span>
-                </p>
+                <h3 className="font-bold text-slate-900 text-xs">Edit User Permissions &amp; Scope</h3>
+                <p className="text-[10px] text-slate-500 font-mono mt-0.5">{editUserModal.email}</p>
               </div>
-              <button onClick={() => setEditUserModal(null)} className="text-slate-400 hover:text-slate-700 text-xl font-bold">✕</button>
+              <button onClick={() => setEditUserModal(null)} className="text-slate-400 hover:text-slate-700 text-sm font-bold">✕</button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
-              {/* Role Selection */}
+            <div className="p-4 space-y-3 text-xs">
               <div>
-                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Assigned Role</label>
+                <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Role</label>
                 <select
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-bold text-slate-900"
                 >
-                  <option value="Admin">Admin (Global Platform Oversight)</option>
-                  <option value="Inventory Manager">Inventory Manager (Facility Inventory Oversight)</option>
-                  <option value="Production Manager">Production Manager (Manufacturing Floor Control)</option>
-                  <option value="Warehouse Operator">Warehouse Operator (Stock Movements & Receiving)</option>
-                  <option value="QC Inspector">QC Inspector (Quality Gatekeeper)</option>
-                  <option value="Planner">Planner (MRP Scheduling)</option>
-                  <option value="Viewer">Viewer (Read-Only)</option>
+                  {ROLE_OPTIONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
                 </select>
               </div>
 
-              {/* Option to Allowed Sites (Matching Image 7) */}
               <div>
-                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Option for Allowed Sites</label>
-                <div className="space-y-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
-                  {sites.map(site => {
-                    const isChecked = selectedSiteIds.includes(String(site._id));
-                    return (
-                      <label key={site._id} className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer hover:bg-slate-100 p-1.5 rounded-lg">
+                <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Allowed Sites (Empty = Global / All Sites)</label>
+                <div className="space-y-1 max-h-28 overflow-y-auto p-1.5 bg-slate-50 rounded border border-slate-200">
+                  {sites.map(site => (
+                    <label key={site._id} className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer p-1 rounded hover:bg-slate-100">
+                      <input
+                        type="checkbox"
+                        checked={selectedSiteIds.includes(String(site._id))}
+                        onChange={() => handleToggleSiteScope(site._id)}
+                        className="rounded text-slate-900"
+                      />
+                      <span>{site.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Allowed Warehouses (Empty = Global / All Warehouses)</label>
+                <div className="space-y-1 max-h-28 overflow-y-auto p-1.5 bg-slate-50 rounded border border-slate-200">
+                  {warehouses.map(wh => (
+                    <label key={wh._id} className="flex items-center justify-between font-bold text-slate-800 cursor-pointer p-1 rounded hover:bg-slate-100">
+                      <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleSiteScope(site._id)}
-                          className="rounded text-purple-600 focus:ring-purple-500"
+                          checked={selectedWarehouseIds.includes(String(wh._id))}
+                          onChange={() => handleToggleWarehouseScope(wh._id)}
+                          className="rounded text-slate-900"
                         />
-                        <span>{site.name}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">({site.code})</span>
-                      </label>
-                    );
-                  })}
+                        <span>{wh.name}</span>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
 
-              {/* Option to Allowed Warehouses (Matching Image 7) */}
               <div>
-                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Option for Allowed Warehouses</label>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
-                  {warehouses.map(wh => {
-                    const isChecked = selectedWarehouseIds.includes(String(wh._id));
-                    const parentSite = sites.find(s => String(s._id) === String(wh.siteId?._id || wh.siteId));
-                    return (
-                      <label key={wh._id} className="flex items-center justify-between font-bold text-slate-800 cursor-pointer hover:bg-slate-100 p-1.5 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleWarehouseScope(wh._id)}
-                            className="rounded text-emerald-600 focus:ring-emerald-500"
-                          />
-                          <span>{wh.name}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">({wh.code})</span>
-                        </div>
-                        {parentSite && (
-                          <span className="text-[10px] text-slate-400">{parentSite.name}</span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Mandatory Reason (Matching Image 7) */}
-              <div>
-                <label className="block font-black uppercase text-[10px] text-slate-500 tracking-wider mb-1.5">Audit Justification Reason *</label>
-                <textarea
-                  rows={2}
+                <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Justification Reason *</label>
+                <input
+                  type="text"
                   value={mandatoryReason}
                   onChange={(e) => setMandatoryReason(e.target.value)}
-                  placeholder="Explain why this role and scope is being granted or modified..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  placeholder="Reason for modifying permissions..."
+                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-medium"
+                  required
                 />
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2.5">
-              <div>
-                {(editUserModal.accountStatus || '').toUpperCase() === 'PENDING' && (
-                  <button
-                    onClick={handleRejectRequest}
-                    disabled={actionLoading}
-                    className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs transition-colors"
-                  >
-                    Reject Request
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setEditUserModal(null)}
-                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleInitiateSaveScope}
-                  disabled={actionLoading}
-                  className={`px-5 py-2 text-white font-extrabold rounded-xl shadow-md text-xs transition-colors ${
-                    (editUserModal.accountStatus || '').toUpperCase() === 'PENDING'
-                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30'
-                      : 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/30'
-                  }`}
-                >
-                  {actionLoading
-                    ? 'Processing...'
-                    : (editUserModal.accountStatus || '').toUpperCase() === 'PENDING'
-                    ? '✓ Approve & Grant Role'
-                    : 'Save Scope'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CONFLICT RESOLUTION MODAL (Matching Image 8 Blueprint) */}
-      {conflictModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-amber-300 max-w-md w-full overflow-hidden animate-scaleIn">
-            <div className="p-5 bg-amber-500/10 border-b border-amber-200 flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
-                <AlertTriangle className="h-6 w-6 text-amber-600" />
-              </div>
-              <div>
-                <h3 className="font-black text-slate-900 text-sm">Warehouse Assignment Conflict</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{conflictModal.resourceName}</p>
-              </div>
-            </div>
-
-            <div className="p-5 space-y-4 text-xs leading-relaxed text-slate-700">
-              <p>
-                This facility is already assigned to <strong className="text-slate-900 font-extrabold">{conflictModal.conflictingUser.username || conflictModal.conflictingUser.email}</strong>.
-              </p>
-              <p className="font-medium text-slate-600">
-                How would you like to proceed?
-              </p>
-
-              <div className="space-y-2.5">
-                {/* Option 1: Co-assignment */}
-                <div
-                  onClick={() => executeSaveScope(false, conflictModal)}
-                  className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-all flex items-start gap-3"
-                >
-                  <UserCheck className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-extrabold text-slate-900">Add Another User (Co-Assignment)</h4>
-                    <p className="text-[11px] text-slate-500">Allow both users to manage and access this facility simultaneously.</p>
-                  </div>
-                </div>
-
-                {/* Option 2: Transfer Ownership */}
-                <div
-                  onClick={() => executeSaveScope(true, conflictModal)}
-                  className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-100/50 cursor-pointer transition-all flex items-start gap-3"
-                >
-                  <UserX className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-extrabold text-rose-900">Transfer Ownership (Remove Existing)</h4>
-                    <p className="text-[11px] text-rose-700">Immediately revoke {conflictModal.conflictingUser.username || conflictModal.conflictingUser.email}'s access and assign exclusively to {conflictModal.targetUser.username || conflictModal.targetUser.email}.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
-                onClick={() => setConflictModal(null)}
-                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                onClick={() => setEditUserModal(null)}
+                className="px-3 py-1 bg-white border border-slate-200 text-slate-700 font-bold rounded text-xs"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleInitiateSaveScope}
+                disabled={actionLoading}
+                className="px-3.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded text-xs shadow-xs"
+              >
+                {actionLoading ? 'Saving...' : 'Save Scope'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL: ADD USER */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-scaleIn">
+            <div className="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <h3 className="font-bold text-slate-900 text-xs">Create New User</h3>
+              <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-slate-700 text-sm font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateNewUser} className="p-4 space-y-2.5 text-xs">
+              <div>
+                <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  value={newUserForm.username}
+                  onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
+                  placeholder="e.g. John Doe"
+                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Work Email *</label>
+                <input
+                  type="email"
+                  value={newUserForm.email}
+                  onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
+                  placeholder="e.g. jdoe@company.com"
+                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-medium"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Role *</label>
+                  <select
+                    value={newUserForm.role}
+                    onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-bold text-slate-800"
+                  >
+                    {ROLE_OPTIONS.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold uppercase text-[9px] text-slate-500 tracking-wider mb-1">Temporary Password *</label>
+                  <input
+                    type="password"
+                    value={newUserForm.password}
+                    onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md font-mono"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(false)}
+                  className="px-3 py-1 bg-white border border-slate-200 text-slate-700 font-bold rounded text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addUserLoading}
+                  className="px-3.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded text-xs shadow-xs"
+                >
+                  {addUserLoading ? 'Creating...' : '+ Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TOAST */}
+      {toastNotice && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full">
+          <div className="p-3 bg-slate-900 text-white rounded-lg shadow-xl border border-slate-700 flex items-center justify-between gap-2.5 text-xs">
+            <div>{toastNotice.text}</div>
+            <button onClick={() => setToastNotice(null)} className="text-slate-400 hover:text-white font-bold text-sm">✕</button>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default UsersAndAccessScope;
+}

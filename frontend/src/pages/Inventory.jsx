@@ -2,56 +2,53 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import { useSiteContext } from '../context/SiteContext';
 import usePageMeta from '../hooks/usePageMeta';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
+import { Card, CardHeader, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
+import DetailDrawer from '../components/ui/DetailDrawer';
+import RowActionsMenu from '../components/ui/RowActionsMenu';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import {
   Boxes,
   ArrowRightLeft,
   Sliders,
   History,
   Plus,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Clock,
-  ArrowRight,
-  XCircle,
-  ShieldCheck,
   Search,
   IndianRupee,
-  TrendingDown,
   Layers,
-  Send,
-  Truck,
   Check,
-  X,
   FileSpreadsheet,
-  Globe
+  Globe,
+  Clock,
+  ArrowRight,
+  AlertTriangle,
+  CheckCircle2,
+  Package,
+  Building2
 } from 'lucide-react';
 
 const TABS = [
-  { id: 'overview', label: 'Stock Overview', icon: Boxes },
-  { id: 'adjustments', label: 'Stock Adjustments', icon: Sliders },
-  { id: 'transfers', label: 'Stock Transfers', icon: ArrowRightLeft },
-  { id: 'ledger', label: 'Audit Ledger', icon: History },
+  { id: 'overview', label: 'Stock', icon: Boxes },
+  { id: 'adjustments', label: 'Adjustments', icon: Sliders },
+  { id: 'transfers', label: 'Transfers', icon: ArrowRightLeft },
+  { id: 'ledger', label: 'Audit Log', icon: History },
 ];
 
-const statusStyles = {
-  PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
-  APPROVED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
-  IN_TRANSIT: 'bg-blue-50 text-blue-700 border-blue-200',
-  COMPLETED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  CANCELLED: 'bg-slate-100 text-slate-600 border-slate-200',
-  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
-  Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Rejected: 'bg-rose-50 text-rose-700 border-rose-200',
-  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  LowStock: 'bg-amber-50 text-amber-700 border-amber-200',
-  OutOfStock: 'bg-rose-50 text-rose-700 border-rose-200',
-  Draft: 'bg-slate-50 text-slate-600 border-slate-200',
+const STATUS_MAP = {
+  in_stock: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  low_stock: 'bg-amber-50 text-amber-700 border-amber-200',
+  out_of_stock: 'bg-rose-50 text-rose-700 border-rose-200',
+  pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+  in_transit: 'bg-blue-50 text-blue-700 border-blue-200',
+  completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  cancelled: 'bg-slate-100 text-slate-600 border-slate-200'
+};
+
+const getStatusBadgeClass = (status = '') => {
+  const key = String(status).toLowerCase().replace(/\s+/g, '_');
+  return STATUS_MAP[key] || 'bg-slate-100 text-slate-700 border-slate-200';
 };
 
 export default function Inventory() {
@@ -65,18 +62,15 @@ export default function Inventory() {
     setActiveWarehouseId,
     filteredWarehouses
   } = useSiteContext();
-  const [activeTab, setActiveTab] = useState('overview');
 
+  const [activeTab, setActiveTab] = useState('overview');
   const [balances, setBalances] = useState([]);
   const [summary, setSummary] = useState({
     totalSKUs: 0,
     totalOnHandUnits: 0,
     totalAvailableUnits: 0,
     totalReservedUnits: 0,
-    totalStockValuation: 0,
-    inStockCount: 0,
-    outOfStockCount: 0,
-    lowStockCount: 0
+    totalStockValuation: 0
   });
 
   const [transactions, setTransactions] = useState([]);
@@ -96,10 +90,12 @@ export default function Inventory() {
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
 
-  // Modals
+  // Modals & Drawers
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
   const [isTrfModalOpen, setIsTrfModalOpen] = useState(false);
   const [stockOutWarningModal, setStockOutWarningModal] = useState(null);
+  const [detailItem, setDetailItem] = useState(null);
+  const [confirmWriteOffItem, setConfirmWriteOffItem] = useState(null);
 
   // Forms
   const [adjForm, setAdjForm] = useState({
@@ -131,7 +127,6 @@ export default function Inventory() {
       if (activeSiteId) query.siteId = activeSiteId;
       if (activeWarehouseId && activeWarehouseId !== 'all') query.warehouseId = activeWarehouseId;
 
-      // Tier 1: Fetch primary inventory balances immediately
       const balRes = await api.get('/api/inventory', { params: query });
       const balData = balRes.data?.data || [];
       setBalances(balData);
@@ -140,7 +135,7 @@ export default function Inventory() {
       }
       setLoading(false);
 
-      // Tier 2: Fetch secondary and modal data in background
+      // Background secondary data
       const [txRes, adjRes, trfRes, matRes, whRes, siteRes] = await Promise.all([
         api.get('/api/inventory/ledger', { params: query }).catch(() => ({ data: { data: [] } })),
         api.get('/api/inventory/adjustments').catch(() => ({ data: { data: [] } })),
@@ -162,7 +157,6 @@ export default function Inventory() {
       setWarehouses(whList);
       setSites(siteList);
 
-      // Pre-populate modal defaults with active scope
       if (matList.length > 0) {
         const defaultWh = (activeWarehouseId && activeWarehouseId !== 'all')
           ? activeWarehouseId
@@ -201,7 +195,9 @@ export default function Inventory() {
       const matType = item.materialId?.type || 'Raw Material';
       const matchesType = typeFilter === 'ALL' || matType === typeFilter;
 
-      const avail = (item.balance || item.onHand || 0) - (item.reservedBalance || item.reserved || 0);
+      const onHand = Number(item.balance !== undefined ? item.balance : (item.onHand || 0));
+      const reserved = Number(item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0));
+      const avail = Math.max(0, onHand - reserved);
       const reorder = item.materialId?.reorderLevel || item.materialId?.safetyStock || 10;
 
       const matchesStatus =
@@ -225,9 +221,6 @@ export default function Inventory() {
     let totalAvail = 0;
     let totalRes = 0;
     let totalVal = 0;
-    let inStock = 0;
-    let outOfStock = 0;
-    let lowStock = 0;
 
     source.forEach(item => {
       const onHand = Number(item.balance !== undefined ? item.balance : (item.onHand || 0));
@@ -240,12 +233,6 @@ export default function Inventory() {
       totalAvail += avail;
       totalRes += reserved;
       totalVal += totalValItem;
-
-      if (avail > 0) inStock++;
-      else outOfStock++;
-
-      const reorder = item.materialId?.reorderLevel || item.materialId?.safetyStock || 10;
-      if (avail > 0 && avail <= reorder) lowStock++;
     });
 
     return {
@@ -253,14 +240,11 @@ export default function Inventory() {
       totalOnHandUnits: Math.round(totalOnHand * 1000) / 1000,
       totalAvailableUnits: Math.round(totalAvail * 1000) / 1000,
       totalReservedUnits: Math.round(totalRes * 1000) / 1000,
-      totalStockValuation: Math.round(totalVal * 100) / 100,
-      inStockCount: inStock,
-      outOfStockCount: outOfStock,
-      lowStockCount: lowStock
+      totalStockValuation: Math.round(totalVal * 100) / 100
     };
   }, [filteredBalances, balances, summary, searchQuery, typeFilter, statusFilter]);
 
-  // Adjustments Handlers with Stock Out Over-Withdrawal Validation
+  // Adjustments Handlers
   const handleCreateAdjustment = async (e) => {
     e.preventDefault();
     try {
@@ -270,7 +254,6 @@ export default function Inventory() {
         return;
       }
 
-      // Check for over-withdrawal when adjustmentType is OUT
       if (adjForm.adjustmentType === 'OUT') {
         const mat = materials.find(m => m._id === adjForm.materialId);
         const curBal = balances.find(b =>
@@ -313,11 +296,10 @@ export default function Inventory() {
     setActionLoadingId(id);
     try {
       await api.post(`/api/inventory/adjustments/${id}/approve`);
-      setToastMsg({ type: 'success', text: `✓ Stock adjustment ${adjNum} approved & inventory updated.` });
+      setToastMsg({ type: 'success', text: `✓ Adjustment ${adjNum} approved & stock updated.` });
       fetchInventoryData();
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Approval failed';
-      setToastMsg({ type: 'error', text: errMsg });
+      setToastMsg({ type: 'error', text: err.response?.data?.message || err.message || 'Approval failed' });
     } finally {
       setActionLoadingId(null);
     }
@@ -327,11 +309,10 @@ export default function Inventory() {
     setActionLoadingId(id);
     try {
       await api.post(`/api/inventory/adjustments/${id}/reject`, { reason: 'Rejected by manager' });
-      setToastMsg({ type: 'info', text: `Stock adjustment ${adjNum} rejected.` });
+      setToastMsg({ type: 'info', text: `Adjustment ${adjNum} rejected.` });
       fetchInventoryData();
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Rejection failed';
-      setToastMsg({ type: 'error', text: errMsg });
+      setToastMsg({ type: 'error', text: err.response?.data?.message || err.message || 'Rejection failed' });
     } finally {
       setActionLoadingId(null);
     }
@@ -359,53 +340,28 @@ export default function Inventory() {
 
       const res = await api.post('/api/transfers', payload);
       if (res.data?.success) {
-        setToastMsg({ type: 'success', text: `✓ Transfer request ${res.data.data?.transferNumber || ''} created (Pending Approval).` });
+        setToastMsg({ type: 'success', text: `✓ Transfer request ${res.data.data?.transferNumber || ''} created.` });
         setIsTrfModalOpen(false);
         fetchInventoryData();
       }
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Transfer failed';
-      setToastMsg({ type: 'error', text: errMsg });
+      setToastMsg({ type: 'error', text: err.response?.data?.message || err.message || 'Transfer failed' });
     }
   };
 
-  const handleApproveTransfer = async (id, trfNum) => {
+  const handleUpdateTransferStatus = async (id, status) => {
     setActionLoadingId(id);
     try {
-      await api.post(`/api/transfers/${id}/approve`);
-      setToastMsg({ type: 'success', text: `✓ Transfer ${trfNum} approved & stock reserved.` });
-      fetchInventoryData();
-    } catch (err) {
-      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Approval failed';
-      setToastMsg({ type: 'error', text: errMsg });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
+      let endpoint = `/api/transfers/${id}`;
+      if (status === 'IN_TRANSIT') endpoint = `/api/transfers/${id}/dispatch`;
+      else if (status === 'COMPLETED') endpoint = `/api/transfers/${id}/receive`;
+      else if (status === 'CANCELLED') endpoint = `/api/transfers/${id}/cancel`;
 
-  const handleDispatchTransfer = async (id, trfNum) => {
-    setActionLoadingId(id);
-    try {
-      await api.post(`/api/transfers/${id}/dispatch`);
-      setToastMsg({ type: 'info', text: `🚚 Transfer ${trfNum} dispatched (In Transit).` });
+      await api.post(endpoint);
+      setToastMsg({ type: 'success', text: `✓ Transfer status updated to ${status}.` });
       fetchInventoryData();
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Dispatch failed';
-      setToastMsg({ type: 'error', text: errMsg });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  const handleReceiveTransfer = async (id, trfNum) => {
-    setActionLoadingId(id);
-    try {
-      await api.post(`/api/transfers/${id}/receive`);
-      setToastMsg({ type: 'success', text: `✓ Transfer ${trfNum} received & stock credited to destination!` });
-      fetchInventoryData();
-    } catch (err) {
-      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Receipt failed';
-      setToastMsg({ type: 'error', text: errMsg });
+      setToastMsg({ type: 'error', text: err.response?.data?.message || err.message || 'Transfer update failed' });
     } finally {
       setActionLoadingId(null);
     }
@@ -439,21 +395,20 @@ export default function Inventory() {
     document.body.removeChild(link);
   };
 
-  // Open Quick Adjustment for Row
+  // Quick Action Triggers
   const openQuickAdjustment = (item) => {
     setAdjForm({
       materialId: item.materialId?._id || item.materialId,
       warehouseId: item.warehouseId?._id || item.warehouseId,
       adjustmentType: 'IN',
       quantity: 10,
-      reason: 'Physical cycle count update',
-      description: `Stock adjustment for ${item.materialId?.name}`,
-      referenceDoc: 'MANUAL-COUNT',
+      reason: 'Physical count discrepancy',
+      description: `Stock adjustment for ${item.materialId?.name || ''}`,
+      referenceDoc: 'CYCLE-COUNT',
     });
     setIsAdjModalOpen(true);
   };
 
-  // Open Quick Transfer for Row
   const openQuickTransfer = (item) => {
     const fromWhId = item.warehouseId?._id || item.warehouseId;
     const destWh = warehouses.find(w => w._id !== fromWhId) || warehouses[0];
@@ -470,97 +425,80 @@ export default function Inventory() {
     setIsTrfModalOpen(true);
   };
 
+  const handleExecuteWriteOff = async () => {
+    if (!confirmWriteOffItem) return;
+    try {
+      const onHand = Number(confirmWriteOffItem.balance !== undefined ? confirmWriteOffItem.balance : (confirmWriteOffItem.onHand || 0));
+      if (onHand <= 0) {
+        setToastMsg({ type: 'info', text: 'Stock is already 0.' });
+        setConfirmWriteOffItem(null);
+        return;
+      }
+      await api.post('/api/inventory/adjustment', {
+        materialId: confirmWriteOffItem.materialId?._id || confirmWriteOffItem.materialId,
+        warehouseId: confirmWriteOffItem.warehouseId?._id || confirmWriteOffItem.warehouseId,
+        type: 'ADJUSTMENT_OUT',
+        quantity: onHand,
+        reason: 'Zero-out balance write-off',
+        referenceDoc: 'INVENTORY-RETIRE'
+      });
+      setToastMsg({ type: 'success', text: `✓ Wrote off remaining stock for ${confirmWriteOffItem.materialId?.name}.` });
+      setConfirmWriteOffItem(null);
+      fetchInventoryData();
+    } catch (err) {
+      setToastMsg({ type: 'error', text: err.response?.data?.message || 'Failed to write off balance' });
+    }
+  };
+
   return (
-    <div className="space-y-3.5 font-sans text-slate-900 bg-slate-50/60 min-h-screen p-3 md:p-6">
-      {/* COMPACT TOP ACTION BAR (No bulky card background) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-transparent">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-blue-600 text-white rounded-xl shadow-xs">
-            <Boxes className="h-5 w-5" />
+    <div className="space-y-2 font-sans text-slate-900 w-full">
+      {/* 1-ROW COMPACT METRIC STRIP */}
+      <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+        <div className="flex flex-wrap items-center gap-4 text-slate-600 font-medium">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">SKUs:</span>
+            <span className="font-extrabold text-slate-900">{activeSummary.totalSKUs}</span>
           </div>
-          <div>
-            <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              Physical Stock & Inventory
-              <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-blue-100 text-blue-800 rounded-md">
-                {activeSummary.totalSKUs} SKUs
-              </span>
-            </h1>
-            <p className="text-[11px] text-slate-500 font-medium">
-              Multi-warehouse inventory balances & stock movements
-            </p>
+          <div className="h-3 w-px bg-slate-200" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">On-Hand:</span>
+            <span className="font-extrabold text-slate-900">{activeSummary.totalOnHandUnits.toLocaleString()}</span>
+          </div>
+          <div className="h-3 w-px bg-slate-200" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Available:</span>
+            <span className="font-extrabold text-slate-900">{activeSummary.totalAvailableUnits.toLocaleString()}</span>
+          </div>
+          <div className="h-3 w-px bg-slate-200" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Reserved:</span>
+            <span className="font-extrabold text-slate-900">{activeSummary.totalReservedUnits.toLocaleString()}</span>
+          </div>
+          <div className="h-3 w-px bg-slate-200" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Valuation:</span>
+            <span className="font-extrabold text-slate-900">₹{activeSummary.totalStockValuation.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
           </div>
         </div>
 
-        {/* 2 Primary Action Buttons on Top in Same Position */}
-        <div className="flex items-center gap-2">
+        {/* Global Facility Scope Reminder */}
+        {(activeSiteId || (activeWarehouseId && activeWarehouseId !== 'all')) && (
           <button
-            onClick={() => setIsAdjModalOpen(true)}
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 active:scale-95"
+            type="button"
+            onClick={() => {
+              setActiveSiteId(null);
+              setActiveWarehouseId('all');
+            }}
+            className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
           >
-            <Plus className="h-4 w-4" />
-            <span>Stock Adjustment</span>
+            <Globe className="h-3 w-3" />
+            <span>Reset Plant Filter</span>
           </button>
-
-          <button
-            onClick={() => setIsTrfModalOpen(true)}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 active:scale-95"
-          >
-            <ArrowRightLeft className="h-4 w-4" />
-            <span>Inter-Warehouse Transfer</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* COMPACT KPI METRICS TILES */}
-      <div className="grid gap-2.5 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs space-y-0.5">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">Total SKUs</span>
-            <Layers className="h-3.5 w-3.5 text-blue-600" />
-          </div>
-          <p className="text-lg sm:text-xl font-black text-slate-900">{activeSummary.totalSKUs} <span className="text-[10px] font-normal text-slate-500">lines</span></p>
-          <p className="text-[10px] text-slate-500 font-medium truncate">{activeSummary.inStockCount} in stock &bull; {activeSummary.outOfStockCount} zero</p>
-        </div>
-
-        <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 shadow-xs space-y-0.5">
-          <div className="flex items-center justify-between text-blue-700">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">On-Hand Stock</span>
-            <Boxes className="h-3.5 w-3.5 text-blue-600" />
-          </div>
-          <p className="text-lg sm:text-xl font-black text-blue-800">{activeSummary.totalOnHandUnits.toLocaleString()} <span className="text-[10px] font-normal text-blue-600">units</span></p>
-          <p className="text-[10px] text-blue-600/80 font-medium truncate">Physical inventory</p>
-        </div>
-
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 shadow-xs space-y-0.5">
-          <div className="flex items-center justify-between text-emerald-700">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">Available Stock</span>
-            <Check className="h-3.5 w-3.5 text-emerald-600" />
-          </div>
-          <p className="text-lg sm:text-xl font-black text-emerald-800">{activeSummary.totalAvailableUnits.toLocaleString()} <span className="text-[10px] font-normal text-emerald-600">units</span></p>
-          <p className="text-[10px] text-emerald-600/80 font-medium truncate">Unreserved & ready</p>
-        </div>
-
-        <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 shadow-xs space-y-0.5">
-          <div className="flex items-center justify-between text-amber-700">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">Reserved Stock</span>
-            <Clock className="h-3.5 w-3.5 text-amber-600" />
-          </div>
-          <p className="text-lg sm:text-xl font-black text-amber-800">{activeSummary.totalReservedUnits.toLocaleString()} <span className="text-[10px] font-normal text-amber-600">units</span></p>
-          <p className="text-[10px] text-amber-600/80 font-medium truncate">Allocated to orders</p>
-        </div>
-
-        <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-3 shadow-xs space-y-0.5 col-span-2 md:col-span-1">
-          <div className="flex items-center justify-between text-purple-700">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">Total Valuation</span>
-            <IndianRupee className="h-3.5 w-3.5 text-purple-600" />
-          </div>
-          <p className="text-lg sm:text-xl font-black text-purple-900">₹{activeSummary.totalStockValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-          <p className="text-[10px] text-purple-600/80 font-medium truncate">Live inventory value</p>
-        </div>
-      </div>
-
-      {/* NAVIGATION TABS */}
-      <div className="flex flex-wrap items-center justify-between border-b border-slate-200 bg-white rounded-2xl p-2 gap-2 shadow-sm">
+      {/* TABS & ACTIONS UNIFIED BAR */}
+      <div className="flex flex-wrap items-center justify-between bg-white border border-slate-200 rounded-lg p-1 gap-2 shadow-2xs">
         <div className="flex items-center gap-1 overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
@@ -569,10 +507,11 @@ export default function Inventory() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${isActive
-                    ? 'bg-slate-900 text-white shadow-sm'
+                className={`flex items-center space-x-1.5 px-3 py-1 text-xs font-bold rounded-md transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-xs'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                  }`}
+                }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span>{tab.label}</span>
@@ -581,55 +520,63 @@ export default function Inventory() {
           })}
         </div>
 
-        {activeTab === 'ledger' && (
-          <Button
-            size="sm"
-            onClick={exportLedgerCSV}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5"
+        <div className="flex items-center gap-1.5 pr-0.5">
+          {activeTab === 'ledger' && (
+            <button
+              onClick={exportLedgerCSV}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded flex items-center gap-1 transition-colors"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Export CSV
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsAdjModalOpen(true)}
+            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded flex items-center gap-1 transition-colors shadow-2xs"
           >
-            <FileSpreadsheet className="h-3.5 w-3.5" /> Export CSV
-          </Button>
-        )}
+            <Plus className="h-3.5 w-3.5" />
+            <span>Adjustment</span>
+          </button>
+
+          <button
+            onClick={() => setIsTrfModalOpen(true)}
+            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded flex items-center gap-1 transition-colors shadow-2xs"
+          >
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            <span>Transfer</span>
+          </button>
+        </div>
       </div>
 
-      {/* TAB 1: PHYSICAL STOCK OVERVIEW */}
+      {/* TAB 1: STOCK */}
       {activeTab === 'overview' && (
-        <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
-          <CardHeader className="border-b border-slate-100 p-4 space-y-3">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <CardTitle className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                  PHYSICAL STOCK OVERVIEW & VALUATION
-                </CardTitle>
-                <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[10px] font-extrabold font-mono">
-                  {filteredBalances.length} Lines
-                </Badge>
-                {activeSite && (
-                  <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700">
-                    Scope: {activeSite.name} {activeWarehouse ? `(${activeWarehouse.name})` : '(All Warehouses)'}
-                  </span>
-                )}
-              </div>
-
-              {/* SEARCH & MULTI-FILTER CONTROLS */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-[200px]">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+        <Card className="bg-white border-slate-200 shadow-2xs rounded-xl overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b border-slate-200 p-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="relative w-[240px] sm:w-[280px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search material or code..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                    className="w-full pl-8 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
                   />
                 </div>
 
+                <Badge variant="outline" className="border-slate-300 text-slate-700 bg-white text-[10px] font-bold font-mono">
+                  {filteredBalances.length} items
+                </Badge>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs">
                 <select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="p-1.5 px-2.5 border border-slate-200 rounded-xl text-xs bg-slate-50 font-bold text-slate-700"
+                  className="py-1 px-2 border border-slate-200 rounded-lg text-xs bg-white font-bold text-slate-700 focus:outline-none"
                 >
-                  <option value="ALL">All Material Types</option>
+                  <option value="ALL">All Types</option>
                   <option value="Raw Material">Raw Material</option>
                   <option value="Packaged Material">Packaged Material</option>
                   <option value="Semi-Finished">Semi-Finished</option>
@@ -639,11 +586,11 @@ export default function Inventory() {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="p-1.5 px-2.5 border border-slate-200 rounded-xl text-xs bg-slate-50 font-bold text-slate-700"
+                  className="py-1 px-2 border border-slate-200 rounded-lg text-xs bg-white font-bold text-slate-700 focus:outline-none"
                 >
-                  <option value="ALL">All Stock Statuses</option>
+                  <option value="ALL">All Statuses</option>
                   <option value="IN_STOCK">In Stock (&gt; 0)</option>
-                  <option value="LOW_STOCK">Low Stock Alert</option>
+                  <option value="LOW_STOCK">Low Stock</option>
                   <option value="OUT_OF_STOCK">Out of Stock (0)</option>
                 </select>
               </div>
@@ -652,48 +599,25 @@ export default function Inventory() {
 
           <CardContent className="p-0">
             <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left text-xs min-w-[900px]">
-                <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
+              <table className="w-full text-left text-xs min-w-[850px]">
+                <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300 select-none">
                   <tr>
-                    <th className="p-3.5">Material Details</th>
-                    <th className="p-3.5">Warehouse & Site</th>
-                    <th className="p-3.5 text-center">Batch / Lot</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">On-Hand</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">Reserved</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">Available</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">Unit Price</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">Total Value</th>
-                    <th className="p-3.5 text-center whitespace-nowrap min-w-[120px]">Status</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">Actions</th>
+                    <th className="px-3 py-2">Material</th>
+                    <th className="px-3 py-2">Warehouse</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">On-Hand</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Reserved</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Available</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Unit Price</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Total Value</th>
+                    <th className="px-3 py-2 text-center whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredBalances.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center">
-                        <div className="max-w-md mx-auto space-y-2 py-3">
-                          <p className="text-xs font-black text-slate-800 uppercase tracking-wide">
-                            No Stock Items Found in Selected Scope
-                          </p>
-                          <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                            {activeSite
-                              ? `Currently filtered to "${activeSite.name}" ${activeWarehouse ? `→ "${activeWarehouse.name}"` : ''}. If you adjusted stock in another facility, switch plant in the top header or click below.`
-                              : 'No stock records match the current search or filters.'}
-                          </p>
-                          {(activeSiteId || (activeWarehouseId && activeWarehouseId !== 'all')) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveSiteId(null);
-                                setActiveWarehouseId('all');
-                              }}
-                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-[11px] rounded-xl transition-all shadow-xs"
-                            >
-                              <Globe className="h-3.5 w-3.5" />
-                              <span>View All Facilities & Warehouses</span>
-                            </button>
-                          )}
-                        </div>
+                      <td colSpan={9} className="p-6 text-center text-slate-400 italic">
+                        No inventory records matching current filter.
                       </td>
                     </tr>
                   ) : (
@@ -705,80 +629,47 @@ export default function Inventory() {
                       const totalVal = Number(item.totalValue !== undefined ? item.totalValue : (onHand * unitPrice));
                       const reorder = item.materialId?.reorderLevel || item.materialId?.safetyStock || 10;
                       const isLow = avail > 0 && avail <= reorder;
-
-                      const formattedOnHand = Math.round(onHand * 1000) / 1000;
-                      const formattedReserved = Math.round(reserved * 1000) / 1000;
-                      const formattedAvail = Math.round(avail * 1000) / 1000;
+                      const statusBadge = avail === 0 ? 'Out of Stock' : isLow ? 'Low Stock' : 'In Stock';
 
                       return (
-                        <tr key={item._id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3.5">
+                        <tr key={item._id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-3 py-2">
                             <span className="font-mono font-bold text-blue-600 block text-[11px]">{item.materialId?.code}</span>
-                            <span className="font-bold text-slate-900 block">{item.materialId?.name}</span>
-                            <span className="text-[10px] text-slate-400 uppercase font-semibold">{item.materialId?.type || 'Material'}</span>
+                            <span className="font-bold text-slate-900 block leading-tight">{item.materialId?.name}</span>
+                            <span className="text-[9px] text-slate-400 uppercase font-semibold">{item.materialId?.type || 'Material'}</span>
                           </td>
-                          <td className="p-3.5">
-                            <p className="font-extrabold text-slate-800">{item.warehouseId?.name || 'Warehouse'}</p>
+                          <td className="px-3 py-2">
+                            <p className="font-bold text-slate-800 leading-tight">{item.warehouseId?.name || 'Warehouse'}</p>
                             <p className="text-[10px] text-slate-400">{item.siteId?.name || item.warehouseId?.siteId?.name || 'Primary Site'}</p>
                           </td>
-                          <td className="p-3.5 text-center font-mono text-[11px] text-slate-600 whitespace-nowrap">
-                            {item.batchNumber || 'DEFAULT'}
+                          <td className="px-3 py-2 text-right font-mono font-extrabold text-slate-900 whitespace-nowrap">
+                            {Math.round(onHand * 1000) / 1000} <span className="text-[10px] font-normal text-slate-500">{item.materialId?.unit || 'pcs'}</span>
                           </td>
-                          <td className="p-3.5 text-right font-mono font-extrabold text-slate-900 whitespace-nowrap">
-                            {formattedOnHand} <span className="text-[10px] font-normal text-slate-500">{item.materialId?.unit || 'pcs'}</span>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-amber-600 whitespace-nowrap">
+                            {Math.round(reserved * 1000) / 1000} <span className="text-[10px] font-normal text-slate-500">{item.materialId?.unit || 'pcs'}</span>
                           </td>
-                          <td className="p-3.5 text-right font-mono font-bold text-amber-600 whitespace-nowrap">
-                            {formattedReserved} <span className="text-[10px] font-normal text-slate-500">{item.materialId?.unit || 'pcs'}</span>
+                          <td className="px-3 py-2 text-right font-mono font-black text-emerald-700 whitespace-nowrap">
+                            {Math.round(avail * 1000) / 1000} <span className="text-[10px] font-normal text-emerald-600">{item.materialId?.unit || 'pcs'}</span>
                           </td>
-                          <td className="p-3.5 text-right font-mono font-black text-emerald-700 whitespace-nowrap">
-                            {formattedAvail} <span className="text-[10px] font-normal text-emerald-600">{item.materialId?.unit || 'pcs'}</span>
+                          <td className="px-3 py-2 text-right font-mono whitespace-nowrap font-bold text-slate-800">
+                            ₹{unitPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="p-3.5 text-right font-mono whitespace-nowrap">
-                            <div className="flex flex-col items-end">
-                              <span className="font-extrabold text-slate-900">
-                                ₹{unitPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                              {item.hasBom ? (
-                                <span className="inline-flex items-center text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 mt-0.5" title={`BOM Unit Cost (${item.bomNumber || 'BOM'})`}>
-                                  BOM Cost
-                                </span>
-                              ) : (
-                                item.priceSource && item.priceSource !== 'Default' && (
-                                  <span className="text-[9px] text-slate-400 font-semibold mt-0.5">
-                                    {item.priceSource}
-                                  </span>
-                                )
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3.5 text-right font-mono font-extrabold text-purple-900 whitespace-nowrap">
+                          <td className="px-3 py-2 text-right font-mono font-extrabold text-indigo-900 whitespace-nowrap">
                             ₹{totalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-md text-[10px] font-extrabold uppercase whitespace-nowrap tracking-wide leading-none ${avail === 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                                isLow ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                                  'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              }`}>
-                              {avail === 0 ? 'Out of Stock' : isLow ? 'Low Stock' : 'In Stock'}
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${getStatusBadgeClass(statusBadge)}`}>
+                              {statusBadge}
                             </span>
                           </td>
-                          <td className="p-3.5 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => openQuickAdjustment(item)}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-lg text-[10px] transition-colors"
-                                title="Adjust Stock"
-                              >
-                                Adjust
-                              </button>
-                              <button
-                                onClick={() => openQuickTransfer(item)}
-                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold rounded-lg text-[10px] transition-colors"
-                                title="Transfer to another warehouse"
-                              >
-                                Transfer
-                              </button>
-                            </div>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            <RowActionsMenu
+                              onView={() => setDetailItem(item)}
+                              onAdjust={() => openQuickAdjustment(item)}
+                              onTransfer={() => openQuickTransfer(item)}
+                              onDelete={onHand > 0 ? () => setConfirmWriteOffItem(item) : null}
+                              deleteLabel="Write off remaining balance"
+                            />
                           </td>
                         </tr>
                       );
@@ -791,283 +682,90 @@ export default function Inventory() {
         </Card>
       )}
 
-      {/* TAB 2: STOCK ADJUSTMENTS */}
+      {/* TAB 2: ADJUSTMENTS */}
       {activeTab === 'adjustments' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div>
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Stock Adjustment Requests & Approvals</h3>
-              <p className="text-[11px] text-slate-500 font-medium">Physical inventory discrepancies require supervisor authorization before ledger write.</p>
-            </div>
+        <Card className="bg-white border-slate-200 shadow-2xs rounded-xl overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b border-slate-200 p-2 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Stock Adjustments</h3>
             <button
               onClick={() => setIsAdjModalOpen(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5"
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded flex items-center gap-1"
             >
-              <Plus className="h-4 w-4" /> New Adjustment Request
+              <Plus className="h-3.5 w-3.5" /> New Request
             </button>
-          </div>
-
-          <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left text-xs min-w-[750px]">
-                  <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="p-3.5">Adj Code</th>
-                      <th className="p-3.5">Material</th>
-                      <th className="p-3.5">Warehouse</th>
-                      <th className="p-3.5 text-center">Type & Qty</th>
-                      <th className="p-3.5">Reason</th>
-                      <th className="p-3.5">Created By</th>
-                      <th className="p-3.5 text-center whitespace-nowrap min-w-[120px]">Status</th>
-                      <th className="p-3.5 text-right whitespace-nowrap">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {adjustments.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="p-8 text-center text-slate-400 text-xs italic">No adjustment requests found.</td>
-                      </tr>
-                    ) : (
-                      adjustments.map((adj) => {
-                        const isAddition = adj.adjustmentType === 'IN' || adj.type === 'INCREASE' || adj.type === 'ADJUSTMENT_IN' || adj.type === 'IN';
-                        const formattedQty = Math.abs(Number(adj.quantity || 0));
-                        return (
-                          <tr key={adj._id} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="p-3.5 font-mono font-extrabold text-blue-600 whitespace-nowrap">
-                              {adj.adjNumber || adj.adjustmentNumber || 'ADJ'}
-                            </td>
-                            <td className="p-3.5">
-                              <p className="font-extrabold text-slate-900">{adj.materialId?.name}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">{adj.materialId?.code}</p>
-                            </td>
-                            <td className="p-3.5 text-slate-700 font-bold">{adj.warehouseId?.name}</td>
-                            <td className="p-3.5 text-center whitespace-nowrap">
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-black text-[10px] ${
-                                  isAddition ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                                }`}>
-                                  {isAddition ? `+${formattedQty}` : `-${formattedQty}`} {adj.materialId?.unit || 'pcs'}
-                                </span>
-                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
-                                  {isAddition ? 'Addition (IN)' : 'Reduction (OUT)'}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="p-3.5 text-slate-600 text-[11px] max-w-xs truncate">{adj.reason}</td>
-                            <td className="p-3.5 text-slate-600 text-xs">{adj.createdBy?.username || 'Planner'}</td>
-                            <td className="p-3.5 text-center whitespace-nowrap">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${statusStyles[adj.status]}`}>
-                                {adj.status}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-right whitespace-nowrap">
-                              {adj.status === 'PENDING' ? (
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <button
-                                    onClick={() => handleApproveAdjustment(adj._id, adj.adjNumber || adj.adjustmentNumber)}
-                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={() => handleRejectAdjustment(adj._id, adj.adjNumber || adj.adjustmentNumber)}
-                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all"
-                                  >
-                                    Reject
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 text-xs italic">Closed</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* TAB 3: INTER-WAREHOUSE TRANSFERS */}
-      {activeTab === 'transfers' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200/90 shadow-sm">
-            <div>
-              <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">Inter-Warehouse Inventory Transfers</h2>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Move materials between storage facilities and production bays</p>
-            </div>
-            <button
-              onClick={() => setIsTrfModalOpen(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5"
-            >
-              <Plus className="h-4 w-4" /> New Transfer Request
-            </button>
-          </div>
-
-          <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left text-xs min-w-[800px]">
-                  <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="p-3.5 whitespace-nowrap">Transfer Code</th>
-                      <th className="p-3.5">Material</th>
-                      <th className="p-3.5">Source &rarr; Destination</th>
-                      <th className="p-3.5 text-right whitespace-nowrap">Quantity</th>
-                      <th className="p-3.5 text-center whitespace-nowrap min-w-[120px]">Status</th>
-                      <th className="p-3.5 whitespace-nowrap">Created At</th>
-                      <th className="p-3.5 text-right whitespace-nowrap">Lifecycle Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {transfers.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400 text-xs italic">No transfer records found.</td>
-                      </tr>
-                    ) : (
-                      transfers.map((trf) => (
-                        <tr key={trf._id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3.5 font-mono font-extrabold text-indigo-600 whitespace-nowrap">{trf.transferNumber}</td>
-                          <td className="p-3.5">
-                            <p className="font-extrabold text-slate-900">{trf.materialId?.name}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">{trf.materialId?.code}</p>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="flex items-center gap-1.5 text-slate-700">
-                              <span className="font-bold">{trf.fromWarehouseId?.name}</span>
-                              <ArrowRight className="h-3 w-3 text-slate-400" />
-                              <span className="font-bold text-slate-900">{trf.toWarehouseId?.name}</span>
-                            </div>
-                          </td>
-                          <td className="p-3.5 text-right font-black text-slate-900 whitespace-nowrap">{trf.quantity} {trf.materialId?.unit || 'pcs'}</td>
-                          <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${statusStyles[trf.status]}`}>
-                              {trf.status}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-slate-500 whitespace-nowrap text-xs">{new Date(trf.createdAt).toLocaleDateString()}</td>
-                          <td className="p-3.5 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {trf.status === 'PENDING' && (
-                                <button
-                                  onClick={() => handleUpdateTransferStatus(trf._id, 'IN_TRANSIT')}
-                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
-                                >
-                                  Dispatch
-                                </button>
-                              )}
-                              {trf.status === 'IN_TRANSIT' && (
-                                <button
-                                  onClick={() => handleUpdateTransferStatus(trf._id, 'COMPLETED')}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
-                                >
-                                  Receive
-                                </button>
-                              )}
-                              {['PENDING', 'IN_TRANSIT'].includes(trf.status) && (
-                                <button
-                                  onClick={() => handleUpdateTransferStatus(trf._id, 'CANCELLED')}
-                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all"
-                                >
-                                  Cancel
-                                </button>
-                              )}
-                              {['COMPLETED', 'CANCELLED'].includes(trf.status) && (
-                                <span className="text-slate-400 text-xs italic">Finished</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* TAB 4: IMMUTABLE AUDIT LEDGER */}
-      {activeTab === 'ledger' && (
-        <Card className="bg-white border-slate-200/90 shadow-sm rounded-2xl overflow-hidden">
-          <CardHeader className="border-b border-slate-100 p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                IMMUTABLE INVENTORY AUDIT LEDGER
-              </CardTitle>
-              <p className="text-[11px] text-slate-500 font-medium">Append-only audit trail recording every stock inward, outward, adjustment, and transfer.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={ledgerTypeFilter}
-                onChange={(e) => setLedgerTypeFilter(e.target.value)}
-                className="p-1.5 px-2.5 border border-slate-200 rounded-xl text-xs bg-slate-50 font-bold text-slate-700"
-              >
-                <option value="ALL">All Transaction Types</option>
-                <option value="GRN">Goods Receipt (GRN)</option>
-                <option value="ADJUSTMENT_IN">Adjustment IN</option>
-                <option value="ADJUSTMENT_OUT">Adjustment OUT</option>
-                <option value="TRANSFER_OUT">Transfer Dispatch</option>
-                <option value="TRANSFER_IN">Transfer Receipt</option>
-                <option value="Issue">Issue / Consumption</option>
-              </select>
-            </div>
           </CardHeader>
+
           <CardContent className="p-0">
             <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left text-xs min-w-[750px]">
-                <thead className="bg-slate-50/80 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
+              <table className="w-full text-left text-xs min-w-[700px]">
+                <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300">
                   <tr>
-                    <th className="p-3.5 whitespace-nowrap">Timestamp</th>
-                    <th className="p-3.5 text-center whitespace-nowrap">Type</th>
-                    <th className="p-3.5">Material</th>
-                    <th className="p-3.5">Warehouse</th>
-                    <th className="p-3.5 text-right whitespace-nowrap">Quantity</th>
-                    <th className="p-3.5">Reference Document</th>
-                    <th className="p-3.5 whitespace-nowrap">User</th>
+                    <th className="px-3 py-2">Code</th>
+                    <th className="px-3 py-2">Material</th>
+                    <th className="px-3 py-2">Warehouse</th>
+                    <th className="px-3 py-2 text-center">Type & Qty</th>
+                    <th className="px-3 py-2">Reason</th>
+                    <th className="px-3 py-2 text-center whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-medium font-mono text-[11px]">
-                  {transactions.length === 0 ? (
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {adjustments.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-400 font-sans italic text-xs">No ledger entries recorded.</td>
+                      <td colSpan={7} className="p-6 text-center text-slate-400 italic">No adjustment requests recorded.</td>
                     </tr>
                   ) : (
-                    transactions
-                      .filter(tx => ledgerTypeFilter === 'ALL' || tx.type === ledgerTypeFilter)
-                      .map((tx) => (
-                        <tr key={tx._id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3.5 text-slate-500 font-sans text-xs whitespace-nowrap">{new Date(tx.createdAt).toLocaleString()}</td>
-                          <td className="p-3.5 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded font-extrabold uppercase text-[10px] bg-slate-100 text-slate-800 font-sans`}>
-                              {tx.type}
+                    adjustments.map((adj) => {
+                      const isAddition = adj.adjustmentType === 'IN' || adj.type === 'INCREASE' || adj.type === 'ADJUSTMENT_IN' || adj.type === 'IN';
+                      const formattedQty = Math.abs(Number(adj.quantity || 0));
+                      return (
+                        <tr key={adj._id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-3 py-2 font-mono font-bold text-blue-600 whitespace-nowrap">
+                            {adj.adjNumber || adj.adjustmentNumber || 'ADJ'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <p className="font-bold text-slate-900 leading-tight">{adj.materialId?.name}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{adj.materialId?.code}</p>
+                          </td>
+                          <td className="px-3 py-2 text-slate-700 font-bold">{adj.warehouseId?.name}</td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded font-bold text-[10px] border ${
+                              isAddition ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}>
+                              {isAddition ? `+${formattedQty}` : `-${formattedQty}`} {adj.materialId?.unit || 'pcs'}
                             </span>
                           </td>
-                          <td className="p-3.5 font-sans">
-                            <span className="font-bold text-slate-900 block">{tx.materialId?.name}</span>
-                            <span className="font-mono text-slate-400 text-[10px]">{tx.materialId?.code}</span>
+                          <td className="px-3 py-2 text-slate-600 text-[11px] max-w-xs truncate">{adj.reason}</td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${getStatusBadgeClass(adj.status)}`}>
+                              {adj.status}
+                            </span>
                           </td>
-                          <td className="p-3.5 font-sans text-slate-700">{tx.warehouseId?.name || 'Warehouse'}</td>
-                          <td className={`p-3.5 text-right font-black whitespace-nowrap ${
-                            (['ADJUSTMENT_OUT', 'TRANSFER_OUT', 'Issue', 'CONSUMPTION', 'SCRAP'].includes(tx.type) || tx.quantity < 0)
-                              ? 'text-rose-700' : 'text-emerald-700'
-                          }`}>
-                            {(() => {
-                              const isOutward = ['ADJUSTMENT_OUT', 'TRANSFER_OUT', 'Issue', 'CONSUMPTION', 'SCRAP'].includes(tx.type) || tx.quantity < 0;
-                              const absQty = Math.abs(Number(tx.quantity || 0));
-                              return `${isOutward ? '-' : '+'}${absQty} ${tx.materialId?.unit || 'pcs'}`;
-                            })()}
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            {adj.status === 'PENDING' ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => handleApproveAdjustment(adj._id, adj.adjNumber || adj.adjustmentNumber)}
+                                  disabled={actionLoadingId === adj._id}
+                                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-all"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleRejectAdjustment(adj._id, adj.adjNumber || adj.adjustmentNumber)}
+                                  disabled={actionLoadingId === adj._id}
+                                  className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-bold transition-all"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Closed</span>
+                            )}
                           </td>
-                          <td className="p-3.5 text-slate-600 truncate max-w-xs">{tx.referenceId || tx.sourceDocType || '—'}</td>
-                          <td className="p-3.5 font-sans text-slate-500 whitespace-nowrap">{tx.userId?.username || 'System'}</td>
                         </tr>
-                      ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1076,32 +774,250 @@ export default function Inventory() {
         </Card>
       )}
 
-      {/* MODAL 1: CREATE STOCK ADJUSTMENT */}
-      {isAdjModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-blue-100 text-blue-600 rounded-xl">
-                  <Sliders className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">New Stock Adjustment Request</h3>
-                  <p className="text-xs text-slate-500">Record physical count variance or inventory write-on/off</p>
-                </div>
+      {/* TAB 3: TRANSFERS */}
+      {activeTab === 'transfers' && (
+        <Card className="bg-white border-slate-200 shadow-2xs rounded-xl overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b border-slate-200 p-2 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Stock Transfers</h3>
+            <button
+              onClick={() => setIsTrfModalOpen(true)}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded flex items-center gap-1"
+            >
+              <Plus className="h-3.5 w-3.5" /> New Transfer
+            </button>
+          </CardHeader>
+
+          <CardContent className="p-0">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs min-w-[700px]">
+                <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300">
+                  <tr>
+                    <th className="px-3 py-2">Transfer Code</th>
+                    <th className="px-3 py-2">Material</th>
+                    <th className="px-3 py-2">Route</th>
+                    <th className="px-3 py-2 text-right">Quantity</th>
+                    <th className="px-3 py-2 text-center whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {transfers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-400 italic">No transfer records found.</td>
+                    </tr>
+                  ) : (
+                    transfers.map((trf) => (
+                      <tr key={trf._id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-3 py-2 font-mono font-bold text-indigo-600 whitespace-nowrap">{trf.transferNumber}</td>
+                        <td className="px-3 py-2">
+                          <p className="font-bold text-slate-900 leading-tight">{trf.materialId?.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{trf.materialId?.code}</p>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1.5 text-slate-700 font-bold">
+                            <span>{trf.fromWarehouseId?.name}</span>
+                            <ArrowRight className="h-3 w-3 text-slate-400" />
+                            <span>{trf.toWarehouseId?.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right font-bold text-slate-900 whitespace-nowrap">{trf.quantity} {trf.materialId?.unit || 'pcs'}</td>
+                        <td className="px-3 py-2 text-center whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${getStatusBadgeClass(trf.status)}`}>
+                            {trf.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {trf.status === 'PENDING' && (
+                            <button
+                              onClick={() => handleUpdateTransferStatus(trf._id, 'IN_TRANSIT')}
+                              disabled={actionLoadingId === trf._id}
+                              className="px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold transition-all"
+                            >
+                              Dispatch
+                            </button>
+                          )}
+                          {trf.status === 'IN_TRANSIT' && (
+                            <button
+                              onClick={() => handleUpdateTransferStatus(trf._id, 'COMPLETED')}
+                              disabled={actionLoadingId === trf._id}
+                              className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-all"
+                            >
+                              Receive
+                            </button>
+                          )}
+                          {['COMPLETED', 'CANCELLED'].includes(trf.status) && (
+                            <span className="text-slate-400 text-xs italic">Closed</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TAB 4: AUDIT LOG */}
+      {activeTab === 'ledger' && (
+        <Card className="bg-white border-slate-200 shadow-2xs rounded-xl overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Audit Log</h3>
+            <select
+              value={ledgerTypeFilter}
+              onChange={(e) => setLedgerTypeFilter(e.target.value)}
+              className="py-1 px-2 border border-slate-200 rounded-lg text-xs bg-white font-bold text-slate-700 focus:outline-none"
+            >
+              <option value="ALL">All Transactions</option>
+              <option value="GRN">Goods Receipt (GRN)</option>
+              <option value="ADJUSTMENT_IN">Adjustment IN</option>
+              <option value="ADJUSTMENT_OUT">Adjustment OUT</option>
+              <option value="TRANSFER_OUT">Transfer Dispatch</option>
+              <option value="TRANSFER_IN">Transfer Receipt</option>
+              <option value="Issue">Issue / Consumption</option>
+            </select>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-xs min-w-[700px]">
+                <thead className="bg-slate-100/90 text-slate-700 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300">
+                  <tr>
+                    <th className="px-3 py-2 whitespace-nowrap">Timestamp</th>
+                    <th className="px-3 py-2 text-center whitespace-nowrap">Type</th>
+                    <th className="px-3 py-2">Material</th>
+                    <th className="px-3 py-2">Warehouse</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Qty</th>
+                    <th className="px-3 py-2">Ref Doc</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium font-mono text-[11px]">
+                  {transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-400 font-sans italic text-xs">No ledger entries recorded.</td>
+                    </tr>
+                  ) : (
+                    transactions
+                      .filter(tx => ledgerTypeFilter === 'ALL' || tx.type === ledgerTypeFilter)
+                      .map((tx) => {
+                        const isOutward = ['ADJUSTMENT_OUT', 'TRANSFER_OUT', 'Issue', 'CONSUMPTION', 'SCRAP'].includes(tx.type) || tx.quantity < 0;
+                        const absQty = Math.abs(Number(tx.quantity || 0));
+                        return (
+                          <tr key={tx._id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="px-3 py-2 text-slate-500 font-sans text-xs whitespace-nowrap">{new Date(tx.createdAt).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded font-bold uppercase text-[9px] bg-slate-100 text-slate-800 font-sans">
+                                {tx.type}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-sans">
+                              <span className="font-bold text-slate-900 block leading-tight">{tx.materialId?.name}</span>
+                              <span className="font-mono text-slate-400 text-[10px]">{tx.materialId?.code}</span>
+                            </td>
+                            <td className="px-3 py-2 font-sans text-slate-700">{tx.warehouseId?.name || 'Warehouse'}</td>
+                            <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${isOutward ? 'text-rose-700' : 'text-emerald-700'}`}>
+                              {isOutward ? `-${absQty}` : `+${absQty}`} {tx.materialId?.unit || 'pcs'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600 truncate max-w-xs">{tx.referenceId || tx.sourceDocType || '—'}</td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* DETAIL DRAWER */}
+      <DetailDrawer
+        isOpen={!!detailItem}
+        onClose={() => setDetailItem(null)}
+        title={detailItem?.materialId?.name || 'Material Details'}
+        subtitle={detailItem?.materialId?.code}
+        badge={detailItem?.materialId?.type}
+      >
+        {detailItem && (
+          <div className="space-y-3">
+            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase block">Warehouse</span>
+                <span className="font-bold text-slate-800">{detailItem.warehouseId?.name || 'Assigned Warehouse'}</span>
               </div>
-              <button onClick={() => setIsAdjModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase block">Facility Site</span>
+                <span className="font-bold text-slate-800">{detailItem.siteId?.name || detailItem.warehouseId?.siteId?.name || 'Primary Plant'}</span>
+              </div>
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase block">Batch / Lot</span>
+                <span className="font-mono font-bold text-slate-800">{detailItem.batchNumber || 'DEFAULT'}</span>
+              </div>
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase block">Reorder Level</span>
+                <span className="font-mono font-bold text-slate-800">{detailItem.materialId?.reorderLevel || 10} {detailItem.materialId?.unit || 'pcs'}</span>
+              </div>
             </div>
 
-            <form onSubmit={handleCreateAdjustment} className="space-y-3.5 text-xs">
+            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">On-Hand Units:</span>
+                <span className="font-mono font-bold text-slate-900">{detailItem.balance || detailItem.onHand || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Reserved Units:</span>
+                <span className="font-mono font-bold text-amber-600">{detailItem.reservedBalance || detailItem.reserved || 0}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1">
+                <span className="text-slate-700 font-bold">Available to Issue:</span>
+                <span className="font-mono font-extrabold text-emerald-700">
+                  {Math.max(0, (detailItem.balance || detailItem.onHand || 0) - (detailItem.reservedBalance || detailItem.reserved || 0))}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                onClick={() => {
+                  const it = detailItem;
+                  setDetailItem(null);
+                  openQuickAdjustment(it);
+                }}
+                className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-colors text-center"
+              >
+                Create Adjustment
+              </button>
+              <button
+                onClick={() => {
+                  const it = detailItem;
+                  setDetailItem(null);
+                  openQuickTransfer(it);
+                }}
+                className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-xs transition-colors text-center"
+              >
+                Transfer Stock
+              </button>
+            </div>
+          </div>
+        )}
+      </DetailDrawer>
+
+      {/* MODAL 1: STOCK ADJUSTMENT */}
+      {isAdjModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold text-slate-900">Stock Adjustment</h3>
+              <button onClick={() => setIsAdjModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-base font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateAdjustment} className="space-y-2.5 text-xs">
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Target Material</label>
+                <label className="font-bold text-slate-700 block mb-1">Target Material *</label>
                 <select
                   value={adjForm.materialId}
                   onChange={(e) => setAdjForm({ ...adjForm, materialId: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                  className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium"
                   required
                 >
                   {materials.map(m => (
@@ -1110,91 +1026,74 @@ export default function Inventory() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Warehouse Location</label>
+                  <label className="font-bold text-slate-700 block mb-1">Warehouse *</label>
                   <select
                     value={adjForm.warehouseId}
                     onChange={(e) => setAdjForm({ ...adjForm, warehouseId: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium text-xs"
                     required
                   >
-                    {warehouses.map(w => {
-                      const sName = w.siteId?.name || (sites.find(s => s._id === (w.siteId?._id || w.siteId))?.name) || 'Facility';
-                      const isCurrent = (w.siteId?._id || w.siteId) === activeSiteId;
-                      return (
-                        <option key={w._id} value={w._id}>
-                          {w.name} — [{sName}]{isCurrent ? ' ⭐ Active Scope' : ''}
-                        </option>
-                      );
-                    })}
+                    {warehouses.map(w => (
+                      <option key={w._id} value={w._id}>{w.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Adjustment Direction</label>
+                  <label className="font-bold text-slate-700 block mb-1">Direction *</label>
                   <select
                     value={adjForm.adjustmentType}
                     onChange={(e) => setAdjForm({ ...adjForm, adjustmentType: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium"
                   >
-                    <option value="IN">IN (Stock Increase / Found)</option>
-                    <option value="OUT">OUT (Stock Decrease / Damaged)</option>
+                    <option value="IN">IN (+ Stock)</option>
+                    <option value="OUT">OUT (- Stock)</option>
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Adjustment Quantity</label>
+                  <label className="font-bold text-slate-700 block mb-1">Quantity *</label>
                   <input
                     type="number"
                     min="0.001"
                     step="0.001"
                     value={adjForm.quantity}
                     onChange={(e) => setAdjForm({ ...adjForm, quantity: Number(e.target.value) })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-bold font-mono"
                     required
                   />
                 </div>
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Reason Code</label>
+                  <label className="font-bold text-slate-700 block mb-1">Reason *</label>
                   <select
                     value={adjForm.reason}
                     onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium"
                   >
-                    <option value="Physical count discrepancy">Physical count discrepancy</option>
-                    <option value="Damaged / Expired stock">Damaged / Expired stock</option>
-                    <option value="Sample testing consumption">Sample testing consumption</option>
-                    <option value="Opening balance calibration">Opening balance calibration</option>
+                    <option value="Physical count discrepancy">Count Discrepancy</option>
+                    <option value="Damaged / Expired stock">Damaged / Expired</option>
+                    <option value="Sample testing consumption">Sample Testing</option>
+                    <option value="Opening balance calibration">Balance Calibration</option>
                   </select>
                 </div>
-              </div>
-
-              <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Notes & Description (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Discrepancy observed during quarterly audit"
-                  value={adjForm.description}
-                  onChange={(e) => setAdjForm({ ...adjForm, description: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                />
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsAdjModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs shadow-sm transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-xs shadow-2xs transition-colors"
                 >
-                  <Check className="h-4 w-4" /> Submit for Approval
+                  Submit Request
                 </button>
               </div>
             </form>
@@ -1202,110 +1101,94 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* MODAL 2: CREATE INTER-WAREHOUSE TRANSFER */}
+      {/* MODAL 2: INTER-WAREHOUSE TRANSFER */}
       {isTrfModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
-                  <ArrowRightLeft className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">New Inter-Warehouse Stock Transfer</h3>
-                  <p className="text-xs text-slate-500">Initiate physical stock dispatch across facilities</p>
-                </div>
-              </div>
-              <button onClick={() => setIsTrfModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold text-slate-900">Inter-Warehouse Transfer</h3>
+              <button onClick={() => setIsTrfModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-base font-bold">✕</button>
             </div>
 
-            <form onSubmit={handleCreateTransfer} className="space-y-3.5 text-xs">
+            <form onSubmit={handleCreateTransfer} className="space-y-2.5 text-xs">
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Transfer Material</label>
+                <label className="font-bold text-slate-700 block mb-1">Material *</label>
                 <select
                   value={trfForm.materialId}
                   onChange={(e) => setTrfForm({ ...trfForm, materialId: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                  className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium"
                   required
                 >
                   {materials.map(m => (
-                    <option key={m._id} value={m._id}>{m.name} ({m.code}) — {m.type}</option>
+                    <option key={m._id} value={m._id}>{m.name} ({m.code})</option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Source Warehouse (FROM)</label>
+                  <label className="font-bold text-slate-700 block mb-1">From *</label>
                   <select
                     value={trfForm.fromWarehouseId}
                     onChange={(e) => setTrfForm({ ...trfForm, fromWarehouseId: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium text-xs"
                     required
                   >
-                    {warehouses.map(w => {
-                      const sName = w.siteId?.name || (sites.find(s => s._id === (w.siteId?._id || w.siteId))?.name) || 'Facility';
-                      return (
-                        <option key={w._id} value={w._id}>{w.name} — [{sName}]</option>
-                      );
-                    })}
+                    {warehouses.map(w => (
+                      <option key={w._id} value={w._id}>{w.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Destination Warehouse (TO)</label>
+                  <label className="font-bold text-slate-700 block mb-1">To *</label>
                   <select
                     value={trfForm.toWarehouseId}
                     onChange={(e) => setTrfForm({ ...trfForm, toWarehouseId: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium text-xs"
                     required
                   >
-                    {warehouses.filter(w => w._id !== trfForm.fromWarehouseId).map(w => {
-                      const sName = w.siteId?.name || (sites.find(s => s._id === (w.siteId?._id || w.siteId))?.name) || 'Facility';
-                      return (
-                        <option key={w._id} value={w._id}>{w.name} — [{sName}]</option>
-                      );
-                    })}
+                    {warehouses.filter(w => w._id !== trfForm.fromWarehouseId).map(w => (
+                      <option key={w._id} value={w._id}>{w.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Transfer Quantity</label>
+                  <label className="font-bold text-slate-700 block mb-1">Quantity *</label>
                   <input
                     type="number"
                     min="1"
                     value={trfForm.quantity}
                     onChange={(e) => setTrfForm({ ...trfForm, quantity: Number(e.target.value) })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-bold font-mono"
                     required
                   />
                 </div>
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Transfer Reason</label>
+                  <label className="font-bold text-slate-700 block mb-1">Reason *</label>
                   <input
                     type="text"
                     value={trfForm.reason}
                     onChange={(e) => setTrfForm({ ...trfForm, reason: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded font-medium"
                     required
                   />
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsTrfModalOpen(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold rounded-xl"
+                  className="px-3 py-1 text-slate-600 hover:bg-slate-100 font-bold rounded text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow-sm transition-all"
+                  className="px-3.5 py-1 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded text-xs shadow-2xs transition-all"
                 >
                   Submit Transfer
                 </button>
@@ -1315,90 +1198,87 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* MODAL: STOCK OUT OVER-WITHDRAWAL DEFICIT POPUP */}
+      {/* MODAL: OVER-WITHDRAWAL DEFICIT POPUP */}
       {stockOutWarningModal && (
-        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white border border-rose-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scaleUp">
-            <div className="flex items-center gap-3 pb-3 border-b border-rose-100">
-              <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
-                <AlertTriangle className="h-6 w-6" />
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-50 backdrop-blur-xs">
+          <div className="bg-white border border-rose-200 rounded-xl max-w-md w-full p-4 space-y-3 shadow-2xl">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-rose-100">
+              <div className="p-1.5 bg-rose-100 text-rose-600 rounded-md">
+                <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900">Stock Out Limit Exceeded</h3>
-                <p className="text-xs text-rose-600 font-bold">Action Cannot Be Performed</p>
+                <h3 className="text-xs font-bold text-slate-900">Stock Limit Exceeded</h3>
+                <p className="text-[10px] text-rose-600 font-bold">Action Blocked</p>
               </div>
             </div>
 
-            <div className="p-3.5 bg-rose-50/80 border border-rose-200 rounded-xl text-xs space-y-2 text-rose-950 font-medium">
+            <div className="p-2.5 bg-rose-50/80 border border-rose-200 rounded-lg text-xs space-y-2 text-rose-950 font-medium">
               <p className="font-bold text-slate-900">
                 {stockOutWarningModal.materialName} ({stockOutWarningModal.materialCode})
               </p>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="p-2 bg-white rounded-lg border border-rose-200">
-                  <span className="text-[10px] text-slate-500 block font-bold uppercase">Present Stock</span>
-                  <span className="text-sm font-black text-emerald-700 font-mono">
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <div className="p-1.5 bg-white rounded border border-rose-200">
+                  <span className="text-[9px] text-slate-500 block font-bold uppercase">Present Stock</span>
+                  <span className="text-xs font-bold text-emerald-700 font-mono">
                     {stockOutWarningModal.availableStock} {stockOutWarningModal.unit}
                   </span>
                 </div>
-                <div className="p-2 bg-white rounded-lg border border-rose-200">
-                  <span className="text-[10px] text-slate-500 block font-bold uppercase">Requested Stock Out</span>
-                  <span className="text-sm font-black text-rose-700 font-mono">
+                <div className="p-1.5 bg-white rounded border border-rose-200">
+                  <span className="text-[9px] text-slate-500 block font-bold uppercase">Requested Out</span>
+                  <span className="text-xs font-bold text-rose-700 font-mono">
                     {stockOutWarningModal.requestedQty} {stockOutWarningModal.unit}
                   </span>
                 </div>
               </div>
-              <p className="text-xs text-rose-900 pt-1 leading-relaxed font-semibold">
-                ⚠ Present stock is only <strong>{stockOutWarningModal.availableStock} {stockOutWarningModal.unit}</strong>. Requested withdrawal of <strong>{stockOutWarningModal.requestedQty} {stockOutWarningModal.unit}</strong> exceeds inventory by <strong className="font-mono text-rose-950 underline">{stockOutWarningModal.deficit} {stockOutWarningModal.unit}</strong>.
+              <p className="text-xs text-rose-900 pt-0.5 leading-relaxed font-semibold">
+                Requested withdrawal of <strong>{stockOutWarningModal.requestedQty}</strong> exceeds available stock by <strong className="font-mono text-rose-950">{stockOutWarningModal.deficit} {stockOutWarningModal.unit}</strong>.
               </p>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="pt-1 flex justify-end">
               <button
                 type="button"
                 onClick={() => setStockOutWarningModal(null)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded shadow-xs transition-colors"
               >
-                Understood, Modify Quantity
+                Modify Quantity
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* FLOATING TOAST NOTIFICATION (BOTTOM RIGHT) */}
+      {/* CONFIRM ZERO-OUT DIALOG */}
+      <ConfirmDialog
+        isOpen={!!confirmWriteOffItem}
+        onClose={() => setConfirmWriteOffItem(null)}
+        onConfirm={handleExecuteWriteOff}
+        title="Zero-Out Stock Balance"
+        message={`Are you sure you want to write off the entire remaining on-hand stock (${confirmWriteOffItem?.balance || 0} units) for ${confirmWriteOffItem?.materialId?.name}? An audit-backed ledger adjustment will be recorded.`}
+        confirmText="Write Off Balance"
+        isDestructive={true}
+      />
+
+      {/* FLOATING TOAST */}
       {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-slideUp pointer-events-auto">
-          <div className={`p-4 rounded-2xl shadow-2xl border flex items-start justify-between gap-3 backdrop-blur-md ${
-            toastMsg.type === 'success'
-              ? 'bg-slate-900/95 text-white border-emerald-500/40'
-              : toastMsg.type === 'error'
-                ? 'bg-slate-900/95 text-white border-rose-500/40'
-                : 'bg-slate-900/95 text-white border-blue-500/40'
-          }`}>
-            <div className="flex items-start gap-3">
-              <div className={`p-2 rounded-xl mt-0.5 ${
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full">
+          <div className="p-3 rounded-lg shadow-xl border bg-slate-900 text-white border-slate-700 flex items-start justify-between gap-2.5">
+            <div className="flex items-start gap-2">
+              <div className={`p-1 rounded mt-0.5 ${
                 toastMsg.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
               }`}>
                 {toastMsg.type === 'success' ? (
-                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 ) : (
-                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                 )}
               </div>
-              <div>
-                <div className={`text-xs font-black uppercase tracking-wider ${
-                  toastMsg.type === 'success' ? 'text-emerald-400' : 'text-rose-400'
-                }`}>
-                  {toastMsg.type === 'success' ? 'Operation Success' : 'Attention / Error'}
-                </div>
-                <div className="text-xs font-medium text-slate-200 mt-1 leading-relaxed">{toastMsg.text}</div>
-              </div>
+              <div className="text-xs font-medium text-slate-200 leading-tight">{toastMsg.text}</div>
             </div>
-            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-lg font-bold p-1 leading-none">×</button>
+            <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-sm font-bold leading-none">×</button>
           </div>
         </div>
       )}
     </div>
   );
 }
-

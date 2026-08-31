@@ -1,25 +1,50 @@
 ---
 name: vendor-po-workflow-check
+command: /vendor-check
+aliases:
+  - /po-check
+  - /po-workflow
+  - /check-workflow
 description: Use when implementing or modifying vendor onboarding, purchase-order approval, or invoice-matching logic. Validates the change against the platform's state-machine rules before code is written.
 ---
 
-# Vendor / PO Workflow Change Check
+# Vendor / PO Workflow Change Check (`/vendor-check`)
 
-**Target location:** rename this file to `SKILL.md` and place it at `.agents/skills/vendor-po-workflow-check/SKILL.md`.
+## How to Trigger
+Type **`/vendor-check`** (or `/po-check`, `/check-workflow`) followed by the specific module, file, or proposed workflow change you want to analyze.
 
-Purchase orders, vendor onboarding, and invoice matching are state machines (see `project-rules.md` §5.2). Before writing or changing code in this area:
+### Examples:
+- `/vendor-check`
+- `/vendor-check backend/routes/purchaseOrderRoutes.js`
+- `/po-check validate invoice 3-way matching logic`
+- `/check-workflow vendor approval state transitions`
 
-## Steps
-1. Identify the full set of valid states for the entity being touched (e.g. PO: draft → submitted → approved → fulfilled → closed, plus cancelled from draft/submitted/approved).
-2. Map every code path that can change status. If the change adds a new way to reach a state, confirm it's only reachable from a legal predecessor state.
-3. Confirm every transition writes an audit log entry (who, when, old → new).
-4. Check what the transition should do to related records:
-   - Approval → reserve inventory / notify the vendor?
-   - Cancellation → release reserved inventory correctly, accounting for partial fulfillment?
-   - Invoice mismatch → block payment or just flag it?
-5. Write or update a test that exercises the new transition end-to-end, not just the function in isolation.
+---
 
-## Red flags — stop and ask the user
-- A transition that skips a required approval step "just for this case."
-- Status set directly (`record.status = 'x'`) instead of through the state-machine function.
-- No test covering the new transition.
+## State Machine Rules (§5.2)
+
+Purchase orders, vendor onboarding, and invoice matching are finite state machines. Before writing or changing code in this area:
+
+## Step-by-Step Validation Procedure
+1. **Identify the Full Valid State Graph**:
+   - **Purchase Orders:** `Draft` &rarr; `Submitted` &rarr; `Approved` &rarr; `Fulfilled` &rarr; `Closed` (or `Cancelled` from `Draft`/`Submitted`/`Approved`).
+   - **Vendor Onboarding:** `Draft` &rarr; `Pending_KYC` &rarr; `Under_Review` &rarr; `Approved` (or `Rejected` / `Suspended`).
+   - **Invoices:** `Received` &rarr; `3_Way_Matched` &rarr; `Approved` &rarr; `Paid` (or `Disputed` / `Rejected`).
+2. **Map Status Transition Code Paths**:
+   - Verify that every new way to reach a state is strictly reachable from a legal predecessor state.
+3. **Audit Trail Logging**:
+   - Confirm every transition writes an immutable audit log entry (`actorId`, `timestamp`, `oldStatus` &rarr; `newStatus`, `reason`).
+4. **Side-Effect Reconciliation**:
+   - **Approval:** Are component quantities properly reserved / supplier notified?
+   - **Cancellation:** Is reserved inventory released correctly, accounting for partial receipts?
+   - **Invoice Mismatch:** Is payment blocked and flagged for managerial review?
+5. **End-to-End Regression Test Coverage**:
+   - Exercise the new transition end-to-end with unit/integration tests (`tests/unit/`).
+
+---
+
+## Red Flags — Stop and Warn
+- A transition that skips a required approval step "just for this case".
+- Direct property mutation (e.g. `record.status = 'Approved'`) instead of calling the centralized state-machine service.
+- Missing rollback/recovery logic on failed transactions.
+- Zero test coverage for the new transition.

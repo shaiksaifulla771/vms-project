@@ -9,8 +9,9 @@ import ErrorBoundary from './components/ErrorBoundary';
 // Route-level code splitting — each module loads only when navigated to
 const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Masters = lazy(() => import('./pages/Masters'));
-const Vendors = lazy(() => import('./pages/Vendors'));
+const MaterialsTab = lazy(() => import('./pages/masters/MaterialsTab'));
+const VendorsTab = lazy(() => import('./pages/masters/VendorsTab'));
+const MPNMaster = lazy(() => import('./pages/masters/MPNMaster'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const Purchasing = lazy(() => import('./pages/Purchasing'));
 const Manufacturing = lazy(() => import('./pages/Manufacturing'));
@@ -40,6 +41,7 @@ const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 // Eagerly loaded lightweight components
 import CookieBanner from './components/CookieBanner';
 import SupportModal from './components/SupportModal';
+import EnterpriseAICopilot from './components/EnterpriseAICopilot';
 
 // Loading fallback
 const PageLoader = () => (
@@ -162,20 +164,30 @@ const AppContent = () => {
     );
   }
 
-  // Derive activePage from the first URL segment (default landing: materials)
+  // Derive activePage from the URL segments (default landing: materials)
   let rawSegment = location.pathname.split('/')[1];
+  let subSegment = location.pathname.split('/')[2];
   let activePage = rawSegment || 'materials';
   if (activePage === 'masters' || activePage === 'master') activePage = 'materials';
-  const sidebarActivePage = activePage === 'bom' ? 'boms' : activePage;
+  
+  let sidebarActivePage = activePage;
+  if (activePage === 'bom' && subSegment === 'new') {
+    sidebarActivePage = 'bom-new';
+  } else if (activePage === 'bom' || activePage === 'boms') {
+    sidebarActivePage = 'bom';
+  }
 
   const setActivePage = (page) => {
     if (page === 'boms' || page === 'bom') navigate('/bom');
+    else if (page === 'bom-new') navigate('/bom/new');
     else if (page === 'materials') navigate('/materials');
     else if (page === 'vendors') navigate('/vendors');
     else if (page === 'mpns' || page === 'mpn') navigate('/mpns');
     else if (page === 'planning' || page === 'mrp') navigate('/planning');
     else if (page === 'sites') navigate('/sites');
     else if (page === 'classifications') navigate('/classifications');
+    else if (page === 'material-classifications') navigate('/material-classifications');
+    else if (page === 'vendor-classifications') navigate('/vendor-classifications');
     else if (page === 'users') navigate('/users');
     else navigate(`/${page}`);
   };
@@ -198,20 +210,20 @@ const AppContent = () => {
       />
 
       {/* Central content area — full-screen, fit-to-screen data density */}
-      <main className="flex-1 pt-12 px-2 sm:px-3 pb-2 w-full max-w-full mx-auto min-w-0">
+      <main className="flex-1 pt-12 px-1.5 sm:px-2.5 pb-2 w-full max-w-full mx-auto min-w-0">
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            {/* Landing & Master Data Routes */}
+            {/* Master Module - 100% Isolated */}
             <Route path="/" element={<Navigate to="/materials" replace />} />
             <Route path="/login" element={<Navigate to="/materials" replace />} />
             <Route path="/dashboard" element={<Navigate to="/materials" replace />} />
-            <Route path="/materials/*" element={<Masters initialTab="materials" />} />
-            <Route path="/vendors/*" element={<Masters initialTab="vendors" />} />
-            <Route path="/mpns/*" element={<Masters initialTab="mpns" />} />
-            <Route path="/mpn/*" element={<Masters initialTab="mpns" />} />
-            <Route path="/masters/*" element={<Masters />} />
+            <Route path="/materials/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><MaterialsTab /></ProtectedRoute>} />
+            <Route path="/vendors/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><VendorsTab /></ProtectedRoute>} />
+            <Route path="/masters/*" element={<Navigate to="/materials" replace />} />
 
             {/* Stocks & Inventory */}
+            <Route path="/mpns/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><MPNMaster /></ProtectedRoute>} />
+            <Route path="/mpn/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><MPNMaster /></ProtectedRoute>} />
             <Route path="/inventory/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']}><Inventory /></ProtectedRoute>} />
 
             {/* Engineering & Infrastructure */}
@@ -225,6 +237,8 @@ const AppContent = () => {
 
             {/* Settings: Classifications & Users */}
             <Route path="/classifications/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer']}><ClassificationsPage /></ProtectedRoute>} />
+            <Route path="/material-classifications/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer']}><ClassificationsPage initialType="material" /></ProtectedRoute>} />
+            <Route path="/vendor-classifications/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer']}><ClassificationsPage initialType="vendor" /></ProtectedRoute>} />
             <Route path="/users/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
             <Route path="/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
             <Route path="/admin/users-access/*" element={<ProtectedRoute roles={['Admin']}><UsersAndAccessScope /></ProtectedRoute>} />
@@ -264,6 +278,9 @@ const AppContent = () => {
 
       {/* Support & Health Modal */}
       <SupportModal isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
+
+      {/* Global Enterprise AI Copilot (NVIDIA Nemotron 3 Ultra 550B) */}
+      <EnterpriseAICopilot />
     </div>
   );
 };

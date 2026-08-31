@@ -14,28 +14,18 @@ const Sequence = require('../../models/Sequence');
 const MRPEngineService = require('../../services/mrpEngineService');
 const ProductionPlanningEngine = require('../../services/productionPlanningEngine');
 
+const connectDB = require('../../config/db');
+
 jest.setTimeout(60000);
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
-});
+  await connectDB();
+}, 60000);
 
 afterAll(async () => {
   try {
     if (mongoose.connection && mongoose.connection.readyState !== 0) {
       await mongoose.connection.close();
-    }
-  } catch (_) {}
-  try {
-    if (mongoServer) {
-      await mongoServer.stop();
     }
   } catch (_) {}
 });

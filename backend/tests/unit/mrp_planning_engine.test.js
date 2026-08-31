@@ -10,24 +10,20 @@ const PurchaseRequirement = require('../../models/PurchaseRequirement');
 const Sequence = require('../../models/Sequence');
 const MRPEngineService = require('../../services/mrpEngineService');
 
+const connectDB = require('../../config/db');
+
 describe('MRP Planning Module Unit Tests', () => {
-  let mongoServer;
   let warehouse;
   let rawMat1, rawMat2, subAssembly, finishedProduct;
   let subBom, rootBom;
 
   beforeAll(async () => {
     jest.setTimeout(60000);
-    mongoServer = await MongoMemoryServer.create();
-    const uri = mongoServer.getUri();
-    await mongoose.connect(uri);
+    await connectDB();
   }, 60000);
 
   afterAll(async () => {
     await mongoose.disconnect();
-    if (mongoServer) {
-      await mongoServer.stop();
-    }
   });
 
   beforeEach(async () => {
