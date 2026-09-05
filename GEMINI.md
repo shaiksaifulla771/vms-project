@@ -24,3 +24,12 @@
     4. 3-way invoice matching constraints.
     5. Test coverage for the transition.
 
+- **`agent go`** (Aliases: `/agent-go`, `agents go`, `agent go <task>`):
+  - **Trigger:** Activates the 4-Agent Synchronized Execution Protocol (`.agents/rules/agent_go_orchestration.md`).
+  - **Collaborative 4-Agent Engine:** Fires all 4 installed plugin agents simultaneously:
+    1. **`code-reviewer`**: Audits correctness, design patterns, clean code, and module boundaries.
+    2. **`security-auditor`**: Scans for OWASP vulnerabilities, authorization leaks, injection vectors, and sensitive data exposure.
+    3. **`test-engineer`**: Identifies test coverage gaps, edge cases, and designs rigorous test suites.
+    4. **`web-performance-auditor`**: Detects rendering bottlenecks, CWV degradation, network waterfalls, and bundle bloat.
+  - **Result:** Delivers a consolidated multi-agent executive scorecard, prioritized severity matrix (Critical, High, Medium, Low), and unified actionable patch plan.
+

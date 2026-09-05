@@ -37,8 +37,22 @@ class NvidiaAiService {
    * High-Performance Enterprise Multi-Domain Context Builder
    * Gathers live operational database state across all ERP/VMS modules with sub-50ms execution
    */
-  async buildEnterpriseContext(prompt = '', context = {}, user = null) {
+  async buildEnterpriseContext(promptOrContext = '', contextOrUser = {}, maybeUser = null) {
     try {
+      let prompt = '';
+      let context = {};
+      let user = null;
+
+      if (typeof promptOrContext === 'object' && promptOrContext !== null) {
+        context = promptOrContext;
+        user = contextOrUser || null;
+        prompt = '';
+      } else {
+        prompt = typeof promptOrContext === 'string' ? promptOrContext : '';
+        context = (typeof contextOrUser === 'object' && contextOrUser !== null) ? contextOrUser : {};
+        user = maybeUser;
+      }
+
       const route = (context.route || '').toLowerCase();
       const p = (prompt || '').toLowerCase();
       let contextBlocks = [];
@@ -46,7 +60,7 @@ class NvidiaAiService {
       // 1. Current User Session Context
       if (user) {
         const isGlobal = authz.isGlobalAdmin(user);
-        let userScopeDesc = `[USER SESSION] Caller: ${user.username || user.email} | Role: ${user.role} | Global Admin: ${isGlobal}`;
+        let userScopeDesc = `[USER SESSION] User: ${user.username || user.email} | Caller: ${user.username || user.email} | Role: ${user.role} | Global Admin: ${isGlobal}`;
         contextBlocks.push(userScopeDesc);
       }
 
@@ -170,7 +184,7 @@ class NvidiaAiService {
    */
   getSystemPrompt(enterpriseContext) {
     return `
-You are the **Senior Enterprise Operations Copilot for VendorOS ERP & VMS**, powered by **NVIDIA Nemotron 3 Ultra 550B**.
+You are the **Senior Enterprise Operations Copilot for VendorOS ERP & VMS**, powered by **NVIDIA Nemotron 3 Ultra 550B Reasoning Engine**.
 
 ### OPERATIONAL GUIDELINES:
 1. **EXECUTIVE CONCISENESS & SPEED:** Be direct, structured, and fast. Avoid lengthy disclaimers or raw sequential listing of dozens of items.
@@ -179,7 +193,7 @@ You are the **Senior Enterprise Operations Copilot for VendorOS ERP & VMS**, pow
    - For listings, provide a clean structured breakdown by category or a concise table of the **top 10 most relevant items** followed by a summary note.
    - Present clean, crisp markdown with bold headers and compact tables.
 3. **ACCURACY:** Answer quantitative and list questions using the exact numbers and items in [LIVE ENTERPRISE CONTEXT].
-4. **HUMAN-IN-THE-LOOP SAFETY:** For record creation or modifications, output an optional drafted action JSON block.
+4. **HUMAN-IN-THE-LOOP SAFETY:** For record creation or modifications, output an optional drafted action JSON block with "_type": "drafted_erp_action".
 
 ### LIVE ENTERPRISE CONTEXT:
 ${enterpriseContext}

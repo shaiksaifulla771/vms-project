@@ -20,64 +20,20 @@ const Visitor = require('../models/Visitor');
 const Appointment = require('../models/Appointment');
 const AuditLog = require('../models/AuditLog');
 
-function determineSubcategory(name, type, vendor) {
-  const lowerName = (name || '').toLowerCase();
-  const lowerVendor = (vendor || '').toLowerCase();
-  
+const FRESH_KW = ['pumpkin', 'banana', 'apple', 'mango', 'strawberry', 'papaya', 'carrot', 'tomato', 'garlic', 'ginger', 'onion', 'spinach', 'fresh', 'vegetable', 'fruits', 'jain farm fresh', 'shimla hills'];
+const RETAIL_KW = ['pouch', 'cap', 'box', 'roll', 'film', 'brand', 'retail'];
+const PORRIDGE_KW = ['porridge', 'oats', 'wheat', 'rice', 'millet', 'lentil', 'barley', 'ragi', 'khichdi'];
+
+function determineSubcategory(name = '', type = '', vendor = '') {
+  const text = `${name} ${vendor}`.toLowerCase();
   if (type === 'Raw Material') {
-    if (
-      lowerName.includes('pumpkin') || 
-      lowerName.includes('banana') || 
-      lowerName.includes('apple') || 
-      lowerName.includes('mango') || 
-      lowerName.includes('strawberry') || 
-      lowerName.includes('papaya') || 
-      lowerName.includes('carrot') || 
-      lowerName.includes('tomato') || 
-      lowerName.includes('garlic') || 
-      lowerName.includes('ginger') || 
-      lowerName.includes('onion') || 
-      lowerName.includes('spinach') || 
-      lowerName.includes('fresh') ||
-      lowerVendor.includes('vegetable') || 
-      lowerVendor.includes('fruits') ||
-      lowerVendor.includes('jain farm fresh') || 
-      lowerVendor.includes('shimla hills')
-    ) {
-      return 'Fresh';
-    }
-    if (
-      lowerName.includes('pouch') || 
-      lowerName.includes('cap') || 
-      lowerName.includes('box') || 
-      lowerName.includes('roll') || 
-      lowerName.includes('film') || 
-      lowerName.includes('brand') || 
-      lowerVendor.includes('retail') ||
-      lowerVendor.includes('brand')
-    ) {
-      return 'Retail';
-    }
+    if (FRESH_KW.some(k => text.includes(k))) return 'Fresh';
+    if (RETAIL_KW.some(k => text.includes(k))) return 'Retail';
     return 'Standardized';
-  } else {
-    if (lowerName.includes('melt') || lowerName.includes('yogurt')) {
-      return 'Yogurt Melts';
-    }
-    if (
-      lowerName.includes('porridge') || 
-      lowerName.includes('oats') || 
-      lowerName.includes('wheat') || 
-      lowerName.includes('rice') || 
-      lowerName.includes('millet') || 
-      lowerName.includes('lentil') || 
-      lowerName.includes('barley') || 
-      lowerName.includes('ragi') ||
-      lowerName.includes('khichdi')
-    ) {
-      return 'Porridge';
-    }
-    return 'Puree';
   }
+  if (text.includes('melt') || text.includes('yogurt')) return 'Yogurt Melts';
+  if (PORRIDGE_KW.some(k => text.includes(k))) return 'Porridge';
+  return 'Puree';
 }
 
 class MasterDataBootstrapService {

@@ -135,11 +135,12 @@ const connectDB = async () => {
         if (mongoose.connection.readyState !== 0) {
           await mongoose.disconnect().catch(() => {});
         }
-        if (!global.__MONGO_MEMORY_SERVER__) {
+        if (!process.env.TEST_MONGO_MEMORY_URI) {
           const { MongoMemoryServer } = require('mongodb-memory-server');
-          global.__MONGO_MEMORY_SERVER__ = await MongoMemoryServer.create();
+          const server = await MongoMemoryServer.create();
+          process.env.TEST_MONGO_MEMORY_URI = server.getUri();
         }
-        const mongoUri = global.__MONGO_MEMORY_SERVER__.getUri();
+        const mongoUri = process.env.TEST_MONGO_MEMORY_URI;
         const memConn = await mongoose.connect(mongoUri, {
           maxPoolSize: 50,
           minPoolSize: 10,

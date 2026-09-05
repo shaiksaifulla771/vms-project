@@ -278,15 +278,20 @@ exports.getInventoryBalances = async (req, res, next) => {
       totalReservedUnits += reserved;
       totalStockValuation += (onHand * unitPrice);
 
-      if (available > 0) {
-        inStockCount++;
-      } else {
-        outOfStockCount++;
-      }
+      item.onHand = onHand;
+      item.reserved = reserved;
+      item.available = available;
 
       const reorderLvl = item.materialId?.reorderLevel || item.materialId?.safetyStock || 0;
-      if (reorderLvl > 0 && available <= reorderLvl) {
+      if (available <= 0) {
+        item.status = 'out_of_stock';
+        outOfStockCount++;
+      } else if (reorderLvl > 0 && available <= reorderLvl) {
+        item.status = 'low_stock';
         lowStockCount++;
+      } else {
+        item.status = 'in_stock';
+        inStockCount++;
       }
     });
 

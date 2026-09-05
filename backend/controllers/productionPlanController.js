@@ -14,6 +14,13 @@ const ProductionPlanningEngine = require('../services/productionPlanningEngine')
 const { nextSeqNumber } = require('../services/sequenceService');
 const { eventBus, EVENTS } = require('../events/eventBus');
 const { escapeRegex } = require('../utils/regex');
+const {
+  populatePlan,
+  calculateBomIngredients,
+  resolveCustomIngredients,
+  checkStockAvailability,
+  logPlanAudit
+} = require('./productionPlanHelper');
 
 
 // @desc    Get all production plans with filters and pagination
@@ -93,15 +100,7 @@ exports.getProductionPlans = asyncHandler(async (req, res, next) => {
   const skip = (page - 1) * limit;
 
   const [plans, total] = await Promise.all([
-    ProductionPlan.find(query)
-      .populate('productId', 'name code unit type')
-      .populate('product', 'name code unit type')
-      .populate('bomId')
-      .populate('warehouseId', 'name code')
-      .populate('ingredients.material', 'name code unit')
-      .populate('createdBy', 'username email')
-      .populate('approvedBy', 'username email')
-      .populate('releasedBy', 'username email')
+    populatePlan(ProductionPlan.find(query))
       .sort('-createdAt')
       .skip(skip)
       .limit(limit),
@@ -115,19 +114,7 @@ exports.getProductionPlans = asyncHandler(async (req, res, next) => {
 // @route   GET /api/production-plans/:id
 // @access  Private
 exports.getProductionPlanById = asyncHandler(async (req, res, next) => {
-  const plan = await ProductionPlan.findById(req.params.id)
-    .populate('productId')
-    .populate('product')
-    .populate('bomId')
-    .populate('bom')
-    .populate('warehouseId')
-    .populate('ingredients.material')
-    .populate('createdBy', 'username email')
-    .populate('approvedBy', 'username email')
-    .populate('releasedBy', 'username email')
-    .populate('completedBy', 'username email')
-    .populate('releasedProductionOrderId');
-
+  const plan = await populatePlan(ProductionPlan.findById(req.params.id));
   if (!plan) return res.status(404).json({ success: false, error: 'Production plan not found' });
   res.status(200).json({ success: true, data: plan });
 });
@@ -180,101 +167,11 @@ exports.createManualPlan = asyncHandler(async (req, res, next) => {
   let materialStatus = { status: 'READY', shortages: [], components: [] };
 
   if (activeBom && (!ingredients || ingredients.length === 0)) {
-    const batchSize = activeBom.batchSize || 1;
-    finalIngredients = (activeBom.components || []).map(comp => {
-      const compMat = comp.materialId || (comp.mpnId && comp.mpnId.materialId);
-      const rawCompQty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty !== undefined ? comp.qty : 1));
-      const compQty = rawCompQty > 0 ? rawCompQty : 1;
-      const lossPct = Number(comp.lossPercentage || comp.lossPercent || 0);
-      const quantityPerPlan = Math.max(0.000001, compQty / batchSize);
-      const totalQuantity = (targetPlansCount * quantityPerPlan) * (1 + lossPct / 100);
-
-      return {
-        material: compMat?._id || compMat,
-        materialId: compMat?._id || compMat,
-        materialCode: compMat?.code || '',
-        materialName: compMat?.name || '',
-        quantityPerPlan: Math.round(quantityPerPlan * 10000) / 10000,
-        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
-        uom: compMat?.unit || comp.uom || 'pcs',
-        warehouse: targetWarehouseId,
-        warehouseId: targetWarehouseId,
-        lossPercentage: lossPct,
-      };
-    });
+    finalIngredients = calculateBomIngredients(activeBom, targetPlansCount, targetWarehouseId);
     materialStatus = await MRPEngineService.checkMaterialAvailability(activeBom._id, targetPlansCount, targetWarehouseId);
   } else if (Array.isArray(ingredients) && ingredients.length > 0) {
-    // Custom ingredient list
-    for (const ing of ingredients) {
-      const matId = ing.materialId || ing.material;
-      const matDoc = await Material.findById(matId);
-      if (!matDoc) continue;
-      const rawQty = Number(ing.quantityPerPlan !== undefined ? ing.quantityPerPlan : (ing.qty !== undefined ? ing.qty : 1));
-      const qtyPerPlan = Math.max(0.000001, rawQty > 0 ? rawQty : 1);
-      const lossPct = Number(ing.lossPercentage || 0);
-      const totalQuantity = (targetPlansCount * qtyPerPlan) * (1 + lossPct / 100);
-
-      finalIngredients.push({
-        material: matDoc._id,
-        materialId: matDoc._id,
-        materialCode: matDoc.code,
-        materialName: matDoc.name,
-        quantityPerPlan: Math.round(qtyPerPlan * 10000) / 10000,
-        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
-        uom: ing.uom || matDoc.unit || 'pcs',
-        warehouse: ing.warehouseId || ing.warehouse || targetWarehouseId,
-        warehouseId: ing.warehouseId || ing.warehouse || targetWarehouseId,
-        lossPercentage: lossPct,
-      });
-    }
-
-    // Check stock for manual ingredients
-    const matIds = finalIngredients.map(i => i.material);
-    const invQuery = { materialId: { $in: matIds } };
-    if (targetWarehouseId && targetWarehouseId !== 'all' && targetWarehouseId !== 'ALL' && mongoose.Types.ObjectId.isValid(targetWarehouseId)) {
-      invQuery.warehouseId = targetWarehouseId;
-    }
-    const invItems = await InventoryItem.find(invQuery);
-    const stockMap = {};
-    for (const item of invItems) {
-      stockMap[item.materialId.toString()] = Math.max(0, (item.onHand || 0) - (item.reserved || 0));
-    }
-    const shortages = [];
-    let hasShortage = false;
-    let hasPartial = false;
-    for (const ing of finalIngredients) {
-      const avail = stockMap[ing.material.toString()] || 0;
-      const shortageQty = Math.max(0, ing.totalQuantity - avail);
-      if (shortageQty > 0) {
-        hasShortage = true;
-        if (avail > 0) hasPartial = true;
-        shortages.push({
-          material: ing.material,
-          materialId: ing.material,
-          materialCode: ing.materialCode,
-          materialName: ing.materialName,
-          requiredQty: ing.totalQuantity,
-          availableQty: avail,
-          shortageQty,
-          unit: ing.uom,
-          warehouseId: targetWarehouseId,
-        });
-      }
-    }
-    materialStatus = {
-      status: hasShortage ? (hasPartial ? 'PARTIAL' : 'SHORTAGE') : 'READY',
-      shortages,
-      components: finalIngredients.map(i => ({
-        materialId: i.material,
-        materialCode: i.materialCode,
-        materialName: i.materialName,
-        requiredQty: i.totalQuantity,
-        availableQty: stockMap[i.material.toString()] || 0,
-        shortageQty: Math.max(0, i.totalQuantity - (stockMap[i.material.toString()] || 0)),
-        unit: i.uom,
-      })),
-      checkedAt: new Date(),
-    };
+    finalIngredients = await resolveCustomIngredients(ingredients, targetPlansCount, targetWarehouseId, Material);
+    materialStatus = await checkStockAvailability(finalIngredients, targetWarehouseId, InventoryItem);
   } else {
     return res.status(400).json({ success: false, error: 'Either an active BOM or an ingredients array must be provided.' });
   }
@@ -403,100 +300,11 @@ exports.updateProductionPlan = asyncHandler(async (req, res, next) => {
   let materialStatus = plan.materialStatus;
 
   if (activeBom && (!ingredients || ingredients.length === 0)) {
-    const batchSize = activeBom.batchSize || 1;
-    finalIngredients = (activeBom.components || []).map(comp => {
-      const compMat = comp.materialId || (comp.mpnId && comp.mpnId.materialId);
-      const rawCompQty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty !== undefined ? comp.qty : 1));
-      const compQty = rawCompQty > 0 ? rawCompQty : 1;
-      const lossPct = Number(comp.lossPercentage || comp.lossPercent || 0);
-      const quantityPerPlan = Math.max(0.000001, compQty / batchSize);
-      const totalQuantity = (newTotalPlans * quantityPerPlan) * (1 + lossPct / 100);
-
-      return {
-        material: compMat?._id || compMat,
-        materialId: compMat?._id || compMat,
-        materialCode: compMat?.code || '',
-        materialName: compMat?.name || '',
-        quantityPerPlan: Math.round(quantityPerPlan * 10000) / 10000,
-        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
-        uom: compMat?.unit || comp.uom || 'pcs',
-        warehouse: targetWarehouseId,
-        warehouseId: targetWarehouseId,
-        lossPercentage: lossPct,
-      };
-    });
+    finalIngredients = calculateBomIngredients(activeBom, newTotalPlans, targetWarehouseId);
     materialStatus = await MRPEngineService.checkMaterialAvailability(activeBom._id, newTotalPlans, targetWarehouseId);
   } else if (Array.isArray(ingredients) && ingredients.length > 0) {
-    finalIngredients = [];
-    for (const ing of ingredients) {
-      const matId = ing.materialId || ing.material;
-      const matDoc = await Material.findById(matId);
-      if (!matDoc) continue;
-      const rawQty = Number(ing.quantityPerPlan !== undefined ? ing.quantityPerPlan : (ing.qty !== undefined ? ing.qty : 1));
-      const qtyPerPlan = Math.max(0.000001, rawQty > 0 ? rawQty : 1);
-      const lossPct = Number(ing.lossPercentage || 0);
-      const totalQuantity = (newTotalPlans * qtyPerPlan) * (1 + lossPct / 100);
-
-      finalIngredients.push({
-        material: matDoc._id,
-        materialId: matDoc._id,
-        materialCode: matDoc.code,
-        materialName: matDoc.name,
-        quantityPerPlan: Math.round(qtyPerPlan * 10000) / 10000,
-        totalQuantity: Math.round(totalQuantity * 10000) / 10000,
-        uom: ing.uom || matDoc.unit || 'pcs',
-        warehouse: ing.warehouseId || ing.warehouse || targetWarehouseId,
-        warehouseId: ing.warehouseId || ing.warehouse || targetWarehouseId,
-        lossPercentage: lossPct,
-      });
-    }
-
-    const matIds = finalIngredients.map(i => i.material);
-    const invQuery = { materialId: { $in: matIds } };
-    if (targetWarehouseId && targetWarehouseId !== 'all' && mongoose.Types.ObjectId.isValid(targetWarehouseId)) {
-      invQuery.warehouseId = targetWarehouseId;
-    }
-    const invItems = await InventoryItem.find(invQuery);
-    const stockMap = {};
-    for (const item of invItems) {
-      stockMap[item.materialId.toString()] = Math.max(0, (item.onHand || 0) - (item.reserved || 0));
-    }
-    const shortages = [];
-    let hasShortage = false;
-    let hasPartial = false;
-    for (const ing of finalIngredients) {
-      const avail = stockMap[ing.material.toString()] || 0;
-      const shortageQty = Math.max(0, ing.totalQuantity - avail);
-      if (shortageQty > 0) {
-        hasShortage = true;
-        if (avail > 0) hasPartial = true;
-        shortages.push({
-          material: ing.material,
-          materialId: ing.material,
-          materialCode: ing.materialCode,
-          materialName: ing.materialName,
-          requiredQty: ing.totalQuantity,
-          availableQty: avail,
-          shortageQty,
-          unit: ing.uom,
-          warehouseId: targetWarehouseId,
-        });
-      }
-    }
-    materialStatus = {
-      status: hasShortage ? (hasPartial ? 'PARTIAL' : 'SHORTAGE') : 'READY',
-      shortages,
-      components: finalIngredients.map(i => ({
-        materialId: i.material,
-        materialCode: i.materialCode,
-        materialName: i.materialName,
-        requiredQty: i.totalQuantity,
-        availableQty: stockMap[i.material.toString()] || 0,
-        shortageQty: Math.max(0, i.totalQuantity - (stockMap[i.material.toString()] || 0)),
-        unit: i.uom,
-      })),
-      checkedAt: new Date(),
-    };
+    finalIngredients = await resolveCustomIngredients(ingredients, newTotalPlans, targetWarehouseId, Material);
+    materialStatus = await checkStockAvailability(finalIngredients, targetWarehouseId, InventoryItem);
   }
 
   // Update plan fields

@@ -13,6 +13,9 @@ import { Search, Plus, Edit2, ToggleLeft, ToggleRight, Trash2, Save, ArrowLeft, 
 import ConfirmDeleteDialog from '../../components/ui/ConfirmDeleteDialog';
 import BulkVendorUploadGrid from '../../components/BulkVendorUploadGrid';
 import MPNMaster from './MPNMaster';
+import VendorDrawer from './components/VendorDrawer';
+import VendorAuditModal from './components/VendorAuditModal';
+import VendorDeletedHistoryModal from './components/VendorDeletedHistoryModal';
 
 const INDIAN_STATES_LIST = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
@@ -3716,171 +3719,19 @@ const VendorsTab = () => {
       </Dialog>
 
       {/* View Details Dialog Modal */}
-      <Dialog
+      <VendorDrawer
         isOpen={isViewModalOpen}
         onClose={() => setIsViewModalOpen(false)}
-        title={viewingVendor ? `Vendor Profile — ${viewingVendor.vendorId || ''}` : 'Vendor Profile'}
-        className="!max-w-[70vw] !w-[70vw] !rounded-xl"
-      >
-        {viewingVendor && (
-          <div className="space-y-4 text-xs">
-            <div className="bg-slate-900 text-white p-4 rounded-xl flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="font-mono font-extrabold text-blue-400 text-sm bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
-                  {viewingVendor.vendorId || '-'}
-                </span>
-                <div>
-                  <span className="font-extrabold text-sm block capitalize">{viewingVendor.name}</span>
-                  <span className="text-xs text-slate-300 block">{viewingVendor.company} • {viewingVendor.category}</span>
-                </div>
-              </div>
-              <Badge className={viewingVendor.status === 'Active' ? 'bg-emerald-500 text-white text-xs font-bold' : 'bg-slate-700 text-white text-xs font-bold'}>
-                {viewingVendor.status || 'Active'}
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">Primary Email</span>
-                <span className="text-xs font-bold text-slate-700">{viewingVendor.email || '-'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">Phone Number</span>
-                <span className="text-xs font-bold text-slate-700">{viewingVendor.phone || '-'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">Primary Contact Person</span>
-                <span className="text-xs font-bold text-slate-700">{viewingVendor.primaryContactName || '-'} ({viewingVendor.primaryContactDesignation || 'Contact'})</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">Sourcing Category</span>
-                <span className="text-xs font-bold text-slate-700">{viewingVendor.category || '-'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">Sub-Category</span>
-                <span className="text-xs font-bold text-slate-700">{viewingVendor.subCategory || '-'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">GSTIN / Tax Registration</span>
-                <span className="text-xs font-mono font-bold text-blue-600">
-                  {(viewingVendor.gstList && viewingVendor.gstList.length > 0) ? viewingVendor.gstList.map(g => `${g.state}: ${g.gstin}`).join(' | ') : (viewingVendor.gstin || 'No GST')}
-                </span>
-              </div>
-            </div>
-
-            {/* Certifications Block */}
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">FFSC 2200 Certification</span>
-                <span className="text-xs font-bold text-slate-800">
-                  {viewingVendor.ffsc2200 ? `✓ Certified (Lic No: ${viewingVendor.ffsc2200LicenseNo || viewingVendor.ffsc2200Qty || 'Active'})` : '✕ Not Certified'}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">FSSAI Certification</span>
-                <span className="text-xs font-bold text-slate-800">
-                  {viewingVendor.fssai ? `✓ Certified (Lic No: ${viewingVendor.fssaiLicenseNo || viewingVendor.fssaiQty || 'Active'})` : '✕ Not Certified'}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">
-                  Primary Plant / Office Address {viewingVendor.addressName ? `(${viewingVendor.addressName})` : ''}
-                </span>
-                <span className="text-xs text-slate-700 font-medium">{viewingVendor.address || 'N/A'} {viewingVendor.address2 ? `, ${viewingVendor.address2}` : ''} {viewingVendor.city ? `, ${viewingVendor.city}` : ''} {viewingVendor.state ? `, ${viewingVendor.state}` : ''} {viewingVendor.zipCode ? `- ${viewingVendor.zipCode}` : ''}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">Secondary Plant Addresses</span>
-                <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-                  {viewingVendor.secondaryAddresses && viewingVendor.secondaryAddresses.length > 0 ? (
-                    viewingVendor.secondaryAddresses.map((addr, idx) => (
-                      <div key={idx} className="text-xs text-slate-700 font-medium border-b border-slate-100 pb-1 mb-1 last:border-0 last:pb-0 last:mb-0">
-                        <span className="font-semibold text-slate-600">{addr.locationName || `Location #${idx + 1}`}: </span>
-                        {addr.address || ''} {addr.address2 ? `, ${addr.address2}` : ''} {addr.city ? `, ${addr.city}` : ''} {addr.state ? `, ${addr.state}` : ''} {addr.zipCode ? `- ${addr.zipCode}` : ''}
-                        {addr.gstOption === 'separate' && addr.gstin && (
-                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">GSTIN: {addr.gstin} ({addr.gstState})</div>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-400 italic font-medium">No secondary addresses registered</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 flex items-center justify-between border-t border-slate-100">
-              <Button
-                onClick={handlePrintPdf}
-                size="sm"
-                className="font-bold flex items-center space-x-1.5 px-4 btn-premium"
-              >
-                <Printer className="h-4 w-4" />
-                <span>Print PDF Profile</span>
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setIsViewModalOpen(false)}>
-                Close Profile
-              </Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
+        viewingVendor={viewingVendor}
+        onPrintPdf={handlePrintPdf}
+      />
 
       {/* Revision History Modal */}
-      <Dialog
+      <VendorAuditModal
         isOpen={isAuditModalOpen}
         onClose={() => setIsAuditModalOpen(false)}
-        title="Revision Log & Audit Trail"
-        className="!max-w-[450px] !w-[450px]"
-      >
-        {viewingVendorAudit && (
-          <div className="space-y-4">
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
-              <div className="text-xs font-bold text-slate-700 uppercase tracking-wide">Selected Vendor</div>
-              <div className="text-sm font-semibold text-slate-900 mt-1 capitalize">{viewingVendorAudit.name}</div>
-              <div className="text-[10px] font-mono text-slate-500 mt-0.5">Company: {viewingVendorAudit.company} | Category: {viewingVendorAudit.category}</div>
-            </div>
-
-            <div className="relative pl-6 border-l border-slate-200 space-y-4 text-xs ml-2">
-              <div className="relative">
-                <div className="absolute -left-[30px] top-1 bg-blue-600 rounded-full h-2 w-2 border border-white ring-4 ring-blue-50" />
-                <div className="flex items-center justify-between text-slate-500 text-[10px] font-mono">
-                  <span>10-Jul-2026 10:30 AM</span>
-                  <span className="font-semibold text-slate-700">Admin</span>
-                </div>
-                <p className="font-bold text-slate-800 mt-0.5">Status set to {viewingVendorAudit.status}</p>
-                <p className="text-slate-500 mt-0.5 text-[11px]">System action triggered via status toggle interface.</p>
-              </div>
-
-              <div className="relative">
-                <div className="absolute -left-[30px] top-1 bg-slate-400 rounded-full h-2 w-2 border border-white ring-4 ring-slate-50" />
-                <div className="flex items-center justify-between text-slate-500 text-[10px] font-mono">
-                  <span>08-Jul-2026 02:40 PM</span>
-                  <span className="font-semibold text-slate-700">Procurement Lead</span>
-                </div>
-                <p className="font-bold text-slate-800 mt-0.5">Vendor Information Updated</p>
-                <p className="text-slate-500 mt-0.5 text-[11px]">GST details verified against national tax database.</p>
-              </div>
-
-              <div className="relative">
-                <div className="absolute -left-[30px] top-1 bg-slate-400 rounded-full h-2 w-2 border border-white ring-4 ring-slate-50" />
-                <div className="flex items-center justify-between text-slate-500 text-[10px] font-mono">
-                  <span>05-Jul-2026 09:15 AM</span>
-                  <span className="font-semibold text-slate-700">System Agent</span>
-                </div>
-                <p className="font-bold text-slate-800 mt-0.5">Vendor Profile Registered</p>
-                <p className="text-slate-500 mt-0.5 text-[11px]">Profile created and designated sourcing category set to {viewingVendorAudit.category}.</p>
-              </div>
-            </div>
-
-            <div className="pt-3 flex items-center justify-end border-t border-slate-100 mt-4">
-              <Button variant="outline" size="sm" onClick={() => setIsAuditModalOpen(false)}>Close Log</Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
+        viewingVendorAudit={viewingVendorAudit}
+      />
 
       {/* Vendor Batch Edit Modal */}
       <Dialog
@@ -5234,66 +5085,12 @@ const VendorsTab = () => {
       </Dialog>
 
       {/* Deleted Vendors Sheets & Rows History Modal */}
-      <Dialog
+      <VendorDeletedHistoryModal
         isOpen={isDeletedVendorsModalOpen}
         onClose={() => setIsDeletedVendorsModalOpen(false)}
-        title="Deleted Rows & Removed Vendor Sheets History"
-        className="!max-w-[65vw] !w-[65vw] !rounded-xl"
-      >
-        <div className="space-y-4 text-xs">
-          <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-red-800 font-semibold flex items-center justify-between">
-            <div>
-              <span className="font-bold block text-sm">Removed Vendor Rows & Sheets Log</span>
-              <span className="text-[11px] text-red-600 block">List of deleted vendor rows and removed sheets. Click Restore to return any record back to your active data grid.</span>
-            </div>
-            <Badge className="bg-red-100 text-red-800 border-red-200 text-xs font-bold">
-              {deletedVendorsHistory.length} Removed Items
-            </Badge>
-          </div>
-
-          {deletedVendorsHistory.length === 0 ? (
-            <div className="py-8 text-center text-slate-400 space-y-1">
-              <Trash2 className="h-8 w-8 mx-auto text-slate-300" />
-              <span className="font-bold text-xs block text-slate-500">No deleted rows or sheets in history</span>
-              <span className="text-[11px] text-slate-400 block">When you delete vendor rows or remove sheets, they will appear here for easy restoration.</span>
-            </div>
-          ) : (
-            <div className="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-              {deletedVendorsHistory.map((item, idx) => (
-                <div key={idx} className="p-3 hover:bg-slate-50 flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2 py-1 rounded">{item.vendorId || 'ROW'}</span>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-bold text-slate-800 text-xs capitalize">{item.name}</span>
-                        <Badge className={item.deletionType === 'Deleted Sheet' ? 'bg-red-100 text-red-700 border-red-200 text-[9px]' : 'bg-amber-100 text-amber-700 border-amber-200 text-[9px]'}>
-                          {item.deletionType || 'Deleted Row'}
-                        </Badge>
-                      </div>
-                      <span className="text-[11px] text-slate-500 block">{item.company || 'Company'} • {item.email || '-'}</span>
-                      <span className="text-[10px] text-slate-400 block">Deleted at: {new Date(item.deletedAt).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => handleRestoreVendor(item)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    <span>Restore Record</span>
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="pt-3 flex justify-end border-t border-slate-100">
-            <Button variant="outline" size="sm" onClick={() => setIsDeletedVendorsModalOpen(false)}>
-              Close History Log
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+        deletedVendorsHistory={deletedVendorsHistory}
+        onRestoreVendor={handleRestoreVendor}
+      />
 
       {/* Floating Toast Notifications Container for Vendor Master */}
 
