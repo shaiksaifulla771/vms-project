@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../services/api';
+import * as XLSX from 'xlsx';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -20,8 +21,15 @@ import {
   Tag,
   ChevronsUpDown,
   ChevronsDownUp,
-  PackageCheck
+  PackageCheck,
+  Eye,
+  ArrowRightLeft,
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
+import { ClassificationDetailDrawer } from './classifications/components/ClassificationDetailDrawer';
+import { LinkItemsModal } from './classifications/components/LinkItemsModal';
+import { ReassignItemsModal } from './classifications/components/ReassignItemsModal';
 
 const ClassificationsPage = ({ initialType }) => {
   const [activeType, setActiveType] = useState(initialType || 'material'); // 'material' | 'vendor'
@@ -31,18 +39,99 @@ const ClassificationsPage = ({ initialType }) => {
   const [search, setSearch] = useState('');
   const [expandedNodes, setExpandedNodes] = useState(new Set());
 
+  // Interactive Selection & Drawer State
+  const [selectedClassification, setSelectedClassification] = useState(null);
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [parentForNew, setParentForNew] = useState(null);
   const [formData, setFormData] = useState({ name: '', code: '', description: '', parentId: '' });
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDeleteItem, setConfirmDeleteItem] = useState(null);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleSyncMasterData = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post('/api/classifications/sync-master-data', { type: activeType });
+      showToast(res.data?.message || 'Master data synced successfully');
+      fetchClassifications();
+    } catch (err) {
+      console.error('Failed to sync master data:', err);
+      showToast(err.response?.data?.error || 'Failed to sync master data', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleExportToExcel = () => {
+    try {
+      if (!classifications || !classifications.length) {
+        showToast('No classifications available to export', 'error');
+        return;
+      }
+
+      const rows = classifications.map((item, idx) => {
+        const pId = typeof item.parentId === 'object' ? item.parentId?._id : item.parentId;
+        const parentNode = pId ? classifications.find(c => String(c._id) === String(pId)) : null;
+        const depth = item.depth !== undefined ? item.depth : 0;
+        const depthLabel = getDepthLabel(depth);
+
+        return {
+          'S.No': idx + 1,
+          'Classification ID': String(item._id),
+          'Code': item.code || '',
+          'Name': item.name || '',
+          'Level': depthLabel,
+          'Depth': depth,
+          'Parent Category': parentNode ? parentNode.name : 'ROOT',
+          'Parent Code': parentNode ? (parentNode.code || '') : 'ROOT',
+          'Hierarchy Path': getCategoryPath(item._id),
+          'Direct Items Linked': item.itemCount || 0,
+          'Total Items in Branch': item.totalItemCount !== undefined ? item.totalItemCount : (item.itemCount || 0),
+          'Status': item.status || 'Active',
+          'Description': item.description || ''
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 6 },
+        { wch: 26 },
+        { wch: 15 },
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 8 },
+        { wch: 24 },
+        { wch: 15 },
+        { wch: 42 },
+        { wch: 18 },
+        { wch: 20 },
+        { wch: 10 },
+        { wch: 45 }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const sheetName = activeType === 'vendor' ? 'Vendor Classifications' : 'Material Classifications';
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      const fileName = `${activeType === 'vendor' ? 'Vendor' : 'Material'}_Classifications_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast(`Exported ${classifications.length} categories to ${fileName}`);
+    } catch (err) {
+      console.error('Failed to export classifications to Excel:', err);
+      showToast('Failed to export Excel file', 'error');
+    }
   };
 
   const fetchClassifications = useCallback(async () => {
@@ -52,6 +141,12 @@ const ClassificationsPage = ({ initialType }) => {
       const res = await api.get('/api/classifications', { params: { type: activeType } });
       const items = res.data?.data || [];
       setClassifications(items);
+
+      // Keep selectedClassification synchronized if open
+      setSelectedClassification(prev => {
+        if (!prev) return null;
+        return items.find(i => String(i._id) === String(prev._id)) || prev;
+      });
 
       // Auto expand root nodes on initial load
       const roots = items.filter(i => !i.parentId || (typeof i.parentId === 'object' && !i.parentId._id)).map(i => i._id);
@@ -63,6 +158,11 @@ const ClassificationsPage = ({ initialType }) => {
       setLoading(false);
     }
   }, [activeType]);
+
+  const handleSelectNode = (node) => {
+    setSelectedClassification(node);
+    setIsDetailDrawerOpen(true);
+  };
 
   useEffect(() => {
     if (initialType && initialType !== activeType) {
@@ -90,6 +190,37 @@ const ClassificationsPage = ({ initialType }) => {
     const key = parentId ? String(parentId) : 'ROOT';
     return childrenMap.get(key) || [];
   }, [childrenMap]);
+
+  // Full Breadcrumb path lookup for parent dropdowns (e.g. "Raw Material › Fresh › Organic")
+  const getCategoryPath = useCallback((catId) => {
+    if (!catId) return '';
+    const trail = [];
+    let currentId = String(catId);
+    const visited = new Set();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const node = classifications.find(c => String(c._id) === currentId);
+      if (!node) break;
+      trail.unshift(node.name);
+      const pId = typeof node.parentId === 'object' ? node.parentId?._id : node.parentId;
+      currentId = pId ? String(pId) : null;
+    }
+    return trail.join(' › ');
+  }, [classifications]);
+
+  const getDepthLabel = (depth = 0) => {
+    if (depth === 0) return 'Category';
+    if (depth === 1) return 'Sub-category';
+    if (depth === 2) return 'Sub-sub-category';
+    return `Level ${depth + 1}`;
+  };
+
+  const getDepthBadgeColor = (depth = 0) => {
+    if (depth === 0) return 'bg-blue-50 text-blue-700 border-blue-200';
+    if (depth === 1) return 'bg-purple-50 text-purple-700 border-purple-200';
+    if (depth === 2) return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  };
 
   // Expand / Collapse Handlers
   const toggleExpand = (id) => {
@@ -233,26 +364,33 @@ const ClassificationsPage = ({ initialType }) => {
     const children = getChildren(node._id);
     const hasChildren = children.length > 0;
     const isExpanded = expandedNodes.has(node._id);
+    const isSelected = selectedClassification?._id === node._id;
     const q = search.toLowerCase();
     const isMatch = q && ((node.name || '').toLowerCase().includes(q) || (node.code || '').toLowerCase().includes(q));
 
     return (
       <div key={node._id} className="relative">
         <div
-          className={`flex items-center justify-between p-2 rounded-lg border transition-all select-none ${
-            isMatch
+          onClick={() => handleSelectNode(node)}
+          className={`flex items-center justify-between p-2 rounded-lg border transition-all select-none cursor-pointer group ${
+            isSelected
+              ? 'bg-blue-50/95 border-blue-500 ring-2 ring-blue-200 shadow-xs'
+              : isMatch
               ? 'bg-amber-50/80 border-amber-300 shadow-xs'
               : depth === 0
-              ? 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
-              : 'bg-slate-50/80 border-slate-100 hover:bg-slate-100/60'
+              ? 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50/80 shadow-2xs'
+              : 'bg-slate-50/80 border-slate-100 hover:bg-blue-50/50 hover:border-slate-200'
           }`}
-          style={{ marginLeft: `${depth * 22}px` }}
+          style={{ marginLeft: `${Math.min(depth * 20, 100)}px` }}
         >
           {/* Left: Expand Toggle + Icon + Name + Badges */}
           <div className="flex items-center space-x-2 min-w-0">
             {hasChildren ? (
               <button
-                onClick={() => toggleExpand(node._id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpand(node._id);
+                }}
                 className="p-1 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors"
                 title={isExpanded ? 'Collapse branch' : 'Expand branch'}
                 aria-label={isExpanded ? 'Collapse' : 'Expand'}
@@ -270,7 +408,14 @@ const ClassificationsPage = ({ initialType }) => {
             )}
 
             <div className="flex items-center flex-wrap gap-1.5 min-w-0">
-              <span className="text-xs font-bold text-slate-900 truncate">{node.name}</span>
+              <span className={`text-xs truncate ${isSelected ? 'font-black text-blue-950' : 'font-bold text-slate-900'}`}>
+                {node.name}
+              </span>
+
+              {/* Hierarchy Level Badge (Category / Sub-category / Sub-sub...) */}
+              <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border shrink-0 ${getDepthBadgeColor(node.depth ?? depth)}`}>
+                {getDepthLabel(node.depth ?? depth)}
+              </span>
 
               {node.code && (
                 <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded border border-slate-200 shrink-0">
@@ -278,14 +423,23 @@ const ClassificationsPage = ({ initialType }) => {
                 </span>
               )}
 
-              {/* Live Assigned Materials / Vendors Metric Badge */}
-              {node.itemCount !== undefined && node.itemCount > 0 && (
+              {/* Live Assigned Materials / Vendors Metric Badge (Direct + Branch Rollup) */}
+              {(node.itemCount > 0 || (node.totalItemCount !== undefined && node.totalItemCount > 0)) && (
                 <span
-                  className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1 shrink-0"
-                  title={`${node.itemCount} active ${activeType === 'vendor' ? 'vendors' : 'materials'} classified under ${node.name}`}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                    isSelected
+                      ? 'bg-blue-600 text-white border-blue-700'
+                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                  }`}
+                  title={`${node.itemCount || 0} direct, ${node.totalItemCount || node.itemCount || 0} total in this hierarchy branch`}
                 >
                   <PackageCheck className="h-2.5 w-2.5" />
-                  <span>{node.itemCount} {activeType === 'vendor' ? 'vendors' : 'materials'}</span>
+                  <span>
+                    {node.itemCount || 0} {activeType === 'vendor' ? 'vendors' : 'materials'}
+                    {node.totalItemCount !== undefined && node.totalItemCount > (node.itemCount || 0) && (
+                      <span className="opacity-80 font-medium ml-1">({node.totalItemCount} in branch)</span>
+                    )}
+                  </span>
                 </span>
               )}
 
@@ -298,9 +452,12 @@ const ClassificationsPage = ({ initialType }) => {
           </div>
 
           {/* Right: Actions Menu */}
-          <div className="flex items-center space-x-1 shrink-0 opacity-90 hover:opacity-100">
+          <div className="flex items-center space-x-1 shrink-0 opacity-90 group-hover:opacity-100">
             <button
-              onClick={() => handleOpenAddModal(node._id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenAddModal(node._id);
+              }}
               className="h-6 px-2 text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded flex items-center gap-1 transition-colors"
               title={`Add sub-category under ${node.name}`}
             >
@@ -309,7 +466,10 @@ const ClassificationsPage = ({ initialType }) => {
             </button>
 
             <button
-              onClick={() => handleOpenEditModal(node)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenEditModal(node);
+              }}
               className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-200/60 transition-colors"
               title={`Edit ${node.name}`}
             >
@@ -317,17 +477,36 @@ const ClassificationsPage = ({ initialType }) => {
             </button>
 
             <button
-              onClick={() => setConfirmDeleteItem({
-                id: node._id,
-                name: node.name,
-                childCount: getChildren(node._id).length,
-                itemCount: node.itemCount || 0
-              })}
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmDeleteItem({
+                  id: node._id,
+                  name: node.name,
+                  childCount: getChildren(node._id).length,
+                  itemCount: node.itemCount || 0
+                });
+              }}
               className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-colors"
               title={`Delete ${node.name}`}
               aria-label={`Delete ${node.name}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
+            </button>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectNode(node);
+              }}
+              className={`h-6 px-2 text-[10px] font-bold rounded flex items-center gap-1 transition-colors ${
+                isSelected
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-blue-700 bg-white hover:bg-blue-50 border border-slate-200'
+              }`}
+              title={`Inspect classified ${activeType === 'vendor' ? 'vendors' : 'materials'}`}
+            >
+              <Eye className="h-3 w-3" />
+              <span>{isSelected ? 'Viewing' : 'Inspect'}</span>
             </button>
           </div>
         </div>
@@ -427,6 +606,32 @@ const ClassificationsPage = ({ initialType }) => {
             <Plus className="h-3.5 w-3.5 mr-1" /> Add Root Category
           </Button>
 
+          {/* Sync from Master Data */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSyncMasterData}
+            disabled={syncing || loading}
+            className="h-7 px-2.5 text-xs font-bold border-blue-200 text-blue-700 bg-blue-50/60 hover:bg-blue-100 shadow-2xs flex items-center gap-1.5"
+            title={`Sync & harvest classifications from ${activeType === 'vendor' ? 'Vendors' : 'Materials'} master records`}
+          >
+            <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin text-blue-600' : 'text-blue-500'}`} />
+            <span>{syncing ? 'Syncing...' : `Sync from ${activeType === 'vendor' ? 'Vendors' : 'Materials'}`}</span>
+          </Button>
+
+          {/* Export to MS Excel */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportToExcel}
+            disabled={loading || !classifications.length}
+            className="h-7 px-2.5 text-xs font-bold border-emerald-200 text-emerald-700 bg-emerald-50/60 hover:bg-emerald-100 shadow-2xs flex items-center gap-1.5"
+            title={`Export ${activeType === 'vendor' ? 'Vendor' : 'Material'} classifications to MS Excel`}
+          >
+            <FileSpreadsheet className="h-3 w-3 text-emerald-600" />
+            <span>Export Excel</span>
+          </Button>
+
           <button
             onClick={fetchClassifications}
             disabled={loading}
@@ -472,7 +677,13 @@ const ClassificationsPage = ({ initialType }) => {
       <Dialog
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingItem ? 'Edit Classification' : parentForNew ? 'Add Sub-Category' : 'Create Root Category'}
+        title={
+          editingItem
+            ? `Edit ${getDepthLabel(editingItem.depth || 0)}: "${editingItem.name}"`
+            : parentForNew
+            ? `Add ${getDepthLabel((classifications.find(c => String(c._id) === String(parentForNew))?.depth ?? 0) + 1)} under "${classifications.find(c => String(c._id) === String(parentForNew))?.name || 'Parent'}"`
+            : 'Create Root Category'
+        }
       >
         <form onSubmit={handleSave} className="space-y-3">
           <div>
@@ -523,7 +734,7 @@ const ClassificationsPage = ({ initialType }) => {
                   })
                   .map(c => (
                     <option key={c._id} value={c._id}>
-                      {c.name} {c.code ? `(${c.code})` : ''}
+                      {getCategoryPath(c._id)} {c.code ? `[${c.code}]` : ''}
                     </option>
                   ))}
               </select>
@@ -580,6 +791,62 @@ const ClassificationsPage = ({ initialType }) => {
         }
         confirmText="Delete"
         isDestructive={true}
+      />
+
+      {/* Interactive Linked Item Drill-Down Drawer */}
+      <ClassificationDetailDrawer
+        isOpen={isDetailDrawerOpen && !!selectedClassification}
+        onClose={() => setIsDetailDrawerOpen(false)}
+        classification={selectedClassification}
+        activeType={activeType}
+        classifications={classifications}
+        onSelectClassification={(cat) => {
+          if (!cat) setIsDetailDrawerOpen(false);
+          else setSelectedClassification(cat);
+        }}
+        onEdit={(cat) => {
+          handleOpenEditModal(cat);
+        }}
+        onAddChild={(parentId) => {
+          handleOpenAddModal(parentId);
+        }}
+        onDelete={(cat) => {
+          setConfirmDeleteItem({
+            id: cat._id,
+            name: cat.name,
+            childCount: getChildren(cat._id).length,
+            itemCount: cat.itemCount || 0
+          });
+        }}
+        onOpenLinkModal={() => setIsLinkModalOpen(true)}
+        onOpenReassignModal={() => setIsReassignModalOpen(true)}
+        onRefreshTree={fetchClassifications}
+        showToast={showToast}
+      />
+
+      {/* Link Items Modal */}
+      <LinkItemsModal
+        isOpen={isLinkModalOpen}
+        onClose={() => setIsLinkModalOpen(false)}
+        classification={selectedClassification}
+        activeType={activeType}
+        onSuccess={() => {
+          fetchClassifications();
+        }}
+        showToast={showToast}
+      />
+
+      {/* Reassign Items Modal */}
+      <ReassignItemsModal
+        isOpen={isReassignModalOpen}
+        onClose={() => setIsReassignModalOpen(false)}
+        sourceClassification={selectedClassification}
+        classifications={classifications}
+        activeType={activeType}
+        onSuccess={() => {
+          fetchClassifications();
+        }}
+        showToast={showToast}
       />
     </div>
   );

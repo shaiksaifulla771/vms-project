@@ -345,13 +345,54 @@ const VendorsTab = () => {
   }, [currentDraftId]);
   const [vendorToasts, setVendorToasts] = useState([]);
 
-  const categoryOptions = [
-    { value: 'Food Processor', label: 'Food Processor' },
-    { value: 'Contract Manufacturer', label: 'Contract Manufacturer' },
-    { value: 'Retail Brand', label: 'Retail Brand' },
-    { value: 'Fresh Fruits Supplier', label: 'Fresh Fruits Supplier' },
-    { value: 'Other', label: 'Other' }
-  ];
+  const [dynamicVendorClassifications, setDynamicVendorClassifications] = useState([]);
+
+  useEffect(() => {
+    const loadVendorClassifications = async () => {
+      try {
+        const res = await api.get('/api/classifications', { params: { type: 'vendor' } });
+        if (res.data?.data) {
+          setDynamicVendorClassifications(res.data.data);
+        }
+      } catch (err) {
+        console.warn('Failed to load dynamic vendor classifications:', err);
+      }
+    };
+    loadVendorClassifications();
+  }, []);
+
+  const categoryOptions = useMemo(() => {
+    const baseOpts = [
+      { value: 'Food Processor', label: 'Food Processor' },
+      { value: 'Contract Manufacturer', label: 'Contract Manufacturer' },
+      { value: 'Retail Brand', label: 'Retail Brand' },
+      { value: 'Fresh Fruits Supplier', label: 'Fresh Fruits Supplier' },
+      { value: 'Other', label: 'Other' }
+    ];
+
+    if (!dynamicVendorClassifications || !dynamicVendorClassifications.length) return baseOpts;
+
+    const rootNodes = dynamicVendorClassifications.filter(c => !c.parentId || (typeof c.parentId === 'object' && !c.parentId._id));
+    rootNodes.forEach(root => {
+      if (!baseOpts.some(o => o.value.toLowerCase() === root.name.toLowerCase())) {
+        baseOpts.push({ value: root.name, label: root.name, id: root._id });
+      }
+    });
+
+    return baseOpts;
+  }, [dynamicVendorClassifications]);
+
+  const availableVendorSubcategories = useMemo(() => {
+    if (!formData.category || !dynamicVendorClassifications.length) return [];
+    const root = dynamicVendorClassifications.find(c => 
+      c.name.toLowerCase() === (formData.category || '').toLowerCase()
+    );
+    if (!root) return [];
+    return dynamicVendorClassifications.filter(c => {
+      const pId = typeof c.parentId === 'object' ? c.parentId?._id : c.parentId;
+      return String(pId) === String(root._id);
+    });
+  }, [formData.category, dynamicVendorClassifications]);
 
   const fetchVendors = async () => {
     setLoading(true);
@@ -3091,11 +3132,9 @@ const VendorsTab = () => {
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:outline-none focus:border-blue-500 h-8"
                   >
-                    <option value="Food Processor">Food Processor</option>
-                    <option value="Contract Manufacturer">Contract Manufacturer</option>
-                    <option value="Retail Brand">Retail Brand</option>
-                    <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                    <option value="Other">Other</option>
+                    {categoryOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                 </div>
                 <Input
@@ -3104,8 +3143,14 @@ const VendorsTab = () => {
                   placeholder="e.g. Raw Material, Packaging"
                   value={formData.subCategory}
                   onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                  list="vendor-subcategories-list-1"
                   className="!text-xs !py-1.5 !px-2.5 !h-8 !rounded"
                 />
+                <datalist id="vendor-subcategories-list-1">
+                  {availableVendorSubcategories.map(s => (
+                    <option key={s._id} value={s.name} />
+                  ))}
+                </datalist>
                 <div className="flex flex-col space-y-1">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
                   <select
@@ -3784,11 +3829,9 @@ const VendorsTab = () => {
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs text-slate-800 focus:outline-none h-9"
                     >
-                      <option value="Food Processor">Food Processor</option>
-                      <option value="Contract Manufacturer">Contract Manufacturer</option>
-                      <option value="Retail Brand">Retail Brand</option>
-                      <option value="Fresh Fruits Supplier">Fresh Fruits Supplier</option>
-                      <option value="Other">Other</option>
+                      {categoryOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
                     </select>
                   </div>
                   <Input
@@ -3796,8 +3839,14 @@ const VendorsTab = () => {
                     placeholder="e.g. Packaged Material, Raw Material"
                     value={formData.subCategory || ''}
                     onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                    list="vendor-subcategories-list-2"
                     className="!text-xs !py-1.5 !px-2.5 !h-9 !rounded-md"
                   />
+                  <datalist id="vendor-subcategories-list-2">
+                    {availableVendorSubcategories.map(s => (
+                      <option key={s._id} value={s.name} />
+                    ))}
+                  </datalist>
                   <div className="flex flex-col space-y-1.5 col-span-2">
                     <label className="text-[11px] font-bold text-slate-600 uppercase">Status</label>
                     <select

@@ -553,28 +553,64 @@ const MaterialsTab = () => {
     setDeleteConfirmState({ isOpen: true, itemIds: Array.from(selectedRowIds) });
   };
 
-  const subcategoryMap = {
-    'Raw Material': [
-      { value: 'Fresh', label: 'Fresh' },
-      { value: 'Standardized', label: 'Standardized' },
-      { value: 'Retail', label: 'Retail' }
-    ],
-    'Packaged Material': [
-      { value: 'Primary', label: 'Primary' },
-      { value: 'Secondary', label: 'Secondary' },
-      { value: 'Tertiary', label: 'Tertiary' }
-    ],
-    'Semi-Finished': [
-      { value: 'Puree', label: 'Puree' },
-      { value: 'Porridge', label: 'Porridge' },
-      { value: 'Yogurt Melts', label: 'Yogurt Melts' }
-    ],
-    'Finished': [
-      { value: 'Puree', label: 'Puree' },
-      { value: 'Porridge', label: 'Porridge' },
-      { value: 'Yogurt Melts', label: 'Yogurt Melts' }
-    ]
-  };
+  const [dynamicClassifications, setDynamicClassifications] = useState([]);
+
+  useEffect(() => {
+    const loadClassifications = async () => {
+      try {
+        const res = await api.get('/api/classifications', { params: { type: 'material' } });
+        if (res.data?.data) {
+          setDynamicClassifications(res.data.data);
+        }
+      } catch (err) {
+        console.warn('Dynamic classification fetch fallback:', err);
+      }
+    };
+    loadClassifications();
+  }, []);
+
+  const subcategoryMap = useMemo(() => {
+    const baseMap = {
+      'Raw Material': [
+        { value: 'Fresh', label: 'Fresh' },
+        { value: 'Standardized', label: 'Standardized' },
+        { value: 'Retail', label: 'Retail' }
+      ],
+      'Packaged Material': [
+        { value: 'Primary', label: 'Primary' },
+        { value: 'Secondary', label: 'Secondary' },
+        { value: 'Tertiary', label: 'Tertiary' }
+      ],
+      'Semi-Finished': [
+        { value: 'Puree', label: 'Puree' },
+        { value: 'Porridge', label: 'Porridge' },
+        { value: 'Yogurt Melts', label: 'Yogurt Melts' }
+      ],
+      'Finished': [
+        { value: 'Puree', label: 'Puree' },
+        { value: 'Porridge', label: 'Porridge' },
+        { value: 'Yogurt Melts', label: 'Yogurt Melts' }
+      ]
+    };
+
+    if (!dynamicClassifications || !dynamicClassifications.length) return baseMap;
+
+    const rootNodes = dynamicClassifications.filter(c => !c.parentId || (typeof c.parentId === 'object' && !c.parentId._id));
+    rootNodes.forEach(root => {
+      if (!baseMap[root.name]) baseMap[root.name] = [];
+      const children = dynamicClassifications.filter(c => {
+        const pId = typeof c.parentId === 'object' ? c.parentId?._id : c.parentId;
+        return String(pId) === String(root._id);
+      });
+      children.forEach(child => {
+        if (!baseMap[root.name].some(s => s.value.toLowerCase() === child.name.toLowerCase())) {
+          baseMap[root.name].push({ value: child.name, label: child.name, id: child._id });
+        }
+      });
+    });
+
+    return baseMap;
+  }, [dynamicClassifications]);
 
   const fetchMaterials = async () => {
     setLoading(true);
