@@ -94,3 +94,75 @@ with three real test users (one per role) after applying
       line) — the `FOR UPDATE` lock in `record_receipt` serializes them.
 - [ ] A request that holds a lock past `LOCK_TIMEOUT_MS` returns 409
       `{"retryable": true}`, not a hung connection.
+
+### Locations, Inventory & Manufacturing (added with migration 0006)
+- [ ] viewer: `GET /locations`, `/warehouses`, `/inventory/*`, `/plans`,
+      `/batches` all succeed; every `POST`/write endpoint under them
+      returns 403.
+- [ ] admin: `POST /locations` succeeds; the row's default warehouse
+      ("Main Warehouse (WH-01)") is visible immediately in
+      `GET /warehouses?location_id=<id>` (confirms
+      `trg_auto_create_default_warehouse` fired).
+- [ ] editor: `POST /inventory/entries/inward` creates a new lot (if
+      `lot_number` doesn't already exist in that warehouse) with a
+      matching `inventory_transactions` row and
+      `inventory_lots.quantity_on_hand` equal to the posted quantity.
+- [ ] editor: `POST /inventory/entries/outward` on a lot with
+      insufficient `quantity_on_hand` returns 409
+      `InsufficientStockError` — `quantity_on_hand` and the ledger are
+      unchanged (the DB function's CHECK constraint rejected the write
+      before any row changed).
+- [ ] Attempting a direct `INSERT`/`UPDATE`/`DELETE` on
+      `public.inventory_transactions` as the `authenticated` role (any
+      role) fails — those privileges are revoked entirely; only
+      `internal.post_inventory_transaction()` (SECURITY DEFINER) can
+      write it.
+- [ ] editor: `POST /plans` with a demand line whose required quantity
+      exceeds on-hand availability still succeeds (status `SHORT` on
+      that material line) — Planning never blocks on availability.
+- [ ] editor: `POST /batches` then `POST /batches/{id}/start` then
+      `POST /batches/{id}/complete` with input lines matching the active
+      BOM's material set exactly succeeds; `inventory_lots.
+      quantity_on_hand` for each consumed material lot decreases by the
+      drawn amount and the new finished-goods lot's `quantity_on_hand`
+      equals `actual_output_qty`.
+- [ ] editor: completing the same batch a second time returns 409
+      `InvalidStateTransitionError` (already `COMPLETED`).
+- [ ] editor: an input line whose variance vs. the BOM-derived planned
+      quantity exceeds `products.variance_tolerance_percent` with no
+      `reason_notes` returns 422 `ToleranceExceededError`; the identical
+      call with `reason_notes` set succeeds.
+- [ ] editor: `POST /batches/{id}/correct-output` and
+      `POST /batches/{id}/actual-inputs/{input_id}/correct` on a
+      COMPLETED batch each post a new `DYNAMIC_RECONCILIATION` ledger row
+      (the original `MFG_CONSUMPTION`/`MFG_PRODUCTION` rows are
+      untouched) and update the lot's `quantity_on_hand` accordingly.
+- [ ] A correction that would drive a lot's `quantity_on_hand` negative
+      returns 409 `CorrectionWouldGoNegativeError` with no ledger row
+      written.
+- [ ] Reconciliation: `GET /inventory/reconciliation` (admin) returns
+      zero rows before and after the above — `quantity_on_hand` always
+      equals the sum of that lot's ledger transactions.
+
+### Advisor findings (accepted)
+- [ ] `mcp__Supabase__get_advisors` (security) reports exactly one WARN:
+      `public.get_auth_role()` is `SECURITY DEFINER` and executable by
+      `authenticated`. This is intentional and required — both
+      `get_current_user`'s API-layer role check and every RLS policy's
+      `(select public.get_auth_role())` predicate call it as the
+      `authenticated` role; revoking `EXECUTE` would break RBAC and RLS
+      entirely. It only ever returns the caller's own role (scoped
+      internally by `auth.uid()`), so it grants no access to another
+      user's data. No other security findings should be present —
+      migration 0007 revoked the public-schema Supabase platform helper
+      `rls_auto_enable()`'s inherited `PUBLIC`/`anon`/`authenticated`
+      EXECUTE grants, since no client role has a legitimate reason to
+      call it directly (it only ever runs via the DDL event-trigger
+      mechanism).
+- [ ] `mcp__Supabase__get_advisors` (performance) reports only INFO-level
+      `unindexed_foreign_keys` (audit columns — `created_by`/
+      `updated_by` — and a handful of low-traffic relationship columns,
+      the same class already present on the pre-existing domain) and
+      `unused_index` (expected on a project with no production query
+      history yet). Neither is a regression versus the bar the
+      pre-existing vendor/procurement domain was already at.

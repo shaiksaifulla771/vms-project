@@ -40,6 +40,17 @@ class BatchLineResult:
     lots: list[BatchActualInputLot]
 
 
+# Allowed transitions. COMPLETED and CANCELLED are both terminal — a
+# completed batch is corrected via CorrectionService, never re-opened; a
+# cancelled batch never resumes (a fresh batch must be created instead).
+_BATCH_ALLOWED: dict[BatchStatus, set[BatchStatus]] = {
+    BatchStatus.SCHEDULED: {BatchStatus.IN_PROGRESS, BatchStatus.CANCELLED},
+    BatchStatus.IN_PROGRESS: {BatchStatus.COMPLETED, BatchStatus.CANCELLED},
+    BatchStatus.COMPLETED: set(),
+    BatchStatus.CANCELLED: set(),
+}
+
+
 class BatchExecutionService:
     def __init__(
         self, ledger: InventoryLedgerService | None = None, planning: PlanningService | None = None
@@ -87,7 +98,7 @@ class BatchExecutionService:
 
     async def start_batch(self, session: AsyncSession, *, batch_id: uuid.UUID, actor_id: uuid.UUID) -> BatchRecord:
         batch = await self._get_batch(session, batch_id, for_update=True)
-        if batch.status != BatchStatus.SCHEDULED:
+        if BatchStatus.IN_PROGRESS not in _BATCH_ALLOWED[batch.status]:
             raise InvalidStateTransitionError(
                 f"Batch {batch.batch_number} cannot start from {batch.status.value}, expected SCHEDULED"
             )
@@ -99,7 +110,7 @@ class BatchExecutionService:
 
     async def cancel_batch(self, session: AsyncSession, *, batch_id: uuid.UUID, actor_id: uuid.UUID) -> BatchRecord:
         batch = await self._get_batch(session, batch_id, for_update=True)
-        if batch.status not in (BatchStatus.SCHEDULED, BatchStatus.IN_PROGRESS):
+        if BatchStatus.CANCELLED not in _BATCH_ALLOWED[batch.status]:
             raise InvalidStateTransitionError(f"Batch {batch.batch_number} cannot be cancelled from {batch.status.value}")
         batch.status = BatchStatus.CANCELLED
         batch.updated_by = actor_id
@@ -121,7 +132,7 @@ class BatchExecutionService:
         sequence. Runs on the caller's single request-scoped transaction —
         no nested session.begin() here."""
         batch = await self._get_batch(session, batch_id, for_update=True)
-        if batch.status != BatchStatus.IN_PROGRESS:
+        if BatchStatus.COMPLETED not in _BATCH_ALLOWED[batch.status]:
             raise InvalidStateTransitionError(
                 f"Cannot complete batch {batch.batch_number}: status is {batch.status.value}, expected IN_PROGRESS"
             )

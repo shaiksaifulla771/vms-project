@@ -1134,3 +1134,16 @@ CREATE POLICY batch_actual_input_lots_editor_insert ON public.batch_actual_input
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.products
     ADD COLUMN IF NOT EXISTS variance_tolerance_percent NUMERIC(5,2) NOT NULL DEFAULT 5.00;
+
+-- ---------------------------------------------------------------------------
+-- 20. Least-privilege hardening for a pre-existing platform helper
+-- ---------------------------------------------------------------------------
+-- public.rls_auto_enable() is a Supabase-managed event-trigger function
+-- (RETURNS event_trigger) installed by the dashboard's "Enforce RLS on new
+-- tables" setting, not part of this project's own schema. New functions
+-- default to EXECUTE granted to PUBLIC, which cascades to anon/authenticated;
+-- no client role has a legitimate reason to call an event-trigger function
+-- directly (Postgres only invokes it via the DDL event-trigger mechanism),
+-- so this revoke is defensive least-privilege, silencing the security
+-- advisor's WARN with no behavior change.
+REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
