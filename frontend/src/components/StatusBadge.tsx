@@ -13,6 +13,11 @@ const TONE_BY_STATUS: Record<string, string> = {
   BLACKLISTED: "tone-danger",
   CANCELLED: "tone-danger",
   INACTIVE: "tone-neutral",
+  SCHEDULED: "tone-neutral",
+  IN_PROGRESS: "tone-info",
+  COMPLETED: "tone-success",
+  LONG: "tone-success",
+  SHORT: "tone-danger",
 };
 
 export function StatusBadge({ status }: { status: string }) {

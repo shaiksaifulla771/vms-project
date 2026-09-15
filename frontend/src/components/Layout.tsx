@@ -8,6 +8,10 @@ const NAV_ITEMS = [
   { to: "/pricing", label: "Pricing" },
   { to: "/purchase-requests", label: "Purchase Requests" },
   { to: "/purchase-orders", label: "Purchase Orders" },
+  { to: "/locations", label: "Locations" },
+  { to: "/inventory", label: "Inventory" },
+  { to: "/planning", label: "Planning" },
+  { to: "/batches", label: "Batches" },
   { to: "/analytics", label: "Analytics" },
 ];
 

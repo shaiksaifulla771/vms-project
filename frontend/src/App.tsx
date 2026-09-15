@@ -4,8 +4,14 @@ import { AuthProvider } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Analytics } from "./pages/Analytics";
+import { BatchDetail } from "./pages/BatchDetail";
+import { Batches } from "./pages/Batches";
+import { Inventory } from "./pages/Inventory";
+import { Locations } from "./pages/Locations";
 import { Login } from "./pages/Login";
 import { MpnMapping } from "./pages/MpnMapping";
+import { PlanDetail } from "./pages/PlanDetail";
+import { Planning } from "./pages/Planning";
 import { Pricing } from "./pages/Pricing";
 import { PurchaseOrderDetail } from "./pages/PurchaseOrderDetail";
 import { PurchaseOrders } from "./pages/PurchaseOrders";
@@ -35,6 +41,12 @@ export function App() {
           <Route path="/purchase-requests/:id" element={<PurchaseRequestDetail />} />
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
+          <Route path="/locations" element={<Locations />} />
+          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/planning" element={<Planning />} />
+          <Route path="/planning/:id" element={<PlanDetail />} />
+          <Route path="/batches" element={<Batches />} />
+          <Route path="/batches/:id" element={<BatchDetail />} />
           <Route path="/analytics" element={<Analytics />} />
         </Route>
         <Route path="*" element={<Navigate to="/vendors" replace />} />

@@ -208,3 +208,187 @@ export interface VendorScorecardRow {
   quality_acceptance_pct: string | null;
   avg_lead_time_days: string | null;
 }
+
+export type InventoryTxnType =
+  | "INWARD_PURCHASE"
+  | "OUTWARD_DISPOSAL"
+  | "STOCK_ADJUSTMENT"
+  | "MFG_CONSUMPTION"
+  | "MFG_PRODUCTION"
+  | "DYNAMIC_RECONCILIATION";
+export type PlanStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+export type BatchStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export interface Location {
+  id: string;
+  name: string;
+  code: string;
+  address: string | null;
+  created_by: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Warehouse {
+  id: string;
+  location_id: string;
+  name: string;
+  code: string;
+  is_default: boolean;
+  created_by: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryLot {
+  id: string;
+  lot_number: string;
+  material_id: string | null;
+  product_id: string | null;
+  location_id: string;
+  warehouse_id: string;
+  mfg_date: string;
+  expiry_date: string;
+  quantity_on_hand: string;
+  uom: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryTransaction {
+  id: string;
+  lot_id: string;
+  transaction_type: InventoryTxnType;
+  quantity: string;
+  balance_after: string;
+  reference_id: string | null;
+  reason_notes: string | null;
+  executed_by: string;
+  created_at: string;
+}
+
+export interface AvailabilityResponse {
+  material_id: string;
+  location_id: string;
+  qty_available: string;
+}
+
+export interface ReconciliationRow {
+  lot_id: string;
+  lot_number: string;
+  cached_quantity: string;
+  ledger_sum: string;
+}
+
+export interface PlanLine {
+  material_id: string;
+  formula_percentage: string;
+  qty_required: string;
+  qty_available: string;
+  delta: string;
+  status: string;
+}
+
+export interface PlanProduct {
+  id: string;
+  product_id: string;
+  location_id: string;
+  demand_target_qty: string;
+  batch_size_output: string;
+  bom_id: string;
+  batches_required: number;
+  lines: PlanLine[];
+}
+
+export interface Plan {
+  id: string;
+  plan_number: string;
+  status: PlanStatus;
+  created_by: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  products: PlanProduct[];
+}
+
+export interface PlanSummaryBatchRow {
+  product_id: string;
+  location_id: string;
+  planned_batches: number;
+  executed_batches: number;
+  completed_output_qty: string;
+}
+
+export interface PlanSummaryMaterialRow {
+  material_id: string;
+  total_required_qty: string;
+  total_available_qty: string;
+  status: string;
+}
+
+export interface PlanSummary {
+  plan: Plan;
+  batch_summary: PlanSummaryBatchRow[];
+  material_summary: PlanSummaryMaterialRow[];
+}
+
+export interface BatchActualInputLot {
+  id: string;
+  consumed_lot_id: string;
+  quantity: string;
+}
+
+export interface BatchActualInput {
+  id: string;
+  material_id: string;
+  bom_percentage: string;
+  planned_input_qty: string;
+  actual_input_qty: string;
+  variance_pct: string;
+  variance_reason: string | null;
+  lots: BatchActualInputLot[];
+}
+
+export interface BomItem {
+  id: string;
+  material_id: string;
+  formula_percentage: string;
+  standard_qty: string;
+  uom: string;
+}
+
+export interface Bom {
+  id: string;
+  product_id: string;
+  version: number;
+  is_active: boolean;
+  created_by: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  items: BomItem[];
+}
+
+export interface Batch {
+  id: string;
+  batch_number: string;
+  plan_id: string | null;
+  product_id: string;
+  location_id: string;
+  warehouse_id: string;
+  planned_output_qty: string;
+  actual_output_qty: string | null;
+  output_variance_qty: string | null;
+  output_variance_pct: string | null;
+  output_variance_reason: string | null;
+  mfg_date: string;
+  expiry_date: string;
+  status: BatchStatus;
+  executed_by: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
