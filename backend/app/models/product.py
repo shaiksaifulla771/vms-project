@@ -21,6 +21,11 @@ class Product(Base, TimestampMixin):
         Enum(MasterDataStatus, name="master_data_status", create_type=False),
         default=MasterDataStatus.ACTIVE,
     )
+    # Additive (docs/schema.sql section 19): the tolerance batch completion
+    # validates output/input variance against. Default 5.00 matches the
+    # source planning docs' "Variance Tolerance (reason required above
+    # this)" setting.
+    variance_tolerance_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("5.00"))
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
     )

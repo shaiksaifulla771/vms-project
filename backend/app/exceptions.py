@@ -40,6 +40,30 @@ class PurchaseOrderNotFoundError(NotFoundError):
     pass
 
 
+class LocationNotFoundError(NotFoundError):
+    pass
+
+
+class WarehouseNotFoundError(NotFoundError):
+    pass
+
+
+class PlanNotFoundError(NotFoundError):
+    pass
+
+
+class BatchNotFoundError(NotFoundError):
+    pass
+
+
+class InputLineNotFoundError(NotFoundError):
+    pass
+
+
+class NoActiveBomError(NotFoundError):
+    pass
+
+
 class ValidationFailedError(DomainError):
     """Maps to HTTP 422 — malformed input or a business-rule validation
     failure discovered before any write."""
@@ -51,6 +75,20 @@ class InvalidLineNumbersError(ValidationFailedError):
 
 class EmptyLinesError(ValidationFailedError):
     pass
+
+
+class ToleranceExceededError(ValidationFailedError):
+    """Output or input variance exceeds the product's
+    variance_tolerance_percent and no reason was supplied."""
+
+
+class OverrideReasonRequiredError(ValidationFailedError):
+    """A manual consumed_lot_id override was supplied without reason_notes."""
+
+
+class DuplicatePlanLineError(ValidationFailedError):
+    """A plan-create request listed the same (product_id, location_id)
+    pair more than once."""
 
 
 class ConflictError(DomainError):
@@ -85,3 +123,35 @@ class ReceiptOverdrawnError(ConflictError):
 
 class BlacklistedVendorError(ConflictError):
     pass
+
+
+class InsufficientStockError(ConflictError):
+    """No unexpired lot(s) at this location/warehouse cover the required
+    quantity — raised both at pre-lock candidate selection and again if a
+    concurrent transaction drained a candidate lot before this one's lock."""
+
+
+class LotScopeMismatchError(ConflictError):
+    """A manual consumed_lot_id override does not match the batch's
+    material/location/warehouse scope."""
+
+
+class CompletionMismatchError(ConflictError):
+    """A completion retry against an already-COMPLETED batch supplied
+    different actual_output_qty/input values than what was actually
+    posted — never silently return the stale result."""
+
+
+class CorrectionWouldGoNegativeError(ConflictError):
+    """A Dynamic IP/OP correction would drive a lot's quantity_on_hand
+    below zero given downstream consumption already posted against it."""
+
+
+class DuplicatePlanIdError(ConflictError):
+    """A client-supplied plan_id already names an existing Plan whose
+    lines don't match this request."""
+
+
+class DuplicateBatchNumberError(ConflictError):
+    """A batch_number already exists with different fields than this
+    request supplied."""
