@@ -136,22 +136,11 @@ class LotScopeMismatchError(ConflictError):
     material/location/warehouse scope."""
 
 
-class CompletionMismatchError(ConflictError):
-    """A completion retry against an already-COMPLETED batch supplied
-    different actual_output_qty/input values than what was actually
-    posted — never silently return the stale result."""
-
-
 class CorrectionWouldGoNegativeError(ConflictError):
     """A Dynamic IP/OP correction would drive a lot's quantity_on_hand
     below zero given downstream consumption already posted against it."""
 
 
 class DuplicatePlanIdError(ConflictError):
-    """A client-supplied plan_id already names an existing Plan whose
-    lines don't match this request."""
-
-
-class DuplicateBatchNumberError(ConflictError):
-    """A batch_number already exists with different fields than this
-    request supplied."""
+    """A client-supplied idempotency_key already names an existing Plan
+    whose lines don't match this request."""

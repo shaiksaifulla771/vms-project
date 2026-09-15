@@ -8,12 +8,15 @@ from sqlalchemy.exc import DBAPIError
 
 from app.api.routes import (
     analytics,
+    batches,
+    correction,
     health,
     inventory,
     locations,
     materials,
     me,
     mpn,
+    planning,
     pricing,
     products,
     purchase_orders,
@@ -113,6 +116,9 @@ def create_app() -> FastAPI:
     app.include_router(analytics.router)
     app.include_router(locations.router)
     app.include_router(inventory.router)
+    app.include_router(planning.router)
+    app.include_router(batches.router)
+    app.include_router(correction.router)
 
     return app
 
