@@ -64,9 +64,11 @@ because Postgres doesn't rank enum values by declaration order.
 | `audit_log` — write | (service only, via SECURITY DEFINER function) | | |
 
 ## Notes
-- `audit_log` inserts happen via `public.record_audit(...)`, a SECURITY
-  DEFINER function called from service code — client code cannot write
-  to the table directly (no INSERT policy).
+- `audit_log` inserts happen via `internal.record_audit(...)`, a SECURITY
+  DEFINER function called from service code over the backend's own direct
+  Postgres connection — client code cannot write to the table directly (no
+  INSERT policy), and the function is not reachable as a PostgREST RPC
+  endpoint since `internal` is never in Supabase's exposed schema list.
 - The `created_by`/`updated_by` audit columns default to `auth.uid()` at
   the DB layer, so a service that forgets to set them still records a
   correct actor. WITH CHECK on RLS policies forbids

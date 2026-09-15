@@ -97,7 +97,7 @@ class PurchaseOrderService:
                 created_or_reused.append(existing)
                 continue
 
-            po_number = (await session.execute(text("SELECT public.next_po_number()"))).scalar_one()
+            po_number = (await session.execute(text("SELECT internal.next_po_number()"))).scalar_one()
             po = PurchaseOrder(
                 id=uuid.uuid4(),
                 po_number=po_number,
@@ -229,7 +229,7 @@ class PurchaseOrderService:
                 f"{item.line_no} of PO {po.po_number}"
             )
 
-        receipt_number = (await session.execute(text("SELECT public.next_grn_number()"))).scalar_one()
+        receipt_number = (await session.execute(text("SELECT internal.next_grn_number()"))).scalar_one()
         received_at = datetime.now(timezone.utc)
         on_time = po.expected_delivery_date is None or received_at.date() <= po.expected_delivery_date
 
@@ -361,7 +361,7 @@ class PurchaseOrderService:
     ) -> None:
         await session.execute(
             text(
-                "SELECT public.record_audit(:etype, :eid, :action::audit_action, :before::jsonb, :after::jsonb)"
+                "SELECT internal.record_audit(:etype, :eid, :action::audit_action, :before::jsonb, :after::jsonb)"
             ),
             {
                 "etype": "purchase_order",

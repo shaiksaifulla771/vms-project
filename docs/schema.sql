@@ -10,7 +10,25 @@
 -- ---------------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "btree_gist";  -- vendor_prices no-overlap EXCLUDE
+
+-- btree_gist (needed for vendor_prices' no-overlap EXCLUDE constraint)
+-- lives in its own schema, never in public — the Supabase security
+-- advisor flags any extension installed into public.
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS "btree_gist" WITH SCHEMA extensions;
+
+-- internal holds backend-only plumbing (audit writer, number generators,
+-- the auth.users provisioning trigger function) that must NEVER be
+-- reachable as a PostgREST RPC endpoint. public is PostgREST's exposed
+-- API schema — anything there with EXECUTE granted to authenticated is
+-- callable over HTTP by any signed-in user with arguments of their
+-- choosing, and GRANT/REVOKE can't tell "our backend's own SQL call"
+-- apart from "a user's PostgREST RPC call" since both run as the same
+-- `authenticated` Postgres role. The only real fix is keeping this code
+-- out of the exposed schema entirely.
+CREATE SCHEMA IF NOT EXISTS internal;
+REVOKE ALL ON SCHEMA internal FROM PUBLIC;
+GRANT USAGE ON SCHEMA internal TO authenticated;
 
 DO $$ BEGIN
     CREATE TYPE user_role AS ENUM ('admin', 'editor', 'viewer');
@@ -69,8 +87,15 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
 
 -- Auto-provision a user_profiles row when a new auth.users row lands, so a
 -- fresh sign-up doesn't 403 on /me before an admin gets around to seeding.
-CREATE OR REPLACE FUNCTION public.trg_auto_provision_user_profile()
-RETURNS TRIGGER AS $$
+-- Lives in `internal`, not `public` — a trigger function has no business
+-- being reachable as a PostgREST RPC endpoint, and triggers reference
+-- functions by OID so the schema move doesn't affect the trigger below.
+CREATE OR REPLACE FUNCTION internal.trg_auto_provision_user_profile()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
     INSERT INTO public.user_profiles (id, full_name, email, role)
     VALUES (
@@ -82,17 +107,21 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS trg_auth_users_after_insert ON auth.users;
 CREATE TRIGGER trg_auth_users_after_insert
 AFTER INSERT ON auth.users
-FOR EACH ROW EXECUTE FUNCTION public.trg_auto_provision_user_profile();
+FOR EACH ROW EXECUTE FUNCTION internal.trg_auto_provision_user_profile();
 
 -- The authoritative role resolver every RLS policy calls. STABLE +
 -- SECURITY DEFINER: runs as the function owner so it can read
 -- user_profiles even under RLS, and its return value is stable within a
--- statement so Postgres can cache it during policy evaluation.
+-- statement so Postgres can cache it during policy evaluation. Stays in
+-- public and callable by authenticated: it only ever returns the caller's
+-- own role, so its PostgREST exposure is intentional, not a gap (unlike
+-- record_audit / next_*_number below, which write or allocate business
+-- numbers and must never be a public RPC endpoint).
 CREATE OR REPLACE FUNCTION public.get_auth_role()
 RETURNS user_role
 LANGUAGE sql
@@ -104,6 +133,7 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION public.get_auth_role() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_auth_role() FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_auth_role() TO authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -366,7 +396,14 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON public.audit_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created_at ON public.audit_log(created_at DESC);
 
-CREATE OR REPLACE FUNCTION public.record_audit(
+-- internal, not public: this writes audit_log rows as auth.uid() with a
+-- caller-supplied entity_type/action/before/after. If it were reachable
+-- as a PostgREST RPC, any signed-in user could forge arbitrary audit
+-- history entries for any entity. Our backend calls it as
+-- internal.record_audit(...) over its own direct asyncpg connection,
+-- which needs only SCHEMA USAGE + EXECUTE — neither of which PostgREST's
+-- exposed-schema routing grants it a path to.
+CREATE OR REPLACE FUNCTION internal.record_audit(
     p_entity_type VARCHAR,
     p_entity_id UUID,
     p_action audit_action,
@@ -387,8 +424,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.record_audit(VARCHAR, UUID, audit_action, JSONB, JSONB) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_audit(VARCHAR, UUID, audit_action, JSONB, JSONB) TO authenticated;
+REVOKE ALL ON FUNCTION internal.record_audit(VARCHAR, UUID, audit_action, JSONB, JSONB) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION internal.record_audit(VARCHAR, UUID, audit_action, JSONB, JSONB) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 9. Row Level Security
@@ -408,64 +445,114 @@ ALTER TABLE public.purchase_order_items    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_order_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_log               ENABLE ROW LEVEL SECURITY;
 
+-- Every auth.uid() / public.get_auth_role() call below is wrapped as
+-- (select ...): a bare call is re-evaluated once PER ROW scanned, wrapped
+-- it becomes a Postgres InitPlan evaluated ONCE per query (same predicate,
+-- no behavior change — see docs/migrations/0004). Every table that needs
+-- both a SELECT policy and admin writes gets separate INSERT/UPDATE/DELETE
+-- policies rather than one FOR ALL, so exactly one permissive SELECT
+-- policy applies per table instead of two being evaluated on every read.
+
 -- user_profiles: self-read for everyone; admin sees all; admin can update role
 CREATE POLICY user_profiles_self_or_admin_read ON public.user_profiles
     FOR SELECT TO authenticated
-    USING (id = auth.uid() OR public.get_auth_role() = 'admin');
+    USING (id = (select auth.uid()) OR public.get_auth_role() = 'admin');
 CREATE POLICY user_profiles_admin_update ON public.user_profiles
     FOR UPDATE TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin');
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
 
 -- Master data: SELECT for all authenticated, WRITE for admin only
 CREATE POLICY vendors_read ON public.vendors
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY vendors_admin_write ON public.vendors
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY vendors_admin_insert ON public.vendors
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY vendors_admin_update ON public.vendors
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY vendors_admin_delete ON public.vendors
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY materials_read ON public.materials
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY materials_admin_write ON public.materials
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY materials_admin_insert ON public.materials
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY materials_admin_update ON public.materials
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY materials_admin_delete ON public.materials
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY products_read ON public.products
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY products_admin_write ON public.products
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY products_admin_insert ON public.products
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY products_admin_update ON public.products
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY products_admin_delete ON public.products
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY boms_read ON public.boms
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY boms_admin_write ON public.boms
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY boms_admin_insert ON public.boms
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY boms_admin_update ON public.boms
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY boms_admin_delete ON public.boms
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY bom_items_read ON public.bom_items
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY bom_items_admin_write ON public.bom_items
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin');
+CREATE POLICY bom_items_admin_insert ON public.bom_items
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY bom_items_admin_update ON public.bom_items
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY bom_items_admin_delete ON public.bom_items
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY mpn_read ON public.material_vendors
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY mpn_admin_write ON public.material_vendors
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY mpn_admin_insert ON public.material_vendors
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY mpn_admin_update ON public.material_vendors
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY mpn_admin_delete ON public.material_vendors
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY vendor_prices_read ON public.vendor_prices
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY vendor_prices_admin_write ON public.vendor_prices
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY vendor_prices_admin_insert ON public.vendor_prices
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY vendor_prices_admin_update ON public.vendor_prices
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY vendor_prices_admin_delete ON public.vendor_prices
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 -- Procurement: editors can create PRs and receipts; only admin can approve
 -- PRs, issue POs, close POs.
@@ -473,64 +560,99 @@ CREATE POLICY pr_read ON public.purchase_requests
     FOR SELECT TO authenticated USING (TRUE);
 CREATE POLICY pr_editor_insert ON public.purchase_requests
     FOR INSERT TO authenticated
-    WITH CHECK (public.get_auth_role() IN ('admin', 'editor') AND created_by = auth.uid());
+    WITH CHECK ((select public.get_auth_role()) IN ('admin', 'editor') AND created_by = (select auth.uid()));
 -- editor may UPDATE only their own DRAFT PR (submit is UPDATE status -> SUBMITTED)
 CREATE POLICY pr_editor_update_own_draft ON public.purchase_requests
     FOR UPDATE TO authenticated
     USING (
-        public.get_auth_role() IN ('admin', 'editor')
-        AND (public.get_auth_role() = 'admin' OR (created_by = auth.uid() AND status IN ('DRAFT', 'SUBMITTED')))
+        (select public.get_auth_role()) IN ('admin', 'editor')
+        AND (
+            (select public.get_auth_role()) = 'admin'
+            OR (created_by = (select auth.uid()) AND status IN ('DRAFT', 'SUBMITTED'))
+        )
     )
     WITH CHECK (
-        public.get_auth_role() IN ('admin', 'editor')
-        AND (public.get_auth_role() = 'admin' OR created_by = auth.uid())
+        (select public.get_auth_role()) IN ('admin', 'editor')
+        AND ((select public.get_auth_role()) = 'admin' OR created_by = (select auth.uid()))
     );
 CREATE POLICY pr_admin_delete ON public.purchase_requests
     FOR DELETE TO authenticated
-    USING (public.get_auth_role() = 'admin');
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY pr_items_read ON public.purchase_request_items
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY pr_items_write ON public.purchase_request_items
-    FOR ALL TO authenticated
-    USING (
-        public.get_auth_role() = 'admin' OR EXISTS (
+CREATE POLICY pr_items_insert ON public.purchase_request_items
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        (select public.get_auth_role()) = 'admin' OR EXISTS (
             SELECT 1 FROM public.purchase_requests pr
             WHERE pr.id = purchase_request_items.pr_id
-              AND pr.created_by = auth.uid()
+              AND pr.created_by = (select auth.uid())
+              AND pr.status = 'DRAFT'
+        )
+    );
+CREATE POLICY pr_items_update ON public.purchase_request_items
+    FOR UPDATE TO authenticated
+    USING (
+        (select public.get_auth_role()) = 'admin' OR EXISTS (
+            SELECT 1 FROM public.purchase_requests pr
+            WHERE pr.id = purchase_request_items.pr_id
+              AND pr.created_by = (select auth.uid())
               AND pr.status = 'DRAFT'
         )
     )
     WITH CHECK (
-        public.get_auth_role() = 'admin' OR EXISTS (
+        (select public.get_auth_role()) = 'admin' OR EXISTS (
             SELECT 1 FROM public.purchase_requests pr
             WHERE pr.id = purchase_request_items.pr_id
-              AND pr.created_by = auth.uid()
+              AND pr.created_by = (select auth.uid())
+              AND pr.status = 'DRAFT'
+        )
+    );
+CREATE POLICY pr_items_delete ON public.purchase_request_items
+    FOR DELETE TO authenticated
+    USING (
+        (select public.get_auth_role()) = 'admin' OR EXISTS (
+            SELECT 1 FROM public.purchase_requests pr
+            WHERE pr.id = purchase_request_items.pr_id
+              AND pr.created_by = (select auth.uid())
               AND pr.status = 'DRAFT'
         )
     );
 
 CREATE POLICY po_read ON public.purchase_orders
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY po_admin_write ON public.purchase_orders
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin' AND created_by = auth.uid());
+CREATE POLICY po_admin_insert ON public.purchase_orders
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin' AND created_by = (select auth.uid()));
+CREATE POLICY po_admin_update ON public.purchase_orders
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY po_admin_delete ON public.purchase_orders
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY po_items_read ON public.purchase_order_items
     FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY po_items_admin_write ON public.purchase_order_items
-    FOR ALL TO authenticated
-    USING (public.get_auth_role() = 'admin')
-    WITH CHECK (public.get_auth_role() = 'admin');
+CREATE POLICY po_items_admin_insert ON public.purchase_order_items
+    FOR INSERT TO authenticated
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY po_items_admin_update ON public.purchase_order_items
+    FOR UPDATE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin')
+    WITH CHECK ((select public.get_auth_role()) = 'admin');
+CREATE POLICY po_items_admin_delete ON public.purchase_order_items
+    FOR DELETE TO authenticated
+    USING ((select public.get_auth_role()) = 'admin');
 
 CREATE POLICY po_receipts_read ON public.purchase_order_receipts
     FOR SELECT TO authenticated USING (TRUE);
 CREATE POLICY po_receipts_editor_insert ON public.purchase_order_receipts
     FOR INSERT TO authenticated
     WITH CHECK (
-        public.get_auth_role() IN ('admin', 'editor')
-        AND created_by = auth.uid()
+        (select public.get_auth_role()) IN ('admin', 'editor')
+        AND created_by = (select auth.uid())
         AND EXISTS (
             SELECT 1 FROM public.purchase_orders po
             WHERE po.id = purchase_order_receipts.po_id
@@ -539,14 +661,19 @@ CREATE POLICY po_receipts_editor_insert ON public.purchase_order_receipts
     );
 
 -- audit_log: read for all authenticated; no INSERT/UPDATE/DELETE policy at
--- all — writes flow only through public.record_audit (SECURITY DEFINER).
+-- all — writes flow only through internal.record_audit (SECURITY DEFINER).
 CREATE POLICY audit_read ON public.audit_log
     FOR SELECT TO authenticated USING (TRUE);
 
 -- ---------------------------------------------------------------------------
 -- 10. Sequence generators for human-readable business numbers
+-- internal, not public — same PostgREST-exposure reasoning as
+-- internal.record_audit above: a signed-in user calling these directly
+-- can't corrupt anything (they just read a MAX and return a formatted
+-- string), but they serve no purpose outside the backend's own PR/PO/GRN
+-- creation calls, so they get the same treatment on principle.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.next_pr_number() RETURNS VARCHAR
+CREATE OR REPLACE FUNCTION internal.next_pr_number() RETURNS VARCHAR
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
     v_prefix VARCHAR := 'PR-' || to_char(NOW() AT TIME ZONE 'utc', 'YYYYMM') || '-';
@@ -559,7 +686,7 @@ BEGIN
     RETURN v_prefix || lpad(v_next::TEXT, 5, '0');
 END; $$;
 
-CREATE OR REPLACE FUNCTION public.next_po_number() RETURNS VARCHAR
+CREATE OR REPLACE FUNCTION internal.next_po_number() RETURNS VARCHAR
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
     v_prefix VARCHAR := 'PO-' || to_char(NOW() AT TIME ZONE 'utc', 'YYYYMM') || '-';
@@ -572,7 +699,7 @@ BEGIN
     RETURN v_prefix || lpad(v_next::TEXT, 5, '0');
 END; $$;
 
-CREATE OR REPLACE FUNCTION public.next_grn_number() RETURNS VARCHAR
+CREATE OR REPLACE FUNCTION internal.next_grn_number() RETURNS VARCHAR
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
     v_prefix VARCHAR := 'GRN-' || to_char(NOW() AT TIME ZONE 'utc', 'YYYYMM') || '-';
@@ -585,9 +712,24 @@ BEGIN
     RETURN v_prefix || lpad(v_next::TEXT, 5, '0');
 END; $$;
 
-REVOKE ALL ON FUNCTION public.next_pr_number() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.next_po_number() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.next_grn_number() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.next_pr_number() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.next_po_number() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.next_grn_number() TO authenticated;
+REVOKE ALL ON FUNCTION internal.next_pr_number() FROM PUBLIC;
+REVOKE ALL ON FUNCTION internal.next_po_number() FROM PUBLIC;
+REVOKE ALL ON FUNCTION internal.next_grn_number() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION internal.next_pr_number() TO authenticated;
+GRANT EXECUTE ON FUNCTION internal.next_po_number() TO authenticated;
+GRANT EXECUTE ON FUNCTION internal.next_grn_number() TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 11. Targeted FK indexes (performance advisor) — only columns this app
+-- actually filters/joins on. Deliberately NOT indexing every *_created_by /
+-- *_updated_by / *_issued_by / *_closed_by / *_decided_by / *_submitted_by
+-- audit-trail column — those are write-path provenance, never a WHERE/JOIN
+-- key in this codebase's query patterns, and an unused index still costs
+-- every future write on that table.
+-- ---------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_bom_items_material ON public.bom_items(material_id);
+CREATE INDEX IF NOT EXISTS idx_po_items_material ON public.purchase_order_items(material_id);
+CREATE INDEX IF NOT EXISTS idx_po_items_material_vendor ON public.purchase_order_items(material_vendor_id);
+CREATE INDEX IF NOT EXISTS idx_pr_items_material ON public.purchase_request_items(material_id);
+CREATE INDEX IF NOT EXISTS idx_pr_items_suggested_vendor ON public.purchase_request_items(suggested_vendor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON public.audit_log(actor_id);

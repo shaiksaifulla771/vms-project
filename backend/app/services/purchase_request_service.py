@@ -36,7 +36,7 @@ class PurchaseRequestService:
     async def create(
         self, session: AsyncSession, *, payload: PurchaseRequestCreateRequest, actor_id: uuid.UUID
     ) -> tuple[PurchaseRequest, list[PurchaseRequestItem]]:
-        pr_number = (await session.execute(text("SELECT public.next_pr_number()"))).scalar_one()
+        pr_number = (await session.execute(text("SELECT internal.next_pr_number()"))).scalar_one()
         pr = PurchaseRequest(
             id=uuid.uuid4(),
             pr_number=pr_number,
@@ -218,7 +218,7 @@ class PurchaseRequestService:
     ) -> None:
         await session.execute(
             text(
-                "SELECT public.record_audit(:etype, :eid, :action::audit_action, :before::jsonb, :after::jsonb)"
+                "SELECT internal.record_audit(:etype, :eid, :action::audit_action, :before::jsonb, :after::jsonb)"
             ),
             {
                 "etype": "purchase_request",

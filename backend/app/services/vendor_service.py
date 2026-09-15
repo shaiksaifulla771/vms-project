@@ -1,7 +1,7 @@
 """VendorService — CRUD + lifecycle transitions
 (DRAFT -> APPROVED -> ACTIVE <-> SUSPENDED -> BLACKLISTED).
 
-Every write records an audit_log row via public.record_audit() — a
+Every write records an audit_log row via internal.record_audit() — a
 SECURITY DEFINER function invoked from SQL, not a direct INSERT into
 audit_log (RLS forbids that). Status changes call it with the previous
 and new state so an auditor can reconstruct a vendor's full history."""
@@ -183,7 +183,7 @@ class VendorService:
     ) -> None:
         await session.execute(
             text(
-                "SELECT public.record_audit(:etype, :eid, :action::audit_action, :before::jsonb, :after::jsonb)"
+                "SELECT internal.record_audit(:etype, :eid, :action::audit_action, :before::jsonb, :after::jsonb)"
             ),
             {
                 "etype": "vendor",
