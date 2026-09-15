@@ -1,0 +1,14 @@
+-- 0007_revoke_rls_auto_enable_public_execute.sql
+--
+-- public.rls_auto_enable() is a platform-managed event-trigger function
+-- (RETURNS event_trigger) that Supabase's dashboard "Enforce RLS on new
+-- tables" setting installs; it is invoked only by Postgres's own DDL event
+-- trigger mechanism, never by a direct function call. It is not part of
+-- this project's own migrations or schema.sql, but security advisors flag
+-- it because newly created functions default to EXECUTE granted to
+-- PUBLIC, which cascades to `anon` and `authenticated`. Direct invocation
+-- of an event-trigger function is rejected by Postgres regardless of
+-- grants, so this is not an active vulnerability, but no client role has
+-- any legitimate reason to hold EXECUTE on it either — revoke it for
+-- least privilege and a clean advisor run.
+REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
