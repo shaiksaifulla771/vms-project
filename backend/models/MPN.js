@@ -1,0 +1,115 @@
+const mongoose = require('mongoose');
+
+const MPNSchema = new mongoose.Schema({
+  mpnCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    uppercase: true,
+  },
+  manufacturerPartNumber: {
+    type: String,
+    trim: true,
+    required: [true, 'Please provide Manufacturer Part Number (MPN string)'],
+  },
+  mpnName: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  manufacturerName: {
+    type: String,
+    trim: true,
+    required: [true, 'Please provide Manufacturer name'],
+  },
+  isDirectFromManufacturer: {
+    type: Boolean,
+    default: false,
+  },
+  materialId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Material',
+    required: [true, 'Please link this MPN to a Material'],
+  },
+  vendorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vendor',
+    required: [true, 'Please link this MPN to a Vendor'],
+  },
+  price: {
+    type: Number,
+    required: [true, 'Please provide a price for this MPN'],
+    min: [0.0001, 'Price must be greater than 0'],
+  },
+  purchasePrice: {
+    type: Number,
+    min: [0, 'Purchase price cannot be negative'],
+  },
+  leadTime: {
+    type: Number,
+    default: 7,
+    min: 0,
+  },
+  isPreferred: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  priceUOM: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  priceUpdatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+  moq: {
+    type: Number,
+    min: [1, 'MOQ must be at least 1'],
+  },
+
+  gstin: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    default: '',
+  },
+  partDescription: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  status: {
+    type: String,
+    enum: ['Active', 'Inactive', 'Draft', 'Deleted'],
+    default: 'Active',
+  },
+  previousStatus: {
+    type: String,
+    default: 'Active',
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+// Pre-save normalization: sync purchasePrice <-> price
+MPNSchema.pre('save', function (next) {
+  if (this.purchasePrice !== undefined && !this.price) {
+    this.price = this.purchasePrice;
+  } else if (this.price !== undefined && !this.purchasePrice) {
+    this.purchasePrice = this.price;
+  }
+  next();
+});
+
+MPNSchema.index({ vendorId: 1, manufacturerName: 1, manufacturerPartNumber: 1 }, { unique: false });
+MPNSchema.index({ materialId: 1, status: 1 });
+MPNSchema.index({ vendorId: 1, status: 1 });
+MPNSchema.index({ status: 1, createdAt: -1 });
+MPNSchema.index({ manufacturerPartNumber: 'text', mpnName: 'text', manufacturerName: 'text' });
+
+module.exports = mongoose.model('MPN', MPNSchema);

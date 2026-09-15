@@ -1,0 +1,12 @@
+{
+  "totalUsersChecked": 9,
+  "usersWithFirebaseUid": 0,
+  "duplicateFirebaseUidCount": 0,
+  "duplicateEmailCount": 0,
+  "duplicateEmailsList": [],
+  "invalidStatusCount": 9,
+  "normalizedStatusCount": 9,
+  "missingFieldsCount": 0,
+  "backupFile": "C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\vms-project\\backend\\storage\\backups\\users_backup_phase0_1786512252934.json",
+  "indexName": "firebaseUid_1_sparse_unique"
+}

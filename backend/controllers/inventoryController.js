@@ -1,0 +1,566 @@
+const mongoose = require('mongoose');
+const InventoryItem = require('../models/InventoryItem');
+const InventoryTransaction = require('../models/InventoryTransaction');
+const Material = require('../models/Material');
+const Warehouse = require('../models/Warehouse');
+const Site = require('../models/Site');
+const StockAdjustment = require('../models/StockAdjustment');
+const Sequence = require('../models/Sequence');
+const BOM = require('../models/BOM');
+const MPN = require('../models/MPN');
+const { escapeRegex } = require('../utils/regex');
+const authz = require('../utils/authz');
+const scopeResolver = require('../utils/scopeResolver');
+
+/**
+ * Resolves BOM Unit Costs & Pricing for an array of materials.
+ * For items with an Active or Draft BOM, calculates:
+ * BOM Unit Cost = (Sum of Component Costs + Packaging + Processing + Overhead) / Batch Size
+ */
+async function resolveMaterialPricesAndBomCosts(materialIds) {
+  if (!materialIds || !materialIds.length) return { bomMap: {}, mpnMap: {} };
+  if (mongoose.connection.readyState === 0) return { bomMap: {}, mpnMap: {} };
+
+  try {
+    const [boms, mpns] = await Promise.all([
+      BOM.find({ productId: { $in: materialIds }, status: { $ne: 'Deleted' } })
+        .populate('components.materialId', 'basePrice unitPrice standardCost cost name code')
+        .populate('components.mpnId', 'price name partNumber')
+        .sort({ status: 1, updatedAt: -1 })
+        .lean(),
+      MPN.find({ materialId: { $in: materialIds }, status: 'Active' })
+        .sort({ price: 1 })
+        .lean()
+    ]);
+
+    const bomMap = {};
+    for (const bom of boms) {
+      const prodIdStr = bom.productId ? (bom.productId._id || bom.productId).toString() : null;
+      if (!prodIdStr || (bomMap[prodIdStr] && bomMap[prodIdStr].status === 'Active' && bom.status !== 'Active')) {
+        continue;
+      }
+
+      let compTotal = 0;
+      if (bom.components && Array.isArray(bom.components)) {
+        for (const comp of bom.components) {
+          const qty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty || 0));
+          const lossPercent = Number(comp.lossPercentage !== undefined ? comp.lossPercentage : (comp.lossPercent || 0));
+          const lossFactor = lossPercent > 0 && lossPercent < 100 ? (1 - lossPercent / 100) : 1;
+          const price = Number(comp.mpnId?.price || comp.materialId?.basePrice || comp.materialId?.unitPrice || comp.materialId?.standardCost || comp.materialId?.cost || 0);
+          const lineCost = lossFactor > 0 ? (qty * price) / lossFactor : (qty * price);
+          compTotal += lineCost;
+        }
+      }
+
+      const packagingCost = Number(bom.packagingCost || 0);
+      const processingCost = Number(bom.processingCost || 0);
+      const overheadCost = Number(bom.overheadCost || 0);
+      const totalBomCost = compTotal + packagingCost + processingCost + overheadCost;
+      const batchSize = Number(bom.batchSize || 1) > 0 ? Number(bom.batchSize) : 1;
+      const unitCost = Math.round((totalBomCost / batchSize) * 100) / 100;
+
+      bomMap[prodIdStr] = {
+        bomId: bom._id,
+        bomNumber: bom.bomNumber || 'BOM',
+        status: bom.status,
+        batchSize,
+        totalCost: Math.round(totalBomCost * 100) / 100,
+        unitCost,
+        hasBom: true
+      };
+    }
+
+    const mpnMap = {};
+    for (const mpn of mpns) {
+      const matIdStr = mpn.materialId ? (mpn.materialId._id || mpn.materialId).toString() : null;
+      if (matIdStr && (!mpnMap[matIdStr] || mpn.price > 0)) {
+        mpnMap[matIdStr] = mpn.price;
+      }
+    }
+
+    return { bomMap, mpnMap };
+  } catch (err) {
+    console.error('[Inventory] Error resolving BOM costs:', err.message);
+    return { bomMap: {}, mpnMap: {} };
+  }
+}
+
+// Helper: Auto-sync missing site references on InventoryItems from their parent warehouses
+async function autoSyncSiteReferences() {
+  try {
+    const itemsWithoutSite = await InventoryItem.find({
+      $or: [{ siteId: { $exists: false } }, { siteId: null }]
+    }).populate('warehouseId', 'siteId');
+
+    const bulkOps = [];
+    for (const item of itemsWithoutSite) {
+      if (item.warehouseId && item.warehouseId.siteId) {
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: item._id },
+            update: { $set: { siteId: item.warehouseId.siteId } }
+          }
+        });
+      }
+    }
+
+    if (bulkOps.length > 0) {
+      await InventoryItem.bulkWrite(bulkOps);
+    }
+  } catch (err) {
+    console.warn('[Inventory] Auto-sync site references note:', err.message);
+  }
+}
+
+// @desc    Get all inventory item balances with optional site/warehouse/material/status filtering & summary
+// @route   GET /api/inventory
+// @access  Private
+exports.getInventoryBalances = async (req, res, next) => {
+  try {
+    const filter = {};
+
+    // 0. Enforce Multi-Site Location Scope for Non-Global Admins
+    if (req.user && !authz.isGlobalAdmin(req.user)) {
+      const { siteIds, warehouseIds } = await scopeResolver.getUserAssignedScopes(req.user);
+      if (warehouseIds && warehouseIds.length > 0) {
+        if (!req.query.warehouseId || req.query.warehouseId === 'ALL') {
+          filter.warehouseId = { $in: warehouseIds };
+        }
+      } else if (siteIds && siteIds.length > 0) {
+        if (!req.query.siteId || req.query.siteId === 'ALL') {
+          const scopedWhs = await Warehouse.find({ siteId: { $in: siteIds } }).select('_id');
+          const scopedWhIds = scopedWhs.map(w => w._id);
+          filter.$or = [
+            { siteId: { $in: siteIds } },
+            { warehouseId: { $in: scopedWhIds } }
+          ];
+        }
+      }
+    }
+
+    // 1. Warehouse Filter
+    if (req.query.warehouseId && req.query.warehouseId !== '' && req.query.warehouseId !== 'ALL') {
+      filter.warehouseId = req.query.warehouseId;
+    }
+
+    // 2. Site Filter (resolves child warehouse hierarchy so items without explicit siteId are matched)
+    if (req.query.siteId && req.query.siteId !== '' && req.query.siteId !== 'ALL') {
+      const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+      const whIds = siteWhs.map(w => w._id);
+      
+      if (filter.warehouseId) {
+        // Both site and warehouse provided
+        filter.$and = [
+          { warehouseId: filter.warehouseId },
+          { $or: [{ siteId: req.query.siteId }, { warehouseId: { $in: whIds } }] }
+        ];
+        delete filter.warehouseId;
+      } else {
+        filter.$or = [
+          { siteId: req.query.siteId },
+          { warehouseId: { $in: whIds } }
+        ];
+      }
+    }
+
+    // 3. Material Filter
+    if (req.query.materialId && req.query.materialId !== '' && req.query.materialId !== 'ALL') {
+      filter.materialId = req.query.materialId;
+    }
+
+    // 4. Search Filter (material name, code, batch, lot)
+    if (req.query.search && req.query.search.trim() !== '') {
+      const q = escapeRegex(req.query.search.trim());
+      const matchingMaterials = await Material.find({
+        $or: [
+          { name: { $regex: q, $options: 'i' } },
+          { code: { $regex: q, $options: 'i' } }
+        ]
+      }).select('_id');
+
+      const matIds = matchingMaterials.map(m => m._id);
+      const searchConditions = [
+        { materialId: { $in: matIds } },
+        { batchNumber: { $regex: q, $options: 'i' } },
+        { lotNumber: { $regex: q, $options: 'i' } }
+      ];
+
+      if (filter.$or) {
+        filter.$and = filter.$and || [];
+        filter.$and.push({ $or: filter.$or });
+        filter.$and.push({ $or: searchConditions });
+        delete filter.$or;
+      } else if (filter.$and) {
+        filter.$and.push({ $or: searchConditions });
+      } else {
+        filter.$or = searchConditions;
+      }
+    }
+
+    // Execute query with .lean() for zero-overhead performance
+    const balances = await InventoryItem.find(filter)
+      .populate('materialId', 'name code unit type subcategory description basePrice unitPrice standardCost cost purchasePrice price safetyStock reorderLevel')
+      .populate('warehouseId', 'name code type siteId')
+      .populate('siteId', 'name code')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // Filter out orphaned records if any
+    const validBalances = balances.filter(b => b.materialId && b.warehouseId);
+
+    // Extract unique material IDs to fetch BOM costs & MPN prices
+    const uniqueMatIds = [...new Set(validBalances.map(b => (b.materialId._id || b.materialId).toString()))];
+    const { bomMap, mpnMap } = await resolveMaterialPricesAndBomCosts(uniqueMatIds);
+
+    // Compute live summary statistics
+    let totalOnHandUnits = 0;
+    let totalAvailableUnits = 0;
+    let totalReservedUnits = 0;
+    let totalStockValuation = 0;
+    let inStockCount = 0;
+    let outOfStockCount = 0;
+    let lowStockCount = 0;
+
+    validBalances.forEach(item => {
+      const onHand = item.balance !== undefined ? item.balance : (item.onHand || 0);
+      const reserved = item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0);
+      const available = Math.max(0, onHand - reserved);
+
+      const matIdStr = (item.materialId._id || item.materialId).toString();
+      const bomInfo = bomMap[matIdStr];
+      const mpnPrice = mpnMap[matIdStr];
+
+      // Priority:
+      // 1. BOM Unit Cost (if item has an active/draft BOM recipe)
+      // 2. Material Master basePrice / unitPrice / standardCost / cost
+      // 3. MPN Price
+      // 4. Stored InventoryItem.unitPrice
+      let unitPrice = 0;
+      let priceSource = 'Default';
+
+      if (bomInfo && bomInfo.unitCost > 0) {
+        unitPrice = bomInfo.unitCost;
+        priceSource = `BOM (${bomInfo.bomNumber})`;
+        item.hasBom = true;
+        item.bomNumber = bomInfo.bomNumber;
+        item.bomUnitCost = bomInfo.unitCost;
+      } else if (item.materialId?.basePrice > 0) {
+        unitPrice = Number(item.materialId.basePrice);
+        priceSource = 'Material Master';
+      } else if (item.materialId?.unitPrice > 0) {
+        unitPrice = Number(item.materialId.unitPrice);
+        priceSource = 'Material Master';
+      } else if (item.materialId?.standardCost > 0) {
+        unitPrice = Number(item.materialId.standardCost);
+        priceSource = 'Standard Cost';
+      } else if (item.materialId?.cost > 0) {
+        unitPrice = Number(item.materialId.cost);
+        priceSource = 'Cost';
+      } else if (mpnPrice > 0) {
+        unitPrice = Number(mpnPrice);
+        priceSource = 'MPN';
+      } else if (item.unitPrice > 0) {
+        unitPrice = Number(item.unitPrice);
+        priceSource = 'Inventory Item';
+      } else if (bomInfo && bomInfo.hasBom) {
+        unitPrice = bomInfo.unitCost || 0;
+        priceSource = 'BOM';
+        item.hasBom = true;
+        item.bomNumber = bomInfo.bomNumber;
+      }
+
+      item.unitPrice = Math.round(unitPrice * 100) / 100;
+      item.totalValue = Math.round(onHand * unitPrice * 100) / 100;
+      item.priceSource = priceSource;
+
+      totalOnHandUnits += onHand;
+      totalAvailableUnits += available;
+      totalReservedUnits += reserved;
+      totalStockValuation += (onHand * unitPrice);
+
+      item.onHand = onHand;
+      item.reserved = reserved;
+      item.available = available;
+
+      const reorderLvl = item.materialId?.reorderLevel || item.materialId?.safetyStock || 0;
+      if (available <= 0) {
+        item.status = 'out_of_stock';
+        outOfStockCount++;
+      } else if (reorderLvl > 0 && available <= reorderLvl) {
+        item.status = 'low_stock';
+        lowStockCount++;
+      } else {
+        item.status = 'in_stock';
+        inStockCount++;
+      }
+    });
+
+    // Optional status filter (post-population or in-memory)
+    let results = validBalances;
+    if (req.query.status === 'IN_STOCK') {
+      results = results.filter(i => (i.balance || i.onHand || 0) > (i.reservedBalance || i.reserved || 0));
+    } else if (req.query.status === 'OUT_OF_STOCK') {
+      results = results.filter(i => (i.balance || i.onHand || 0) <= (i.reservedBalance || i.reserved || 0));
+    } else if (req.query.status === 'LOW_STOCK') {
+      results = results.filter(i => {
+        const avail = (i.balance || i.onHand || 0) - (i.reservedBalance || i.reserved || 0);
+        const reorder = i.materialId?.reorderLevel || i.materialId?.safetyStock || 10;
+        return avail <= reorder && avail > 0;
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      count: results.length,
+      totalRecords: validBalances.length,
+      summary: {
+        totalSKUs: validBalances.length,
+        totalOnHandUnits: Math.round(totalOnHandUnits * 100) / 100,
+        totalAvailableUnits: Math.round(totalAvailableUnits * 100) / 100,
+        totalReservedUnits: Math.round(totalReservedUnits * 100) / 100,
+        totalStockValuation: Math.round(totalStockValuation * 100) / 100,
+        inStockCount,
+        outOfStockCount,
+        lowStockCount
+      },
+      data: results
+    });
+  } catch (err) {
+    console.error('[Inventory ERROR]:', err);
+    next(err);
+  }
+};
+
+// @desc    Get inventory summary dashboard metrics
+// @route   GET /api/inventory/summary
+// @access  Private
+exports.getInventorySummary = async (req, res, next) => {
+  try {
+    const items = await InventoryItem.find()
+      .populate('materialId', 'name code unit type basePrice unitPrice standardCost cost safetyStock reorderLevel')
+      .populate('warehouseId', 'name code siteId')
+      .populate('siteId', 'name code')
+      .lean();
+
+    const validItems = items.filter(i => i.materialId && i.warehouseId);
+    const uniqueMatIds = [...new Set(validItems.map(b => (b.materialId._id || b.materialId).toString()))];
+    const { bomMap, mpnMap } = await resolveMaterialPricesAndBomCosts(uniqueMatIds);
+
+    let totalOnHandUnits = 0;
+    let totalAvailableUnits = 0;
+    let totalReservedUnits = 0;
+    let totalStockValuation = 0;
+    let inStockCount = 0;
+    let outOfStockCount = 0;
+    let lowStockCount = 0;
+
+    validItems.forEach(item => {
+      const onHand = item.balance !== undefined ? item.balance : (item.onHand || 0);
+      const reserved = item.reservedBalance !== undefined ? item.reservedBalance : (item.reserved || 0);
+      const available = Math.max(0, onHand - reserved);
+
+      const matIdStr = (item.materialId._id || item.materialId).toString();
+      const bomInfo = bomMap[matIdStr];
+      const mpnPrice = mpnMap[matIdStr];
+
+      let unitPrice = 0;
+      if (bomInfo && bomInfo.unitCost > 0) {
+        unitPrice = bomInfo.unitCost;
+      } else if (item.materialId?.basePrice > 0) {
+        unitPrice = Number(item.materialId.basePrice);
+      } else if (item.materialId?.unitPrice > 0) {
+        unitPrice = Number(item.materialId.unitPrice);
+      } else if (item.materialId?.standardCost > 0) {
+        unitPrice = Number(item.materialId.standardCost);
+      } else if (item.materialId?.cost > 0) {
+        unitPrice = Number(item.materialId.cost);
+      } else if (mpnPrice > 0) {
+        unitPrice = Number(mpnPrice);
+      } else if (item.unitPrice > 0) {
+        unitPrice = Number(item.unitPrice);
+      }
+
+      totalOnHandUnits += onHand;
+      totalAvailableUnits += available;
+      totalReservedUnits += reserved;
+      totalStockValuation += (onHand * unitPrice);
+
+      if (available > 0) inStockCount++;
+      else outOfStockCount++;
+
+      const reorderLvl = item.materialId?.reorderLevel || item.materialId?.safetyStock || 0;
+      if (reorderLvl > 0 && available <= reorderLvl) lowStockCount++;
+    });
+
+    res.status(200).json({
+      success: true,
+      summary: {
+        totalSKUs: validItems.length,
+        totalOnHandUnits: Math.round(totalOnHandUnits * 100) / 100,
+        totalAvailableUnits: Math.round(totalAvailableUnits * 100) / 100,
+        totalReservedUnits: Math.round(totalReservedUnits * 100) / 100,
+        totalStockValuation: Math.round(totalStockValuation * 100) / 100,
+        inStockCount,
+        outOfStockCount,
+        lowStockCount
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Sync missing site references on InventoryItems
+// @route   POST /api/inventory/sync-sites
+// @access  Private
+exports.syncMissingSiteReferences = async (req, res, next) => {
+  try {
+    await autoSyncSiteReferences();
+    const updatedCount = await InventoryItem.countDocuments({ siteId: { $ne: null } });
+    res.status(200).json({
+      success: true,
+      message: `Site references synchronized. ${updatedCount} items have active site references.`,
+      updatedCount
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get inventory audit trail transactions with site/warehouse filtering
+// @route   GET /api/inventory/transactions
+// @access  Private
+exports.getInventoryTransactions = async (req, res, next) => {
+  try {
+    const filter = {};
+    if (req.query.warehouseId && req.query.warehouseId !== '' && req.query.warehouseId !== 'ALL') {
+      filter.warehouseId = req.query.warehouseId;
+    }
+    if (req.query.siteId && req.query.siteId !== '' && req.query.siteId !== 'ALL') {
+      const siteWhs = await Warehouse.find({ siteId: req.query.siteId }).select('_id');
+      const whIds = siteWhs.map(w => w._id);
+      if (filter.warehouseId) {
+        filter.$and = [
+          { warehouseId: filter.warehouseId },
+          { $or: [{ siteId: req.query.siteId }, { warehouseId: { $in: whIds } }] }
+        ];
+        delete filter.warehouseId;
+      } else {
+        filter.$or = [
+          { siteId: req.query.siteId },
+          { warehouseId: { $in: whIds } }
+        ];
+      }
+    }
+    if (req.query.materialId && req.query.materialId !== '' && req.query.materialId !== 'ALL') {
+      filter.materialId = req.query.materialId;
+    }
+    if (req.query.type && req.query.type !== '' && req.query.type !== 'ALL') {
+      filter.type = req.query.type;
+    }
+
+    const limit = parseInt(req.query.limit) || 500;
+    const transactions = await InventoryTransaction.find(filter)
+      .populate('materialId', 'name code unit type')
+      .populate('warehouseId', 'name code')
+      .populate('siteId', 'name code')
+      .populate('userId', 'username email')
+      .populate('approvedBy', 'username email')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.status(200).json({ success: true, count: transactions.length, data: transactions });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Create manual inventory adjustment request
+// @route   POST /api/inventory/adjustment
+// @access  Private
+exports.createAdjustment = async (req, res, next) => {
+  try {
+    const { materialId, warehouseId, quantity, notes, reason } = req.body;
+
+    if (!materialId || quantity === undefined) {
+      return res.status(400).json({ success: false, error: 'Please provide materialId and adjustment quantity' });
+    }
+
+    const adjQty = parseFloat(quantity);
+    if (isNaN(adjQty) || adjQty === 0) {
+      return res.status(400).json({ success: false, error: 'Adjustment quantity must be a non-zero number' });
+    }
+
+    const material = await Material.findById(materialId);
+    if (!material) {
+      return res.status(404).json({ success: false, error: 'Material not found' });
+    }
+
+    // Default to first active warehouse if not provided
+    let targetWarehouseId = warehouseId;
+    if (!targetWarehouseId) {
+      const defaultWh = await Warehouse.findOne({ status: 'Active' }) || await Warehouse.findOne();
+      if (!defaultWh) {
+        return res.status(400).json({ success: false, error: 'No warehouse location found in system' });
+      }
+      targetWarehouseId = defaultWh._id;
+    }
+
+    const adjustmentType = adjQty > 0 ? 'IN' : 'OUT';
+    const absQty = Math.abs(adjQty);
+
+    let seqDoc = await Sequence.findById('stockAdjustment');
+    if (!seqDoc) {
+      seqDoc = await Sequence.create({ _id: 'stockAdjustment', seq: 1000 });
+    } else {
+      seqDoc = await Sequence.findByIdAndUpdate('stockAdjustment', { $inc: { seq: 1 } }, { new: true });
+    }
+    const adjNumber = `ADJ-${seqDoc.seq}`;
+
+    const isAdmin = req.user && req.user.role === 'Admin';
+
+    // Create stock adjustment record
+    const adjustment = await StockAdjustment.create({
+      adjNumber,
+      warehouseId: targetWarehouseId,
+      materialId,
+      adjustmentType,
+      quantity: absQty,
+      reason: reason || notes || 'Manual warehouse stock adjustment',
+      description: notes || '',
+      status: isAdmin ? 'Approved' : 'Pending Approval',
+      approvedBy: isAdmin ? req.user.id : null,
+      approvedAt: isAdmin ? new Date() : null,
+      createdBy: req.user ? req.user.id : null,
+    });
+
+    if (isAdmin) {
+      const InventoryLedgerService = require('../services/inventoryLedgerService');
+      const txnType = adjustmentType === 'IN' ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
+      try {
+        await InventoryLedgerService.recordTransaction({
+          warehouseId: targetWarehouseId,
+          materialId,
+          type: txnType,
+          quantity: absQty,
+          sourceDocType: 'StockAdjustment',
+          sourceDocId: adjustment._id.toString(),
+          referenceId: adjNumber,
+          userId: req.user ? req.user.id : null,
+          reason: `Admin adjustment: ${reason || notes || 'Manual adjustment'}`
+        });
+      } catch (txnErr) {
+        console.warn('[Inventory createAdjustment] Ledger notice:', txnErr.message);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: isAdmin ? `Stock adjustment ${adjNumber} approved & inventory ledger updated` : `Stock adjustment request ${adjNumber} submitted for approval (Created By: ${req.user ? req.user.username : 'User'})`,
+      data: adjustment
+    });
+  } catch (err) {
+    next(err);
+  }
+};
