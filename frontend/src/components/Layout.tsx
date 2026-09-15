@@ -3,6 +3,9 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 const NAV_ITEMS = [
+  { to: "/materials", label: "Materials" },
+  { to: "/products", label: "Products" },
+  { to: "/bom", label: "BOM (Recipe)" },
   { to: "/vendors", label: "Vendors" },
   { to: "/mpn", label: "MPN Mapping" },
   { to: "/pricing", label: "Pricing" },

@@ -6,13 +6,16 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Analytics } from "./pages/Analytics";
 import { BatchDetail } from "./pages/BatchDetail";
 import { Batches } from "./pages/Batches";
+import { BomPage } from "./pages/Bom";
 import { Inventory } from "./pages/Inventory";
 import { Locations } from "./pages/Locations";
 import { Login } from "./pages/Login";
+import { Materials } from "./pages/Materials";
 import { MpnMapping } from "./pages/MpnMapping";
 import { PlanDetail } from "./pages/PlanDetail";
 import { Planning } from "./pages/Planning";
 import { Pricing } from "./pages/Pricing";
+import { Products } from "./pages/Products";
 import { PurchaseOrderDetail } from "./pages/PurchaseOrderDetail";
 import { PurchaseOrders } from "./pages/PurchaseOrders";
 import { PurchaseRequestDetail } from "./pages/PurchaseRequestDetail";
@@ -32,7 +35,10 @@ export function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/vendors" replace />} />
+          <Route index element={<Navigate to="/materials" replace />} />
+          <Route path="/materials" element={<Materials />} />
+          <Route path="/products" element={<Products />} />
+          <Route path="/bom" element={<BomPage />} />
           <Route path="/vendors" element={<Vendors />} />
           <Route path="/vendors/:id" element={<VendorDetail />} />
           <Route path="/mpn" element={<MpnMapping />} />
@@ -49,7 +55,7 @@ export function App() {
           <Route path="/batches/:id" element={<BatchDetail />} />
           <Route path="/analytics" element={<Analytics />} />
         </Route>
-        <Route path="*" element={<Navigate to="/vendors" replace />} />
+        <Route path="*" element={<Navigate to="/materials" replace />} />
       </Routes>
     </AuthProvider>
   );
