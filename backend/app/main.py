@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 
-from app.api.routes import health, materials, me, products, users, vendors
+from app.api.routes import health, materials, me, mpn, pricing, products, users, vendors
 from app.core.logging import configure_logging, log_event
 from app.exceptions import ConflictError, DomainError, NotFoundError, ValidationFailedError
 
@@ -92,6 +92,8 @@ def create_app() -> FastAPI:
     app.include_router(vendors.router)
     app.include_router(materials.router)
     app.include_router(products.router)
+    app.include_router(mpn.router)
+    app.include_router(pricing.router)
 
     return app
 
