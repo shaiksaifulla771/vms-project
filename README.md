@@ -73,9 +73,13 @@ psql "$SUPABASE_DB_URL" -f docs/schema.sql
 - every table with RLS enabled and `created_by UUID NOT NULL DEFAULT auth.uid()`
 - `public.get_auth_role()` — the role resolver every RLS policy and the
   backend's auth dependency both call
-- `internal.record_audit()` / `internal.next_{pr,po,grn}_number()` — kept
-  out of the `public` schema so they are never reachable as a PostgREST
-  RPC endpoint (see `docs/migrations/0003_*.sql`)
+- `internal.record_audit()` / `internal.next_{pr,po,grn,plan,batch}_number()`
+  — kept out of the `public` schema so they are never reachable as a
+  PostgREST RPC endpoint (see `docs/migrations/0003_*.sql`)
+- `internal.post_inventory_transaction()` — the sole writer of the
+  append-only `inventory_transactions` ledger; `INSERT`/`UPDATE`/`DELETE`
+  on that table are revoked from `authenticated` entirely (see
+  `docs/migrations/0006_*.sql`)
 - a trigger that auto-provisions a `user_profiles` row (role `viewer`) on
   every new `auth.users` insert, so a fresh sign-up never 403s on `/me`
 
@@ -110,12 +114,14 @@ cd backend
 pytest
 ```
 
-Ships 65 unit tests covering the vendor/PR/PO state-transition tables,
-SQLSTATE → typed-exception mapping, rounding behavior, and the
-retryable-lock-contention set — all runnable with zero live credentials.
-Full RBAC/RLS behavior is verified against the live database via the
-checklist in `docs/RLS_VERIFICATION.md` and the Supabase security/
-performance advisors (`mcp__Supabase__get_advisors`).
+Ships 96 unit tests covering the vendor/PR/PO/batch state-transition
+tables, SQLSTATE → typed-exception mapping, rounding behavior, the
+Planning/Batch formula layer (`utils/formulas.py`, including the
+exactly-at-tolerance boundary case), and the retryable-lock-contention
+set — all runnable with zero live credentials. Full RBAC/RLS behavior is
+verified against the live database via the checklist in
+`docs/RLS_VERIFICATION.md` and the Supabase security/performance
+advisors (`mcp__Supabase__get_advisors`).
 
 ## Creating your first admin
 
@@ -147,6 +153,11 @@ the backend is running. A summary of the route surface:
 | Vendor pricing | `POST /api/v1/pricing`, `GET /api/v1/pricing/mpn/{id}/history\|current`, `GET /api/v1/pricing/material/{id}/compare` |
 | Purchase Requests | `GET/POST /api/v1/purchase-requests`, `GET /api/v1/purchase-requests/{id}`, `POST .../submit\|approve\|reject\|cancel` |
 | Purchase Orders | `GET /api/v1/purchase-orders`, `GET /api/v1/purchase-orders/{id}`, `POST /api/v1/purchase-orders/from-purchase-request/{pr_id}`, `POST .../issue\|close\|cancel`, `POST .../receipts` |
+| Locations & Warehouses | `GET/POST /api/v1/locations`, `GET /api/v1/locations/{id}`, `GET/POST /api/v1/warehouses` |
+| Inventory | `GET /api/v1/inventory/lots\|availability\|transactions`, `GET /api/v1/inventory/reconciliation` (admin), `POST /api/v1/inventory/entries/inward\|outward` |
+| Planning | `GET/POST /api/v1/plans`, `GET /api/v1/plans/{id}`, `GET /api/v1/plans/{id}/summary` |
+| Batches (Manufacturing) | `GET/POST /api/v1/batches`, `GET /api/v1/batches/{id}`, `GET /api/v1/batches/{id}/inputs`, `POST .../start\|cancel\|complete` |
+| Dynamic IP/OP Correction | `POST /api/v1/batches/{id}/correct-output`, `POST /api/v1/batches/{id}/actual-inputs/{input_id}/correct` |
 | Analytics | `GET /api/v1/analytics/vendor-scorecard` |
 
 Every mutating route requires `Authorization: Bearer <supabase-jwt>` and
