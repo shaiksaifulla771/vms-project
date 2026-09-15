@@ -2,10 +2,13 @@
 
 A production-grade Vendor Management System: vendor lifecycle, MPN
 (material↔vendor) mapping, effective-dated vendor pricing, procurement
-(Purchase Request → Purchase Order → Receipt), and vendor performance
-analytics. Standalone by design, and integration-ready with a
-BatchCore-like ERP that shares the `materials` / `vendors` /
-`material_vendors` shape.
+(Purchase Request → Purchase Order → Receipt), vendor performance
+analytics, and a full Manufacturing/Inventory/Planning flow (locations &
+warehouses, lot-tracked inventory with an append-only ledger, demand
+planning, batch execution, and Dynamic IP/OP Correction) built as new
+modules connected to — never modifying — the vendor/material/MPN/BOM
+domain. Standalone by design, and integration-ready with a BatchCore-like
+ERP that shares the `materials` / `vendors` / `material_vendors` shape.
 
 ## Stack
 
@@ -50,7 +53,8 @@ concurrency model.
     │   ├── auth/AuthContext.tsx   session + role (via GET /api/v1/me)
     │   ├── api/                    typed fetch client with retry-on-409
     │   ├── components/            Layout, RoleGate, StatusBadge, etc.
-    │   └── pages/                  Vendors, MPN, Pricing, PR/PO, Analytics
+    │   └── pages/                  Vendors, MPN, Pricing, PR/PO, Locations,
+    │                                Inventory, Planning, Batches, Analytics
     └── package.json
 ```
 

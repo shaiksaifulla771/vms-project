@@ -54,6 +54,35 @@ because Postgres doesn't rank enum values by declaration order.
 | `purchase_order_receipts` — read | ✅ | ✅ | ✅ |
 | `purchase_order_receipts` — create | ❌ | ✅ | ✅ |
 
+### Locations, Inventory, Planning & Manufacturing
+| Resource | viewer | editor | admin |
+|---|---|---|---|
+| `locations` — read | ✅ | ✅ | ✅ |
+| `locations` — write | ❌ | ❌ | ✅ |
+| `warehouses` — read | ✅ | ✅ | ✅ |
+| `warehouses` — write | ❌ | ❌ | ✅ |
+| `inventory_lots` — read (lots, availability) | ✅ | ✅ | ✅ |
+| `inventory_transactions` — read (ledger) | ✅ | ✅ | ✅ |
+| `inventory_transactions` — reconciliation report | ❌ | ❌ | ✅ |
+| Manual Inventory Entry (Add Stock / Remove Stock) | ❌ | ✅ | ✅ |
+| `plans` — read | ✅ | ✅ | ✅ |
+| `plans` — create | ❌ | ✅ | ✅ |
+| `batch_records` — read | ✅ | ✅ | ✅ |
+| `batch_records` — create / start / cancel | ❌ | ✅ | ✅ |
+| `batch_records` — complete | ❌ | ✅ | ✅ |
+| Dynamic IP/OP Correction (output or input line) | ❌ | ✅ | ✅ |
+
+Batch completion and Dynamic IP/OP Correction are the operations that
+actually move inventory, so they sit at `editor+` rather than
+`admin`-only — production-floor operators are typically `editor`, the
+same tightness the reference BatchCore system uses. Plan creation and
+location/warehouse master-data writes stay admin-only, matching every
+other master in this system. `inventory_transactions` is never writable
+directly by any role, including admin — `INSERT`/`UPDATE`/`DELETE` are
+revoked from `authenticated` at the grant level; the only writer is
+`internal.post_inventory_transaction()`, called from
+`InventoryLedgerService`.
+
 ### Governance
 | Resource | viewer | editor | admin |
 |---|---|---|---|
