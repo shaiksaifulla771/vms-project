@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^7.10.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "aws-sdk": "^2.1693.0",
     "axios": "^1.19.0",
@@ -48,6 +49,8 @@
     "nodemailer": "^9.0.5",
     "openai": "^7.8.0",
     "pdfkit": "^0.15.0",
+    "pg": "^8.23.0",
+    "prisma": "^7.10.0",
     "rate-limit-redis": "^6.0.1",
     "socket.io": "^4.8.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
