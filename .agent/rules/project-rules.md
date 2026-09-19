@@ -19,6 +19,7 @@
 - After every change, check what already depends on the changed area: run existing tests, or do a manual pass through the affected flow if none exist yet. "It compiles" is not "it's done."
 - **Definition of done:** builds clean, relevant tests pass (add them if missing), the specific feature was actually exercised — not just read — and nothing else touching the same files regressed. Use the Walkthrough artifact to show what was tested, not only what changed.
 - If a fix needs something outside the stated scope to actually work, stop and flag it instead of quietly expanding the change.
+- **Single Source of Truth & Stop-the-Line Protocol:** All work must comply with `docs/MASTER_SYSTEM_SPECIFICATION.md`. If any planned or written change deviates from, deletes, or breaks any existing feature, invariant, 50-row pagination, 5% batch tolerance, or workflow defined in that specification, **STOP EXECUTION IMMEDIATELY**. Realign the work to strictly match `docs/MASTER_SYSTEM_SPECIFICATION.md` before continuing.
 
 ## 3. Continuous learning — don't repeat mistakes
 

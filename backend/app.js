@@ -192,15 +192,18 @@ app.use('/api', (req, res, next) => {
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/webhooks', webhookLimiter, require('./routes/webhookRoutes'));
 
-// Global Firebase ID Token authentication (all /api/* routes except /api/auth/* and /api/webhooks/*)
+// Global Firebase ID Token authentication (all /api/* routes except
+// /api/auth/*, /api/webhooks/*, and /api/pg/* -- the last is the
+// Postgres/Supabase migration's reference routes, which verify Supabase
+// Auth tokens with their own middleware, see routes/pg/*.js).
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks')) return next();
+  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks') || req.path.startsWith('/pg')) return next();
   protect(req, res, next);
 });
 
 // Authenticated user-aware rate limiting (after protect — req.user is verified)
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks')) return next();
+  if (req.path.startsWith('/auth') || req.path.startsWith('/webhooks') || req.path.startsWith('/pg')) return next();
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     return writeLimiter(req, res, next);
   } else if (req.method === 'GET') {
@@ -222,10 +225,28 @@ app.use('/api/warehouses', require('./routes/warehouseRoutes'));
 app.use('/api/vendors', require('./routes/vendorRoutes'));
 app.use('/api/vendor-masters', require('./routes/vendorMasterRoutes'));
 app.use('/api/materials', require('./routes/materialRoutes'));
+// Postgres/Supabase reference implementation (migration in progress, see
+// docs/schema.sql and the migration plan) -- mounted at a separate path so
+// it doesn't collide with the live Mongo-backed /api/materials above.
+app.use('/api/pg/materials', require('./routes/pg/materialRoutes'));
+app.use('/api/pg/vendors', require('./routes/pg/vendorRoutes'));
+app.use('/api/pg/vendor-masters', require('./routes/pg/vendorMasterRoutes'));
+app.use('/api/pg/vendor-contracts', require('./routes/pg/vendorContractRoutes'));
+app.use('/api/pg/vendor-performance', require('./routes/pg/vendorPerformanceRoutes'));
+app.use('/api/pg/mpns', require('./routes/pg/mpnRoutes'));
+// Postgres/Supabase reference implementation for Sites/Locations and
+// Warehouses -- mounted at separate paths so they don't collide with the
+// live Mongo-backed /api/sites and /api/warehouses above.
+app.use('/api/pg/locations', require('./routes/pg/locationRoutes'));
+app.use('/api/pg/warehouses', require('./routes/pg/warehouseRoutes'));
 app.use('/api/mpns', require('./routes/mpnRoutes'));
 app.use('/api/classifications', require('./routes/classificationRoutes'));
 app.use('/api/bom', require('./routes/bomRoutes'));
 app.use('/api/boms', require('./routes/bomRoutes'));
+// Postgres/Supabase reference implementation (migration in progress, see
+// docs/schema.sql and the migration plan) -- mounted at a separate path so
+// it doesn't collide with the live Mongo-backed /api/bom(s) above.
+app.use('/api/pg/boms', require('./routes/pg/bomRoutes'));
 app.use('/api/inventory', enforceActiveLocation, require('./routes/inventoryRoutes'));
 app.use('/api/mrp', require('./routes/mrpRoutes'));
 app.use('/api/procurement', require('./routes/procurementRoutes'));

@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "seed": "node scripts/seed.js",
+    "prisma:generate": "prisma generate && node scripts/ensure_prisma_esm.js",
     "start": "node server.js",
     "predev": "node scripts/predev.js",
     "dev": "node --watch --watch-path=server.js --watch-path=app.js --watch-path=controllers --watch-path=models --watch-path=routes --watch-path=services --watch-path=middleware --watch-path=config --watch-path=utils --watch-path=events server.js",
@@ -23,6 +24,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "aws-sdk": "^2.1693.0",
@@ -44,6 +46,7 @@
     "ioredis": "^6.0.0",
     "ioredis-mock": "^8.13.1",
     "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^4.1.0",
     "mongoose": "^8.3.1",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.5",
