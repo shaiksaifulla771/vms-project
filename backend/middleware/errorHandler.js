@@ -58,6 +58,52 @@ module.exports = (err, req, res, next) => {
     });
   }
 
+  // Postgres/Prisma (Supabase migration): RLS policy rejected the write.
+  // This means the route-level requireRole() guard was more permissive
+  // than the table's actual RLS policy (they're meant to always agree --
+  // see supabaseAuthMiddleware.js) -- worth treating as a bug to fix in
+  // the route, not just swallowing as a generic 500. Matched on message
+  // rather than a specific Prisma error code since the code Prisma assigns
+  // varies by call shape (raw query vs. model method).
+  if (err.message && /row-level security policy/i.test(err.message)) {
+    return res.status(403).json({
+      success: false,
+      errorType: 'ForbiddenError',
+      message: 'You do not have permission to perform this action.',
+    });
+  }
+
+  // Prisma unique constraint violation -- Postgres equivalent of Mongo's 11000.
+  if (err.code === 'P2002') {
+    const fields = (err.meta && err.meta.target) || [];
+    return res.status(409).json({
+      success: false,
+      errorType: 'DuplicateKeyError',
+      message: `A duplicate value already exists for: ${Array.isArray(fields) ? fields.join(', ') : fields}.`,
+    });
+  }
+
+  // Prisma record-not-found (e.g. update/delete targeting a missing row).
+  if (err.code === 'P2025') {
+    return res.status(404).json({
+      success: false,
+      errorType: 'NotFoundError',
+      message: 'The requested record was not found.',
+    });
+  }
+
+  // Postgres CHECK constraint violation (SQLSTATE 23514) -- surfaces from
+  // this schema's extensive use of CHECK constraints for domain validation
+  // (quantities, date ranges, percentages, etc.) instead of duplicating
+  // that validation in application code.
+  if (err.message && /violates check constraint/i.test(err.message)) {
+    return res.status(400).json({
+      success: false,
+      errorType: 'ValidationError',
+      message: 'The submitted data violates a database constraint. Please check the values and try again.',
+    });
+  }
+
   // Default: 500 internal server error — no stack trace to client
   return res.status(err.status || 500).json({
     success: false,
