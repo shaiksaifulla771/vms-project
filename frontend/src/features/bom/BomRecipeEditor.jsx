@@ -96,25 +96,13 @@ export default function BomRecipeEditor({
     }
   };
 
- useEffect(() => {
- // Fetch MPNs and Materials for dropdowns
- const fetchData = async () => {
- try {
- const [mpnRes, matRes] = await Promise.all([
- api.get('/api/mpns', { params: { status: 'All' } }),
- api.get('/api/materials')
- ]);
- const fetchedMpns = mpnRes.data?.data || [];
- const fetchedMats = matRes.data?.data || [];
- setMpns(fetchedMpns);
- setMaterials(fetchedMats);
   useEffect(() => {
-    // Fetch MPNs, Materials, Sites, and Warehouses
+    // Fetch MPNs, Materials, Sites, and Warehouses for dropdowns
     const fetchData = async () => {
       try {
         const [mpnRes, matRes, siteRes, whRes] = await Promise.all([
-          api.get('/api/mpns', { params: { status: 'All' } }),
-          api.get('/api/materials'),
+          api.get('/api/mpns', { params: { status: 'All' } }).catch(() => ({ data: { data: [] } })),
+          api.get('/api/materials').catch(() => ({ data: { data: [] } })),
           api.get('/api/sites').catch(() => ({ data: { sites: [] } })),
           api.get('/api/warehouses').catch(() => ({ data: { warehouses: [] } }))
         ]);
@@ -125,20 +113,6 @@ export default function BomRecipeEditor({
         setSitesList(siteRes.data?.sites || siteRes.data?.data || []);
         setWarehousesList(whRes.data?.warehouses || whRes.data?.data || []);
 
- // Auto-fetch manufacturer on initial load if productId is set
- if (productId && !manufacturer) {
-   const mfr = resolveManufacturer(productId, fetchedMats, fetchedMpns);
-   if (mfr) {
-     setManufacturer(mfr);
-     setOriginalManufacturer(mfr);
-   }
- }
- } catch (err) {
- console.error('Failed to fetch data:', err);
- }
- };
- fetchData();
- }, []);
         // Auto-fetch manufacturer on initial load if productId is set
         if (productId && !manufacturer) {
           const mfr = resolveManufacturer(productId, fetchedMats, fetchedMpns);
@@ -152,7 +126,7 @@ export default function BomRecipeEditor({
       }
     };
     fetchData();
-  }, []);
+  }, [productId, manufacturer]);
 
  // Unsaved changes guard
  useEffect(() => {
@@ -472,7 +446,11 @@ export default function BomRecipeEditor({
             <div className="flex flex-col xl:col-span-2">
               <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Finished Product *</label>
               <SearchableSelect 
-                options={materials.filter(m => (m.type === 'Finished' || m.type === 'Finished Goods' || m.type === 'Finished Good') && m.status !== 'Deleted').map(m => ({
+                options={materials.filter(m => {
+                  const t = (m.type || '').toLowerCase();
+                  const c = (m.category || '').toLowerCase();
+                  return (t.includes('finish') || c.includes('finish')) && m.status !== 'Deleted';
+                }).map(m => ({
                   value: m._id, label: `${m.name} (${m.code})`
                 }))}
                 value={productId} 
