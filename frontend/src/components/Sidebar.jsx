@@ -15,19 +15,27 @@ import {
   Tag,
   Database,
   FileSpreadsheet,
-  PlusCircle
+  PlusCircle,
+  Cpu,
+  MapPin
 } from 'lucide-react';
 
 const NAVIGATION_SECTIONS = [
   {
     id: 'master',
-    title: 'Master',
+    title: 'Master Data',
     icon: Database,
     items: [
       {
         id: 'materials',
-        name: 'Materials',
+        name: 'Raw Materials',
         icon: Boxes,
+        roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']
+      },
+      {
+        id: 'products',
+        name: 'Products (Finished Goods)',
+        icon: Package,
         roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']
       },
       {
@@ -40,28 +48,34 @@ const NAVIGATION_SECTIONS = [
   },
   {
     id: 'stocks',
-    title: 'Stocks',
+    title: 'Stocks & Inventory',
     icon: Package,
     items: [
       {
         id: 'mpns',
-        name: 'MPN',
+        name: 'MPN Master',
         icon: Layers,
         roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']
       },
       {
         id: 'inventory',
-        name: 'Inventory',
+        name: 'Lot Storage Ledger',
         icon: Boxes,
         roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Planner']
       }
     ]
   },
   {
-    id: 'bom',
-    title: 'BOM',
-    icon: FileSpreadsheet,
+    id: 'production',
+    title: 'Production & Planning',
+    icon: Cpu,
     items: [
+      {
+        id: 'planning',
+        name: 'Planning & MRP (Sheet 3)',
+        icon: Cpu,
+        roles: ['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Planner']
+      },
       {
         id: 'bom',
         name: 'BOM Master',
@@ -78,12 +92,18 @@ const NAVIGATION_SECTIONS = [
   },
   {
     id: 'settings',
-    title: 'Settings',
+    title: 'Settings & Administration',
     icon: Settings,
     items: [
       {
+        id: 'sites',
+        name: 'Sites & Warehouses (Sec 10)',
+        icon: MapPin,
+        roles: ['Admin', 'Editor']
+      },
+      {
         id: 'users',
-        name: 'Users',
+        name: 'Users & Access Scope',
         icon: UserCheck,
         roles: ['Admin']
       },
@@ -112,7 +132,10 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
     return (
       activePage === itemId ||
       (itemId === 'materials' && (activePage === 'masters' || activePage === 'master')) ||
+      (itemId === 'products' && activePage === 'products') ||
       (itemId === 'mpns' && activePage === 'mpn') ||
+      (itemId === 'planning' && (activePage === 'planning' || activePage === 'mrp')) ||
+      (itemId === 'sites' && (activePage === 'sites' || activePage === 'network-sites' || activePage === 'warehouse')) ||
       (itemId === 'bom' && (activePage === 'boms' || activePage === 'bom')) ||
       (itemId === 'bom-new' && activePage === 'bom-new') ||
       (itemId === 'material-classifications' && activePage === 'classifications') ||

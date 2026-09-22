@@ -64,6 +64,7 @@ exports.createBOM = async (data, userContext) => {
   startSafeTransaction(session);
   try {
     const { productId, batchSize, batchUOM, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
+    const { productId, batchSize, batchUOM, expectedOutputQty, siteId, warehouseId, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
 
     await validateBOMComponents(productId, components);
 
@@ -95,6 +96,9 @@ exports.createBOM = async (data, userContext) => {
       manufacturer: manufacturer || '',
       batchSize: Number(batchSize),
       batchUOM: String(batchUOM || 'pcs').trim(),
+      expectedOutputQty: Number(expectedOutputQty) > 0 ? Number(expectedOutputQty) : Number(batchSize),
+      siteId: siteId || null,
+      warehouseId: warehouseId || null,
       batchCode: batchCode || '',
       components: cleanComponents,
       packagingCost: Number(packagingCost) || 0,
@@ -153,6 +157,7 @@ exports.updateBOM = async (id, data, userContext) => {
   startSafeTransaction(session);
   try {
     const { productId, batchSize, batchUOM, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
+    const { productId, batchSize, batchUOM, expectedOutputQty, siteId, warehouseId, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
 
     const bom = await BOM.findById(id).session(session);
     if (!bom || bom.status === 'Obsolete') {
@@ -164,9 +169,13 @@ exports.updateBOM = async (id, data, userContext) => {
 
     // Handle partial updates without creating a new version
     if ((status || batchCode !== undefined) && !components && !productId) {
+    if ((status || batchCode !== undefined || siteId !== undefined || warehouseId !== undefined || expectedOutputQty !== undefined) && !components && !productId) {
       const updateFields = { updatedBy: userContext.name };
       if (status) updateFields.status = status;
       if (batchCode !== undefined) updateFields.batchCode = batchCode;
+      if (siteId !== undefined) updateFields.siteId = siteId;
+      if (warehouseId !== undefined) updateFields.warehouseId = warehouseId;
+      if (expectedOutputQty !== undefined) updateFields.expectedOutputQty = expectedOutputQty;
 
       await BOM.updateOne(
         { _id: bom._id }, 
@@ -221,6 +230,9 @@ exports.updateBOM = async (id, data, userContext) => {
       manufacturer: manufacturer !== undefined ? manufacturer : bom.manufacturer,
       batchSize: Number(batchSize),
       batchUOM: String(batchUOM || 'pcs').trim(),
+      expectedOutputQty: Number(expectedOutputQty) > 0 ? Number(expectedOutputQty) : (bom.expectedOutputQty || Number(batchSize)),
+      siteId: siteId !== undefined ? siteId : bom.siteId,
+      warehouseId: warehouseId !== undefined ? warehouseId : bom.warehouseId,
       batchCode: batchCode !== undefined ? batchCode : bom.batchCode,
       components: cleanComponents,
       packagingCost: Number(packagingCost) || 0,

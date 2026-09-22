@@ -30,18 +30,19 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed }) => {
 
   const getPageTitle = () => {
     switch (activePage) {
-      case 'materials': return 'Materials Master';
+      case 'materials': return 'Raw Materials Master';
+      case 'products': return 'Products Master (Finished Goods)';
       case 'vendors': return 'Vendors Master';
       case 'mpns': return 'MPN Master';
       case 'masters': return 'Master Data';
-      case 'inventory': return 'Physical Stock & Inventory';
+      case 'inventory': return 'Lot Storage Ledger (Sheet 2)';
       case 'bom':
       case 'boms': return 'Bill of Materials (BOM)';
       case 'bom-new': return 'Create Recipe (BOM)';
       case 'planning':
-      case 'mrp': return 'MRP & Material Planning';
+      case 'mrp': return 'MRP & 3-Tier Production Planning (Sheet 3)';
       case 'sites':
-      case 'network-sites': return 'Sites & Warehouses';
+      case 'network-sites': return 'Sites & Warehouses (Sec 10)';
       case 'classifications': return 'Categories & Classifications';
       case 'material-classifications': return 'Material Classification';
       case 'vendor-classifications': return 'Vendor Classification';
@@ -108,7 +109,9 @@ const Header = ({ activePage, sidebarCollapsed, setSidebarCollapsed }) => {
         >
           <option value="all">All Warehouses</option>
           {filteredWarehouses.map((w) => (
-            <option key={w._id} value={w._id}>{w.name}</option>
+            <option key={w._id} value={w._id}>
+              {w.name} {w.isDefault ? '★ [Default]' : ''}
+            </option>
           ))}
         </select>
       </div>

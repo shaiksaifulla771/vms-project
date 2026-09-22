@@ -8,7 +8,9 @@ import {
   ArrowLeft,
   RefreshCw,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Layers,
+  Boxes
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 
@@ -17,6 +19,7 @@ import InventorySummaryBanner from '../components/inventory/InventorySummaryBann
 import InventoryStockGrid from '../components/inventory/InventoryStockGrid';
 import InventoryDetailDrawer from '../components/inventory/InventoryDetailDrawer';
 import StockActionModal from '../components/inventory/StockActionModal';
+import LotStorageLedger from '../components/inventory/LotStorageLedger';
 
 export default function Inventory() {
   usePageMeta('Inventory & Stock Console', 'High-density physical vs reserved stock sheet, warehouse tracking, and audit ledger.');
@@ -29,7 +32,7 @@ export default function Inventory() {
     activeWarehouseId
   } = useSiteContext();
 
-  const [activeView, setActiveView] = useState('stock'); // 'stock' | 'audit'
+  const [activeView, setActiveView] = useState('lot-ledger'); // 'lot-ledger' | 'stock' | 'audit'
   const [balances, setBalances] = useState([]);
   const [summary, setSummary] = useState({
     totalSKUs: 0,
@@ -215,8 +218,54 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* View 1: Main High-Density Stock Console */}
-      {activeView === 'stock' ? (
+      {/* VIEW SELECTOR RIBBON */}
+      <div className="flex items-center justify-between bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center space-x-1.5 overflow-x-auto">
+          <button
+            onClick={() => setActiveView('lot-ledger')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeView === 'lot-ledger'
+                ? 'bg-blue-600 text-white shadow-2xs'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Lot Storage Ledger (Sheet 2)</span>
+            <span>Lot Ledger</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('stock')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeView === 'stock'
+                ? 'bg-blue-600 text-white shadow-2xs'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            <span>Physical Stock Balances</span>
+            <span>Stock Balances</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('audit')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeView === 'audit'
+                ? 'bg-blue-600 text-white shadow-2xs'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Audit &amp; Movement Ledger</span>
+            <span>Movements &amp; Audit</span>
+          </button>
+        </div>
+      </div>
+
+      {/* View 1: Lot Storage Ledger (Sheet 2) */}
+      {activeView === 'lot-ledger' ? (
+        <LotStorageLedger onRefreshParent={fetchInventoryData} />
+      ) : activeView === 'stock' ? (
         <>
           {/* Main Excel-Dense Grid with Integrated Top Ribbon */}
           <InventoryStockGrid

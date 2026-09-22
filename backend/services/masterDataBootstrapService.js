@@ -61,10 +61,17 @@ class MasterDataBootstrapService {
       // 1. Seed Sites
       const siteDefs = [
         {
-          code: 'HYD-01',
-          name: 'Hyderabad Plant',
+          code: 'MUM-01',
+          name: 'Mumbai Plant',
           type: 'Manufacturing Plant',
-          address: { street: 'Phase II, HITEC City', city: 'Hyderabad', state: 'Telangana', country: 'India', postalCode: '500081' },
+          address: { street: 'MIDC Andheri East', city: 'Mumbai', state: 'Maharashtra', country: 'India', postalCode: '400093' },
+          status: 'Active'
+        },
+        {
+          code: 'PUN-01',
+          name: 'Pune Facility',
+          type: 'Manufacturing Plant',
+          address: { street: 'Hinjawadi IT Park', city: 'Pune', state: 'Maharashtra', country: 'India', postalCode: '411057' },
           status: 'Active'
         },
         {
@@ -75,17 +82,17 @@ class MasterDataBootstrapService {
           status: 'Active'
         },
         {
+          code: 'HYD-01',
+          name: 'Hyderabad Plant',
+          type: 'Manufacturing Plant',
+          address: { street: 'Phase II, HITEC City', city: 'Hyderabad', state: 'Telangana', country: 'India', postalCode: '500081' },
+          status: 'Active'
+        },
+        {
           code: 'MAA-01',
           name: 'Chennai Distribution Center',
           type: 'Distribution Center',
           address: { street: 'SIPCOT Industrial Park', city: 'Chennai', state: 'Tamil Nadu', country: 'India', postalCode: '600001' },
-          status: 'Active'
-        },
-        {
-          code: 'PUN-01',
-          name: 'Pune Facility',
-          type: 'R&D Center',
-          address: { street: 'Hinjawadi IT Park', city: 'Pune', state: 'Maharashtra', country: 'India', postalCode: '411057' },
           status: 'Active'
         }
       ];
@@ -96,14 +103,18 @@ class MasterDataBootstrapService {
         createdSites[s.code] = doc;
       }
 
-      // 2. Seed Warehouses linked to Sites
+      // 2. Seed Warehouses linked to Sites (Section 10: 1 Location -> 1 WH minimum. Default.)
       const warehouseDefs = [
-        { code: 'WH-HYD-RAW', name: 'Hyderabad Raw Materials Depot', siteId: createdSites['HYD-01']._id, type: 'Raw', status: 'Active' },
-        { code: 'WH-HYD-FG', name: 'Hyderabad Finished Goods Hub', siteId: createdSites['HYD-01']._id, type: 'FG', status: 'Active' },
-        { code: 'WH-HYD-WIP', name: 'Hyderabad WIP Staging', siteId: createdSites['HYD-01']._id, type: 'WIP', status: 'Active' },
-        { code: 'WH-BLR-RAW', name: 'Bangalore RM Store', siteId: createdSites['BLR-01']._id, type: 'Raw', status: 'Active' },
-        { code: 'WH-BLR-FG', name: 'Bangalore Dispatch Depot', siteId: createdSites['BLR-01']._id, type: 'FG', status: 'Active' },
-        { code: 'WH-MAA-DC', name: 'Chennai Central Distribution Warehouse', siteId: createdSites['MAA-01']._id, type: 'FG', status: 'Active' }
+        { code: 'WH-01', name: 'Mumbai Primary Store', siteId: createdSites['MUM-01']._id, type: 'Raw', isDefault: true, status: 'Active', location: 'Mumbai' },
+        { code: 'WH-02', name: 'Mumbai Secondary Hub', siteId: createdSites['MUM-01']._id, type: 'FG', isDefault: false, status: 'Active', location: 'Mumbai' },
+        { code: 'WH-PUN-01', name: 'Pune Primary Warehouse', siteId: createdSites['PUN-01']._id, type: 'Raw', isDefault: true, status: 'Active', location: 'Pune' },
+        { code: 'WH-PUN-03', name: 'Pune Storage Depot', siteId: createdSites['PUN-01']._id, type: 'FG', isDefault: false, status: 'Active', location: 'Pune' },
+        { code: 'WH-BLR-01', name: 'Bangalore Main Store', siteId: createdSites['BLR-01']._id, type: 'Raw', isDefault: true, status: 'Active', location: 'Bangalore' },
+        { code: 'WH-BLR-02', name: 'Bangalore Secondary Store', siteId: createdSites['BLR-01']._id, type: 'FG', isDefault: false, status: 'Active', location: 'Bangalore' },
+        { code: 'WH-BLR-04', name: 'Bangalore Deep Storage', siteId: createdSites['BLR-01']._id, type: 'General', isDefault: false, status: 'Active', location: 'Bangalore' },
+        { code: 'WH-HYD-RAW', name: 'Hyderabad Raw Materials Depot', siteId: createdSites['HYD-01']._id, type: 'Raw', isDefault: true, status: 'Active', location: 'Hyderabad' },
+        { code: 'WH-HYD-FG', name: 'Hyderabad Finished Goods Hub', siteId: createdSites['HYD-01']._id, type: 'FG', isDefault: false, status: 'Active', location: 'Hyderabad' },
+        { code: 'WH-MAA-DC', name: 'Chennai Central Distribution Warehouse', siteId: createdSites['MAA-01']._id, type: 'FG', isDefault: true, status: 'Active', location: 'Chennai' }
       ];
 
       const createdWarehouses = {};
@@ -387,6 +398,7 @@ class MasterDataBootstrapService {
               existingBom.bomNumber = bomNum;
               existingBom.components = components;
               existingBom.batchSize = 1000;
+              existingBom.expectedOutputQty = 1000;
               existingBom.batchUOM = 'pcs';
               existingBom.status = 'Active';
               await existingBom.save();
@@ -395,6 +407,7 @@ class MasterDataBootstrapService {
                 productId,
                 bomNumber: bomNum,
                 batchSize: 1000,
+                expectedOutputQty: 1000,
                 batchUOM: 'pcs',
                 status: 'Active',
                 components

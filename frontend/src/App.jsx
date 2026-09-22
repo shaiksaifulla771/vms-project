@@ -10,6 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MaterialsTab = lazy(() => import('./pages/masters/MaterialsTab'));
+const ProductsTab = lazy(() => import('./pages/masters/ProductsTab'));
 const VendorsTab = lazy(() => import('./pages/masters/VendorsTab'));
 const MPNMaster = lazy(() => import('./pages/masters/MPNMaster'));
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -181,6 +182,7 @@ const AppContent = () => {
     if (page === 'boms' || page === 'bom') navigate('/bom');
     else if (page === 'bom-new') navigate('/bom/new');
     else if (page === 'materials') navigate('/materials');
+    else if (page === 'products') navigate('/products');
     else if (page === 'vendors') navigate('/vendors');
     else if (page === 'mpns' || page === 'mpn') navigate('/mpns');
     else if (page === 'planning' || page === 'mrp') navigate('/planning');
@@ -218,6 +220,7 @@ const AppContent = () => {
             <Route path="/login" element={<Navigate to="/materials" replace />} />
             <Route path="/dashboard" element={<Navigate to="/materials" replace />} />
             <Route path="/materials/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><MaterialsTab /></ProtectedRoute>} />
+            <Route path="/products/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><ProductsTab /></ProtectedRoute>} />
             <Route path="/vendors/*" element={<ProtectedRoute roles={['Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'Warehouse Operator', 'ProcurementManager', 'Purchaser', 'Vendor', 'Planner', 'QC Inspector', 'Finance']}><VendorsTab /></ProtectedRoute>} />
             <Route path="/masters/*" element={<Navigate to="/materials" replace />} />
 

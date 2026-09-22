@@ -37,7 +37,12 @@ export default function BomRecipeEditor({
  // BOM Header state
  const [productId, setProductId] = useState(initialData?.productId?._id || initialData?.productId || '');
  const [batchSize, setBatchSize] = useState(initialData?.batchSize || 1);
+ const [expectedOutputQty, setExpectedOutputQty] = useState(initialData?.expectedOutputQty || initialData?.batchSize || 1);
  const [batchUOM, setBatchUOM] = useState(initialData?.batchUOM || 'kg');
+ const [siteId, setSiteId] = useState(initialData?.siteId?._id || initialData?.siteId || '');
+ const [warehouseId, setWarehouseId] = useState(initialData?.warehouseId?._id || initialData?.warehouseId || '');
+ const [sitesList, setSitesList] = useState([]);
+ const [warehousesList, setWarehousesList] = useState([]);
  const [effectiveDate, setEffectiveDate] = useState(
  initialData?.effectiveDate ? new Date(initialData.effectiveDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
  );
@@ -80,6 +85,17 @@ export default function BomRecipeEditor({
     }
   }, [productId, mpns, materials, isNew, initialData]);
 
+  const handleSiteChange = (newSiteId) => {
+    setSiteId(newSiteId);
+    if (newSiteId) {
+      const siteWhs = warehousesList.filter(w => String(w.siteId?._id || w.siteId) === String(newSiteId));
+      const defWh = siteWhs.find(w => w.isDefault) || siteWhs[0];
+      setWarehouseId(defWh ? defWh._id : '');
+    } else {
+      setWarehouseId('');
+    }
+  };
+
  useEffect(() => {
  // Fetch MPNs and Materials for dropdowns
  const fetchData = async () => {
@@ -92,6 +108,22 @@ export default function BomRecipeEditor({
  const fetchedMats = matRes.data?.data || [];
  setMpns(fetchedMpns);
  setMaterials(fetchedMats);
+  useEffect(() => {
+    // Fetch MPNs, Materials, Sites, and Warehouses
+    const fetchData = async () => {
+      try {
+        const [mpnRes, matRes, siteRes, whRes] = await Promise.all([
+          api.get('/api/mpns', { params: { status: 'All' } }),
+          api.get('/api/materials'),
+          api.get('/api/sites').catch(() => ({ data: { sites: [] } })),
+          api.get('/api/warehouses').catch(() => ({ data: { warehouses: [] } }))
+        ]);
+        const fetchedMpns = mpnRes.data?.data || [];
+        const fetchedMats = matRes.data?.data || [];
+        setMpns(fetchedMpns);
+        setMaterials(fetchedMats);
+        setSitesList(siteRes.data?.sites || siteRes.data?.data || []);
+        setWarehousesList(whRes.data?.warehouses || whRes.data?.data || []);
 
  // Auto-fetch manufacturer on initial load if productId is set
  if (productId && !manufacturer) {
@@ -107,6 +139,20 @@ export default function BomRecipeEditor({
  };
  fetchData();
  }, []);
+        // Auto-fetch manufacturer on initial load if productId is set
+        if (productId && !manufacturer) {
+          const mfr = resolveManufacturer(productId, fetchedMats, fetchedMpns);
+          if (mfr) {
+            setManufacturer(mfr);
+            setOriginalManufacturer(mfr);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+      }
+    };
+    fetchData();
+  }, []);
 
  // Unsaved changes guard
  useEffect(() => {
@@ -312,7 +358,10 @@ export default function BomRecipeEditor({
     const payload = {
       productId,
       batchSize: Number(batchSize),
+      expectedOutputQty: Number(expectedOutputQty) > 0 ? Number(expectedOutputQty) : Number(batchSize),
       batchUOM,
+      siteId: siteId || undefined,
+      warehouseId: warehouseId || undefined,
       status: status || 'Active',
       effectiveDate,
       components: components.map(c => ({
@@ -506,6 +555,46 @@ export default function BomRecipeEditor({
                 </select>
               </div>
               {(errors.batchSize || errors.batchUOM) && <p className="text-red-500 text-[11px] mt-0.5 font-semibold">{errors.batchSize || errors.batchUOM}</p>}
+            </div>
+
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Expected Output</label>
+              <div className="flex space-x-1">
+                <Input type="number" min="0.001" step="any" value={expectedOutputQty} onChange={e => setExpectedOutputQty(e.target.value)} className="w-full h-8 text-xs font-bold text-slate-900 flex-1" placeholder="Output qty..." />
+                <span className="h-8 px-2 bg-slate-100 border border-slate-300 rounded-md text-xs font-bold text-slate-600 flex items-center">{batchUOM}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Production Site</label>
+              <select
+                value={siteId}
+                onChange={e => handleSiteChange(e.target.value)}
+                className="w-full h-8 px-2 bg-white border border-slate-300 rounded-md text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              >
+                <option value="">All Plants (Global)</option>
+                {sitesList.map(s => (
+                  <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col xl:col-span-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Target Warehouse</label>
+              <select
+                value={warehouseId}
+                onChange={e => setWarehouseId(e.target.value)}
+                className="w-full h-8 px-2 bg-white border border-slate-300 rounded-md text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              >
+                <option value="">Default Warehouse</option>
+                {warehousesList
+                  .filter(w => !siteId || String(w.siteId?._id || w.siteId) === String(siteId))
+                  .map(w => (
+                    <option key={w._id} value={w._id}>
+                      {w.name} {w.isDefault ? '★ [Default]' : ''}
+                    </option>
+                  ))}
+              </select>
             </div>
 
             <div className="flex flex-col xl:col-span-1">

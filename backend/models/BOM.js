@@ -85,9 +85,28 @@ const BOMSchema = new mongoose.Schema({
     required: [true, 'Batch size is required'],
     min: [0.0001, 'Batch size must be greater than zero'],
   },
+  expectedOutputQty: {
+    type: Number,
+    min: [0, 'Expected output quantity cannot be negative'],
+    default: function () {
+      return this.batchSize || 1;
+    }
+  },
   batchUOM: {
     type: String,
     required: [true, 'Batch UOM is required'],
+  },
+  siteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+    required: false,
+    index: true,
+  },
+  warehouseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+    required: false,
+    index: true,
   },
   components: {
     type: [BOMComponentSchema],
@@ -160,6 +179,9 @@ const BOMSchema = new mongoose.Schema({
 
 // Pre-save: normalize qty→quantity, lossPercent→lossPercentage, and auto-resolve materialId from mpnId
 BOMSchema.pre('save', async function(next) {
+  if (this.expectedOutputQty === undefined || this.expectedOutputQty === null) {
+    this.expectedOutputQty = this.batchSize || 1;
+  }
   if (this.components && Array.isArray(this.components)) {
     for (const comp of this.components) {
       if (!comp.materialId && comp.mpnId) {

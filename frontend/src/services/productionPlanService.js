@@ -175,6 +175,12 @@ export const productionPlanService = {
   syncPlanProgress: async (id) => {
     const response = await api.post(`/production-plans/${id}/sync-progress`);
     return response.data;
+  },
+
+  // Simulate demand planning (Product + Demand Qty + Location)
+  simulatePlan: async (payload) => {
+    const response = await api.post('/production-plans/simulate', payload);
+    return response.data;
   }
 };
 

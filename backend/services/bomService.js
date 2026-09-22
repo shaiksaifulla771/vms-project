@@ -94,6 +94,7 @@ exports.getBOMs = async (query) => {
 
   const enrichedBoms = boms.map(b => ({ 
     ...b, 
+    expectedOutputQty: b.expectedOutputQty !== undefined && b.expectedOutputQty !== null ? b.expectedOutputQty : (b.batchSize || 1),
     cloneCount: cloneCountMap[b._id.toString()] || 0,
     mpnManufacturer: b.productId ? (mpnMap[b.productId._id?.toString()] || b.productId.manufacturer || b.manufacturer) : null
   }));

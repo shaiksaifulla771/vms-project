@@ -105,6 +105,9 @@ const InventoryItemSchema = new mongoose.Schema({
 
 // Sync balance, onHand, quantity, reserved, and available automatically
 InventoryItemSchema.pre('save', function (next) {
+  if ((!this.batchNumber || this.batchNumber === 'DEFAULT') && this.lotNumber) {
+    this.batchNumber = this.lotNumber;
+  }
   if (this.quantity !== undefined && this.quantity !== 0 && !this.balance && !this.onHand) {
     this.balance = this.quantity;
     this.onHand = this.quantity;

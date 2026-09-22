@@ -4,7 +4,14 @@ const {
   getInventoryTransactions,
   getInventorySummary,
   syncMissingSiteReferences,
-  createAdjustment
+  createAdjustment,
+  getLotStorageLedger,
+  inwardStock,
+  outwardStock,
+  getLotsForMaterial
+  getLotsForMaterial,
+  transferLotStock,
+  adjustLotStock
 } = require('../controllers/inventoryController');
 
 const {
@@ -22,6 +29,12 @@ router.use(protect);
 
 router.get('/', getInventoryBalances);
 router.get('/summary', getInventorySummary);
+router.get('/lot-ledger', getLotStorageLedger);
+router.get('/lots-for-material/:materialId', getLotsForMaterial);
+router.post('/inward', authorize('Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Inventory'), inwardStock);
+router.post('/outward', authorize('Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Inventory'), outwardStock);
+router.post('/transfer', authorize('Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Inventory'), transferLotStock);
+router.post('/adjust-lot', authorize('Admin', 'Inventory Manager', 'Warehouse', 'Warehouse Operator', 'Inventory'), adjustLotStock);
 router.post('/sync-sites', authorize('Admin'), syncMissingSiteReferences);
 router.get('/transactions', getInventoryTransactions);
 router.get('/ledger', getInventoryTransactions);

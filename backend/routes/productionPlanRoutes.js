@@ -34,6 +34,8 @@ const {
   matchProductionPlans,
   reverifyProductionPlan,
   overrideProductionPlan,
+  getPlan3TierSummary,
+  simulatePlanningDemand,
 } = require('../controllers/productionPlanController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -42,6 +44,7 @@ const router = express.Router();
 
 router.use(protect);
 
+router.post('/simulate', simulatePlanningDemand);
 router.get('/templates', getReusableTemplates);
 router.post('/match', authorize('Admin', 'Production Manager', 'Planner', 'Execution', 'Operator'), matchProductionPlans);
 router.post('/wizard', authorize('Admin', 'Production Manager', 'Planner'), createWizardPlan);
@@ -60,6 +63,8 @@ router
   .get(getProductionPlanById)
   .put(authorize('Admin', 'Production Manager', 'Planner'), updateProductionPlan)
   .patch(authorize('Admin', 'Production Manager', 'Planner'), updateProductionPlan);
+
+router.get('/:id/summary', getPlan3TierSummary);
 
 router.get('/:id/instances', getPlanInstances);
 router.post('/:id/instances', authorize('Admin', 'Production Manager', 'Planner'), generatePlanInstances);

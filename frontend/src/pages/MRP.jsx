@@ -11,6 +11,9 @@ import {
   Edit3, Eye, Layers, Calculator, Sliders, AlertCircle,
   Split, ChevronRight, Sparkles
 } from 'lucide-react';
+import BatchExecutionModal from '../components/production/BatchExecutionModal';
+import Plan3TierSummaryModal from '../components/production/Plan3TierSummaryModal';
+import DemandPlanningConsole from '../components/production/DemandPlanningConsole';
 
 
 const DEFAULT_OPERATIONAL_STAGES = [
@@ -73,6 +76,8 @@ export default function MRP() {
 
   // Navigation Tabs: 'dashboard' | 'unscheduled' | 'scheduled' | 'on_hold' | 'templates' | 'all_plans' | 'netting' | 'exceptions' | 'runs'
   const [viewTab, setViewTab] = useState('dashboard');
+  // Navigation Tabs: 'demand_planning' | 'dashboard' | 'unscheduled' | 'scheduled' | 'on_hold' | 'templates' | 'all_plans' | 'netting' | 'exceptions' | 'runs'
+  const [viewTab, setViewTab] = useState('demand_planning');
   const [planFilter, setPlanFilter] = useState('ALL');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,6 +103,10 @@ export default function MRP() {
 
   // Active Plan & Modal Control States
   const [activePlan, setActivePlan] = useState(null);
+  const [selectedPlanFor3Tier, setSelectedPlanFor3Tier] = useState(null);
+  const [is3TierModalOpen, setIs3TierModalOpen] = useState(false);
+  const [isBatchExecModalOpen, setIsBatchExecModalOpen] = useState(false);
+  const [batchExecPlan, setBatchExecPlan] = useState(null);
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
   const [isCreatePlanModalOpen, setIsCreatePlanModalOpen] = useState(false);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
@@ -767,8 +776,18 @@ export default function MRP() {
 
           <div className="flex items-center gap-2 shrink-0">
             <button
+              onClick={() => setViewTab('demand_planning')}
+              className={`px-3.5 py-2 ${viewTab === 'demand_planning' ? 'bg-indigo-700 ring-2 ring-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'} text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer`}
+              title="Demand Planning & Requirements Simulation (Blueprint Sheet 3)"
+            >
+              <Calculator className="h-3.5 w-3.5" />
+              <span>Demand Planning (Sheet 3)</span>
+            </button>
+
+            <button
               onClick={() => setIsRunModalOpen(true)}
               className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
+              className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
             >
               <Play className="h-3.5 w-3.5" />
               <span>Run MRP</span>
@@ -806,6 +825,18 @@ export default function MRP() {
               <span>Create Plan</span>
             </button>
 
+
+            <button
+              onClick={() => {
+                setBatchExecPlan(null);
+                setIsBatchExecModalOpen(true);
+              }}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
+              title="Execute Discrete Production Batch (Blueprint Sheet 1)"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Execute Batch (Sheet 1)</span>
+            </button>
 
             <button
               onClick={fetchData}
@@ -921,6 +952,7 @@ export default function MRP() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200/90 shadow-sm">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-thin">
           {[
+            ['demand_planning', 'Demand Planning (Sheet 3)', Calculator],
             ['dashboard', 'Dashboard', BarChart3],
             ['unscheduled', 'Unscheduled', Clock, summaryData?.unscheduled || plans.filter(p => (p.status || '').toUpperCase() === 'UNSCHEDULED').length],
             ['scheduled', 'Scheduled', CalendarClock, summaryData?.scheduled || plans.filter(p => (p.status || '').toUpperCase() === 'SCHEDULED').length],
@@ -935,6 +967,7 @@ export default function MRP() {
               key={id}
               onClick={() => setViewTab(id)}
               className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${viewTab === id
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${viewTab === id
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
@@ -954,6 +987,7 @@ export default function MRP() {
         {/* Filter & Search */}
         <div className="flex items-center gap-2 shrink-0">
           {viewTab !== 'dashboard' && viewTab !== 'runs' && (
+          {viewTab !== 'dashboard' && viewTab !== 'runs' && viewTab !== 'demand_planning' && (
             <select
               value={priorityFilter}
               onChange={e => setPriorityFilter(e.target.value)}
@@ -981,6 +1015,23 @@ export default function MRP() {
       </div>
 
       {/* 4. PRODUCTION PLANS MATRIX TABLE */}
+      {/* 4. DEMAND PLANNING CONSOLE (SHEET 3 BLUEPRINT) */}
+      {viewTab === 'demand_planning' && (
+        <DemandPlanningConsole
+          materials={materials}
+          sites={sites}
+          warehouses={warehouses}
+          boms={boms}
+          activeSiteId={activeSiteId}
+          activeWarehouseId={activeWarehouseId}
+          onPlanCreated={(newPlan) => {
+            fetchData();
+            setViewTab('all_plans');
+          }}
+        />
+      )}
+
+      {/* 5. PRODUCTION PLANS MATRIX TABLE */}
       {['dashboard', 'unscheduled', 'scheduled', 'on_hold', 'templates', 'all_plans'].includes(viewTab) && (
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -1016,7 +1067,13 @@ export default function MRP() {
                         <tr className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3 px-3.5">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-black text-slate-900">{plan.planNumber}</span>
+                              <button
+                                onClick={() => { setSelectedPlanFor3Tier(plan); setIs3TierModalOpen(true); }}
+                                className="font-mono font-black text-blue-600 hover:text-blue-800 hover:underline text-left cursor-pointer"
+                                title="Click to view Blueprint Sheet 3: 3-Tier Plan Summary"
+                              >
+                                {plan.planNumber}
+                              </button>
                               {plan.isSeries && (
                                 <button
                                   onClick={() => togglePlanInstances(plan._id)}
@@ -1144,6 +1201,16 @@ export default function MRP() {
                                   <Edit3 className="w-3 h-3" /> Edit
                                 </button>
                               )}
+
+                              {/* Sheet 3: 3-Tier Summary (Plan, Batches, Netting) */}
+                              <button
+                                onClick={() => { setSelectedPlanFor3Tier(plan); setIs3TierModalOpen(true); }}
+                                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
+                                title="Open 3-Tier Plan Summary & Execute Discrete Batches (Sheet 3)"
+                              >
+                                <Layers className="w-3 h-3 text-blue-600" />
+                                <span>3-Tier Summary</span>
+                              </button>
 
                               {/* Batch Copy & Reuse (Unified) */}
                               <button
@@ -2620,6 +2687,34 @@ export default function MRP() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* SHEET 3: 3-TIER PLAN SUMMARY MODAL */}
+      {is3TierModalOpen && selectedPlanFor3Tier && (
+        <Plan3TierSummaryModal
+          isOpen={is3TierModalOpen}
+          onClose={() => {
+            setIs3TierModalOpen(false);
+            setSelectedPlanFor3Tier(null);
+          }}
+          planId={selectedPlanFor3Tier._id}
+          onPlanUpdated={fetchData}
+        />
+      )}
+
+      {/* SHEET 1: BATCH EXECUTION MODAL */}
+      {isBatchExecModalOpen && (
+        <BatchExecutionModal
+          isOpen={isBatchExecModalOpen}
+          onClose={() => {
+            setIsBatchExecModalOpen(false);
+            setBatchExecPlan(null);
+          }}
+          initialPlan={batchExecPlan}
+          onExecutionComplete={() => {
+            fetchData();
+          }}
+        />
       )}
 
       {/* ========================================================================= */}

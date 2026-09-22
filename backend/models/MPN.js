@@ -81,6 +81,35 @@ const MPNSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  siteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+    required: false,
+    index: true,
+  },
+  warehouseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+    required: false,
+    index: true,
+  },
+  specifications: {
+    type: String,
+    trim: true,
+    default: '',
+  },
+  certifications: [
+    {
+      name: { type: String, trim: true },
+      validUntil: { type: Date },
+      docUrl: { type: String, trim: true },
+    }
+  ],
+  controlTrackDecision: {
+    type: String,
+    enum: ['Approved', 'Restricted', 'Under Review', 'Quarantine', ''],
+    default: 'Approved',
+  },
   status: {
     type: String,
     enum: ['Active', 'Inactive', 'Draft', 'Deleted'],

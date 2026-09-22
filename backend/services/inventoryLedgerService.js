@@ -19,6 +19,8 @@ class InventoryLedgerService {
       siteId,
       batchNumber = 'DEFAULT',
       lotNumber,
+      mfgDate,
+      expiryDate,
       quantity,
       type,
       referenceId,
@@ -58,10 +60,16 @@ class InventoryLedgerService {
 
         const executeOperations = async (activeSession) => {
           const opts = activeSession ? { session: activeSession } : {};
+          const effectiveBatch = (batchNumber === 'DEFAULT' && lotNumber) ? lotNumber : batchNumber;
           
-          let item = await InventoryItem.findOne({ materialId, warehouseId, batchNumber }, null, opts);
+          let item = null;
+          if (lotNumber) {
+            item = await InventoryItem.findOne({ materialId, warehouseId, $or: [{ lotNumber }, { batchNumber: lotNumber }] }, null, opts);
+          }
           if (!item) {
-            // Fallback: lookup any existing item for this material & warehouse
+            item = await InventoryItem.findOne({ materialId, warehouseId, batchNumber: effectiveBatch }, null, opts);
+          }
+          if (!item && !lotNumber) {
             item = await InventoryItem.findOne({ materialId, warehouseId }, null, opts);
           }
 
@@ -81,8 +89,10 @@ class InventoryLedgerService {
               materialId,
               warehouseId,
               siteId: resolvedSiteId,
-              batchNumber,
-              lotNumber,
+              batchNumber: effectiveBatch,
+              lotNumber: lotNumber || (effectiveBatch !== 'DEFAULT' ? effectiveBatch : undefined),
+              mfgDate: mfgDate || undefined,
+              expiryDate: expiryDate || undefined,
               onHand: 0,
               available: 0,
               reserved: 0,
@@ -92,6 +102,10 @@ class InventoryLedgerService {
               reservedBalance: 0,
               version: 1
             });
+          } else {
+            if (lotNumber && !item.lotNumber) item.lotNumber = lotNumber;
+            if (mfgDate && !item.mfgDate) item.mfgDate = mfgDate;
+            if (expiryDate && !item.expiryDate) item.expiryDate = expiryDate;
           }
 
           // Auto-sync available balance if onHand exists but available was zero/uninitialized

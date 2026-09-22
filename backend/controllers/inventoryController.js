@@ -11,6 +11,7 @@ const MPN = require('../models/MPN');
 const { escapeRegex } = require('../utils/regex');
 const authz = require('../utils/authz');
 const scopeResolver = require('../utils/scopeResolver');
+const InventoryLedgerService = require('../services/inventoryLedgerService');
 
 /**
  * Resolves BOM Unit Costs & Pricing for an array of materials.
@@ -559,6 +560,464 @@ exports.createAdjustment = async (req, res, next) => {
       success: true,
       message: isAdmin ? `Stock adjustment ${adjNumber} approved & inventory ledger updated` : `Stock adjustment request ${adjNumber} submitted for approval (Created By: ${req.user ? req.user.username : 'User'})`,
       data: adjustment
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get high-density Lot Storage Ledger (Matching Blueprint Sheet 2)
+// @route   GET /api/inventory/lot-ledger
+// @access  Private
+exports.getLotStorageLedger = async (req, res, next) => {
+  try {
+    const filter = {};
+    if (req.query.siteId && req.query.siteId !== 'ALL') {
+      filter.siteId = req.query.siteId;
+    }
+    if (req.query.warehouseId && req.query.warehouseId !== 'ALL') {
+      filter.warehouseId = req.query.warehouseId;
+    }
+
+    const items = await InventoryItem.find(filter)
+      .populate('materialId', 'name code unit type subcategory')
+      .populate('warehouseId', 'name code type isDefault siteId')
+      .populate('siteId', 'name code')
+      .sort({ 'materialId': 1, 'expiryDate': 1 })
+      .lean();
+
+    const validItems = items.filter(i => i.materialId && i.warehouseId);
+
+    // Fetch active MPNs to map vendors and MPN codes
+    const matIds = [...new Set(validItems.map(i => i.materialId._id.toString()))];
+    const mpnDocs = await MPN.find({ materialId: { $in: matIds }, status: 'Active' })
+      .populate('vendorId', 'name vendorCode')
+      .lean();
+
+    const mpnByMatId = {};
+    for (const m of mpnDocs) {
+      const k = m.materialId.toString();
+      if (!mpnByMatId[k]) {
+        mpnByMatId[k] = {
+          mpnCode: m.mpnCode || m.manufacturerPartNumber,
+          vendorName: m.vendorId?.name || m.manufacturerName || 'Enterprise Supplier',
+        };
+      }
+    }
+
+    // Build detailed lot rows
+    const lots = validItems.map(item => {
+      const matIdStr = item.materialId._id.toString();
+      const mpnInfo = mpnByMatId[matIdStr] || { mpnCode: item.materialId.code, vendorName: 'Standard Vendor' };
+      const effectiveLot = item.lotNumber || (item.batchNumber !== 'DEFAULT' ? item.batchNumber : 'LOT-INITIAL');
+
+      return {
+        _id: item._id,
+        materialId: item.materialId._id,
+        mpn: mpnInfo.mpnCode,
+        classification: item.materialId.type || 'Raw Material',
+        material: item.materialId.name,
+        vendor: mpnInfo.vendorName,
+        location: item.siteId?.name || (item.warehouseId?.location) || 'Primary Site',
+        siteCode: item.siteId?.code || 'SITE',
+        wh: item.warehouseId?.code || item.warehouseId?.name,
+        warehouseId: item.warehouseId?._id,
+        lotNo: effectiveLot,
+        mfgDate: item.mfgDate || item.createdAt,
+        expDate: item.expiryDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        qty: item.onHand || item.balance || 0,
+        available: item.available || 0,
+        uom: item.uom || item.materialId.unit || 'kg',
+      };
+    });
+
+    // Build aggregate summary by Material / MPN
+    const aggMap = {};
+    for (const lot of lots) {
+      const key = lot.materialId.toString();
+      if (!aggMap[key]) {
+        aggMap[key] = {
+          materialId: lot.materialId,
+          mpn: lot.mpn,
+          classification: lot.classification,
+          material: lot.material,
+          vendor: lot.vendor,
+          location: 'All',
+          wh: 'All',
+          lotCount: 0,
+          totalQty: 0,
+          uom: lot.uom,
+          lots: [],
+        };
+      }
+      aggMap[key].lotCount += 1;
+      aggMap[key].totalQty += lot.qty;
+      aggMap[key].lots.push(lot);
+    }
+
+    const aggregates = Object.values(aggMap);
+
+    res.status(200).json({
+      success: true,
+      count: lots.length,
+      aggregates,
+      lots,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Add Stock (Inward Entry) — Section 4 (Raw & Finished Goods)
+// @route   POST /api/inventory/inward
+// @access  Private
+exports.inwardStock = async (req, res, next) => {
+  try {
+    const {
+      materialId,
+      siteId,
+      warehouseId,
+      quantity,
+      lotNumber,
+      mfgDate,
+      expiryDate,
+      reason,
+      uom
+    } = req.body;
+
+    if (!materialId || !quantity || Number(quantity) <= 0) {
+      return res.status(400).json({ success: false, error: 'Please provide materialId and valid quantity > 0' });
+    }
+
+    // Auto-resolve default warehouse from Location if not directly provided (Section 10 rule)
+    let targetWhId = warehouseId;
+    if (!targetWhId && siteId) {
+      const defWh = await Warehouse.findOne({ siteId, isDefault: true, status: 'Active' })
+        || await Warehouse.findOne({ siteId, status: 'Active' });
+      if (defWh) targetWhId = defWh._id;
+    }
+    if (!targetWhId) {
+      const fallbackWh = await Warehouse.findOne({ status: 'Active' });
+      if (fallbackWh) targetWhId = fallbackWh._id;
+    }
+
+    if (!targetWhId) {
+      return res.status(400).json({ success: false, error: 'No active warehouse found for selected location' });
+    }
+
+    const effectiveLot = lotNumber || `LOT-${Date.now()}`;
+    const tx = await InventoryLedgerService.recordTransaction({
+      materialId,
+      warehouseId: targetWhId,
+      siteId: siteId || undefined,
+      quantity: Number(quantity),
+      type: 'GRN',
+      lotNumber: effectiveLot,
+      batchNumber: effectiveLot,
+      mfgDate: mfgDate ? new Date(mfgDate) : new Date(),
+      expiryDate: expiryDate ? new Date(expiryDate) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      reason: reason || 'Initial stock inward entry',
+      userId: req.user ? req.user.id : null,
+      sourceDocType: 'StockInward',
+      referenceId: `INW-${Date.now()}`
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Stock successfully added (${quantity} ${uom || 'units'}) with Lot ${effectiveLot}`,
+      data: tx
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Remove Stock (Outward Entry) with Mandatory Lot Selection — Section 4
+// @route   POST /api/inventory/outward
+// @access  Private
+exports.outwardStock = async (req, res, next) => {
+  try {
+    const {
+      materialId,
+      warehouseId,
+      lotNumber,
+      quantity,
+      reason
+    } = req.body;
+
+    if (!materialId || !lotNumber) {
+      return res.status(400).json({ success: false, error: 'Mandatory: You must select a specific Lot # during removal (FIFO tracking)' });
+    }
+
+    const removeQty = Number(quantity);
+    if (!removeQty || removeQty <= 0) {
+      return res.status(400).json({ success: false, error: 'Please provide a valid removal quantity > 0' });
+    }
+
+    // Verify lot exists and has sufficient stock
+    const query = { materialId, $or: [{ lotNumber }, { batchNumber: lotNumber }] };
+    if (warehouseId) query.warehouseId = warehouseId;
+    const lotItem = await InventoryItem.findOne(query);
+
+    if (!lotItem) {
+      return res.status(404).json({ success: false, error: `Lot ${lotNumber} not found in inventory` });
+    }
+
+    if (lotItem.available < removeQty) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient stock in Lot ${lotNumber}. Requested: ${removeQty}, Available: ${lotItem.available}`
+      });
+    }
+
+    const tx = await InventoryLedgerService.recordTransaction({
+      materialId,
+      warehouseId: lotItem.warehouseId,
+      siteId: lotItem.siteId,
+      quantity: removeQty,
+      type: 'Issue',
+      lotNumber,
+      batchNumber: lotNumber,
+      reason: reason || 'Stock removal / disposal',
+      userId: req.user ? req.user.id : null,
+      sourceDocType: 'StockOutward',
+      referenceId: `OUT-${Date.now()}`
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Stock successfully removed (${removeQty} units) from Lot ${lotNumber}`,
+      data: tx
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Get active lots for a material sorted by FIFO (expiryDate asc)
+// @route   GET /api/inventory/lots-for-material/:materialId
+// @access  Private
+exports.getLotsForMaterial = async (req, res, next) => {
+  try {
+    const filter = {
+      materialId: req.params.materialId,
+      onHand: { $gt: 0 }
+    };
+    if (req.query.warehouseId) filter.warehouseId = req.query.warehouseId;
+    if (req.query.siteId) filter.siteId = req.query.siteId;
+
+    const lots = await InventoryItem.find(filter)
+      .populate('warehouseId', 'name code')
+      .populate('siteId', 'name code')
+      .sort({ expiryDate: 1, createdAt: 1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: lots.length,
+      data: lots.map(l => ({
+        _id: l._id,
+        lotNumber: l.lotNumber || l.batchNumber,
+        warehouse: l.warehouseId?.code || l.warehouseId?.name,
+        warehouseId: l.warehouseId?._id,
+        site: l.siteId?.name || l.siteId?.code,
+        mfgDate: l.mfgDate,
+        expiryDate: l.expiryDate,
+        onHand: l.onHand || l.balance || 0,
+        available: l.available || 0,
+        uom: l.uom || 'kg'
+      }))
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Transfer stock between warehouses preserving Lot #, Mfg Date, and Expiry Date
+// @route   POST /api/inventory/transfer
+exports.transferLotStock = async (req, res, next) => {
+  try {
+    const {
+      materialId,
+      lotNumber,
+      fromWarehouseId,
+      toWarehouseId,
+      sourceWarehouseId,
+      destinationWarehouseId,
+      quantity,
+      reason,
+      notes
+    } = req.body;
+
+    const sourceWh = fromWarehouseId || sourceWarehouseId;
+    const destWh = toWarehouseId || destinationWarehouseId;
+
+    if (!materialId || !lotNumber || !sourceWh || !destWh || !quantity || Number(quantity) <= 0) {
+      return res.status(400).json({ success: false, error: 'Please provide material, lot, source warehouse, destination warehouse, and positive quantity' });
+    }
+
+    if (String(sourceWh) === String(destWh)) {
+      return res.status(400).json({ success: false, error: 'Source and Destination warehouses must be different' });
+    }
+
+    const transferQty = Number(quantity);
+
+    // Verify origin lot
+    const originItem = await InventoryItem.findOne({
+      materialId,
+      warehouseId: sourceWh,
+      $or: [{ lotNumber }, { batchNumber: lotNumber }]
+    });
+
+    if (!originItem) {
+      return res.status(404).json({ success: false, error: `Lot ${lotNumber} not found in source warehouse` });
+    }
+
+    if (originItem.available < transferQty) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient stock in source lot ${lotNumber}. Available: ${originItem.available}, Requested: ${transferQty}`
+      });
+    }
+
+    const destinationWhDoc = await Warehouse.findById(destWh);
+    if (!destinationWhDoc) {
+      return res.status(404).json({ success: false, error: 'Destination warehouse not found' });
+    }
+
+    const transferRef = `TRF-${Date.now()}`;
+
+    // 1. Debit Source Warehouse
+    const txOut = await InventoryLedgerService.recordTransaction({
+      materialId,
+      warehouseId: sourceWh,
+      siteId: originItem.siteId,
+      quantity: transferQty,
+      type: 'Transfer',
+      lotNumber,
+      batchNumber: lotNumber,
+      reason: reason || `Inter-warehouse transfer to ${destinationWhDoc.name}`,
+      userId: req.user ? req.user.id : null,
+      sourceDocType: 'StockTransfer',
+      referenceId: transferRef
+    });
+
+    // 2. Credit Destination Warehouse with SAME Lot #, Mfg Date, Expiry Date
+    const txIn = await InventoryLedgerService.recordTransaction({
+      materialId,
+      warehouseId: destWh,
+      siteId: destinationWhDoc.siteId,
+      quantity: transferQty,
+      type: 'GRN',
+      lotNumber,
+      batchNumber: lotNumber,
+      mfgDate: originItem.mfgDate,
+      expiryDate: originItem.expiryDate,
+      reason: reason || `Inter-warehouse transfer from source WH`,
+      userId: req.user ? req.user.id : null,
+      sourceDocType: 'StockTransfer',
+      referenceId: transferRef
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Stock transfer of ${transferQty} units of Lot ${lotNumber} completed successfully. Ref: ${transferRef}`,
+      data: { transferRef, txOut, txIn }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Adjust lot stock count (physical reconciliation) or edit lot metadata
+// @route   POST /api/inventory/adjust-lot
+exports.adjustLotStock = async (req, res, next) => {
+  try {
+    const {
+      materialId,
+      warehouseId,
+      lotNumber,
+      newQuantity,
+      newExpiryDate,
+      newMfgDate,
+      reason,
+      notes
+    } = req.body;
+
+    if (!materialId || !lotNumber || !warehouseId) {
+      return res.status(400).json({ success: false, error: 'Material, warehouse, and lotNumber are required' });
+    }
+
+    const item = await InventoryItem.findOne({
+      materialId,
+      warehouseId,
+      $or: [{ lotNumber }, { batchNumber: lotNumber }]
+    });
+
+    if (!item) {
+      return res.status(404).json({ success: false, error: `Lot ${lotNumber} not found in warehouse` });
+    }
+
+    // Update metadata if provided
+    if (newExpiryDate) item.expiryDate = new Date(newExpiryDate);
+    if (newMfgDate) item.mfgDate = new Date(newMfgDate);
+    await item.save();
+
+    let tx = null;
+    // If quantity is adjusted
+    if (newQuantity !== undefined && newQuantity !== null && String(newQuantity).trim() !== '') {
+      const targetQty = Number(newQuantity);
+      if (isNaN(targetQty) || targetQty < 0) {
+        return res.status(400).json({ success: false, error: 'New quantity must be a non-negative number' });
+      }
+
+      const diff = targetQty - item.onHand;
+      if (diff !== 0) {
+        if (!reason) {
+          return res.status(400).json({ success: false, error: 'A reason is required when adjusting stock quantities' });
+        }
+
+        if (diff > 0) {
+          // Increase stock
+          tx = await InventoryLedgerService.recordTransaction({
+            materialId,
+            warehouseId,
+            siteId: item.siteId,
+            quantity: diff,
+            type: 'Adjustment',
+            lotNumber,
+            batchNumber: lotNumber,
+            mfgDate: item.mfgDate,
+            expiryDate: item.expiryDate,
+            reason: reason || 'Physical count reconciliation (increase)',
+            userId: req.user ? req.user.id : null,
+            sourceDocType: 'PhysicalAudit',
+            referenceId: `ADJ-${Date.now()}`
+          });
+        } else {
+          // Decrease stock
+          const decreaseQty = Math.abs(diff);
+          tx = await InventoryLedgerService.recordTransaction({
+            materialId,
+            warehouseId,
+            siteId: item.siteId,
+            quantity: decreaseQty,
+            type: 'Issue',
+            lotNumber,
+            batchNumber: lotNumber,
+            reason: reason || 'Physical count reconciliation (decrease)',
+            userId: req.user ? req.user.id : null,
+            sourceDocType: 'PhysicalAudit',
+            referenceId: `ADJ-${Date.now()}`
+          });
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Lot ${lotNumber} updated successfully.`,
+      data: { item, tx }
     });
   } catch (err) {
     next(err);

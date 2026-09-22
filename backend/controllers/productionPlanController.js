@@ -2089,7 +2089,8 @@ exports.overrideProductionPlan = asyncHandler(async (req, res, next) => {
 
   const currentUserId = req.user.id || req.user._id;
   plan.status = 'APPROVED';
-  plan.overrideDetails = {
+  plan.overrideApproval = {
+    isOverridden: true,
     overriddenBy: currentUserId,
     overriddenAt: new Date(),
     justification: justification.trim(),
@@ -2103,7 +2104,6 @@ exports.overrideProductionPlan = asyncHandler(async (req, res, next) => {
 
   await plan.save();
 
-  // Write immutable audit log entry
   try {
     await AuditLog.create({
       entityType: 'ProductionPlan',
@@ -2130,5 +2130,310 @@ exports.overrideProductionPlan = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get 3-Tier Plan Summary (Sheet 3: Plan Summary, Batch Summary, Material Summary)
+// @route   GET /api/production-plans/:id/summary
+// @access  Private
+exports.getPlan3TierSummary = asyncHandler(async (req, res, next) => {
+  const plan = await ProductionPlan.findById(req.params.id)
+    .populate('productId', 'name code unit')
+    .populate('bomId')
+    .populate('siteId', 'name code')
+    .populate('warehouseId', 'name code')
+    .populate('ingredients.material', 'name code unit');
+  if (!plan) return res.status(404).json({ success: false, code: 'PLAN_NOT_FOUND', error: 'Plan not found' });
 
+  const executedOrders = await ProductionOrder.find({
+    $or: [{ planId: plan._id }, { sourcePlanNumber: plan.planNumber }]
+  }).lean();
 
+  const noOfExecuted = executedOrders.filter(o => o.status === 'Completed').length;
+  const targetOutputQty = plan.totalPlans || plan.quantity || 1000;
+  const batchSize = plan.bomId?.batchSize || 1000;
+  const totalBatches = Math.max(1, Math.ceil(targetOutputQty / batchSize));
+  const noToBeExecuted = Math.max(0, totalBatches - noOfExecuted);
+
+  // 1. Plan Summary
+  const planSummary = [{
+    product: plan.productId?.name || plan.productName || 'Finished Goods Product',
+    productCode: plan.productId?.code || plan.productCode,
+    noOfBatches: totalBatches,
+    targetOutputQty,
+    noOfExecuted,
+    noToBeExecuted,
+    status: plan.status,
+    uom: plan.bomId?.batchUOM || 'kg'
+  }];
+
+  // 2. Batch Summary
+  const batchSummary = [];
+  for (let i = 1; i <= totalBatches; i++) {
+    const existingOrder = executedOrders[i - 1];
+    const batchNo = existingOrder?.batchNumber || `${plan.planNumber}-B${String(i).padStart(2, '0')}`;
+    const mfgDate = existingOrder?.mfgDate || new Date(Date.now() + (i - 1) * 7 * 24 * 60 * 60 * 1000);
+    const expDate = existingOrder?.expiryDate || new Date(Date.now() + ((i - 1) * 7 + 365) * 24 * 60 * 60 * 1000);
+    const batchQty = Math.min(batchSize, targetOutputQty - (i - 1) * batchSize);
+
+    batchSummary.push({
+      batchIndex: i,
+      product: plan.productId?.name || plan.productName,
+      batchNo,
+      mfgDate,
+      expDate,
+      qty: batchQty,
+      isExecuted: !!(existingOrder && existingOrder.status === 'Completed'),
+      orderId: existingOrder?._id || null,
+      status: existingOrder?.status || 'Scheduled'
+    });
+  }
+
+  // 3. Material Summary (Requirements vs Availability with Short/Long)
+  const MPN = require('../models/MPN');
+  const InventoryItem = require('../models/InventoryItem');
+
+  const materialSummary = [];
+  const ingredients = plan.ingredients || [];
+  
+  for (const ing of ingredients) {
+    const matId = ing.material?._id || ing.material || ing.materialId;
+    if (!matId) continue;
+
+    const mpnDoc = await MPN.findOne({ materialId: matId, status: 'Active' })
+      .populate('vendorId', 'name')
+      .lean();
+
+    const invQuery = { materialId: matId };
+    if (plan.warehouseId) invQuery.warehouseId = plan.warehouseId;
+    const invItems = await InventoryItem.find(invQuery).lean();
+    const qtyAvail = invItems.reduce((acc, it) => acc + (it.onHand || it.balance || 0), 0);
+    const qtyReq = ing.totalQuantity || ing.quantity || (ing.quantityPerPlan * targetOutputQty);
+    const diff = qtyAvail - qtyReq;
+
+    materialSummary.push({
+      materialId: matId,
+      material: ing.material?.name || ing.materialName || 'Raw Material',
+      materialCode: ing.material?.code || ing.materialCode,
+      mpn: mpnDoc?.mpnCode || mpnDoc?.manufacturerPartNumber || ing.materialCode,
+      vendor: mpnDoc?.vendorId?.name || mpnDoc?.manufacturerName || 'Primary Supplier',
+      qtyReq: Math.round(qtyReq * 100) / 100,
+      qtyAvail: Math.round(qtyAvail * 100) / 100,
+      diff: Math.round(diff * 100) / 100,
+      status: diff >= 0 ? 'Surplus' : 'Shortage',
+      uom: ing.uom || 'kg'
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      planId: plan.planNumber,
+      location: plan.siteId?.name || 'All Locations',
+      planSummary,
+      batchSummary,
+      materialSummary
+    }
+  });
+});
+
+// @desc    Simulate Demand & Requirements Planning (Inputs: Product + Demand Qty + Location)
+// @route   POST /api/production-plans/simulate
+// @access  Private
+exports.simulatePlanningDemand = asyncHandler(async (req, res, next) => {
+  const { productId, demandQty, quantity, targetQty, siteId, warehouseId } = req.body;
+  const targetProductId = productId || req.body.product;
+  const targetDemandQty = parseFloat(demandQty || quantity || targetQty || 0);
+
+  if (!targetProductId) {
+    return res.status(400).json({ success: false, error: 'Product ID is required for planning simulation.' });
+  }
+
+  if (isNaN(targetDemandQty) || targetDemandQty <= 0) {
+    return res.status(400).json({ success: false, error: 'Demand quantity must be greater than 0.' });
+  }
+
+  const product = await Material.findById(targetProductId);
+  if (!product) {
+    return res.status(404).json({ success: false, error: 'Product material not found in master records.' });
+  }
+
+  // 1. Fetch active BOM for Product & Location
+  let bom = null;
+  if (siteId && siteId !== 'ALL' && siteId !== '') {
+    bom = await BOM.findOne({
+      $or: [{ productId: product._id }, { product: product._id }],
+      siteId: siteId,
+      status: { $ne: 'Deleted' }
+    }).populate('components.materialId').populate('components.mpnId');
+  }
+
+  if (!bom) {
+    bom = await BOM.findOne({
+      $or: [{ productId: product._id }, { product: product._id }],
+      status: 'Active'
+    }).populate('components.materialId').populate('components.mpnId')
+    || await BOM.findOne({
+      $or: [{ productId: product._id }, { product: product._id }],
+      status: { $ne: 'Deleted' }
+    }).populate('components.materialId').populate('components.mpnId');
+  }
+
+  if (!bom || !bom.components || bom.components.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: `No active BOM recipe found for product "${product.name}" (${product.code}). Please configure a BOM recipe first.`
+    });
+  }
+
+  // 2. Compute Batch parameters
+  const batchSize = bom.batchSize || 1000;
+  const expectedOutputQty = bom.expectedOutputQty || batchSize;
+  const batchUOM = bom.batchUOM || product.unit || 'kg';
+  const requiredBatches = Math.max(1, Math.ceil(targetDemandQty / expectedOutputQty));
+  const targetOutputQty = requiredBatches * expectedOutputQty;
+
+  // Resolve warehouse / site filter for inventory check
+  const Warehouse = require('../models/Warehouse');
+  const Site = require('../models/Site');
+  const MPN = require('../models/MPN');
+  let locationLabel = 'All Locations';
+  let whConditions = [];
+
+  if (warehouseId && warehouseId !== 'ALL' && warehouseId !== 'all') {
+    whConditions.push({ warehouseId });
+    const whDoc = await Warehouse.findById(warehouseId);
+    if (whDoc) locationLabel = whDoc.name;
+  } else if (siteId && siteId !== 'ALL' && siteId !== 'all') {
+    const siteWhs = await Warehouse.find({ siteId }).select('_id');
+    const whIds = siteWhs.map(w => w._id);
+    whConditions.push({
+      $or: [
+        { siteId: siteId },
+        { warehouseId: { $in: whIds } }
+      ]
+    });
+    const siteDoc = await Site.findById(siteId);
+    if (siteDoc) locationLabel = siteDoc.name;
+  }
+
+  const invItemQuery = whConditions.length > 0 ? { $and: whConditions } : {};
+
+  // 3. Explode components & check stock
+  const materialSummary = [];
+  let totalShortageCount = 0;
+  let minBatchesPossible = Infinity;
+  let bottleneckMaterial = null;
+  let bottleneckMpn = null;
+  let bottleneckDeficit = 0;
+
+  for (const comp of bom.components) {
+    const matDoc = comp.materialId;
+    const matId = matDoc?._id || comp.materialId;
+    if (!matId) continue;
+
+    const qtyPerBatch = comp.quantity || 0;
+    const grossReq = qtyPerBatch * requiredBatches;
+
+    const stockItems = await InventoryItem.find({
+      materialId: matId,
+      ...invItemQuery
+    }).lean();
+
+    const qtyAvail = stockItems.reduce((acc, it) => acc + (it.quantityOnHand || it.onHand || it.balance || it.quantity || 0), 0);
+    const shortage = Math.max(0, grossReq - qtyAvail);
+    const surplus = Math.max(0, qtyAvail - grossReq);
+    const diff = qtyAvail - grossReq;
+
+    if (shortage > 0) totalShortageCount++;
+
+    const batchesPossible = qtyPerBatch > 0 ? Math.floor(qtyAvail / qtyPerBatch) : 999999;
+    if (batchesPossible < minBatchesPossible) {
+      minBatchesPossible = batchesPossible;
+      bottleneckMaterial = matDoc?.name || comp.materialName || 'Raw Material';
+      bottleneckMpn = comp.mpnId?.mpnCode || comp.mpnCode || matDoc?.code;
+      bottleneckDeficit = shortage;
+    }
+
+    let mpnDoc = comp.mpnId;
+    if (!mpnDoc || !mpnDoc.vendorId) {
+      mpnDoc = await MPN.findOne({ materialId: matId, status: 'Active' })
+        .populate('vendorId', 'name')
+        .lean();
+    }
+
+    materialSummary.push({
+      materialId: matId,
+      material: matDoc?.name || comp.materialName || 'Raw Material',
+      materialCode: matDoc?.code || comp.materialCode || '',
+      mpn: mpnDoc?.mpnCode || mpnDoc?.manufacturerPartNumber || comp.mpnCode || matDoc?.code || 'MPN-STD',
+      vendor: mpnDoc?.vendorId?.name || mpnDoc?.manufacturerName || 'Primary Supplier',
+      qtyPerBatch: Math.round(qtyPerBatch * 100) / 100,
+      qtyReq: Math.round(grossReq * 100) / 100,
+      qtyAvail: Math.round(qtyAvail * 100) / 100,
+      diff: Math.round(diff * 100) / 100,
+      shortage: Math.round(shortage * 100) / 100,
+      surplus: Math.round(surplus * 100) / 100,
+      status: diff >= 0 ? 'Surplus' : 'Shortage',
+      uom: comp.uom || matDoc?.unit || 'kg',
+      batchesPossible
+    });
+  }
+
+  if (minBatchesPossible === Infinity) minBatchesPossible = 0;
+  const maxProducibleQty = minBatchesPossible * expectedOutputQty;
+
+  // 4. Batch Summary
+  const batchSummary = [];
+  for (let i = 1; i <= requiredBatches; i++) {
+    const batchNo = `SIM-${product.code || 'BCH'}-${String(i).padStart(2, '0')}`;
+    const mfgDate = new Date(Date.now() + (i - 1) * 7 * 86400000);
+    const expDate = new Date(Date.now() + ((i - 1) * 7 + 365) * 86400000);
+    batchSummary.push({
+      batchIndex: i,
+      product: product.name,
+      batchNo,
+      mfgDate,
+      expDate,
+      qty: Math.min(batchSize, targetOutputQty - (i - 1) * batchSize),
+      status: 'Planned'
+    });
+  }
+
+  // 5. Plan Summary
+  const planSummary = [{
+    product: product.name,
+    productCode: product.code,
+    demandQty: targetDemandQty,
+    noOfBatches: requiredBatches,
+    targetOutputQty,
+    noOfExecuted: 0,
+    noToBeExecuted: requiredBatches,
+    batchSize,
+    expectedOutputQty,
+    uom: batchUOM,
+    bomId: bom._id,
+    bomNumber: bom.bomNumber || bom.code || 'BOM-01'
+  }];
+
+  const availabilityStatus = totalShortageCount === 0 ? 'READY' : (minBatchesPossible > 0 ? 'PARTIAL' : 'SHORTAGE');
+
+  res.status(200).json({
+    success: true,
+    data: {
+      planId: `SIM-${Date.now().toString().slice(-6)}`,
+      location: locationLabel,
+      siteId: siteId || null,
+      warehouseId: warehouseId || null,
+      status: availabilityStatus,
+      planSummary,
+      batchSummary,
+      materialSummary,
+      maxProducible: {
+        maxBatches: minBatchesPossible,
+        maxProducibleQty,
+        bottleneckMaterial: bottleneckMaterial || 'None',
+        bottleneckMpn: bottleneckMpn || '',
+        bottleneckDeficit: Math.round(bottleneckDeficit * 100) / 100,
+        uom: batchUOM
+      }
+    }
+  });
+});

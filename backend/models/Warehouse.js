@@ -58,6 +58,11 @@ const WarehouseSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  isDefault: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
   deactivatedAt: {
     type: Date,
     default: null,

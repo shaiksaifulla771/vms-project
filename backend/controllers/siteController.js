@@ -37,9 +37,11 @@ exports.getSites = async (req, res) => {
     
     const sitesWithCounts = sites.map(site => {
       const siteWhs = warehouses.filter(w => w.siteId && w.siteId.toString() === site._id.toString());
+      const defaultWh = siteWhs.find(w => w.isDefault) || siteWhs[0] || null;
       return {
         ...site.toObject(),
         warehousesCount: siteWhs.length,
+        defaultWarehouse: defaultWh ? { _id: defaultWh._id, code: defaultWh.code, name: defaultWh.name } : null,
       };
     });
 
@@ -89,7 +91,20 @@ exports.createSite = async (req, res) => {
       createdBy: req.user ? req.user._id : null,
     });
 
-    res.status(201).json({ success: true, site });
+    // Section 10 Rule: 1 Location -> 1 WH minimum (Default)
+    const defaultWhCode = `WH-${code.toUpperCase()}-01`;
+    const defaultWarehouse = await Warehouse.create({
+      code: defaultWhCode,
+      name: `${name} Primary Warehouse`,
+      siteId: site._id,
+      parentSiteId: site._id,
+      type: 'General',
+      isDefault: true,
+      status: 'Active',
+      location: name,
+    });
+
+    res.status(201).json({ success: true, site, defaultWarehouse });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
