@@ -784,7 +784,6 @@ export default function MRP() {
 
             <button
               onClick={() => setIsRunModalOpen(true)}
-              className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
               className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
             >
               <Play className="h-3.5 w-3.5" />
