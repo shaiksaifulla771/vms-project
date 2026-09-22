@@ -382,18 +382,6 @@ const VendorsTab = () => {
     return baseOpts;
   }, [dynamicVendorClassifications]);
 
-  const availableVendorSubcategories = useMemo(() => {
-    if (!formData.category || !dynamicVendorClassifications.length) return [];
-    const root = dynamicVendorClassifications.find(c => 
-      c.name.toLowerCase() === (formData.category || '').toLowerCase()
-    );
-    if (!root) return [];
-    return dynamicVendorClassifications.filter(c => {
-      const pId = typeof c.parentId === 'object' ? c.parentId?._id : c.parentId;
-      return String(pId) === String(root._id);
-    });
-  }, [formData.category, dynamicVendorClassifications]);
-
   const fetchVendors = async () => {
     setLoading(true);
     setError(null);

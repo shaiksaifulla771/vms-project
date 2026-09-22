@@ -74,8 +74,6 @@ export default function MRP() {
   usePageMeta('MRP & Production Planning', 'Multi-level BOM explosion, time-phased netting, and discrete lot sizing.');
   const { activeSiteId, activeWarehouseId, activeSite, activeWarehouse } = useSiteContext();
 
-  // Navigation Tabs: 'dashboard' | 'unscheduled' | 'scheduled' | 'on_hold' | 'templates' | 'all_plans' | 'netting' | 'exceptions' | 'runs'
-  const [viewTab, setViewTab] = useState('dashboard');
   // Navigation Tabs: 'demand_planning' | 'dashboard' | 'unscheduled' | 'scheduled' | 'on_hold' | 'templates' | 'all_plans' | 'netting' | 'exceptions' | 'runs'
   const [viewTab, setViewTab] = useState('demand_planning');
   const [planFilter, setPlanFilter] = useState('ALL');
@@ -966,7 +964,6 @@ export default function MRP() {
             <button
               key={id}
               onClick={() => setViewTab(id)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${viewTab === id
               className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${viewTab === id
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
@@ -986,7 +983,6 @@ export default function MRP() {
 
         {/* Filter & Search */}
         <div className="flex items-center gap-2 shrink-0">
-          {viewTab !== 'dashboard' && viewTab !== 'runs' && (
           {viewTab !== 'dashboard' && viewTab !== 'runs' && viewTab !== 'demand_planning' && (
             <select
               value={priorityFilter}

@@ -19,7 +19,6 @@ import {
   Filter,
   FileSpreadsheet,
   Clock,
-  Boxes
   Boxes,
   ArrowRightLeft,
   Edit3,
@@ -592,11 +591,9 @@ export default function LotStorageLedger({ onRefreshParent }) {
           <button
             onClick={exportToExcel}
             className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 flex items-center space-x-1 transition-colors"
-            title="Export Sheet 2 to Excel"
             title="Export to Excel"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export Excel</span>
             <span>Excel</span>
           </button>
 
@@ -694,7 +691,6 @@ export default function LotStorageLedger({ onRefreshParent }) {
                       {/* EXPANDED GRANULAR LOT SUB-ROWS */}
                       {isExpanded && row.lots && row.lots.length > 0 && (
                         <tr className="bg-slate-50/80">
-                          <td colSpan={9} className="p-2.5 pl-10">
                           <td colSpan={10} className="p-2.5 pl-10">
                             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                               <table className="w-full text-left text-[11px]">
