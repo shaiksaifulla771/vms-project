@@ -16,7 +16,7 @@ export default function TransactionsPage() {
     { key: 'user_name', label: 'User' },
     { key: 'txn_type', label: 'Type', value: (r) => TXN_LABEL[r.txn_type] || r.txn_type },
     { key: 'mpn_code', label: 'MPN' },
-    { key: 'material_name', label: 'Material' },
+    { key: 'material_name', label: 'Material', className: 'whitespace-normal min-w-[180px]' },
     { key: 'lot_no', label: 'Lot No', render: (r) => <Link className="text-accent hover:underline" onClick={(e) => e.stopPropagation()} to={`/reports/traceability?mpn_id=${r.mpn_id}&lot_no=${encodeURIComponent(r.lot_no)}`}>{r.lot_no}</Link>, value: (r) => r.lot_no },
     { key: 'qty_change', label: 'Qty Change', align: 'right', render: (r) => `${r.qty_change > 0 ? '+' : ''}${fmtQty(r.qty_change)}`, value: (r) => Number(r.qty_change) },
     { key: 'new_balance', label: 'New Balance', align: 'right', render: (r) => fmtQty(r.new_balance), value: (r) => Number(r.new_balance) },

@@ -77,7 +77,7 @@ export const materialOptions = (rows) => rows.map((m) => ({ value: m.id, label: 
 export const mpnOptions = (rows) => rows.map((p) => ({ value: p.id, label: `${p.mpn_code} - ${p.material_name}`, sub: `${p.material_code} · ${p.uom}${p.vendors?.[0] ? ` · ${p.vendors[0].vendor_name}` : ''}` }));
 
 /** Location + Warehouse pair of selects */
-export function LocationWarehouse({ locationId, warehouseId, onChange, required, disabledLocation }) {
+export function LocationWarehouse({ locationId, warehouseId, onChange, required, disabledLocation, allowAllWarehouses }) {
   const { locations } = useApp();
   const loc = locations.find((l) => l.id === locationId);
   return (
@@ -88,7 +88,7 @@ export function LocationWarehouse({ locationId, warehouseId, onChange, required,
           onChange={(e) => {
             const l = locations.find((x) => x.id === e.target.value);
             const def = l?.warehouses.find((w) => w.is_default) || l?.warehouses[0];
-            onChange(e.target.value, def?.id || '');
+            onChange(e.target.value, allowAllWarehouses ? '' : (def?.id || ''));
           }}>
           <option value="">Select location</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
@@ -97,7 +97,7 @@ export function LocationWarehouse({ locationId, warehouseId, onChange, required,
       <label className="block">
         <span className="label">Warehouse{required && <span className="text-danger"> *</span>}</span>
         <select className="input" value={warehouseId || ''} disabled={!loc} onChange={(e) => onChange(locationId, e.target.value)}>
-          <option value="">Select warehouse</option>
+          <option value="">{allowAllWarehouses ? 'All warehouses' : 'Select warehouse'}</option>
           {(loc?.warehouses || []).filter((w) => w.is_active !== false).map((w) => <option key={w.id} value={w.id}>{w.code} - {w.name}</option>)}
         </select>
       </label>

@@ -33,7 +33,7 @@ export default function StockPage() {
   const columns = [
     { key: 'mpn_code', label: 'MPN' },
     { key: 'material_code', label: 'Material Code' },
-    { key: 'material_name', label: 'Material Name' },
+    { key: 'material_name', label: 'Material Name', className: 'whitespace-normal min-w-[180px]' },
     { key: 'classification', label: 'Classification', render: (r) => CLASS_LABEL[r.classification], value: (r) => CLASS_LABEL[r.classification] },
     { key: 'vendor_name', label: 'Vendor' },
     { key: 'location_code', label: 'Location' },

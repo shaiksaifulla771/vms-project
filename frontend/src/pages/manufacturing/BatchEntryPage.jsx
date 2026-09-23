@@ -206,7 +206,7 @@ export default function BatchEntryPage() {
                   const over = lot && Number(r.actual_input_qty) > Number(lot.quantity);
                   return (
                     <tr key={r.key}>
-                      <td className="td">{r.extra ? <span className="text-ink-muted">↳ </span> : ''}{r.material_code} - {r.material_name}</td>
+                      <td className="td whitespace-normal min-w-[200px]">{r.extra ? <span className="text-ink-muted">↳ </span> : ''}{r.material_code} - {r.material_name}</td>
                       <td className="td">
                         <select className={`input w-64 ${over ? 'border-danger' : ''}`} value={r.inventory_id} onChange={(e) => setRow(i, { inventory_id: e.target.value })}>
                           <option value="">{r.lots.length ? 'Select lot' : 'No stock at location'}</option>

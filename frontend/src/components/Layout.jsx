@@ -54,8 +54,8 @@ function ScopeBar() {
 export default function Layout() {
   const { company, toast, isAdmin } = useApp();
   return (
-    <div className="h-full flex flex-col">
-      <header className="h-11 shrink-0 flex items-center justify-between border-b border-line px-4 bg-white no-print">
+    <div className="min-h-full flex flex-col">
+      <header className="sticky top-0 z-30 h-11 shrink-0 flex items-center justify-between border-b border-line px-4 bg-white no-print">
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="" className="h-5 w-5" />
           <span className="font-semibold">{company?.name || 'ERP'}</span>
@@ -63,8 +63,8 @@ export default function Layout() {
         </div>
         <ScopeBar />
       </header>
-      <div className="flex-1 flex min-h-0">
-        <nav className="w-52 shrink-0 border-r border-line bg-panel overflow-y-auto py-2 no-print">
+      <div className="flex-1 flex">
+        <nav className="w-52 shrink-0 border-r border-line bg-panel py-2 no-print sticky top-11 self-start h-[calc(100vh-2.75rem)] overflow-y-auto">
           {NAV.map((g) => (
             <div key={g.title} className="mb-2">
               <div className="flex items-center gap-2 px-4 py-1 text-xs2 font-semibold uppercase tracking-wide text-ink-muted">
@@ -83,7 +83,7 @@ export default function Layout() {
             <Cog size={13} /> Settings {isAdmin ? '' : '(view)'}
           </NavLink>
         </nav>
-        <main className="flex-1 min-w-0 overflow-y-auto bg-white">
+        <main className="flex-1 min-w-0 bg-white">
           <Outlet />
         </main>
       </div>

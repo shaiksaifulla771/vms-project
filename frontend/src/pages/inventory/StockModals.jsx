@@ -91,7 +91,7 @@ export function OutwardModal({ lot: presetLot, onClose, onDone }) {
   const materials = useMaterials();
   const def = useDefaultScope();
   const [materialId, setMaterialId] = useState(presetLot?.material_id || '');
-  const [loc, setLoc] = useState({ l: presetLot?.location_id || def.locationId, w: presetLot?.warehouse_id || def.warehouseId });
+  const [loc, setLoc] = useState({ l: presetLot?.location_id || def.locationId, w: presetLot?.warehouse_id || '' });
   const [lots, setLots] = useState([]);
   const [lotId, setLotId] = useState(presetLot?.id || '');
   const [qty, setQty] = useState('');
@@ -121,7 +121,7 @@ export function OutwardModal({ lot: presetLot, onClose, onDone }) {
       <Field label="Material" required>
         <Combobox value={materialId} onChange={(v) => { setMaterialId(v); setLotId(''); }} options={materialOptions(materials)} disabled={!!presetLot} />
       </Field>
-      <LocationWarehouse locationId={loc.l} warehouseId={loc.w} disabledLocation={!!presetLot}
+      <LocationWarehouse locationId={loc.l} warehouseId={loc.w} disabledLocation={!!presetLot} allowAllWarehouses
         onChange={(l, w) => setLoc({ l, w })} />
       <div className="text-xs text-ink-muted">Available lots (FEFO - earliest expiry first). Expired lots cannot be issued.</div>
       <div className="card max-h-56 overflow-y-auto">
