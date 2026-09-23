@@ -1,0 +1,114 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { api, qs } from '../lib/api';
+import { useApp } from '../lib/app-context';
+
+/** Searchable single select for long lists. options: [{value, label, sub}] */
+export function Combobox({ value, onChange, options, placeholder = 'Select...', disabled }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  const selected = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  const list = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    const l = n ? options.filter((o) => `${o.label} ${o.sub || ''}`.toLowerCase().includes(n)) : options;
+    return l.slice(0, 200);
+  }, [q, options]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" disabled={disabled} onClick={() => { setOpen((x) => !x); setQ(''); }}
+        className="input flex items-center justify-between text-left">
+        <span className={`truncate ${selected ? '' : 'text-ink-faint'}`}>{selected ? selected.label : placeholder}</span>
+        <ChevronDown size={14} className="text-ink-faint shrink-0" />
+      </button>
+      {open && (
+        // preventDefault: stop an enclosing <label> from re-clicking the toggle button
+        <div className="absolute z-50 mt-1 w-full min-w-[280px] bg-white border border-line-strong rounded shadow"
+          onClick={(e) => e.preventDefault()}>
+          <input autoFocus className="input border-0 border-b rounded-none" placeholder="Type to search"
+            value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="max-h-64 overflow-y-auto">
+            {list.length === 0 && <div className="px-3 py-2 text-ink-muted">No matches</div>}
+            {list.map((o) => (
+              <button type="button" key={o.value} onClick={() => { onChange(o.value, o); setOpen(false); }}
+                className={`block w-full text-left px-3 py-1.5 hover:bg-accent-soft ${o.value === value ? 'bg-accent-soft' : ''}`}>
+                <div className="truncate">{o.label}</div>
+                {o.sub && <div className="text-xs2 text-ink-muted truncate">{o.sub}</div>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function useMaterials(params = {}) {
+  const [rows, setRows] = useState([]);
+  const key = JSON.stringify(params);
+  useEffect(() => {
+    api.get(`/materials${qs(params)}`, { scoped: false }).then(setRows).catch(() => setRows([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return rows;
+}
+
+export function useMpns() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api.get('/mpns?status=ACTIVE', { scoped: false }).then(setRows).catch(() => setRows([])); }, []);
+  return rows;
+}
+
+export function useVendors() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api.get('/vendors', { scoped: false }).then(setRows).catch(() => setRows([])); }, []);
+  return rows;
+}
+
+export const materialOptions = (rows) => rows.map((m) => ({ value: m.id, label: `${m.code} - ${m.name}`, sub: `${m.classification.replace(/_/g, ' ')} · ${m.uom}` }));
+export const mpnOptions = (rows) => rows.map((p) => ({ value: p.id, label: `${p.mpn_code} - ${p.material_name}`, sub: `${p.material_code} · ${p.uom}${p.vendors?.[0] ? ` · ${p.vendors[0].vendor_name}` : ''}` }));
+
+/** Location + Warehouse pair of selects */
+export function LocationWarehouse({ locationId, warehouseId, onChange, required, disabledLocation, allowAllWarehouses }) {
+  const { locations } = useApp();
+  const loc = locations.find((l) => l.id === locationId);
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <label className="block">
+        <span className="label">Location{required && <span className="text-danger"> *</span>}</span>
+        <select className="input" value={locationId || ''} disabled={disabledLocation}
+          onChange={(e) => {
+            const l = locations.find((x) => x.id === e.target.value);
+            const def = l?.warehouses.find((w) => w.is_default) || l?.warehouses[0];
+            onChange(e.target.value, allowAllWarehouses ? '' : (def?.id || ''));
+          }}>
+          <option value="">Select location</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="label">Warehouse{required && <span className="text-danger"> *</span>}</span>
+        <select className="input" value={warehouseId || ''} disabled={!loc} onChange={(e) => onChange(locationId, e.target.value)}>
+          <option value="">{allowAllWarehouses ? 'All warehouses' : 'Select warehouse'}</option>
+          {(loc?.warehouses || []).filter((w) => w.is_active !== false).map((w) => <option key={w.id} value={w.id}>{w.code} - {w.name}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+/** Default location / WH for new documents: the global selector, else the first location's default WH. */
+export function useDefaultScope() {
+  const { locations, locationId, warehouseId } = useApp();
+  const loc = locations.find((l) => l.id === locationId) || null;
+  const wh = warehouseId || loc?.warehouses.find((w) => w.is_default)?.id || '';
+  return { locationId: loc?.id || '', warehouseId: loc ? wh : '' };
+}
