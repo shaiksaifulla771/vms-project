@@ -16,6 +16,7 @@ const NAV = [
   { title: 'Inventory', icon: Boxes, items: [
     { to: '/inventory/stock', label: 'Stock' },
     { to: '/inventory/transfers', label: 'Transfers' },
+    { to: '/inventory/stock-counts', label: 'Physical Stock Count' },
   ] },
   { title: 'Planning', icon: ClipboardList, items: [
     { to: '/planning/plans', label: 'Plans' },
@@ -27,7 +28,6 @@ const NAV = [
   ] },
   { title: 'Reports', icon: FileBarChart, items: [
     { to: '/reports/stock-balance', label: 'Stock Balance' },
-    { to: '/reports/physical-sheet', label: 'Physical Stock Sheet' },
     { to: '/reports/transactions', label: 'Transactions' },
     { to: '/reports/traceability', label: 'Traceability' },
   ] },

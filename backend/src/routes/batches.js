@@ -7,6 +7,7 @@ const { loadBom } = require('./boms');
 const { getSettings } = require('../services/settings');
 const { postStock, outputMpn } = require('../services/stock');
 const v = require('../utils/validate');
+const planning = require('../services/planning');
 
 const BATCH_SELECT = `
   select b.*, m.code as product_code, m.name as product_name, p.mpn_code as output_mpn_code,
@@ -97,7 +98,9 @@ router.get('/prefill', h(async (req, res) => {
   const expected = bom ? Number(bom.expected_output_qty) : 0;
   let plannedOutput = v.num(req.query.planned_output, 'Planned output', { min: 0 });
   if (plannedOutput === null) {
-    plannedOutput = plan ? Math.min(expected || Number(plan.remaining_qty), Number(plan.remaining_qty)) : expected;
+    // Batch plans: every batch is one full BOM batch.
+    plannedOutput = plan && plan.plan_mode !== 'BATCHES'
+      ? Math.min(expected || Number(plan.remaining_qty), Number(plan.remaining_qty)) : expected;
   }
   const scale = expected > 0 ? plannedOutput / expected : 0;
 
@@ -118,7 +121,9 @@ router.get('/prefill', h(async (req, res) => {
   const mfg = new Date().toISOString().slice(0, 10);
   res.json({
     plan: plan ? { id: plan.id, plan_no: plan.plan_no, remaining_qty: Number(plan.remaining_qty),
-      target_qty: Number(plan.target_qty), executed_qty: Number(plan.executed_qty) } : null,
+      target_qty: Number(plan.target_qty), executed_qty: Number(plan.executed_qty), plan_mode: plan.plan_mode,
+      target_batches: plan.target_batches, executed_batches: (await db.query(
+        'select count(*)::int as n from public.batches where plan_id = $1', [plan.id])).rows[0].n } : null,
     product: { id: product.id, code: product.code, name: product.name, uom: product.uom },
     location_id: locationId,
     warehouse_id: plan?.warehouse_id || bom?.warehouse_id || null,
@@ -267,6 +272,7 @@ router.post('/', h(async (req, res) => {
                             status = case when target_qty <= executed_qty + $2 then 'COMPLETED' else 'IN_PROGRESS' end,
                             updated_by = $3
                       where id = $1`, [plan.id, actualOutput, req.user.id]);
+      await planning.refreshPlanStatus(c, plan.id);
     }
     return batch.id;
   });
@@ -306,6 +312,7 @@ router.put('/:id', h(async (req, res) => {
                                        when target_qty <= greatest(executed_qty + $2, 0) then 'COMPLETED'
                                        when greatest(executed_qty + $2, 0) > 0 then 'IN_PROGRESS' else 'OPEN' end,
                          updated_by = $3 where id = $1`, [batch.plan_id, outDelta, req.user.id]);
+        await planning.refreshPlanStatus(c, batch.plan_id);
       }
     }
     await c.query(`update public.batches set actual_output_qty = $2, variance_reason = $3,

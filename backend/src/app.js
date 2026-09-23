@@ -37,6 +37,7 @@ function createApp() {
   app.use('/api/plans', require('./routes/plans'));
   app.use('/api/batches', require('./routes/batches'));
   app.use('/api/reports', require('./routes/reports'));
+  app.use('/api/stock-counts', require('./routes/stockCounts'));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 

@@ -81,4 +81,31 @@ function plannedBatches(remaining, expectedOutput, startIndex = 1) {
   return out;
 }
 
-module.exports = { requiredBatches, lineRequirement, usableStock, materialSummary, plannedBatches };
+/**
+ * Plans by number of batches: status follows executed batches vs planned batches
+ * (actual output per batch can differ from expected, so quantity is not used).
+ * Quantity plans are left as they are.
+ */
+async function refreshPlanStatus(c, planId) {
+  await c.query(`
+    update public.plans p
+       set status = case when x.n >= p.target_batches then 'COMPLETED'
+                         when x.n > 0 or p.executed_qty > 0 then 'IN_PROGRESS' else 'OPEN' end
+      from (select count(*)::int as n from public.batches where plan_id = $1) x
+     where p.id = $1 and p.plan_mode = 'BATCHES' and p.status <> 'CANCELLED'`, [planId]);
+}
+
+/** Batch figures for any plan (quantity plans derive them from the BOM expected output). */
+function batchFigures(plan, expectedOutput, executedBatches) {
+  if (plan.plan_mode === 'BATCHES') {
+    const target = Number(plan.target_batches);
+    return { target_batches: target, executed_batches: executedBatches, remaining_batches: Math.max(target - executedBatches, 0) };
+  }
+  return {
+    target_batches: requiredBatches(plan.target_qty, expectedOutput),
+    executed_batches: executedBatches,
+    remaining_batches: requiredBatches(plan.remaining_qty, expectedOutput),
+  };
+}
+
+module.exports = { requiredBatches, lineRequirement, usableStock, materialSummary, plannedBatches, refreshPlanStatus, batchFigures };

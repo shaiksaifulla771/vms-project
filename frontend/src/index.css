@@ -34,3 +34,11 @@ body {
   main { padding: 0 !important; overflow: visible !important; }
 }
 .print-only { display: none; }
+
+/* Always-visible scrollbars on data grids (the "sliding bar") */
+.scroll-box { scrollbar-width: auto; scrollbar-color: #9ca3af #f3f4f6; }
+.scroll-box::-webkit-scrollbar { width: 12px; height: 12px; }
+.scroll-box::-webkit-scrollbar-track { background: #f3f4f6; }
+.scroll-box::-webkit-scrollbar-thumb { background: #b6bcc6; border-radius: 6px; border: 2px solid #f3f4f6; }
+.scroll-box::-webkit-scrollbar-thumb:hover { background: #8b93a0; }
+@media print { .scroll-box { max-height: none !important; } }

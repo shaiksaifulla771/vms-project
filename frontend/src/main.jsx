@@ -24,7 +24,8 @@ import BomEditPage from './pages/masters/BomEditPage';
 import BomDetailPage from './pages/masters/BomDetailPage';
 import LocationsPage from './pages/masters/LocationsPage';
 import StockBalancePage from './pages/reports/StockBalancePage';
-import PhysicalSheetPage from './pages/reports/PhysicalSheetPage';
+import StockCountsPage from './pages/inventory/StockCountsPage';
+import StockCountPage from './pages/inventory/StockCountPage';
 import TransactionsPage from './pages/reports/TransactionsPage';
 import TraceabilityPage from './pages/reports/TraceabilityPage';
 import SettingsPage from './pages/SettingsPage';
@@ -73,7 +74,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="masters/boms/:id/edit" element={<BomEditPage />} />
               <Route path="masters/locations" element={<LocationsPage />} />
               <Route path="reports/stock-balance" element={<StockBalancePage />} />
-              <Route path="reports/physical-sheet" element={<PhysicalSheetPage />} />
+              <Route path="inventory/stock-counts" element={<StockCountsPage />} />
+              <Route path="inventory/stock-counts/:id" element={<StockCountPage />} />
+              <Route path="reports/physical-sheet" element={<Navigate to="/inventory/stock-counts" replace />} />
               <Route path="reports/transactions" element={<TransactionsPage />} />
               <Route path="reports/traceability" element={<TraceabilityPage />} />
               <Route path="settings" element={<SettingsPage />} />

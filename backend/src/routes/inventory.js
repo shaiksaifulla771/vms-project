@@ -127,6 +127,16 @@ router.get('/ledger', h(async (req, res) => {
     ['(l.mpn_code ilike ? or l.material_code ilike ? or l.material_name ilike ? or l.lot_no ilike ? or l.reference_id ilike ?)',
       req.query.q ? `%${req.query.q}%` : null],
   ]);
+  // ?page=N[&page_size=M] returns { rows, total, page, page_size }; without it the plain list (max 5000) as before.
+  if (req.query.page !== undefined) {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const size = Math.min(Math.max(parseInt(req.query.page_size || '100', 10) || 100, 10), 1000);
+    const [list, total] = await Promise.all([
+      query(`select * from public.v_ledger l ${clause} order by l.txn_no desc limit ${size} offset ${(page - 1) * size}`, params),
+      query(`select count(*)::int as n from public.v_ledger l ${clause}`, params),
+    ]);
+    return res.json({ rows: list.rows, total: total.rows[0].n, page, page_size: size });
+  }
   const limit = Math.min(parseInt(req.query.limit || '1000', 10) || 1000, 5000);
   const { rows } = await query(`select * from public.v_ledger l ${clause} order by l.txn_no desc limit ${limit}`, params);
   res.json(rows);
