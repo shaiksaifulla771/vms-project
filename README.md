@@ -1,67 +1,79 @@
-# VMS — Vendor Management System
+# ERP - Inventory, Planning, Manufacturing
 
-A vendor/material/inventory/manufacturing management system: vendor lifecycle, MPN (material↔vendor) mapping and pricing, BOM, inventory (lot-tracked), production planning and batch execution, procurement (Purchase Request → Purchase Order → Receipt), quality control, and governance (audit trail, RBAC, approvals).
-
-## Current status: mid-migration
-
-The app **runs today** on the original stack (below) with all modules functional. A migration to **Supabase Postgres** is **in progress** — the target database schema is designed, built, and applied, but the application code has not yet been switched over. See [`docs/schema.sql`](docs/schema.sql) and [`docs/migrations/`](docs/migrations/) for the target schema, and [`docs/manufacturing-inventory-implementation-plan.md`](docs/manufacturing-inventory-implementation-plan.md) for the manufacturing/inventory/planning domain spec driving it.
-
-Do not assume the backend talks to Postgres yet — check `backend/config/db.js` (still Mongoose/MongoDB as of this PR).
-
-## Tech stack
-
-**Running today:**
-- Backend: Node.js, Express, Mongoose (MongoDB)
-- Frontend: React (Vite)
-- Auth: custom JWT + bcrypt, with Firebase Admin SDK integration
-- Background jobs: BullMQ (Redis), with in-memory fallback when Redis isn't configured
-
-**Migration target:**
-- Database: PostgreSQL via Supabase (project ref `hqpkgutythloohankart`), with Row Level Security on every business table
-- ORM/client: Prisma (`backend/prisma/schema.prisma`, introspected from the live database — the SQL migration files are the source of truth, not Prisma Migrate)
-- Auth: Supabase Auth (JWT verified against Supabase's JWKS), replacing the custom JWT/bcrypt/Firebase stack
-
-## Project structure
+A stateful, database-driven, Zoho-style ERP. React (Vite, Tailwind) + Express REST API + PostgreSQL (Supabase).
+No login: every request runs as an "acting user" chosen in the top bar.
 
 ```
-backend/    Express API (Mongoose today; Prisma/Postgres client generated, not yet wired in)
-  models/       Mongoose schemas (current data layer)
-  controllers/  Route handlers
-  services/     Business logic
-  prisma/       Generated Prisma schema (introspected from Supabase)
-frontend/   React app (Vite)
-docs/
-  schema.sql              Full Postgres schema (single-source-of-truth for a fresh Supabase deployment)
-  migrations/              Numbered SQL migrations (0001-0007 from the original schema build, 0008-0014 extending it)
-  manufacturing-inventory-implementation-plan.md   Domain spec for manufacturing/inventory/planning
+Master Data -> MPN -> BOM -> Inventory Entry -> Centralized Inventory -> Planning -> Manufacturing -> Auto Inventory Update
 ```
 
-## Setup
+## Run it
 
-### Backend
+Requirements: Node 18+, a PostgreSQL database (Supabase project `vms`, or local Postgres 15+).
+
 ```bash
-cd backend
-npm install
-cp .env.example .env   # fill in MONGO_URI, JWT_SECRET, etc.
-npm run dev             # http://localhost:5000
-```
-If no local MongoDB is reachable, `backend/config/db.js` automatically falls back to an in-memory MongoDB instance for local development (seeds demo master data on boot).
-
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev              # http://localhost:3000 (or next available port)
+npm run install-all
+cp backend/.env.example backend/.env      # set DATABASE_URL (see below)
+npm run dev                               # API http://localhost:5000, UI http://localhost:3000
 ```
 
-### Tests
-```bash
-cd backend
-npm run test:all
-```
+**Supabase connection:** Supabase Dashboard -> Project `vms` -> Connect -> Session pooler URI, e.g.
+`postgresql://postgres.hqpkgutythloohankart:<DB_PASSWORD>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres`.
+Put it only in `backend/.env` (git-ignored). SSL is enabled automatically. The Supabase database already has the
+schema and your migrated data; the API applies any newer migration on start (`AUTO_MIGRATE=true`).
 
-## Database (Postgres/Supabase) — migration in progress
+**Local Postgres instead:** set `DATABASE_URL=postgres://postgres:postgres@localhost:5432/erp_dev`, then
+`npm run migrate --prefix backend` and `npm run seed:demo --prefix backend` for demo data.
 
-The Supabase project already has the full target schema applied (48 tables in `public`, RLS-enabled, following the conventions documented at the top of `docs/schema.sql`). To point the backend at it once the application-layer migration lands, `backend/.env` needs `DATABASE_URL` (pooled connection, runtime) and `DIRECT_URL` (session/direct connection, migrations) — see the comments in `backend/prisma/schema.prisma` and `backend/prisma7.config.ts` for how these are wired.
+**Tests:** `npm test` - 21 end-to-end API tests against a throw-away database (`TEST_DATABASE_URL`, wiped on every run).
 
-Until the backend rewrite is complete, treat the Postgres schema as the target, not the live data store.
+## Architecture
+
+| Layer | Where |
+|---|---|
+| Master data | `companies`, `locations`, `warehouses`, `vendors`, `materials`, `mpns`, `mpn_vendors`, `boms`, `bom_lines`, `app_settings` |
+| Transactions | `stock_transfers`, `plans`, `plan_events`, `batches`, `batch_inputs` |
+| Logic | `backend/src/routes/*`, `backend/src/services/planning.js`, DB function `erp.post_stock()` |
+| Storage | `inventory` (Centralized Inventory, unique MPN + Location + WH + Lot), `stock_ledger` (immutable Audit Ledger) |
+
+Rules enforced **in the database** (not only in the API):
+
+- `inventory` can only change through `erp.post_stock()` (trigger guard); quantity `>= 0` (negative stock impossible).
+- Every stock change writes a `stock_ledger` row with the new balance; the ledger rejects UPDATE/DELETE/TRUNCATE.
+- Warehouses must belong to the location used (composite foreign keys); one default WH per location.
+- Expired lots cannot be issued (`OUTWARD`) or consumed (`MFG_CONSUMPTION`).
+- One ACTIVE BOM per product + location; BOM versions are immutable once active (revise into a new draft).
+- Multi-step operations (batch execution, transfer completion, batch edits) run in one DB transaction:
+  any failure rolls back every change. Concurrent issues on one lot are serialised by row locks.
+
+Roles are the existing Supabase `user_profiles.role` values: `admin` (everything, incl. stock adjustments,
+plan-target changes, variance-tolerance override, settings), `editor` (day-to-day transactions), `viewer` (read only).
+
+## Workflows
+
+1. **Inventory** - Stock page: Inward (MPN, Location, WH, Lot, Qty, Mfg/Expiry, Vendor), Outward (FEFO lot list,
+   expired blocked), Transfers (Draft -> In-Transit -> Completed; stock moves only on Completed, two ledger rows,
+   lot dates preserved), Adjustment (Admin: New Physical - System).
+2. **Planning** - Product + Demand + Location -> active BOM, `batches = ceil(demand / expected output)`,
+   `required = qty_per_batch x batches x (1 + scrap%)` (scrap optional per plan / default in Settings),
+   availability = non-expired stock at the location. Plan, Batch and Material summaries.
+   Editing the target (Admin) recalculates Remaining = Target - Executed and re-explodes the BOM for the remainder.
+3. **Manufacturing** - Batch Entry: Batch Detail, Output vs Plan, Material Inputs with a lot per material (FEFO
+   suggested), variance per material; above tolerance needs a reason (Admin can override). Edit IP/OP posts deltas only.
+4. **Auto inventory update** - on submit: RM lots deducted, FG lot (= batch no) created, plan executed qty updated,
+   every posting referenced to the batch in the ledger.
+5. **Reports** - Stock Balance Sheet, printable Physical Stock Sheet (Admins can post counts as adjustments),
+   Transaction Report (filters: date, location/WH, MPN, type; CSV), Traceability (backward + forward, recursive).
+
+## API (all under `/api`)
+
+`session`, `settings`, `locations` (+`/:id/warehouses`), `warehouses`, `vendors`, `materials`, `mpns`,
+`boms` (+`/active`, `/:id/activate|obsolete|revise`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
+`transfers` (+`/:id/dispatch|complete|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
+`batches` (+`/prefill`, `PUT /:id`), `reports/stock-balance|physical-stock-sheet|lots|trace`.
+Headers: `X-User-Id` (acting user), `X-Location-Id`, `X-Warehouse-Id` (global scope).
+
+## Migration history
+
+The v1 Supabase tables were moved (not deleted) to schema `archive_v1`; see `backend/db/supabase/`.
+The previous MongoDB/Express/Firebase code is in git history (branch `master`); old notes are in `docs/archive/`.
