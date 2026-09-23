@@ -13,7 +13,9 @@ function createApp() {
   app.use(cors({
     origin: (process.env.CLIENT_URL || 'http://localhost:3000').split(',').map((s) => s.trim()),
     allowedHeaders: ['Content-Type', 'X-User-Id', 'X-Location-Id', 'X-Warehouse-Id'],
+    exposedHeaders: ['Content-Disposition'],
   }));
+  app.use('/api/bulk', express.json({ limit: '10mb' })); // uploaded spreadsheets
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
@@ -26,6 +28,8 @@ function createApp() {
   app.use('/api/warehouses', require('./routes/warehouses'));
   app.use('/api/vendors', require('./routes/vendors'));
   app.use('/api/materials', require('./routes/materials'));
+  app.use('/api/categories', require('./routes/categories'));
+  app.use('/api/bulk', require('./routes/bulk'));
   app.use('/api/mpns', require('./routes/mpns'));
   app.use('/api/boms', require('./routes/boms'));
   app.use('/api/inventory', require('./routes/inventory'));

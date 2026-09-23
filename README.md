@@ -62,13 +62,21 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
    suggested), variance per material; above tolerance needs a reason (Admin can override). Edit IP/OP posts deltas only.
 4. **Auto inventory update** - on submit: RM lots deducted, FG lot (= batch no) created, plan executed qty updated,
    every posting referenced to the batch in the ledger.
+0. **Master data** - Materials (code M1001.., category / sub-category, description, status), Vendors (V1001..,
+   FSSAI + expiry, several addresses with editable name / Primary-Secondary / one Default, contact directory,
+   bank accounts with IFSC check, supplied materials), MPNs (MPN1001.., per-vendor UOM / MOQ / price with price
+   history, Bulk MPN Create grid), BOMs (packing / processing / overhead / freight cost, ingredient price and notes,
+   cost per batch and per unit, Scale Recipe into a new draft). Every list has a Functions menu (Manual Entry,
+   Bulk Entry, Bulk Update, Export) and View / Edit / Delete actions. Codes come from database sequences and are
+   never reused; existing codes are kept. Delete becomes Deactivate when a record is in use.
 5. **Reports** - Stock Balance Sheet, printable Physical Stock Sheet (Admins can post counts as adjustments),
    Transaction Report (filters: date, location/WH, MPN, type; CSV), Traceability (backward + forward, recursive).
 
 ## API (all under `/api`)
 
-`session`, `settings`, `locations` (+`/:id/warehouses`), `warehouses`, `vendors`, `materials`, `mpns`,
-`boms` (+`/active`, `/:id/activate|obsolete|revise`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
+`session`, `settings`, `locations` (+`/:id/warehouses`), `warehouses`, `vendors`, `materials`, `categories`,
+`mpns` (+`POST /bulk`), `bulk/:entity/template|export|parse|preview|commit` (entity = materials, vendors, mpns),
+`boms` (+`/active`, `/:id/activate|obsolete|revise|scale`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
 `transfers` (+`/:id/dispatch|complete|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
 `batches` (+`/prefill`, `PUT /:id`), `reports/stock-balance|physical-stock-sheet|lots|trace`.
 Headers: `X-User-Id` (acting user), `X-Location-Id`, `X-Warehouse-Id` (global scope).

@@ -15,6 +15,10 @@ import BatchDetailPage from './pages/manufacturing/BatchDetailPage';
 import MaterialsPage from './pages/masters/MaterialsPage';
 import MpnsPage from './pages/masters/MpnsPage';
 import VendorsPage from './pages/masters/VendorsPage';
+import VendorFormPage from './pages/masters/VendorFormPage';
+import VendorViewPage from './pages/masters/VendorViewPage';
+import MpnBulkCreatePage from './pages/masters/MpnBulkCreatePage';
+import CategoriesPage from './pages/CategoriesPage';
 import BomsPage from './pages/masters/BomsPage';
 import BomEditPage from './pages/masters/BomEditPage';
 import BomDetailPage from './pages/masters/BomDetailPage';
@@ -58,7 +62,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="manufacturing/batches/:id" element={<BatchDetailPage />} />
               <Route path="masters/materials" element={<MaterialsPage />} />
               <Route path="masters/mpns" element={<MpnsPage />} />
+              <Route path="masters/mpns/bulk-create" element={<MpnBulkCreatePage />} />
               <Route path="masters/vendors" element={<VendorsPage />} />
+              <Route path="masters/vendors/new" element={<VendorFormPage />} />
+              <Route path="masters/vendors/:id" element={<VendorViewPage />} />
+              <Route path="masters/vendors/:id/edit" element={<VendorFormPage />} />
               <Route path="masters/boms" element={<BomsPage />} />
               <Route path="masters/boms/new" element={<BomEditPage />} />
               <Route path="masters/boms/:id" element={<BomDetailPage />} />
@@ -69,6 +77,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="reports/transactions" element={<TransactionsPage />} />
               <Route path="reports/traceability" element={<TraceabilityPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings/categories" element={<CategoriesPage />} />
               <Route path="*" element={<div className="p-6 text-ink-muted">Page not found</div>} />
             </Route>
           </Routes>
