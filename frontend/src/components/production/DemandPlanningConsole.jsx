@@ -414,7 +414,7 @@ export default function DemandPlanningConsole({
               <span className="text-[11px] text-slate-500 font-medium mt-1 block">
                 {simulationData.status === 'READY'
                   ? 'All materials available in stock'
-                  : `${matSum.filter(m => m.status === 'Shortage').length} item(s) in shortage`}
+                  : `${matSum.filter(m => m.status === 'Short').length} item(s) in shortage`}
               </span>
             </div>
 
@@ -593,7 +593,7 @@ export default function DemandPlanningConsole({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {matSum.map((m, idx) => {
-                    const isShortage = m.status === 'Shortage';
+                    const isShortage = m.status === 'Short';
                     return (
                       <tr key={idx} className="hover:bg-slate-50/80 font-medium">
                         <td className="py-2.5 px-4">

@@ -7,7 +7,6 @@ import Header from './components/Header';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Route-level code splitting — each module loads only when navigated to
-const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MaterialsTab = lazy(() => import('./pages/masters/MaterialsTab'));
 const ProductsTab = lazy(() => import('./pages/masters/ProductsTab'));
@@ -37,7 +36,6 @@ const ProductionRoutes = lazy(() => import('./pages/production/ProductionRoutes'
 const NotFound = lazy(() => import('./pages/NotFound'));
 const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
 const TermsOfService = lazy(() => import('./pages/legal/TermsOfService'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
 // Eagerly loaded lightweight components
 import CookieBanner from './components/CookieBanner';
@@ -56,7 +54,7 @@ const ProtectedRoute = ({ roles, children }) => {
   const { user } = useAuth();
   const userRole = user?.role || 'Viewer';
 
-  if (!roles.includes(userRole)) {
+  if (userRole !== 'Admin' && !roles.includes(userRole)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-8 bg-slate-900 border border-slate-800 rounded-2xl">
         <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-xl mb-4">
@@ -80,7 +78,7 @@ const ProtectedRoute = ({ roles, children }) => {
 };
 
 const AppContent = () => {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, error, refreshUserStatus } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -88,79 +86,23 @@ const AppContent = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center space-y-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        <p className="text-sm font-semibold text-slate-400">Verifying session credentials...</p>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center space-y-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
+        <p className="text-xs text-slate-500">Loading workspace...</p>
       </div>
     );
   }
 
-  // Support link-based Password Reset
-  if (location.pathname === '/reset-password') {
-    return <Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>;
-  }
-
-  // Auto-login fallback if user is null
+  // No login page: the backend resolves an acting user. If that fails the
+  // server is unreachable or misconfigured — show a plain retry screen.
   if (!user) {
-    return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
-  }
-
-  // Handle non-ACTIVE account statuses cleanly
-  if (user.accountStatus === 'PENDING' || user.accountStatus === 'Pending') {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white">
-        <div className="max-w-md bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-          <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-xl font-bold">!</div>
-          <h2 className="text-2xl font-bold text-amber-400">Access Request Pending Approval</h2>
-          <p className="text-sm text-slate-300">
-            Your account ({user.email}) is registered, but requires administrator approval before VMS workspace access is granted.
-          </p>
-          <div className="pt-4 flex flex-col items-center gap-3">
-            <button onClick={() => window.location.reload()} className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-sm font-bold rounded-lg text-white transition-colors">
-              Check Status
-            </button>
-            <button onClick={logout} className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-sm font-bold rounded-lg text-white border border-slate-600 transition-colors">
-              Sign Out &amp; Return to Login
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (user.accountStatus === 'REJECTED' || user.accountStatus === 'Rejected') {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white">
-        <div className="max-w-md bg-slate-900 p-8 rounded-2xl border border-rose-900/50 shadow-2xl space-y-4">
-          <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto text-xl font-bold">X</div>
-          <h2 className="text-2xl font-bold text-rose-400">Access Request Rejected</h2>
-          <p className="text-sm text-slate-300">
-            Your access request for account ({user.email}) was not approved by an administrator.
-          </p>
-          <div className="pt-4 flex justify-center">
-            <button onClick={logout} className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-sm font-bold rounded-lg text-white border border-slate-600 transition-colors">
-              Sign Out &amp; Return to Login
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (user.accountStatus === 'SUSPENDED' || user.accountStatus === 'DISABLED') {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white">
-        <div className="max-w-md bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-          <h2 className="text-2xl font-bold text-slate-400">Account Deactivated</h2>
-          <p className="text-sm text-slate-400">
-            Your account ({user.email}) is currently suspended or disabled. Contact your administrator.
-          </p>
-          <div className="pt-4 flex justify-center">
-            <button onClick={logout} className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-sm font-bold rounded-lg text-white border border-slate-600 transition-colors">
-              Sign Out &amp; Return to Login
-            </button>
-          </div>
-        </div>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-base font-semibold text-slate-800 mb-1">Cannot load workspace</h2>
+        <p className="text-xs text-slate-500 mb-4 max-w-sm">{error || 'The ERP server did not return a user session.'}</p>
+        <button onClick={refreshUserStatus} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded">
+          Retry
+        </button>
       </div>
     );
   }

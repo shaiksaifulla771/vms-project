@@ -187,8 +187,8 @@ export default function Plan3TierSummaryModal({
                         <th className="p-2.5">Product Code</th>
                         <th className="p-2.5 text-center">No. of Batches</th>
                         <th className="p-2.5 text-right">Target Output Qty</th>
-                        <th className="p-2.5 text-center text-emerald-700">Executed Batches</th>
-                        <th className="p-2.5 text-center text-amber-700">To Be Executed</th>
+                        <th className="p-2.5 text-center text-emerald-700">Executed Qty</th>
+                        <th className="p-2.5 text-center text-amber-700">Remaining Qty</th>
                         <th className="p-2.5">Status</th>
                       </tr>
                     </thead>
@@ -203,13 +203,15 @@ export default function Plan3TierSummaryModal({
                             </span>
                           </td>
                           <td className="p-2.5 text-right font-mono font-black text-slate-900">
-                            {planSum.targetOutputQty.toLocaleString()} {planSum.uom}
+                            {(planSum.targetOutputQty ?? 0).toLocaleString()} {planSum.uom}
                           </td>
                           <td className="p-2.5 text-center font-bold text-emerald-700 font-mono">
-                            {planSum.noOfExecuted}
+                            {(planSum.executedQty ?? 0).toLocaleString()} {planSum.uom}
+                            <span className="block text-[10px] text-slate-400 font-normal">{planSum.noOfExecuted} batch(es)</span>
                           </td>
                           <td className="p-2.5 text-center font-bold text-amber-700 font-mono">
-                            {planSum.noToBeExecuted}
+                            {(planSum.remainingQty ?? 0).toLocaleString()} {planSum.uom}
+                            <span className="block text-[10px] text-slate-400 font-normal">{planSum.noToBeExecuted} batch(es)</span>
                           </td>
                           <td className="p-2.5">
                             <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200">
@@ -340,7 +342,7 @@ export default function Plan3TierSummaryModal({
                                   ? 'bg-rose-100 text-rose-800 border-rose-300' 
                                   : 'bg-emerald-100 text-emerald-800 border-emerald-300'
                               }`}>
-                                {isShort ? 'Shortage' : 'Surplus'}
+                                {isShort ? 'Short' : 'Long'}
                               </span>
                             </td>
                           </tr>

@@ -127,7 +127,7 @@ export default function BatchExecutionModal({
       setActualOutputQty(existingBatch.actualQuantity || existingBatch.actualOutputQty || 1000);
       setVarianceReason(existingBatch.varianceReason || '');
 
-      const existingInputs = (existingBatch.materials || existingBatch.ingredients || []).map(ing => ({
+      const existingInputs = (existingBatch.components || existingBatch.materials || existingBatch.ingredients || []).map(ing => ({
         materialId: ing.materialId?._id || ing.materialId || ing.material?._id || ing.material,
         code: ing.materialId?.code || ing.materialCode || ing.code || 'RAW-MAT',
         name: ing.materialId?.name || ing.materialName || ing.name || 'Raw Material',
@@ -140,51 +140,79 @@ export default function BatchExecutionModal({
       return;
     }
 
+    let bomIdForInputs = selectedBomId;
     if (sourceType === 'PLAN' && selectedPlanId) {
       const plan = plans.find(p => p._id === selectedPlanId);
       if (plan) {
-        setSelectedProductId(plan.productId?._id || plan.productId || '');
-        setSelectedBomId(plan.bomId?._id || plan.bomId || '');
-        
-        // Populate ingredients from plan
-        if (plan.ingredients && plan.ingredients.length > 0) {
-          const ratio = (planOutputQty / (plan.totalPlans || plan.quantity || 1000)) || 1;
-          const ingList = plan.ingredients.map(ing => {
-            const plannedQty = Math.round((ing.totalQuantity || ing.quantity || 10) * ratio * 100) / 100;
-            return {
-              materialId: ing.material?._id || ing.material || ing.materialId,
-              code: ing.material?.code || ing.materialCode || 'RAW-MAT',
-              name: ing.material?.name || ing.materialName || 'Raw Material',
-              planInputQty: plannedQty,
-              actualInputQty: plannedQty,
-              unit: ing.uom || ing.material?.unit || 'kg',
-              lotNumber: ''
-            };
-          });
-          setInputs(ingList);
-        }
+        const planProduct = plan.productId?._id || plan.productId || '';
+        const planBom = plan.bomId?._id || plan.bomId || '';
+        if (planProduct !== selectedProductId) setSelectedProductId(planProduct);
+        if (planBom && planBom !== selectedBomId) setSelectedBomId(planBom);
+        if (planBom) bomIdForInputs = planBom;
       }
-    } else if (selectedBomId) {
-      const bom = boms.find(b => b._id === selectedBomId);
+    }
+    if (bomIdForInputs) {
+      const bom = boms.find(b => b._id === bomIdForInputs);
       if (bom && bom.components) {
-        const bomBatchSize = bom.batchSize || bom.batchQuantity || 1000;
-        const scale = planOutputQty / bomBatchSize;
+        // Plan input = qty per batch x (this batch's planned output / BOM expected output)
+        const bomOutput = bom.expectedOutputQty || bom.batchSize || 1;
+        const scale = Number(planOutputQty) / bomOutput;
         const ingList = bom.components.map(comp => {
-          const plannedQty = Math.round((comp.quantity || 1) * scale * 100) / 100;
+          const plannedQty = Math.round((comp.quantity ?? comp.qty ?? 0) * scale * 1000) / 1000;
           return {
             materialId: comp.materialId?._id || comp.materialId,
-            code: comp.materialId?.code || comp.materialCode || 'RAW-MAT',
-            name: comp.materialId?.name || comp.materialName || 'Raw Material',
+            code: comp.materialId?.code || comp.materialCode || '',
+            name: comp.materialId?.name || comp.materialName || '',
             planInputQty: plannedQty,
             actualInputQty: plannedQty,
-            unit: comp.uom || comp.materialId?.unit || 'kg',
-            lotNumber: ''
+            unit: comp.uom || comp.materialId?.unit || '',
+            lotNumber: '',
+            varianceReason: ''
           };
         });
         setInputs(ingList);
       }
     }
   }, [sourceType, selectedPlanId, selectedBomId, planOutputQty, plans, boms, existingBatch]);
+
+  // Available lots per material at the selected warehouse (FEFO: earliest expiry first)
+  const [lotsByMaterial, setLotsByMaterial] = useState({});
+  const inputMaterialKey = inputs.map(i => i.materialId).join(',');
+  useEffect(() => {
+    if (!isOpen || !warehouseId || inputs.length === 0 || isDynamicEditMode) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(inputs.map(async (inp) => {
+        if (!inp.materialId) return [inp.materialId, []];
+        try {
+          const res = await api.get(`/inventory/lots-for-material/${inp.materialId}`, { params: { warehouseId } });
+          return [inp.materialId, (res.data?.data || []).filter(l => !l.isExpired && l.available > 0)];
+        } catch (e) {
+          return [inp.materialId, []];
+        }
+      }));
+      if (cancelled) return;
+      const map = Object.fromEntries(entries);
+      setLotsByMaterial(map);
+      // Pre-select the first (FEFO) lot that covers the planned quantity
+      setInputs(prev => prev.map(inp => {
+        if (inp.lotNumber) return inp;
+        const lots = map[inp.materialId] || [];
+        const pick = lots.find(l => l.available >= inp.actualInputQty) || lots[0];
+        return pick ? { ...inp, lotNumber: pick.lotNumber } : inp;
+      }));
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, warehouseId, inputMaterialKey, isDynamicEditMode]);
+
+  const handleRowField = (index, field, value) => {
+    setInputs(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
 
   // Calculate Output Variance
   const outputVariancePercent = useMemo(() => {
@@ -224,12 +252,36 @@ export default function BatchExecutionModal({
       setErrorMsg('Variance exceeds ±5.0%. A detailed Variance Reason (min 5 characters) is strictly mandatory.');
       return;
     }
+    if (sourceType === 'PLAN' && !selectedPlanId) {
+      setErrorMsg('Select a Plan, or switch Source to Ad Hoc.');
+      return;
+    }
+    if (!warehouseId) {
+      setErrorMsg('Select the Location / Warehouse for this batch.');
+      return;
+    }
+    if (consumeLots) {
+      const missingLot = inputs.find(i => Number(i.actualInputQty) > 0 && !i.lotNumber);
+      if (missingLot) {
+        setErrorMsg(`Select a Lot No for ${missingLot.name || missingLot.code}.`);
+        return;
+      }
+    }
+    const rowNeedsReason = inputs.find(i => {
+      const p = Number(i.planInputQty);
+      return p > 0 && Math.abs((Number(i.actualInputQty) - p) / p) * 100 > 5 && !(i.varianceReason || '').trim();
+    });
+    if (rowNeedsReason) {
+      setErrorMsg(`Input variance for ${rowNeedsReason.name || rowNeedsReason.code} exceeds ±5%. Enter a reason on that row.`);
+      return;
+    }
 
     setSubmitting(true);
     try {
       const payload = {
         batchNumber,
         sourceType,
+        source: sourceType === 'PLAN' ? 'Plan' : 'Ad Hoc',
         planId: sourceType === 'PLAN' ? selectedPlanId : undefined,
         productId: selectedProductId,
         bomId: selectedBomId,
@@ -245,7 +297,9 @@ export default function BatchExecutionModal({
           materialId: i.materialId,
           planInputQty: Number(i.planInputQty),
           actualInputQty: Number(i.actualInputQty),
-          lotNumber: i.lotNumber || undefined
+          lotNumber: i.lotNumber || undefined,
+          varianceReason: (i.varianceReason || '').trim() || undefined,
+          materialName: i.name
         }))
       };
 
@@ -281,7 +335,8 @@ export default function BatchExecutionModal({
         adjustmentReason: dynamicAdjustmentReason.trim(),
         inputs: inputs.map(i => ({
           materialId: i.materialId,
-          actualInputQty: Number(i.actualInputQty)
+          actualInputQty: Number(i.actualInputQty),
+          varianceReason: (i.varianceReason || '').trim() || undefined
         }))
       };
 
@@ -582,7 +637,9 @@ export default function BatchExecutionModal({
                     <th className="p-2 text-right">Plan Input Qty</th>
                     <th className="p-2 text-right">Actual Input Qty (IP)</th>
                     <th className="p-2">UOM</th>
+                    <th className="p-2">Lot No</th>
                     <th className="p-2 text-right">Variance %</th>
+                    <th className="p-2">Reason</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -604,17 +661,44 @@ export default function BatchExecutionModal({
                           />
                         </td>
                         <td className="p-2 text-slate-500">{inp.unit}</td>
+                        <td className="p-2">
+                          {isDynamicEditMode ? (
+                            <span className="font-mono text-[10px] text-slate-600">{inp.lotNumber || '-'}</span>
+                          ) : (
+                            <select
+                              value={inp.lotNumber || ''}
+                              onChange={(e) => handleRowField(idx, 'lotNumber', e.target.value)}
+                              className="w-36 px-1 py-0.5 text-[10px] font-mono bg-white border border-slate-300 rounded focus:border-blue-500"
+                            >
+                              <option value="">{(lotsByMaterial[inp.materialId] || []).length ? 'Select lot' : 'No stock'}</option>
+                              {(lotsByMaterial[inp.materialId] || []).map(l => (
+                                <option key={l._id} value={l.lotNumber}>
+                                  {l.lotNumber} ({l.available}{l.expiryDate ? `, exp ${String(l.expiryDate).slice(0, 10)}` : ''})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
                         <td className={`p-2 text-right font-mono font-bold ${
                           Math.abs(vPct) > 5 ? 'text-amber-600' : 'text-slate-600'
                         }`}>
                           {vPct > 0 ? `+${vPct}%` : `${vPct}%`}
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="text"
+                            value={inp.varianceReason || ''}
+                            onChange={(e) => handleRowField(idx, 'varianceReason', e.target.value)}
+                            placeholder={Math.abs(vPct) > 5 ? 'Required' : ''}
+                            className={`w-32 px-1.5 py-0.5 text-[10px] bg-white border rounded focus:border-blue-500 ${Math.abs(vPct) > 5 && !inp.varianceReason ? 'border-amber-400' : 'border-slate-300'}`}
+                          />
                         </td>
                       </tr>
                     );
                   })}
                   {inputs.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-400 font-semibold">
+                      <td colSpan={8} className="p-6 text-center text-slate-400 font-semibold">
                         No recipe components selected. Select a Plan or BOM above to populate inputs.
                       </td>
                     </tr>

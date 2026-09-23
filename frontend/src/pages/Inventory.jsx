@@ -230,7 +230,6 @@ export default function Inventory() {
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Lot Storage Ledger (Sheet 2)</span>
             <span>Lot Ledger</span>
           </button>
 
@@ -243,7 +242,6 @@ export default function Inventory() {
             }`}
           >
             <Boxes className="w-3.5 h-3.5" />
-            <span>Physical Stock Balances</span>
             <span>Stock Balances</span>
           </button>
 
@@ -256,7 +254,6 @@ export default function Inventory() {
             }`}
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Audit &amp; Movement Ledger</span>
             <span>Movements &amp; Audit</span>
           </button>
         </div>

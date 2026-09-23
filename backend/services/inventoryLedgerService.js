@@ -4,6 +4,23 @@ const InventoryTransaction = require('../models/InventoryTransaction');
 const Warehouse = require('../models/Warehouse');
 const auditService = require('./auditService');
 
+// Transaction type classification. Every type MUST be listed here; unknown
+// types are rejected instead of silently being treated as stock increases.
+const INBOUND_TYPES = new Set([
+  'Opening', 'GRN', 'purchase', 'Production Receipt', 'PRODUCTION_OUTPUT', 'PRODUCTION_IN',
+  'production', 'ADJUSTMENT_IN', 'TRANSFER_IN', 'Transfer In', 'RECEIPT', 'Return', 'RETURN',
+]);
+const OUTBOUND_TYPES = new Set([
+  'Issue', 'ISSUE', 'consumption', 'Production Consumption', 'PRODUCTION_CONSUMPTION', 'Scrap',
+  'ADJUSTMENT_OUT', 'TRANSFER_OUT', 'Transfer Out', 'Transfer',
+]);
+// Outbound types that represent real consumption/issue — expired lots are blocked for these.
+const CONSUMPTION_TYPES = new Set([
+  'Issue', 'ISSUE', 'consumption', 'Production Consumption', 'PRODUCTION_CONSUMPTION',
+]);
+const SIGNED_TYPES = new Set(['Adjustment', 'adjustment', 'REVERSAL']);
+const STATE_TYPES = new Set(['Reservation', 'RESERVATION', 'Release', 'RELEASE', 'Allocation', 'QC Hold', 'QC Release']);
+
 /**
  * InventoryLedgerService — Single entry point for all inventory mutations.
  * Enforces atomic transactions, non-negative available stock, idempotency, OCC retries, and immutable ledger entries.
@@ -34,6 +51,16 @@ class InventoryLedgerService {
 
     if (!materialId || !warehouseId || quantity === undefined || !type) {
       throw new Error('Missing required inventory transaction parameters (materialId, warehouseId, quantity, type)');
+    }
+    if (!INBOUND_TYPES.has(type) && !OUTBOUND_TYPES.has(type) && !SIGNED_TYPES.has(type) && !STATE_TYPES.has(type)) {
+      const err = new Error(`Unknown inventory transaction type '${type}'`);
+      err.status = 400;
+      throw err;
+    }
+    if (!Number.isFinite(Number(quantity))) {
+      const err = new Error('Transaction quantity must be a number');
+      err.status = 400;
+      throw err;
     }
 
     // Idempotency check: return existing transaction if already processed
@@ -116,47 +143,46 @@ class InventoryLedgerService {
             }
           }
 
+          if (CONSUMPTION_TYPES.has(type) && item.expiryDate && new Date(item.expiryDate) < new Date()) {
+            const expErr = new Error(`Lot ${item.lotNumber || item.batchNumber} expired on ${new Date(item.expiryDate).toISOString().slice(0, 10)} and cannot be consumed or issued.`);
+            expErr.status = 400;
+            throw expErr;
+          }
+          if (isNewItem && OUTBOUND_TYPES.has(type)) {
+            const nfErr = new Error(`No stock found for material ${materialId}${lotNumber ? ` in lot ${lotNumber}` : ''} at the selected warehouse.`);
+            nfErr.status = 400;
+            throw nfErr;
+          }
+
           const beforeQty = item.onHand;
+          const before = {
+            onHand: item.onHand, available: item.available, reserved: item.reserved,
+            allocated: item.allocated, blocked: item.blocked, balance: item.balance, reservedBalance: item.reservedBalance,
+          };
           let delta = 0;
           const originalVersion = item.version || 1;
 
-          switch (type) {
-            case 'Opening':
-            case 'GRN':
-            case 'purchase':
-            case 'Production Receipt':
-            case 'PRODUCTION_OUTPUT':
-            case 'ADJUSTMENT_IN':
-            case 'TRANSFER_IN':
-              delta = Math.abs(quantity);
-              item.onHand += delta;
-              item.available += delta;
-              break;
-
-            case 'Issue':
-            case 'consumption':
-            case 'Production Consumption':
-            case 'PRODUCTION_CONSUMPTION':
-            case 'Scrap':
-            case 'ADJUSTMENT_OUT':
-            case 'TRANSFER_OUT':
-            case 'Transfer Out':
-              delta = -Math.abs(quantity);
-              if (item.allocated >= Math.abs(delta)) {
-                item.allocated -= Math.abs(delta);
-              } else if (item.reserved >= Math.abs(delta)) {
-                item.reserved -= Math.abs(delta);
-              } else if (item.available >= Math.abs(delta)) {
-                item.available -= Math.abs(delta);
-              } else {
-                if (item.available + item.reserved + item.allocated < Math.abs(delta)) {
-                  throw new Error(`Insufficient available stock for material ${materialId}. Requested: ${Math.abs(delta)}, Available: ${item.available}`);
-                }
-                item.available = Math.max(0, item.available - Math.abs(delta));
-              }
-              item.onHand = Math.max(0, item.onHand - Math.abs(delta));
-              break;
-
+          if (INBOUND_TYPES.has(type)) {
+            delta = Math.abs(quantity);
+            item.onHand += delta;
+            item.available += delta;
+          } else if (OUTBOUND_TYPES.has(type)) {
+            delta = -Math.abs(quantity);
+            const need = Math.abs(delta);
+            if (item.available + item.reserved + item.allocated < need) {
+              const insErr = new Error(`Insufficient stock for material ${materialId}${lotNumber ? ` (lot ${lotNumber})` : ''}. Requested: ${need}, Available: ${item.available}`);
+              insErr.status = 400;
+              throw insErr;
+            }
+            if (item.allocated >= need) {
+              item.allocated -= need;
+            } else if (item.reserved >= need) {
+              item.reserved -= need;
+            } else {
+              item.available = Math.max(0, item.available - need);
+            }
+            item.onHand = item.onHand - need;
+          } else switch (type) {
             case 'Reservation':
             case 'RESERVATION':
               if (item.available < Math.abs(quantity)) {
@@ -199,17 +225,15 @@ class InventoryLedgerService {
               break;
 
             case 'Adjustment':
-            case 'Transfer In':
-              delta = quantity;
+            case 'adjustment':
+            case 'REVERSAL':
+              delta = Number(quantity);
               item.onHand += delta;
               item.available += delta;
               break;
 
             default:
-              delta = quantity;
-              item.onHand += delta;
-              item.available += delta;
-              break;
+              throw new Error(`Unhandled inventory transaction type '${type}'`);
           }
 
           if (item.onHand < 0 || item.available < 0 || item.reserved < 0 || item.allocated < 0 || item.blocked < 0) {
@@ -226,7 +250,7 @@ class InventoryLedgerService {
             } catch (saveErr) {
               if (saveErr.code === 11000) {
                 // Concurrent item creation collision -> fetch existing item and update balances directly
-                const existingItem = await InventoryItem.findOne({ materialId, warehouseId }, null, opts);
+                const existingItem = await InventoryItem.findOne({ materialId, warehouseId, batchNumber: item.batchNumber }, null, opts);
                 if (existingItem) {
                   existingItem.onHand += Math.max(0, delta);
                   existingItem.available += Math.max(0, delta);
@@ -284,7 +308,9 @@ class InventoryLedgerService {
 
           const txnId = `TXN-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-          const transactionArr = await InventoryTransaction.create([{
+          let transactionArr;
+          try {
+            transactionArr = await InventoryTransaction.create([{
             txnId,
             idempotencyKey,
             materialId,
@@ -303,7 +329,18 @@ class InventoryLedgerService {
             reason,
             userId,
             notes,
-          }], opts);
+            }], opts);
+          } catch (ledgerErr) {
+            // Without a real DB transaction, undo the balance change so stock and ledger never diverge.
+            if (!activeSession || !activeSession.inTransaction || !activeSession.inTransaction()) {
+              if (isNewItem) {
+                await InventoryItem.deleteOne({ _id: savedItem._id }).catch(() => {});
+              } else {
+                await InventoryItem.updateOne({ _id: savedItem._id }, { $set: before, $inc: { version: 1 } }).catch(() => {});
+              }
+            }
+            throw ledgerErr;
+          }
 
           const transaction = transactionArr[0];
 

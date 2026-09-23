@@ -29,12 +29,12 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'editor', 'viewer', 'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator'],
+    enum: ['admin', 'editor', 'viewer', 'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator', 'Manager', 'Operator'],
     default: 'Viewer',
   },
   requestedRole: {
     type: String,
-    enum: ['admin', 'editor', 'viewer', 'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator', null],
+    enum: ['admin', 'editor', 'viewer', 'Admin', 'Editor', 'Viewer', 'Inventory', 'Inventory Manager', 'Production', 'Production Manager', 'Warehouse', 'ProcurementManager', 'Vendor', 'Planner', 'QC Inspector', 'Finance', 'Purchaser', 'Warehouse Operator', 'Manager', 'Operator', null],
     default: null,
   },
   isActive: {
@@ -151,6 +151,16 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
+const ROLE_CANONICAL = {
+  admin: 'Admin', administrator: 'Admin', editor: 'Editor', viewer: 'Viewer',
+  manager: 'Manager', operator: 'Operator',
+  inventory: 'Inventory', 'inventory manager': 'Inventory Manager',
+  production: 'Production', 'production manager': 'Production Manager',
+  warehouse: 'Warehouse', 'warehouse operator': 'Warehouse Operator',
+  procurementmanager: 'ProcurementManager', vendor: 'Vendor', planner: 'Planner',
+  'qc inspector': 'QC Inspector', finance: 'Finance', purchaser: 'Purchaser',
+};
+
 // Normalize accountStatus, role, and sync isActive before saving
 UserSchema.pre('save', function (next) {
   if (this.accountStatus) {
@@ -164,16 +174,12 @@ UserSchema.pre('save', function (next) {
     this.accountStatus = this.isActive ? 'ACTIVE' : 'PENDING';
   }
 
-  // Normalize 3-role system
+  // Normalize role casing only. (Previously every functional role was collapsed
+  // into 'Editor', which made role-based route guards such as
+  // authorize('Inventory Manager') unreachable for everyone except Admins.)
   if (this.role) {
-    const r = this.role.toLowerCase();
-    if (r === 'admin' || r === 'administrator') {
-      this.role = 'Admin';
-    } else if (['editor', 'inventory', 'production', 'warehouse', 'purchaser', 'planner', 'qc inspector', 'finance', 'manager'].some(k => r.includes(k))) {
-      this.role = 'Editor';
-    } else {
-      this.role = 'Viewer';
-    }
+    const canonical = ROLE_CANONICAL[this.role.toLowerCase().trim()];
+    this.role = canonical || 'Viewer';
   }
   next();
 });

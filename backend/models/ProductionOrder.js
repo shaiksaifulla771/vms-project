@@ -42,6 +42,23 @@ const POComponentSchema = new mongoose.Schema({
   scrapQuantity: {
     type: Number,
     default: 0,
+  },
+  // Lot-level traceability (which raw-material lot was consumed, from where)
+  lotNumber: {
+    type: String,
+    trim: true,
+  },
+  warehouseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+  },
+  variancePercent: {
+    type: Number,
+    default: 0,
+  },
+  varianceReason: {
+    type: String,
+    default: '',
   }
 }, { _id: false });
 
@@ -126,6 +143,26 @@ const ProductionOrderSchema = new mongoose.Schema({
   },
   wasteReason: {
     type: String,
+  },
+  source: {
+    type: String,
+    enum: ['Plan', 'Ad Hoc'],
+  },
+  executedBy: {
+    type: String,
+    trim: true,
+  },
+  planOutputQty: {
+    type: Number,
+    default: 0,
+  },
+  outputVarianceQty: {
+    type: Number,
+    default: 0,
+  },
+  outputVariancePercent: {
+    type: Number,
+    default: 0,
   },
   varianceReason: {
     type: String,

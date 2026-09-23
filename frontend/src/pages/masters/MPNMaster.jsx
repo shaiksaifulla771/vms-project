@@ -316,8 +316,6 @@ export default function MPNMaster() {
         params: {
           search,
           status: statusFilter,
-          materialId: materialFilter,
-          vendorId: vendorFilter,
         },
       });
 

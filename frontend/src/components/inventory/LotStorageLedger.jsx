@@ -510,8 +510,6 @@ export default function LotStorageLedger({ onRefreshParent }) {
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Active Lots</span>
-            <div className="text-xl font-black text-slate-900">{metrics.totalLots} <span className="text-xs font-semibold text-slate-500">Tracked Batches</span></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Active Lots</span>
             <div className="text-xl font-black text-slate-900">{metrics.totalLots} <span className="text-xs font-semibold text-slate-500">Lots</span></div>
           </div>
           <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
@@ -521,7 +519,6 @@ export default function LotStorageLedger({ onRefreshParent }) {
 
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Ledger Stock</span>
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Stock</span>
             <div className="text-xl font-black text-slate-900">{metrics.totalQty.toLocaleString()} <span className="text-xs font-semibold text-slate-500">Units</span></div>
           </div>
@@ -533,8 +530,6 @@ export default function LotStorageLedger({ onRefreshParent }) {
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Lots Expiring (60 Days)</span>
-            <div className="text-xl font-black text-amber-600">{metrics.expiringSoon} <span className="text-xs font-semibold text-slate-500">FIFO Alert</span></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Expiring Soon</span>
             <div className="text-xl font-black text-amber-600">{metrics.expiringSoon} <span className="text-xs font-semibold text-slate-500">Within 60d</span></div>
           </div>
           <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
@@ -603,7 +598,7 @@ export default function LotStorageLedger({ onRefreshParent }) {
             title="Inter-Warehouse Stock Transfer"
           >
             <ArrowRightLeft className="w-3.5 h-3.5" />
-            <span>⇄ Transfer</span>
+            <span>Transfer</span>
           </button>
 
           <button
@@ -612,8 +607,7 @@ export default function LotStorageLedger({ onRefreshParent }) {
             title="Issue / Dispatch Stock (FIFO Lot Selection)"
           >
             <Minus className="w-3.5 h-3.5" />
-            <span>- Outward Stock</span>
-            <span>- Dispatch</span>
+            <span>Outward</span>
           </button>
 
           <button
@@ -622,8 +616,7 @@ export default function LotStorageLedger({ onRefreshParent }) {
             title="Receive / Inward Stock with Lot #"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Inward Stock</span>
-            <span>+ Inward</span>
+            <span>Inward</span>
           </button>
         </div>
       </div>
@@ -795,7 +788,7 @@ export default function LotStorageLedger({ onRefreshParent }) {
                 (viewMode === 'GRANULAR' && filteredGranularLots.length === 0)) && !loading && (
                 <tr>
                   <td colSpan={viewMode === 'AGGREGATE' ? 9 : 9} className="p-8 text-center text-slate-400 font-semibold">
-                    No lot storage records found. Click "+ Inward Stock" to register the first batch receipt.
+                    No lot storage records found. Click "Inward" to register the first batch receipt.
                   </td>
                 </tr>
               )}

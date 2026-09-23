@@ -52,6 +52,8 @@ const InventoryTransactionSchema = new mongoose.Schema({
       'consumption',
       'production',
       'adjustment',
+      'Adjustment',
+      'Allocation',
       'Production Consumption',
       'Production Receipt',
       'Transfer Out',
@@ -72,6 +74,7 @@ const InventoryTransactionSchema = new mongoose.Schema({
       'TRANSFER_IN',
       'PRODUCTION_CONSUMPTION',
       'PRODUCTION_OUTPUT',
+      'PRODUCTION_IN',
       'RETURN',
       'REVERSAL'
     ],

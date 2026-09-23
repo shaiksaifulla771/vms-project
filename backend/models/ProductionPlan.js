@@ -175,6 +175,12 @@ const ProductionPlanSchema = new mongoose.Schema({
     type: Number,
     min: 0,
   },
+  // Sum of Actual_Output_Qty of all batches executed against this plan
+  executedQuantity: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   copiedFromPlanId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ProductionPlan',

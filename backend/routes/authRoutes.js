@@ -18,7 +18,8 @@ const {
   validate2FA,
   disable2FA
 } = require('../controllers/authController');
-const { protect, checkRole, authorize } = require('../middleware/authMiddleware');
+const { protect, checkRole, authorize, isAuthDisabled } = require('../middleware/authMiddleware');
+const User = require('../models/User');
 const { loginLimiter, otpLimiter, registerLimiter, passwordResetLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
@@ -45,6 +46,20 @@ router.post('/refresh', loginLimiter, refresh);
 router.post('/logout', logout); // Clears cookies reliably regardless of JWT expiry
 router.post('/revoke/:userId', protect, authorize('Admin'), revokeUser);
 router.get('/me', protect, getMe);
+
+// No-login mode: list ACTIVE users for the header "acting user" switcher
+router.get('/acting-users', async (req, res, next) => {
+  try {
+    if (!isAuthDisabled()) return res.status(404).json({ success: false, error: 'Not available' });
+    const users = await User.find({ accountStatus: { $in: ['ACTIVE', 'Active', 'APPROVED'] } })
+      .select('username email role')
+      .sort({ role: 1, username: 1 })
+      .lean();
+    res.json({ success: true, authDisabled: true, data: users.map(u => ({ id: u._id, username: u.username, email: u.email, role: u.role })) });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Google Authenticator 2FA Routes
 router.post('/2fa/generate', protect, otpLimiter, generate2FA);

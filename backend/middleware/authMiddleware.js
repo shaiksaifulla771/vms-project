@@ -20,11 +20,63 @@ exports.invalidateUserStatusCache = (userId) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// No-login mode (login page removed)
+// AUTH_DISABLED defaults to ON outside production. Requests without a bearer
+// token run as an "acting user": the ACTIVE user named in the X-User-Id header
+// (chosen in the UI's user switcher), otherwise the first ACTIVE Admin.
+// RBAC still applies to the acting user's role. In production it must be
+// enabled explicitly with AUTH_DISABLED=true.
+// ─────────────────────────────────────────────────────────────────────────────
+const isAuthDisabled = () => {
+  const flag = (process.env.AUTH_DISABLED || '').toLowerCase();
+  if (flag === 'false' || flag === '0') return false;
+  // production and test runs keep real auth unless explicitly disabled
+  if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return flag === 'true' || flag === '1';
+  return true;
+};
+exports.isAuthDisabled = isAuthDisabled;
+
+const ACTIVE_STATUSES = ['ACTIVE', 'Active', 'APPROVED'];
+
+async function resolveActingUser(req) {
+  const requestedId = req.headers['x-user-id'];
+  if (requestedId && /^[a-f0-9]{24}$/i.test(String(requestedId))) {
+    const u = await User.findOne({ _id: requestedId, accountStatus: { $in: ACTIVE_STATUSES } });
+    if (u) return u;
+  }
+  let admin = await User.findOne({ role: 'Admin', accountStatus: { $in: ACTIVE_STATUSES } }).sort({ createdAt: 1 });
+  if (!admin) {
+    // Fresh database: create a local system administrator so the app is usable
+    admin = await User.create({
+      username: 'System Admin',
+      email: 'admin@local.erp',
+      role: 'Admin',
+      accountStatus: 'ACTIVE',
+      emailVerified: true,
+    });
+  }
+  return admin;
+}
+exports.resolveActingUser = resolveActingUser;
+
 // Protect routes using Dual-Engine Verification (Native Backend JWT + Firebase ID Token)
 exports.protect = async (req, res, next) => {
+  if (req.user) return next(); // already resolved by an upstream protect()
+
   let token;
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (!token && isAuthDisabled()) {
+    try {
+      req.user = await resolveActingUser(req);
+      req.authMode = 'acting-user';
+      return next();
+    } catch (e) {
+      return res.status(500).json({ success: false, error: `Could not resolve acting user: ${e.message}` });
+    }
   }
 
   if (!token) {
@@ -163,12 +215,25 @@ exports.protect = async (req, res, next) => {
  * Standard RBAC Authorization middleware
  * @param {Array<String>} roles - Allowed roles
  */
-exports.requireRole = (allowedRoles = []) => {
+exports.requireRole = (...roleArgs) => {
+  // Accept both authorize('Admin', 'Manager') and authorize(['Admin', 'Manager']).
+  // (Previously only the array form worked; the varargs form silently kept the
+  // first role as a *string*, turning `.includes()` into a substring match.)
+  const allowedRoles = roleArgs.flat().filter(Boolean);
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
     if (authz.isGlobalAdmin(req.user) || allowedRoles.includes(req.user.role)) {
+      return next();
+    }
+    // Legacy 'Editor' users (from the old 3-role model) may perform any
+    // non-Admin-only action.
+    if (req.user.role === 'Editor' && allowedRoles.some(r => r !== 'Admin')) {
+      return next();
+    }
+    // 'Manager' is a superset of the specific manager roles
+    if (req.user.role === 'Manager' && allowedRoles.some(r => /manager/i.test(r))) {
       return next();
     }
     return res.status(403).json({

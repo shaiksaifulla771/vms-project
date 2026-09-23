@@ -24,13 +24,17 @@ function populatePlan(query) {
 function calculateBomIngredients(activeBom, totalPlans, targetWarehouseId) {
   if (!activeBom) return [];
   const batchSize = activeBom.batchSize || 1;
+  // Spec: Required_Batches = ceil(Demand / Expected_Output_Qty);
+  //       Required_Qty     = Required_Qty_Per_Batch * Required_Batches (+ scrap allowance)
+  const expectedOutput = Number(activeBom.expectedOutputQty) > 0 ? Number(activeBom.expectedOutputQty) : batchSize;
+  const requiredBatches = totalPlans > 0 ? Math.ceil(Number(totalPlans) / expectedOutput) : 0;
   return (activeBom.components || []).map(comp => {
     const compMat = comp.materialId || (comp.mpnId && comp.mpnId.materialId);
     const rawCompQty = Number(comp.quantity !== undefined ? comp.quantity : (comp.qty !== undefined ? comp.qty : 1));
     const compQty = rawCompQty > 0 ? rawCompQty : 1;
     const lossPct = Number(comp.lossPercentage || comp.lossPercent || 0);
-    const quantityPerPlan = Math.max(0.000001, compQty / batchSize);
-    const totalQuantity = (totalPlans * quantityPerPlan) * (1 + lossPct / 100);
+    const quantityPerPlan = Math.max(0.000001, compQty / expectedOutput);
+    const totalQuantity = (compQty * requiredBatches) * (1 + lossPct / 100);
 
     return {
       material: compMat?._id || compMat,

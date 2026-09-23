@@ -265,19 +265,28 @@ exports.updateProductionPlan = asyncHandler(async (req, res, next) => {
     ingredients
   } = req.body;
 
-  const newTotalPlans = totalPlans !== undefined ? parseInt(totalPlans, 10) : (quantity !== undefined ? parseInt(quantity, 10) : plan.totalPlans);
-  if (isNaN(newTotalPlans) || newTotalPlans < 1) {
-    return res.status(400).json({ success: false, error: 'Total plans/quantity must be at least 1' });
+  const rawTarget = totalPlans !== undefined ? totalPlans : quantity;
+  const newTotalPlans = rawTarget !== undefined ? parseFloat(rawTarget) : (plan.quantity || plan.totalPlans);
+  if (isNaN(newTotalPlans) || newTotalPlans <= 0) {
+    return res.status(400).json({ success: false, error: 'Target plan quantity must be greater than 0' });
   }
 
-  // If already partially or fully released, total plans cannot be less than already committed plans
-  const committedPlans = (plan.releasedPlans || 0) + (plan.completedPlans || 0);
-  if (newTotalPlans < committedPlans) {
+  // Spec RBAC: only Admins may override (change) a plan's target quantity
+  const currentTarget = plan.quantity || plan.totalPlans;
+  if (rawTarget !== undefined && newTotalPlans !== currentTarget && req.user?.role !== 'Admin') {
+    return res.status(403).json({ success: false, error: 'Only Admins can change a plan target quantity.' });
+  }
+
+  // Target cannot go below what has already been produced
+  const executedQty = plan.executedQuantity || 0;
+  if (newTotalPlans < executedQty) {
     return res.status(400).json({
       success: false,
-      error: `Cannot reduce total plans to ${newTotalPlans} because ${committedPlans} plans are already released/completed.`
+      error: `Target (${newTotalPlans}) cannot be less than the already executed quantity (${executedQty}).`
     });
   }
+  // Material requirements are exploded only for what is still left to make
+  const remainingQty = Math.max(0, newTotalPlans - executedQty);
 
   const targetWarehouseId = warehouseId || plan.warehouseId;
   const targetSiteId = siteId !== undefined ? siteId : plan.siteId;
@@ -300,18 +309,19 @@ exports.updateProductionPlan = asyncHandler(async (req, res, next) => {
   let materialStatus = plan.materialStatus;
 
   if (activeBom && (!ingredients || ingredients.length === 0)) {
-    finalIngredients = calculateBomIngredients(activeBom, newTotalPlans, targetWarehouseId);
-    materialStatus = await MRPEngineService.checkMaterialAvailability(activeBom._id, newTotalPlans, targetWarehouseId);
+    finalIngredients = calculateBomIngredients(activeBom, remainingQty, targetWarehouseId);
+    materialStatus = await MRPEngineService.checkMaterialAvailability(activeBom._id, remainingQty, targetWarehouseId);
   } else if (Array.isArray(ingredients) && ingredients.length > 0) {
-    finalIngredients = await resolveCustomIngredients(ingredients, newTotalPlans, targetWarehouseId, Material);
+    finalIngredients = await resolveCustomIngredients(ingredients, remainingQty, targetWarehouseId, Material);
     materialStatus = await checkStockAvailability(finalIngredients, targetWarehouseId, InventoryItem);
   }
 
   // Update plan fields
   if (planName) plan.planName = planName;
-  plan.totalPlans = newTotalPlans;
+  plan.totalPlans = Math.max(1, Math.ceil(newTotalPlans));
   plan.quantity = newTotalPlans;
-  plan.availablePlans = Math.max(0, newTotalPlans - (plan.reservedPlans || 0) - (plan.releasedPlans || 0) - (plan.completedPlans || 0));
+  plan.remainingQuantity = remainingQty;
+  plan.availablePlans = Math.max(0, plan.totalPlans - (plan.reservedPlans || 0) - (plan.releasedPlans || 0) - (plan.completedPlans || 0));
   if (targetBomId) {
     plan.bomId = targetBomId;
     plan.bom = targetBomId;
@@ -366,13 +376,13 @@ exports.updateProductionPlan = asyncHandler(async (req, res, next) => {
     for (const p of remainingPlans) {
       if (p._id.toString() === plan._id.toString()) continue;
 
-      const committed = (p.releasedPlans || 0) + (p.completedPlans || 0);
-      if (newTotalPlans < committed) continue;
+      if (newTotalPlans < (p.executedQuantity || 0)) continue;
 
       if (planName) p.planName = `${planName} (${p.seriesIndex ? `Series ${p.seriesIndex}/${p.seriesTotal || 'N'}` : 'Batch'})`;
-      p.totalPlans = newTotalPlans;
+      p.totalPlans = Math.max(1, Math.ceil(newTotalPlans));
       p.quantity = newTotalPlans;
-      p.availablePlans = Math.max(0, newTotalPlans - (p.reservedPlans || 0) - (p.releasedPlans || 0) - (p.completedPlans || 0));
+      p.remainingQuantity = Math.max(0, newTotalPlans - (p.executedQuantity || 0));
+      p.availablePlans = Math.max(0, p.totalPlans - (p.reservedPlans || 0) - (p.releasedPlans || 0) - (p.completedPlans || 0));
       if (targetBomId) {
         p.bomId = targetBomId;
         p.bom = targetBomId;
@@ -2136,89 +2146,106 @@ exports.overrideProductionPlan = asyncHandler(async (req, res, next) => {
 exports.getPlan3TierSummary = asyncHandler(async (req, res, next) => {
   const plan = await ProductionPlan.findById(req.params.id)
     .populate('productId', 'name code unit')
-    .populate('bomId')
+    .populate({ path: 'bomId', populate: [{ path: 'components.materialId', select: 'name code unit' }, { path: 'components.mpnId' }] })
     .populate('siteId', 'name code')
-    .populate('warehouseId', 'name code')
-    .populate('ingredients.material', 'name code unit');
+    .populate('warehouseId', 'name code');
   if (!plan) return res.status(404).json({ success: false, code: 'PLAN_NOT_FOUND', error: 'Plan not found' });
 
   const executedOrders = await ProductionOrder.find({
-    $or: [{ planId: plan._id }, { sourcePlanNumber: plan.planNumber }]
-  }).lean();
+    $or: [{ planId: plan._id }, { sourcePlanNumber: plan.planNumber }],
+    status: { $in: ['Completed', 'COMPLETED'] }
+  }).sort({ createdAt: 1 }).lean();
 
-  const noOfExecuted = executedOrders.filter(o => o.status === 'Completed').length;
-  const targetOutputQty = plan.totalPlans || plan.quantity || 1000;
-  const batchSize = plan.bomId?.batchSize || 1000;
-  const totalBatches = Math.max(1, Math.ceil(targetOutputQty / batchSize));
-  const noToBeExecuted = Math.max(0, totalBatches - noOfExecuted);
+  const bom = plan.bomId;
+  const uom = bom?.batchUOM || plan.productId?.unit || '';
+  const expectedOutput = Number(bom?.expectedOutputQty) > 0 ? Number(bom.expectedOutputQty) : (Number(bom?.batchSize) || 0);
+  const targetQty = plan.quantity || plan.totalPlans || 0;
+  const executedQty = executedOrders.reduce((a, o) => a + (o.actualQuantity || 0), 0);
+  const remainingQty = Math.max(0, targetQty - executedQty);
+  const remainingBatches = expectedOutput > 0 ? Math.ceil(remainingQty / expectedOutput) : 0;
 
-  // 1. Plan Summary
+  // 1. Plan Summary: Product | Plan ID | Target | Executed | Remaining | Status
   const planSummary = [{
-    product: plan.productId?.name || plan.productName || 'Finished Goods Product',
-    productCode: plan.productId?.code || plan.productCode,
-    noOfBatches: totalBatches,
-    targetOutputQty,
-    noOfExecuted,
-    noToBeExecuted,
+    product: plan.productId?.name || plan.productName || '',
+    productCode: plan.productId?.code || plan.productCode || '',
+    planId: plan.planNumber,
+    targetOutputQty: targetQty,
+    executedQty: Math.round(executedQty * 10000) / 10000,
+    remainingQty: Math.round(remainingQty * 10000) / 10000,
+    noOfBatches: executedOrders.length + remainingBatches,
+    noOfExecuted: executedOrders.length,
+    noToBeExecuted: remainingBatches,
     status: plan.status,
-    uom: plan.bomId?.batchUOM || 'kg'
+    uom
   }];
 
-  // 2. Batch Summary
-  const batchSummary = [];
-  for (let i = 1; i <= totalBatches; i++) {
-    const existingOrder = executedOrders[i - 1];
-    const batchNo = existingOrder?.batchNumber || `${plan.planNumber}-B${String(i).padStart(2, '0')}`;
-    const mfgDate = existingOrder?.mfgDate || new Date(Date.now() + (i - 1) * 7 * 24 * 60 * 60 * 1000);
-    const expDate = existingOrder?.expiryDate || new Date(Date.now() + ((i - 1) * 7 + 365) * 24 * 60 * 60 * 1000);
-    const batchQty = Math.min(batchSize, targetOutputQty - (i - 1) * batchSize);
-
+  // 2. Batch Summary: executed batches (actuals) + planned remaining batches
+  const batchSummary = executedOrders.map((o, i) => ({
+    batchIndex: i + 1,
+    product: plan.productId?.name || plan.productName,
+    batchNo: o.batchNumber,
+    mfgDate: o.mfgDate || null,
+    expDate: o.expiryDate || null,
+    qty: o.actualQuantity || 0,
+    isExecuted: true,
+    orderId: o._id,
+    status: o.status
+  }));
+  for (let i = 0; i < remainingBatches; i++) {
+    const idx = executedOrders.length + i + 1;
     batchSummary.push({
-      batchIndex: i,
+      batchIndex: idx,
       product: plan.productId?.name || plan.productName,
-      batchNo,
-      mfgDate,
-      expDate,
-      qty: batchQty,
-      isExecuted: !!(existingOrder && existingOrder.status === 'Completed'),
-      orderId: existingOrder?._id || null,
-      status: existingOrder?.status || 'Scheduled'
+      batchNo: `${plan.planNumber}-B${String(idx).padStart(2, '0')}`,
+      mfgDate: null,
+      expDate: null,
+      qty: Math.min(expectedOutput, remainingQty - i * expectedOutput),
+      isExecuted: false,
+      orderId: null,
+      status: 'Planned'
     });
   }
 
-  // 3. Material Summary (Requirements vs Availability with Short/Long)
+  // 3. Material Summary — requirement for the REMAINING quantity vs usable stock at the plan location
   const MPN = require('../models/MPN');
-  const InventoryItem = require('../models/InventoryItem');
+  const Warehouse = require('../models/Warehouse');
+  const invScope = {};
+  if (plan.warehouseId) invScope.warehouseId = plan.warehouseId._id || plan.warehouseId;
+  else if (plan.siteId) {
+    const whs = await Warehouse.find({ siteId: plan.siteId._id || plan.siteId }).select('_id').lean();
+    invScope.warehouseId = { $in: whs.map(w => w._id) };
+  }
+  const now = new Date();
 
   const materialSummary = [];
-  const ingredients = plan.ingredients || [];
-  
-  for (const ing of ingredients) {
-    const matId = ing.material?._id || ing.material || ing.materialId;
+  for (const comp of (bom?.components || [])) {
+    const matDoc = comp.materialId;
+    const matId = matDoc?._id || comp.materialId;
     if (!matId) continue;
+    const perBatch = Number(comp.quantity ?? comp.qty ?? 0);
+    const qtyReq = perBatch * remainingBatches;
 
-    const mpnDoc = await MPN.findOne({ materialId: matId, status: 'Active' })
-      .populate('vendorId', 'name')
-      .lean();
-
-    const invQuery = { materialId: matId };
-    if (plan.warehouseId) invQuery.warehouseId = plan.warehouseId;
-    const invItems = await InventoryItem.find(invQuery).lean();
-    const qtyAvail = invItems.reduce((acc, it) => acc + (it.onHand || it.balance || 0), 0);
-    const qtyReq = ing.totalQuantity || ing.quantity || (ing.quantityPerPlan * targetOutputQty);
+    const invItems = await InventoryItem.find({ materialId: matId, ...invScope }).lean();
+    const qtyAvail = invItems
+      .filter(it => !(it.expiryDate && new Date(it.expiryDate) < now))
+      .reduce((acc, it) => acc + (it.available || 0), 0);
     const diff = qtyAvail - qtyReq;
+
+    const mpnDoc = (comp.mpnId && comp.mpnId.vendorId !== undefined) ? comp.mpnId
+      : await MPN.findOne({ materialId: matId, status: 'Active' }).populate('vendorId', 'name').lean();
+    const vendorName = mpnDoc?.vendorId?.name || (mpnDoc?.vendorId && (await require('../models/Vendor').findById(mpnDoc.vendorId).select('name').lean())?.name) || '';
 
     materialSummary.push({
       materialId: matId,
-      material: ing.material?.name || ing.materialName || 'Raw Material',
-      materialCode: ing.material?.code || ing.materialCode,
-      mpn: mpnDoc?.mpnCode || mpnDoc?.manufacturerPartNumber || ing.materialCode,
-      vendor: mpnDoc?.vendorId?.name || mpnDoc?.manufacturerName || 'Primary Supplier',
+      material: matDoc?.name || '',
+      materialCode: matDoc?.code || '',
+      mpn: mpnDoc?.mpnCode || mpnDoc?.manufacturerPartNumber || '',
+      vendor: vendorName,
       qtyReq: Math.round(qtyReq * 100) / 100,
       qtyAvail: Math.round(qtyAvail * 100) / 100,
       diff: Math.round(diff * 100) / 100,
-      status: diff >= 0 ? 'Surplus' : 'Shortage',
-      uom: ing.uom || 'kg'
+      status: diff >= 0 ? 'Long' : 'Short',
+      uom: comp.uom || matDoc?.unit || ''
     });
   }
 
@@ -2226,7 +2253,7 @@ exports.getPlan3TierSummary = asyncHandler(async (req, res, next) => {
     success: true,
     data: {
       planId: plan.planNumber,
-      location: plan.siteId?.name || 'All Locations',
+      location: plan.siteId?.name || '',
       planSummary,
       batchSummary,
       materialSummary
@@ -2261,7 +2288,7 @@ exports.simulatePlanningDemand = asyncHandler(async (req, res, next) => {
     bom = await BOM.findOne({
       $or: [{ productId: product._id }, { product: product._id }],
       siteId: siteId,
-      status: { $ne: 'Deleted' }
+      status: 'Active'
     }).populate('components.materialId').populate('components.mpnId');
   }
 
@@ -2284,9 +2311,9 @@ exports.simulatePlanningDemand = asyncHandler(async (req, res, next) => {
   }
 
   // 2. Compute Batch parameters
-  const batchSize = bom.batchSize || 1000;
+  const batchSize = bom.batchSize || 1;
   const expectedOutputQty = bom.expectedOutputQty || batchSize;
-  const batchUOM = bom.batchUOM || product.unit || 'kg';
+  const batchUOM = bom.batchUOM || product.unit || '';
   const requiredBatches = Math.max(1, Math.ceil(targetDemandQty / expectedOutputQty));
   const targetOutputQty = requiredBatches * expectedOutputQty;
 
@@ -2337,7 +2364,11 @@ exports.simulatePlanningDemand = asyncHandler(async (req, res, next) => {
       ...invItemQuery
     }).lean();
 
-    const qtyAvail = stockItems.reduce((acc, it) => acc + (it.quantityOnHand || it.onHand || it.balance || it.quantity || 0), 0);
+    // Usable stock = available (not reserved/blocked) and not expired
+    const nowTs = new Date();
+    const qtyAvail = stockItems
+      .filter(it => !(it.expiryDate && new Date(it.expiryDate) < nowTs))
+      .reduce((acc, it) => acc + (it.available || 0), 0);
     const shortage = Math.max(0, grossReq - qtyAvail);
     const surplus = Math.max(0, qtyAvail - grossReq);
     const diff = qtyAvail - grossReq;
@@ -2363,16 +2394,16 @@ exports.simulatePlanningDemand = asyncHandler(async (req, res, next) => {
       materialId: matId,
       material: matDoc?.name || comp.materialName || 'Raw Material',
       materialCode: matDoc?.code || comp.materialCode || '',
-      mpn: mpnDoc?.mpnCode || mpnDoc?.manufacturerPartNumber || comp.mpnCode || matDoc?.code || 'MPN-STD',
-      vendor: mpnDoc?.vendorId?.name || mpnDoc?.manufacturerName || 'Primary Supplier',
+      mpn: mpnDoc?.mpnCode || mpnDoc?.manufacturerPartNumber || comp.mpnCode || '',
+      vendor: mpnDoc?.vendorId?.name || '',
       qtyPerBatch: Math.round(qtyPerBatch * 100) / 100,
       qtyReq: Math.round(grossReq * 100) / 100,
       qtyAvail: Math.round(qtyAvail * 100) / 100,
       diff: Math.round(diff * 100) / 100,
       shortage: Math.round(shortage * 100) / 100,
       surplus: Math.round(surplus * 100) / 100,
-      status: diff >= 0 ? 'Surplus' : 'Shortage',
-      uom: comp.uom || matDoc?.unit || 'kg',
+      status: diff >= 0 ? 'Long' : 'Short',
+      uom: comp.uom || matDoc?.unit || '',
       batchesPossible
     });
   }
@@ -2392,7 +2423,7 @@ exports.simulatePlanningDemand = asyncHandler(async (req, res, next) => {
       batchNo,
       mfgDate,
       expDate,
-      qty: Math.min(batchSize, targetOutputQty - (i - 1) * batchSize),
+      qty: Math.min(expectedOutputQty, targetOutputQty - (i - 1) * expectedOutputQty),
       status: 'Planned'
     });
   }

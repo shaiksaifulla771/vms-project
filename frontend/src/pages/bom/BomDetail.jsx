@@ -4,7 +4,7 @@ import api from '../../services/api';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Edit2, ChevronLeft } from 'lucide-react';
+import { Edit2, ChevronLeft, Copy } from 'lucide-react';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
 import PriceDriftBanner from '../../features/bom/PriceDriftBanner';
 

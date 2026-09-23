@@ -4,6 +4,7 @@ import api from '../../services/api';
 import BomPageWrapper from '../../features/bom/BomPageWrapper';
 import { ChevronLeft, Calculator, PieChart } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
 
 export default function BomCostBreakdown() {
   const { id } = useParams();

@@ -100,7 +100,7 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Request-Id', 'Idempotency-Key', 'idempotency-key', 'X-Site-Id', 'x-site-id', 'X-Warehouse-Id', 'x-warehouse-id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Request-Id', 'Idempotency-Key', 'idempotency-key', 'X-Site-Id', 'x-site-id', 'X-Warehouse-Id', 'x-warehouse-id', 'X-User-Id', 'x-user-id'],
   exposedHeaders: ['X-Correlation-Id', 'X-Site-Id', 'X-Warehouse-Id'],
   credentials: true,
 }));

@@ -763,6 +763,10 @@ exports.outwardStock = async (req, res, next) => {
       return res.status(404).json({ success: false, error: `Lot ${lotNumber} not found in inventory` });
     }
 
+    if (lotItem.expiryDate && new Date(lotItem.expiryDate) < new Date()) {
+      return res.status(400).json({ success: false, error: `Lot ${lotNumber} is expired and cannot be issued. Use a Stock Adjustment to write it off.` });
+    }
+
     if (lotItem.available < removeQty) {
       return res.status(400).json({
         success: false,
@@ -825,7 +829,8 @@ exports.getLotsForMaterial = async (req, res, next) => {
         expiryDate: l.expiryDate,
         onHand: l.onHand || l.balance || 0,
         available: l.available || 0,
-        uom: l.uom || 'kg'
+        isExpired: !!(l.expiryDate && new Date(l.expiryDate) < new Date()),
+        uom: l.uom || ''
       }))
     });
   } catch (err) {
@@ -893,7 +898,7 @@ exports.transferLotStock = async (req, res, next) => {
       warehouseId: sourceWh,
       siteId: originItem.siteId,
       quantity: transferQty,
-      type: 'Transfer',
+      type: 'TRANSFER_OUT',
       lotNumber,
       batchNumber: lotNumber,
       reason: reason || `Inter-warehouse transfer to ${destinationWhDoc.name}`,
@@ -902,22 +907,41 @@ exports.transferLotStock = async (req, res, next) => {
       referenceId: transferRef
     });
 
-    // 2. Credit Destination Warehouse with SAME Lot #, Mfg Date, Expiry Date
-    const txIn = await InventoryLedgerService.recordTransaction({
-      materialId,
-      warehouseId: destWh,
-      siteId: destinationWhDoc.siteId,
-      quantity: transferQty,
-      type: 'GRN',
-      lotNumber,
-      batchNumber: lotNumber,
-      mfgDate: originItem.mfgDate,
-      expiryDate: originItem.expiryDate,
-      reason: reason || `Inter-warehouse transfer from source WH`,
-      userId: req.user ? req.user.id : null,
-      sourceDocType: 'StockTransfer',
-      referenceId: transferRef
-    });
+    // 2. Credit Destination Warehouse with SAME Lot #, Mfg Date, Expiry Date.
+    //    If the credit fails, reverse the debit so no stock is lost (atomicity).
+    let txIn;
+    try {
+      txIn = await InventoryLedgerService.recordTransaction({
+        materialId,
+        warehouseId: destWh,
+        siteId: destinationWhDoc.siteId,
+        quantity: transferQty,
+        type: 'TRANSFER_IN',
+        lotNumber,
+        batchNumber: lotNumber,
+        mfgDate: originItem.mfgDate,
+        expiryDate: originItem.expiryDate,
+        reason: reason || `Inter-warehouse transfer from source WH`,
+        userId: req.user ? req.user.id : null,
+        sourceDocType: 'StockTransfer',
+        referenceId: transferRef
+      });
+    } catch (creditErr) {
+      await InventoryLedgerService.recordTransaction({
+        materialId,
+        warehouseId: sourceWh,
+        siteId: originItem.siteId,
+        quantity: transferQty,
+        type: 'TRANSFER_IN',
+        lotNumber,
+        batchNumber: lotNumber,
+        reason: `Reversal of failed transfer ${transferRef}: ${creditErr.message}`,
+        userId: req.user ? req.user.id : null,
+        sourceDocType: 'StockTransferReversal',
+        referenceId: transferRef
+      });
+      throw creditErr;
+    }
 
     res.status(200).json({
       success: true,
@@ -984,7 +1008,7 @@ exports.adjustLotStock = async (req, res, next) => {
             warehouseId,
             siteId: item.siteId,
             quantity: diff,
-            type: 'Adjustment',
+            type: 'ADJUSTMENT_IN',
             lotNumber,
             batchNumber: lotNumber,
             mfgDate: item.mfgDate,
@@ -1002,7 +1026,7 @@ exports.adjustLotStock = async (req, res, next) => {
             warehouseId,
             siteId: item.siteId,
             quantity: decreaseQty,
-            type: 'Issue',
+            type: 'ADJUSTMENT_OUT',
             lotNumber,
             batchNumber: lotNumber,
             reason: reason || 'Physical count reconciliation (decrease)',

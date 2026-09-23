@@ -63,7 +63,6 @@ exports.createBOM = async (data, userContext) => {
   const session = await mongoose.startSession();
   startSafeTransaction(session);
   try {
-    const { productId, batchSize, batchUOM, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
     const { productId, batchSize, batchUOM, expectedOutputQty, siteId, warehouseId, components, previousVersionId, effectiveDate, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
 
     await validateBOMComponents(productId, components);
@@ -156,7 +155,6 @@ exports.updateBOM = async (id, data, userContext) => {
   const session = await mongoose.startSession();
   startSafeTransaction(session);
   try {
-    const { productId, batchSize, batchUOM, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
     const { productId, batchSize, batchUOM, expectedOutputQty, siteId, warehouseId, components, version, effectiveDate, status, packagingCost, processingCost, overheadCost, manufacturer, updateMasterManufacturer, batchCode, notes } = data;
 
     const bom = await BOM.findById(id).session(session);
@@ -168,7 +166,6 @@ exports.updateBOM = async (id, data, userContext) => {
     }
 
     // Handle partial updates without creating a new version
-    if ((status || batchCode !== undefined) && !components && !productId) {
     if ((status || batchCode !== undefined || siteId !== undefined || warehouseId !== undefined || expectedOutputQty !== undefined) && !components && !productId) {
       const updateFields = { updatedBy: userContext.name };
       if (status) updateFields.status = status;

@@ -6,7 +6,6 @@ import {
   Layers,
   Package,
   Settings,
-  LogOut,
   X,
   UserCheck,
   ChevronDown,
@@ -124,7 +123,7 @@ const NAVIGATION_SECTIONS = [
 ];
 
 const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => {
-  const { user, logout } = useAuth();
+  const { user, actingUsers = [], switchUser } = useAuth();
   const [expandedSection, setExpandedSection] = useState('master');
   const userRole = user?.role || 'Viewer';
 
@@ -249,7 +248,7 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
           })}
         </nav>
 
-        {/* User profile & Logout */}
+        {/* Acting user (no login) */}
         <div className="p-2 border-t border-slate-800 bg-slate-950/40 flex flex-col space-y-1.5">
           {user && (
             <div className="flex items-center space-x-2 w-full px-1">
@@ -263,13 +262,21 @@ const Sidebar = ({ activePage, setActivePage, isCollapsed, setIsCollapsed }) => 
             </div>
           )}
 
-          <button
-            onClick={logout}
-            className="flex items-center justify-center w-full px-2 py-1 space-x-1.5 bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 rounded text-[10px] font-bold transition-colors"
-          >
-            <LogOut className="h-3 w-3 shrink-0" />
-            <span>Sign Out</span>
-          </button>
+          {actingUsers.length > 0 && (
+            <label className="block px-1">
+              <span className="block text-[9px] text-slate-500 font-semibold uppercase tracking-wide mb-0.5">Acting as</span>
+              <select
+                value={user?.id || ''}
+                onChange={(e) => switchUser(e.target.value)}
+                className="w-full bg-slate-800 text-slate-200 text-[10px] rounded px-1.5 py-1 border border-slate-700 focus:outline-none focus:border-blue-500"
+                title="Select which user/role the ERP acts as (no login required)"
+              >
+                {actingUsers.map(u => (
+                  <option key={u.id} value={u.id}>{u.username} ({u.role})</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
       </aside>
     </>

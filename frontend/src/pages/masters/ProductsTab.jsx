@@ -55,7 +55,7 @@ export default function ProductsTab() {
       const [matRes, bomRes, invRes] = await Promise.all([
         api.get('/api/materials').catch(() => ({ data: { data: [] } })),
         api.get('/api/bom').catch(() => ({ data: { data: [] } })),
-        api.get('/api/inventory/balance').catch(() => ({ data: { data: [] } }))
+        api.get('/api/inventory').catch(() => ({ data: { data: [] } }))
       ]);
 
       const allMaterials = matRes.data?.data || matRes.data?.materials || [];
