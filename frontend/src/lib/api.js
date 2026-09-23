@@ -18,8 +18,8 @@ export const prefs = {
   setWarehouseId: (v) => store.set('erp.warehouseId', v),
 };
 
-async function request(method, path, body, { scoped = true } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+function baseHeaders(scoped) {
+  const headers = {};
   const uid = prefs.userId();
   if (uid) headers['X-User-Id'] = uid;
   if (scoped) {
@@ -28,6 +28,11 @@ async function request(method, path, body, { scoped = true } = {}) {
     if (loc) headers['X-Location-Id'] = loc;
     if (wh) headers['X-Warehouse-Id'] = wh;
   }
+  return headers;
+}
+
+async function request(method, path, body, { scoped = true } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...baseHeaders(scoped) };
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
@@ -39,9 +44,40 @@ async function request(method, path, body, { scoped = true } = {}) {
   if (!res.ok) {
     const err = new Error((data && data.error) || `Request failed (${res.status})`);
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data;
+}
+
+/** Download a file from the API (sends the acting-user header, then saves the blob). */
+async function download(path, fallbackName = 'download') {
+  const res = await fetch(`${BASE}${path}`, { headers: baseHeaders(false) });
+  if (!res.ok) {
+    let msg = `Download failed (${res.status})`;
+    try { msg = (await res.json()).error || msg; } catch { /* not json */ }
+    throw new Error(msg);
+  }
+  const cd = res.headers.get('Content-Disposition') || '';
+  const name = /filename="?([^"]+)"?/.exec(cd)?.[1] || fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Read a File as base64 (no data: prefix). */
+export function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = () => reject(new Error('Could not read the file'));
+    r.readAsDataURL(file);
+  });
 }
 
 export const api = {
@@ -49,6 +85,8 @@ export const api = {
   post: (p, b, o) => request('POST', p, b ?? {}, o),
   put: (p, b, o) => request('PUT', p, b ?? {}, o),
   patch: (p, b, o) => request('PATCH', p, b ?? {}, o),
+  del: (p, o) => request('DELETE', p, undefined, o),
+  download,
 };
 
 export function qs(params) {

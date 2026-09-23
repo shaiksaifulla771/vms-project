@@ -43,7 +43,7 @@ function api(userId) {
     if (userId) r = r.set('X-User-Id', userId);
     return body !== undefined ? r.send(body) : r;
   };
-  return { get: wrap('get'), post: wrap('post'), put: wrap('put'), patch: wrap('patch') };
+  return { get: wrap('get'), post: wrap('post'), put: wrap('put'), patch: wrap('patch'), del: wrap('delete') };
 }
 
 module.exports = { resetDb, ctx, api, getPool, close };

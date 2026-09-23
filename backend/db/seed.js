@@ -20,8 +20,8 @@ async function seedDemo(c) {
   const mumWh2 = await ins(`insert into public.warehouses(location_id, code, name) values ($1,'WH-02','Mumbai FG Store') returning id`, [mum.id]);
   await ins(`insert into public.warehouses(location_id, code, name, is_default) values ($1,'WH-01','Pune Main',true) returning id`, [pun.id]);
 
-  const ven1 = await ins(`insert into public.vendors(code, name, city) values ('V1001','Agro Grains Co','Nashik') returning id`);
-  const ven2 = await ins(`insert into public.vendors(code, name, city) values ('V1002','PackRight Ltd','Pune') returning id`);
+  const ven1 = await ins(`insert into public.vendors(name, city) values ('Agro Grains Co','Nashik') returning id`);
+  const ven2 = await ins(`insert into public.vendors(name, city) values ('PackRight Ltd','Pune') returning id`);
 
   const mat = async (code, name, cls, uom, shelf) => ins(
     `insert into public.materials(code, name, classification, uom, shelf_life_days) values ($1,$2,$3,$4,$5) returning id`,
@@ -31,20 +31,38 @@ async function seedDemo(c) {
   const pouch = await mat('PK-POUCH', 'Spouted Pouch 100g', 'PACKAGING', 'pcs', null);
   const fg = await mat('FG-RL1', 'Rice O Lentil 100g Pouch', 'FINISHED_GOOD', 'pcs', 270);
 
-  const mpn = async (code, materialId, vendorId) => {
+  // Categories (Settings > Categories)
+  const cat = async (name, parentId) => ins(`insert into public.material_categories(name, parent_id) values ($1,$2) returning id`, [name, parentId || null]);
+  const cereals = await cat('Cereals & Pulses');
+  const flours = await cat('Flours', cereals.id);
+  const pulses = await cat('Pulses', cereals.id);
+  const packing = await cat('Packing Material');
+  const pouches = await cat('Pouches', packing.id);
+  await cat('Cartons', packing.id);
+  await c.query(`update public.materials set category_id = $2, sub_category_id = $3 where id = $1`, [rice.id, cereals.id, flours.id]);
+  await c.query(`update public.materials set category_id = $2, sub_category_id = $3 where id = $1`, [lentil.id, cereals.id, pulses.id]);
+  await c.query(`update public.materials set category_id = $2, sub_category_id = $3 where id = $1`, [pouch.id, packing.id, pouches.id]);
+  for (const [vid, mid] of [[ven1.id, rice.id], [ven1.id, lentil.id], [ven2.id, pouch.id]]) {
+    await c.query('insert into public.vendor_materials(vendor_id, material_id) values ($1,$2)', [vid, mid]);
+  }
+
+  const mpn = async (code, materialId, vendorId, uom, moq, price) => {
     const m = await ins(`insert into public.mpns(mpn_code, material_id) values ($1,$2) returning id`, [code, materialId]);
-    if (vendorId) await c.query(`insert into public.mpn_vendors(mpn_id, vendor_id, is_preferred) values ($1,$2,true)`, [m.id, vendorId]);
+    if (vendorId) {
+      await c.query(`insert into public.mpn_vendors(mpn_id, vendor_id, is_preferred, uom, moq, price) values ($1,$2,true,$3,$4,$5)`,
+        [m.id, vendorId, uom, moq, price]);
+    }
     return m;
   };
-  const riceMpn = await mpn('MPN-RICE-AG', rice.id, ven1.id);
-  const lentilMpn = await mpn('MPN-LENTIL-AG', lentil.id, ven1.id);
-  const pouchMpn = await mpn('MPN-POUCH-PR', pouch.id, ven2.id);
+  const riceMpn = await mpn('MPN-RICE-AG', rice.id, ven1.id, 'kg', 100, 42);
+  const lentilMpn = await mpn('MPN-LENTIL-AG', lentil.id, ven1.id, 'kg', 50, 95);
+  const pouchMpn = await mpn('MPN-POUCH-PR', pouch.id, ven2.id, 'pcs', 5000, 3.2);
   await mpn('FG-RL1', fg.id, null);
 
   // BOM: 1 batch = 100 kg input -> 1000 pouches
   const bom = await ins(`insert into public.boms(product_id, location_id, warehouse_id, version, status, batch_size, batch_uom,
-                            expected_output_qty, output_uom, created_by)
-                         values ($1,$2,$3,1,'ACTIVE',100,'kg',1000,'pcs',$4) returning id`, [fg.id, mum.id, mumWh2.id, admin.id]);
+                            expected_output_qty, output_uom, created_by, packing_cost, processing_cost, overhead_cost, freight_cost)
+                         values ($1,$2,$3,1,'ACTIVE',100,'kg',1000,'pcs',$4, 250, 400, 150, 120) returning id`, [fg.id, mum.id, mumWh2.id, admin.id]);
   const line = (n, m, p, q, uom, scrap) => c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct)
                                                    values ($1,$2,$3,$4,$5,$6,$7)`, [bom.id, n, m, p, q, uom, scrap]);
   await line(1, rice.id, riceMpn.id, 60, 'kg', 2);

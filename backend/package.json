@@ -5,7 +5,9 @@
   "description": "ERP API: Inventory, Planning, Manufacturing (PostgreSQL / Supabase)",
   "main": "src/server.js",
   "type": "commonjs",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
@@ -17,6 +19,7 @@
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "helmet": "^8.1.0",
     "pg": "^8.13.1"
@@ -28,5 +31,8 @@
   "jest": {
     "testEnvironment": "node",
     "testTimeout": 30000
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

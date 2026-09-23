@@ -112,3 +112,13 @@ export function useDefaultScope() {
   const wh = warehouseId || loc?.warehouses.find((w) => w.is_default)?.id || '';
   return { locationId: loc?.id || '', warehouseId: loc ? wh : '' };
 }
+
+/** Material categories as a tree [{id, name, status, children: [...] }] */
+export function useCategories(reloadKey = 0) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api.get('/categories', { scoped: false }).then(setRows).catch(() => setRows([])); }, [reloadKey]);
+  return rows;
+}
+
+export const vendorOptions = (rows) => rows.filter((v) => v.status === 'ACTIVE')
+  .map((v) => ({ value: v.id, label: `${v.code} - ${v.name}`, sub: [v.default_address, v.phone].filter(Boolean).join(' · ') }));
