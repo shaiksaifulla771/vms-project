@@ -20,7 +20,9 @@ export default function PlansPage() {
     { key: 'executed_qty', label: 'Executed Qty', align: 'right', render: (r) => fmtQty(r.executed_qty), value: (r) => Number(r.executed_qty) },
     { key: 'remaining_qty', label: 'Remaining Qty', align: 'right', render: (r) => fmtQty(r.remaining_qty), value: (r) => Number(r.remaining_qty) },
     { key: 'output_uom', label: 'UOM' },
-    { key: 'batch_count', label: 'Batches', align: 'right' },
+    { key: 'plan_mode', label: 'Plan By', value: (r) => (r.plan_mode === 'BATCHES' ? 'Batches' : 'Quantity') },
+    { key: 'batch_count', label: 'Batches Done / Planned', align: 'right', value: (r) => r.batch_count, render: (r) => `${r.batch_count} / ${r.planned_batches ?? '-'}` },
+    { key: 'remaining_batches', label: 'Remaining Batches', align: 'right', value: (r) => Math.max((r.planned_batches || 0) - r.batch_count, 0) },
     { key: 'required_date', label: 'Required By', render: (r) => fmtDate(r.required_date) },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
   ];

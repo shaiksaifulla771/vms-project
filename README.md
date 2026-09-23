@@ -54,7 +54,8 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 1. **Inventory** - Stock page: Inward (MPN, Location, WH, Lot, Qty, Mfg/Expiry, Vendor), Outward (FEFO lot list,
    expired blocked), Transfers (Draft -> In-Transit -> Completed; stock moves only on Completed, two ledger rows,
    lot dates preserved), Adjustment (Admin: New Physical - System).
-2. **Planning** - Product + Demand + Location -> active BOM, `batches = ceil(demand / expected output)`,
+2. **Planning** - Plan by **number of batches** (e.g. 10; each Batch Entry counts one; remaining = planned - executed;
+   Admin can raise or lower the count, never below executed) or by quantity. Product + Demand + Location -> active BOM, `batches = ceil(demand / expected output)`,
    `required = qty_per_batch x batches x (1 + scrap%)` (scrap optional per plan / default in Settings),
    availability = non-expired stock at the location. Plan, Batch and Material summaries.
    Editing the target (Admin) recalculates Remaining = Target - Executed and re-explodes the BOM for the remainder.
@@ -69,7 +70,10 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
    cost per batch and per unit, Scale Recipe into a new draft). Every list has a Functions menu (Manual Entry,
    Bulk Entry, Bulk Update, Export) and View / Edit / Delete actions. Codes come from database sequences and are
    never reused; existing codes are kept. Delete becomes Deactivate when a record is in use.
-5. **Reports** - Stock Balance Sheet, printable Physical Stock Sheet (Admins can post counts as adjustments),
+5. **Physical Stock Count** - start a count (snapshot of lots by Location / WH / classification / category, optional
+   hidden system qty), print the sheet, enter counts, a reason for every difference, submit; only an Admin approves,
+   which posts each difference as an ADJUSTMENT referenced to the count number (movements after the snapshot are kept).
+6. **Reports** - Stock Balance Sheet,
    Transaction Report (filters: date, location/WH, MPN, type; CSV), Traceability (backward + forward, recursive).
 
 ## API (all under `/api`)
@@ -77,7 +81,7 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 `session`, `settings`, `locations` (+`/:id/warehouses`), `warehouses`, `vendors`, `materials`, `categories`,
 `mpns` (+`POST /bulk`), `bulk/:entity/template|export|parse|preview|commit` (entity = materials, vendors, mpns),
 `boms` (+`/active`, `/:id/activate|obsolete|revise|scale`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
-`transfers` (+`/:id/dispatch|complete|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
+`transfers` (+`/:id/dispatch|complete|cancel`), `stock-counts` (+`/:id/lines|submit|return|approve|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
 `batches` (+`/prefill`, `PUT /:id`), `reports/stock-balance|physical-stock-sheet|lots|trace`.
 Headers: `X-User-Id` (acting user), `X-Location-Id`, `X-Warehouse-Id` (global scope).
 

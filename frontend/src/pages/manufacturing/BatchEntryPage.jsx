@@ -133,7 +133,8 @@ export default function BatchEntryPage() {
               <Field label="Plan" required className="col-span-2">
                 <select className="input" value={planId} onChange={(e) => { setPlanId(e.target.value); setOut({ plan: '', actual: '', reason: '' }); }}>
                   <option value="">Select open plan</option>
-                  {plans.map((p) => <option key={p.id} value={p.id}>{p.plan_no} · {p.product_code} · remaining {fmtQty(p.remaining_qty)} {p.output_uom}</option>)}
+                  {plans.map((p) => <option key={p.id} value={p.id}>{p.plan_no} · {p.product_code} · {p.plan_mode === 'BATCHES'
+                    ? `batch ${p.batch_count + 1} of ${p.planned_batches}` : `remaining ${fmtQty(p.remaining_qty)} ${p.output_uom}`}</option>)}
                 </select>
               </Field>
             ) : (
@@ -164,7 +165,9 @@ export default function BatchEntryPage() {
             <div className="text-xs text-ink-muted mt-2">
               {pf.product.code} - {pf.product.name}
               {pf.bom ? ` · BOM ${pf.bom.bom_no} v${pf.bom.version} (expected output ${fmtQty(pf.bom.expected_output_qty)} ${pf.bom.output_uom} per batch)` : ' · No active BOM - add inputs manually'}
-              {pf.plan ? ` · Plan target ${fmtQty(pf.plan.target_qty)}, executed ${fmtQty(pf.plan.executed_qty)}, remaining ${fmtQty(pf.plan.remaining_qty)}` : ''}
+              {pf.plan ? (pf.plan.plan_mode === 'BATCHES'
+                ? ` · Plan ${pf.plan.plan_no}: batch ${pf.plan.executed_batches + 1} of ${pf.plan.target_batches} (${pf.plan.executed_batches} done)`
+                : ` · Plan target ${fmtQty(pf.plan.target_qty)}, executed ${fmtQty(pf.plan.executed_qty)}, remaining ${fmtQty(pf.plan.remaining_qty)}`) : ''}
             </div>
           )}
         </Section>

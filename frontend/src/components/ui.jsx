@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Download, Search, X } from 'lucide-react';
 import { downloadCsv } from '../lib/format';
 
@@ -109,9 +109,23 @@ export function Stat({ label, value, sub }) {
  * columns: [{ key, label, render?(row), value?(row) (for sort/search/csv), align:'right', width }]
  */
 export function DataTable({ columns, rows, loading, empty = 'No records', searchable = true, exportName,
-  onRowClick, rowKey = 'id', toolbar, dense = false, initialSort }) {
+  onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(initialSort || null);
+  const box = useRef(null);
+  const [boxH, setBoxH] = useState(null);
+  // Fit the scroll box to the space left on screen, so its sideways scrollbar is always visible.
+  useLayoutEffect(() => {
+    if (!scroll) return undefined;
+    const fit = () => {
+      if (!box.current) return;
+      const top = box.current.getBoundingClientRect().top + window.scrollY;
+      setBoxH(Math.max(window.innerHeight - top - (footer ? 64 : 24), 240));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [scroll, footer ? 1 : 0, toolbar ? 1 : 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const val = (c, r) => (c.value ? c.value(r) : r[c.key]);
 
   const shown = useMemo(() => {
@@ -163,9 +177,11 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           </div>
         </div>
       )}
-      <div className="overflow-x-auto">
+      {/* Scroll box as tall as the screen: headers stay visible and the sideways scrollbar is always reachable. */}
+      <div ref={box} className={scroll ? 'scroll-box overflow-auto min-h-[8rem] print:overflow-visible' : 'overflow-x-auto'}
+        style={scroll && boxH ? { maxHeight: boxH } : undefined}>
         <table className="w-full border-collapse">
-          <thead>
+          <thead className={scroll ? 'sticky top-0 z-10' : ''}>
             <tr>
               {columns.map((c) => (
                 <th key={c.key} className={`th ${c.align === 'right' ? 'text-right' : ''} ${c.noSort ? '' : 'cursor-pointer'}`}
@@ -198,6 +214,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           </tbody>
         </table>
       </div>
+      {footer}
     </div>
   );
 }
