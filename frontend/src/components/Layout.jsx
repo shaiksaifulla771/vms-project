@@ -4,14 +4,14 @@ import { Boxes, ChevronDown, ChevronRight, ClipboardList, Database, Factory, Fil
 import { useApp } from '../lib/app-context';
 import { Toast } from './ui';
 
-// Order follows the system flow: Master Data -> MPN -> BOM -> Inventory -> Planning -> Manufacturing -> Reports.
+// Order follows the system flow (company set-up such as Locations & WH lives in Settings): Master Data -> MPN -> BOM -> Inventory -> Planning -> Manufacturing -> Reports.
 const NAV = [
   { title: 'Master Data', icon: Database, items: [
     { to: '/masters/materials', label: 'Materials' },
+    { to: '/masters/products', label: 'Products' },
     { to: '/masters/vendors', label: 'Vendors' },
     { to: '/masters/mpns', label: 'MPNs' },
     { to: '/masters/boms', label: 'BOMs' },
-    { to: '/masters/locations', label: 'Locations & WH' },
   ] },
   { title: 'Inventory', icon: Boxes, items: [
     { to: '/inventory/stock', label: 'Stock' },
@@ -33,6 +33,7 @@ const NAV = [
   ] },
   { title: 'Settings', icon: Cog, items: [
     { to: '/settings', label: 'General', end: true },
+    { to: '/settings/locations', label: 'Locations & WH' },
     { to: '/settings/categories', label: 'Categories' },
   ] },
 ];

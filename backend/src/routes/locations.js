@@ -8,7 +8,7 @@ const v = require('../utils/validate');
 router.get('/', h(async (req, res) => {
   const { rows } = await query(`
     select l.*, coalesce(json_agg(json_build_object(
-             'id', w.id, 'code', w.code, 'name', w.name, 'is_default', w.is_default, 'is_active', w.is_active)
+             'id', w.id, 'code', w.code, 'name', w.name, 'is_default', w.is_default, 'is_active', w.is_active, 'created_at', w.created_at)
              order by w.is_default desc, w.code) filter (where w.id is not null), '[]') as warehouses
       from public.locations l
       left join public.warehouses w on w.location_id = l.id

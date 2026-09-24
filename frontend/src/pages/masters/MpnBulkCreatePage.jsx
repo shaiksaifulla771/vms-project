@@ -4,7 +4,7 @@ import { Copy, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { ErrorBox, PageHeader } from '../../components/ui';
-import { Combobox, materialOptions, useMaterials, useVendors } from '../../components/pickers';
+import { Combobox, UomSelect, materialOptions, useMaterials, useUoms, useVendors } from '../../components/pickers';
 import { sortedVendorOptions } from './MpnsPage';
 
 let seq = 0;
@@ -19,6 +19,7 @@ export default function MpnBulkCreatePage() {
   const { notify } = useApp();
   const materials = useMaterials({ status: 'ACTIVE' });
   const vendors = useVendors();
+  const uoms = useUoms();
   const [rows, setRows] = useState(() => [blankRow(), blankRow(), blankRow()]);
   const [errors, setErrors] = useState({});
   const [err, setErr] = useState(null);
@@ -96,7 +97,7 @@ export default function MpnBulkCreatePage() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <FragmentRow key={r._k} i={i} r={r} errors={errors[i + 1]} set={set} matOpts={materialOptions(materials)} vOpts={vOpts}
+                <FragmentRow uoms={uoms} key={r._k} i={i} r={r} errors={errors[i + 1]} set={set} matOpts={materialOptions(materials)} vOpts={vOpts}
                   onCopy={() => setRows((rs) => [...rs.slice(0, i + 1), { ...blankRow(r), uom: '' }, ...rs.slice(i + 1)])}
                   onRemove={() => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : [blankRow()]))} />
               ))}
@@ -113,14 +114,14 @@ export default function MpnBulkCreatePage() {
   );
 }
 
-function FragmentRow({ i, r, errors, set, matOpts, vOpts, onCopy, onRemove }) {
+function FragmentRow({ i, r, errors, set, matOpts, vOpts, onCopy, onRemove, uoms }) {
   return (
     <>
       <tr className={errors ? 'bg-red-50' : ''}>
         <td className="td num text-ink-muted">{i + 1}</td>
         <td className="td px-1"><Combobox value={r.material_id} onChange={(v) => set(i, { material_id: v })} options={matOpts} placeholder="Select material" /></td>
         <td className="td px-1"><Combobox value={r.vendor_id} onChange={(v) => set(i, { vendor_id: v })} options={vOpts} placeholder="Select vendor" /></td>
-        <td className="td px-1"><input className="input" value={r.uom} onChange={(e) => set(i, { uom: e.target.value })} /></td>
+        <td className="td px-1"><UomSelect value={r.uom} uoms={uoms} onChange={(u) => set(i, { uom: u })} /></td>
         <td className="td px-1"><input className="input num" type="number" min="0" value={r.moq} onChange={(e) => set(i, { moq: e.target.value })} /></td>
         <td className="td px-1"><input className="input num" type="number" min="0" step="0.01" value={r.price} onChange={(e) => set(i, { price: e.target.value })} /></td>
         <td className="td px-1"><input className="input num" type="number" min="0" value={r.lead_time_days} onChange={(e) => set(i, { lead_time_days: e.target.value })} /></td>

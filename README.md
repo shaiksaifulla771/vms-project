@@ -70,6 +70,10 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
    cost per batch and per unit, Scale Recipe into a new draft). Every list has a Functions menu (Manual Entry,
    Bulk Entry, Bulk Update, Export) and View / Edit / Delete actions. Codes come from database sequences and are
    never reused; existing codes are kept. Delete becomes Deactivate when a record is in use.
+   **Option lists (v5):** each category belongs to a classification, so the Material form and bulk template offer
+   only that classification's categories, then that category's sub-categories; every UOM field is a dropdown from a
+   fixed list (kg, g, ltr, pcs, packet, box, carton, pouch ...; case-insensitive, checked in the database). **Products** lists finished / semi-finished goods with
+   active BOM, cost per unit, stock and open plans. Company set-up lives in **Settings**: Locations & WH, Categories.
 5. **Physical Stock Count** - start a count (snapshot of lots by Location / WH / classification / category, optional
    hidden system qty), print the sheet, enter counts, a reason for every difference, submit; only an Admin approves,
    which posts each difference as an ADJUSTMENT referenced to the count number (movements after the snapshot are kept).

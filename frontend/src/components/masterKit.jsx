@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Download, Eye, FileSpreadsheet, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { api, fileToBase64 } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { CLASS_LABEL } from '../lib/format';
 import { ErrorBox, Modal } from './ui';
 
 // ---------------------------------------------------------------------------
@@ -147,7 +148,7 @@ const KEY_COLS = {
  * 1 download template -> 2 upload file -> 3 preview (errors / changes per row) -> 4 save all-or-nothing.
  */
 export function BulkDialog({ entity, mode, onClose, onDone }) {
-  const { notify } = useApp();
+  const { notify, canWrite } = useApp();
   const [file, setFile] = useState(null);
   const [rows, setRows] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -171,6 +172,17 @@ export function BulkDialog({ entity, mode, onClose, onDone }) {
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
+  // Create the categories / sub-categories the file uses but that do not exist yet, then check the same rows again.
+  const createMissing = async () => {
+    setErr(null); setBusy(true);
+    try {
+      const items = preview.missing_categories.map(({ classification, category, sub_categories }) => ({ classification, category, sub_categories }));
+      const r = await api.post('/categories/bulk-create', { items }, { scoped: false });
+      notify(`Added ${r.categories.length} categor${r.categories.length === 1 ? 'y' : 'ies'} and ${r.sub_categories.length} sub-categor${r.sub_categories.length === 1 ? 'y' : 'ies'}`);
+      setPreview(await api.post(`/bulk/${entity}/preview`, { mode, rows }, { scoped: false }));
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
   const save = async () => {
     setErr(null); setBusy(true);
     try {
@@ -179,12 +191,16 @@ export function BulkDialog({ entity, mode, onClose, onDone }) {
       notify(`${r.saved.length} ${TITLES[entity].toLowerCase()} ${isUpdate ? 'updated' : 'created'}`);
     } catch (e) {
       setErr(e.message);
-      if (e.data?.rows) setPreview({ summary: e.data.summary, rows: e.data.rows });
+      if (e.data?.rows) setPreview({ summary: e.data.summary, rows: e.data.rows, missing_categories: e.data.missing_categories });
     }
     setBusy(false);
   };
 
   const s = preview?.summary;
+  const missing = preview?.missing_categories || [];
+  const newCats = missing.filter((m) => !m.category_exists).length;
+  const newSubs = missing.reduce((n, m) => n + m.sub_categories.length, 0);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const cols = KEY_COLS[entity][mode];
   const canSave = s && s.errors === 0 && (s.create + s.update) > 0 && !result;
 
@@ -226,7 +242,30 @@ export function BulkDialog({ entity, mode, onClose, onDone }) {
           {!isUpdate && <span>{s.create} ready to create</span>}
           {isUpdate && <span>{s.update} with changes</span>}
           {isUpdate && <span className="text-ink-muted">{s.unchanged} unchanged</span>}
-          <span className={s.errors ? 'text-danger font-medium' : 'text-ink-muted'}>{s.errors} with errors</span>
+          {s.needs_category > 0 && <span className="font-medium">{s.needs_category} need new categories</span>}
+          <span className={s.errors - (s.needs_category || 0) ? 'text-danger font-medium' : 'text-ink-muted'}>{s.errors - (s.needs_category || 0)} with errors</span>
+        </div>
+      )}
+
+      {missing.length > 0 && !result && (
+        <div className="border border-line rounded p-3 text-[13px] space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-medium">New categories found in your file</div>
+            {canWrite && (
+              <button type="button" className="btn-primary" disabled={busy} onClick={createMissing}>
+                Create {[newCats ? plural(newCats, 'category', 'categories') : null, newSubs ? plural(newSubs, 'sub-category', 'sub-categories') : null].filter(Boolean).join(', ')}
+              </button>
+            )}
+          </div>
+          {missing.map((m) => (
+            <div key={`${m.classification}|${m.category}`}>
+              <span className="text-ink-muted">{CLASS_LABEL[m.classification]} → </span>
+              <b>{m.category}</b> <span className="text-ink-muted">{m.category_exists ? '(exists)' : '(new)'}</span>
+              {m.sub_categories.length > 0 && <> <span className="text-ink-muted">→</span> {m.sub_categories.map((x) => `${x} (new)`).join(', ')}</>}
+              {m.similar?.length > 0 && <span className="text-ink-muted"> · similar name already exists: {m.similar.join(', ')}. Fix the file instead if you meant that one.</span>}
+            </div>
+          ))}
+          <div className="text-xs2 text-ink-faint">They are added to Settings → Categories under the classification shown, then the file is checked again. Nothing is saved to Materials until you press Save.</div>
         </div>
       )}
 
@@ -243,12 +282,13 @@ export function BulkDialog({ entity, mode, onClose, onDone }) {
             </thead>
             <tbody>
               {preview.rows.filter((r) => r.errors.length || r.action !== 'unchanged').concat(preview.rows.filter((r) => !r.errors.length && r.action === 'unchanged')).map((r) => (
-                <tr key={r.row_no} className={r.errors.length ? 'bg-red-50' : ''}>
+                <tr key={r.row_no} className={r.errors.length && !r.needs_only ? 'bg-red-50' : ''}>
                   <td className="td num">{r.row_no}</td>
-                  <td className="td">{r.errors.length ? <span className="text-danger">Error</span> : r.action === 'unchanged' ? <span className="text-ink-faint">No change</span> : r.action === 'update' ? 'Update' : 'Create'}</td>
+                  <td className="td">{r.needs_only ? <span className="font-medium">Needs category</span> : r.errors.length ? <span className="text-danger">Error</span> : r.action === 'unchanged' ? <span className="text-ink-faint">No change</span> : r.action === 'update' ? 'Update' : 'Create'}</td>
                   {cols.map(([k]) => <td key={k} className="td">{String(r.values?.[k] ?? r[k] ?? '')}</td>)}
                   <td className="td whitespace-normal">
-                    {r.errors.length > 0 && <ul className="text-danger list-disc pl-4">{r.errors.map((e) => <li key={e}>{e}</li>)}</ul>}
+                    {r.needs_only && <span className="text-ink-muted">New: {r.needs.map((n) => [n.category_exists ? null : n.category, n.sub_category].filter(Boolean).join(' → ')).join('; ')}</span>}
+                    {r.errors.length > 0 && !r.needs_only && <ul className="text-danger list-disc pl-4">{r.errors.map((e) => <li key={e}>{e}</li>)}</ul>}
                     {!r.errors.length && r.changes?.map((c) => (
                       <div key={c.field}><span className="text-ink-muted">{c.field}:</span> <s className="text-ink-faint">{String(c.from ?? '-')}</s> → {String(c.to ?? '-')}</div>
                     ))}

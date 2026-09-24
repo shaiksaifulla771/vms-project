@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { fmtQty } from '../../lib/format';
+import { fmtDate, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, PageHeader, Status } from '../../components/ui';
 
 export default function BomsPage() {
@@ -21,6 +21,7 @@ export default function BomsPage() {
     { key: 'expected_output_qty', label: 'Expected Output', align: 'right', render: (r) => `${fmtQty(r.expected_output_qty)} ${r.output_uom}`, value: (r) => Number(r.expected_output_qty) },
     { key: 'line_count', label: 'Lines', align: 'right' },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
+    { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
   ];
   return (
     <div>
@@ -28,7 +29,7 @@ export default function BomsPage() {
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/masters/boms/new')}><Plus size={14} /> New BOM</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} exportName="boms" onRowClick={(r) => navigate(`/masters/boms/${r.id}`)}
+        <DataTable columns={columns} rows={data || []} loading={loading} exportName="boms" newField="created_at" onRowClick={(r) => navigate(`/masters/boms/${r.id}`)}
           toolbar={(
             <select className="input w-36" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option><option>ACTIVE</option><option>DRAFT</option><option>OBSOLETE</option>

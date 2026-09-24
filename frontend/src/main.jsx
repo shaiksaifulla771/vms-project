@@ -19,6 +19,7 @@ import VendorFormPage from './pages/masters/VendorFormPage';
 import VendorViewPage from './pages/masters/VendorViewPage';
 import MpnBulkCreatePage from './pages/masters/MpnBulkCreatePage';
 import CategoriesPage from './pages/CategoriesPage';
+import ProductsPage from './pages/masters/ProductsPage';
 import BomsPage from './pages/masters/BomsPage';
 import BomEditPage from './pages/masters/BomEditPage';
 import BomDetailPage from './pages/masters/BomDetailPage';
@@ -62,6 +63,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="manufacturing/new" element={<BatchEntryPage />} />
               <Route path="manufacturing/batches/:id" element={<BatchDetailPage />} />
               <Route path="masters/materials" element={<MaterialsPage />} />
+              <Route path="masters/products" element={<ProductsPage />} />
               <Route path="masters/mpns" element={<MpnsPage />} />
               <Route path="masters/mpns/bulk-create" element={<MpnBulkCreatePage />} />
               <Route path="masters/vendors" element={<VendorsPage />} />
@@ -72,7 +74,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="masters/boms/new" element={<BomEditPage />} />
               <Route path="masters/boms/:id" element={<BomDetailPage />} />
               <Route path="masters/boms/:id/edit" element={<BomEditPage />} />
-              <Route path="masters/locations" element={<LocationsPage />} />
+              <Route path="settings/locations" element={<LocationsPage />} />
+              <Route path="masters/locations" element={<Navigate to="/settings/locations" replace />} />
               <Route path="reports/stock-balance" element={<StockBalancePage />} />
               <Route path="inventory/stock-counts" element={<StockCountsPage />} />
               <Route path="inventory/stock-counts/:id" element={<StockCountPage />} />

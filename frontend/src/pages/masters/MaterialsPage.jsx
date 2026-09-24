@@ -2,26 +2,77 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDateTime } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtDateTime } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
-import { useCategories, useVendors } from '../../components/pickers';
+import { Link } from 'react-router-dom';
+import { UomSelect, categoriesFor, useCategories, useUoms } from '../../components/pickers';
 import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } from '../../components/masterKit';
 
 const CLASSES = Object.entries(CLASS_LABEL);
 
-function MaterialForm({ material, onClose, onDone }) {
-  const vendors = useVendors();
-  const cats = useCategories();
+const NEW = '__new__';
+
+/** "+ Add new" box under a Category / Sub-category dropdown. */
+function QuickAdd({ label, onAdd, onCancel }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const add = async () => { if (!name.trim()) return; setBusy(true); await onAdd(name.trim()); setBusy(false); };
+  return (
+    <span className="mt-1 flex gap-1">
+      <input className="input" autoFocus placeholder={label} value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } if (e.key === 'Escape') onCancel(); }} />
+      <button type="button" className="btn-primary px-2" disabled={busy || !name.trim()} onClick={add}>Add</button>
+      <button type="button" className="btn-secondary px-2" onClick={onCancel}>Cancel</button>
+    </span>
+  );
+}
+
+export function MaterialForm({ material, onClose, onDone, preset }) {
+  const [catKey, setCatKey] = useState(0);
+  const cats = useCategories(catKey);
+  const [adding, setAdding] = useState(null); // 'cat' | 'sub' | null
+  const uoms = useUoms();
+  const { canWrite } = useApp();
   const isNew = !material;
   const [f, setF] = useState(material
     ? { ...material, shelf_life_days: material.shelf_life_days ?? '', category_id: material.category_id || '',
       sub_category_id: material.sub_category_id || '', description: material.description || '' }
     : { name: '', classification: 'RAW_MATERIAL', uom: 'kg', shelf_life_days: '', status: 'ACTIVE', category_id: '',
-      sub_category_id: '', description: '', vendor_id: '' });
+      sub_category_id: '', description: '', ...preset });
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const subs = cats.find((c) => c.id === f.category_id)?.children || [];
+  const catChoices = categoriesFor(cats, f.classification, f.category_id);
+  // A new classification keeps the category only if it belongs to that classification (or to none).
+  const setClass = (cls) => {
+    const cat = cats.find((c) => c.id === f.category_id);
+    const keep = cat && (!cat.classification || cat.classification === cls);
+    setF({ ...f, classification: cls, category_id: keep ? f.category_id : '', sub_category_id: keep ? f.sub_category_id : '' });
+  };
+
+  // Create a category (under the chosen classification) or a sub-category (under the chosen category) and select it.
+  const quickAdd = async (name) => {
+    setErr(null);
+    try {
+      const cat = cats.find((c) => c.id === f.category_id);
+      const item = adding === 'cat'
+        ? { classification: f.classification, category: name }
+        : { classification: cat?.classification || f.classification, category: cat?.name, sub_categories: [name] };
+      await api.post('/categories/bulk-create', { items: [item] }, { scoped: false });
+      const tree = await api.get('/categories', { scoped: false });
+      const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+      if (adding === 'cat') {
+        const c = tree.find((x) => same(x.name, name));
+        setF((x) => ({ ...x, category_id: c?.id || '', sub_category_id: '' }));
+      } else {
+        const sc = tree.find((x) => x.id === f.category_id)?.children.find((x) => same(x.name, name));
+        setF((x) => ({ ...x, sub_category_id: sc?.id || '' }));
+      }
+      setAdding(null);
+      setCatKey((k) => k + 1);
+    } catch (e) { setErr(e.message); }
+  };
 
   const save = async () => {
     setErr(null); setBusy(true);
@@ -32,7 +83,7 @@ function MaterialForm({ material, onClose, onDone }) {
         category_id: f.category_id || null, sub_category_id: f.sub_category_id || null, description: f.description || null,
       };
       const saved = isNew
-        ? await api.post('/materials', { ...body, vendor_id: f.vendor_id || undefined })
+        ? await api.post('/materials', body)
         : await api.put(`/materials/${material.id}`, body);
       onDone(saved);
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -49,23 +100,31 @@ function MaterialForm({ material, onClose, onDone }) {
         </Field>
         <Field label="Material Name" required className="col-span-2"><input className="input" value={f.name} onChange={set('name')} autoFocus /></Field>
         <Field label="Classification" required>
-          <select className="input" value={f.classification} onChange={set('classification')}>
+          <select className="input" value={f.classification} onChange={(e) => setClass(e.target.value)}>
             {CLASSES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </Field>
-        <Field label="Category">
-          <select className="input" value={f.category_id} onChange={(e) => setF({ ...f, category_id: e.target.value, sub_category_id: '' })}>
+        <Field label="Category" hint={catChoices.length ? `${CLASS_LABEL[f.classification]} categories` : <>No {CLASS_LABEL[f.classification]} categories yet{canWrite && <> · <Link className="text-accent" to="/settings/categories">add one</Link></>}</>}>
+          <select className="input" value={f.category_id}
+            onChange={(e) => (e.target.value === NEW ? setAdding('cat') : setF({ ...f, category_id: e.target.value, sub_category_id: '' }))}>
             <option value="">-</option>
-            {cats.filter((c) => c.status === 'ACTIVE' || c.id === f.category_id).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {catChoices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.status !== 'ACTIVE' ? ' (inactive)' : ''}</option>)}
+            {canWrite && <option value={NEW}>+ Add new category…</option>}
           </select>
+          {adding === 'cat' && <QuickAdd label={`New ${CLASS_LABEL[f.classification]} category`} onAdd={quickAdd} onCancel={() => setAdding(null)} />}
         </Field>
-        <Field label="Sub-category" hint={f.category_id && !subs.length ? 'No sub-categories under this category' : ''}>
-          <select className="input" value={f.sub_category_id} onChange={set('sub_category_id')} disabled={!f.category_id || !subs.length}>
+        <Field label="Sub-category" hint={f.category_id && !subs.length && adding !== 'sub' ? 'No sub-categories under this category yet' : ''}>
+          <select className="input" value={f.sub_category_id} disabled={!f.category_id}
+            onChange={(e) => (e.target.value === NEW ? setAdding('sub') : setF({ ...f, sub_category_id: e.target.value }))}>
             <option value="">-</option>
             {subs.filter((s) => s.status === 'ACTIVE' || s.id === f.sub_category_id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {canWrite && f.category_id && <option value={NEW}>+ Add new sub-category…</option>}
           </select>
+          {adding === 'sub' && <QuickAdd label="New sub-category" onAdd={quickAdd} onCancel={() => setAdding(null)} />}
         </Field>
-        <Field label="Base UOM" required hint="Inventory is kept in this unit"><input className="input" value={f.uom} onChange={set('uom')} /></Field>
+        <Field label="Base UOM" required hint="Inventory is kept in this unit">
+          <UomSelect value={f.uom} uoms={uoms} onChange={(u) => setF({ ...f, uom: u })} placeholder="Select UOM" />
+        </Field>
         <Field label="Shelf Life (days)" hint="Suggests expiry dates"><input className="input num" type="number" min="1" value={f.shelf_life_days} onChange={set('shelf_life_days')} /></Field>
         <Field label="Status">
           <select className="input" value={f.status} onChange={set('status')}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select>
@@ -75,15 +134,10 @@ function MaterialForm({ material, onClose, onDone }) {
         </Field>
       </div>
       {isNew && (
-        <div className="border-t border-line pt-3 grid grid-cols-3 gap-3">
-          <Field label="First vendor (optional)" className="col-span-2"
-            hint="Creates an MPN for this vendor. Price and MOQ can be set in MPNs, or use MPNs > Bulk MPN Create.">
-            <select className="input" value={f.vendor_id} onChange={set('vendor_id')}>
-              <option value="">-</option>
-              {vendors.filter((v) => v.status === 'ACTIVE').map((v) => <option key={v.id} value={v.id}>{v.code} - {v.name}</option>)}
-            </select>
-          </Field>
-        </div>
+        <p className="border-t border-line pt-3 text-xs2 text-ink-muted">
+          Vendors and prices are added in <b>MPNs</b> (material + vendor + UOM + MOQ + price) after saving.
+          {['FINISHED_GOOD', 'SEMI_FINISHED'].includes(f.classification) && ' Finished and semi-finished goods get their own MPN automatically.'}
+        </p>
       )}
     </Modal>
   );
@@ -122,7 +176,7 @@ function MaterialView({ id, onClose, onEdit, canWrite }) {
               </tbody>
             </table>
           </div>
-          <div className="text-[13px]"><span className="text-ink-muted">Supplied by: </span>{m.vendors.length ? m.vendors.map((v) => `${v.code} - ${v.name}`).join(', ') : '-'}</div>
+          <div className="text-[13px]"><span className="text-ink-muted">Supplied by (from MPNs): </span>{m.vendors.length ? m.vendors.map((v) => `${v.code} - ${v.name}`).join(', ') : '-'}</div>
         </div>
       )}
     </Modal>
@@ -150,6 +204,7 @@ export default function MaterialsPage() {
     { key: 'mpns', label: 'MPN(s)', value: (r) => r.mpns.map((m) => m.mpn_code).join(', '), className: 'whitespace-normal max-w-[220px]' },
     { key: 'uom', label: 'UOM' },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => setModal({ type: 'view', id: r.id }),
@@ -167,16 +222,20 @@ export default function MaterialsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading}
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at"
           onRowClick={(r) => setModal({ type: 'view', id: r.id })}
           toolbar={<>
-            <select className="input w-40" value={cls} onChange={(e) => setCls(e.target.value)}>
+            <select className="input w-40" value={cls} onChange={(e) => {
+              const c = cats.find((x) => x.id === cat);
+              setCls(e.target.value);
+              if (c && e.target.value && c.classification && c.classification !== e.target.value) setCat('');
+            }}>
               <option value="">All classifications</option>
               {CLASSES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             <select className="input w-40" value={cat} onChange={(e) => setCat(e.target.value)}>
               <option value="">All categories</option>
-              {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {categoriesFor(cats, cls, cat).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <select className="input w-32" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Any status</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>

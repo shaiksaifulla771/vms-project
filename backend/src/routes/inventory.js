@@ -41,6 +41,33 @@ router.get('/lots', h(async (req, res) => {
   res.json(rows);
 }));
 
+/**
+ * Suggestions for the Inward form of a material:
+ *   location / WH where it was last received (inside ?location_id when given), else where it is stocked now;
+ *   next lot number <material code>-<YYMMDD>-<n>.
+ */
+router.get('/inward-defaults', h(async (req, res) => {
+  const materialId = v.uuid(req.query.material_id, 'Material', { required: true });
+  const locationId = v.uuid(req.query.location_id || req.scope.locationId, 'Location');
+  const mat = (await query('select code from public.materials where id = $1', [materialId])).rows[0];
+  if (!mat) throw notFound('Material not found');
+  const last = (await query(`
+    select location_id, warehouse_id from (
+      select l.location_id, l.warehouse_id, l.txn_at as at, 1 as pri from public.stock_ledger l
+       where l.material_id = $1 and l.txn_type in ('INWARD', 'OPENING') and ($2::uuid is null or l.location_id = $2)
+      union all
+      select i.location_id, i.warehouse_id, i.updated_at, 2 from public.inventory i
+       where i.material_id = $1 and i.quantity > 0 and ($2::uuid is null or i.location_id = $2)
+    ) x order by pri, at desc limit 1`, [materialId, locationId || null])).rows[0] || null;
+  const d = new Date();
+  const ymd = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const prefix = `${mat.code}-${ymd}-`;
+  const used = (await query(`select lot_no from public.inventory where upper(lot_no) like upper($1) || '%'`, [prefix])).rows
+    .map((r) => Number(r.lot_no.slice(prefix.length))).filter((n) => Number.isInteger(n));
+  res.json({ last_location_id: last?.location_id || null, last_warehouse_id: last?.warehouse_id || null,
+    suggested_lot_no: `${prefix}${used.length ? Math.max(...used) + 1 : 1}` });
+}));
+
 // Inward (add stock): creates the lot or increases MPN + Location + WH + Lot
 router.post('/inward', h(async (req, res) => {
   const b = req.body || {};

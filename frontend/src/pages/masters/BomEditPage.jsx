@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
-import { Combobox, LocationWarehouse, materialOptions, useDefaultScope, useMaterials, useMpns } from '../../components/pickers';
+import { Combobox, LocationWarehouse, UomSelect, materialOptions, useDefaultScope, useMaterials, useMpns, useUoms } from '../../components/pickers';
 
 const emptyLine = () => ({ material_id: '', mpn_id: '', qty_per_batch: '', uom: '', scrap_allowance_pct: '0', unit_price: '', notes: '' });
 const COSTS = [['packing_cost', 'Packing Cost'], ['processing_cost', 'Processing Cost'], ['overhead_cost', 'Overhead Cost'], ['freight_cost', 'Freight Cost']];
@@ -29,13 +29,24 @@ export default function BomEditPage() {
   const materials = useMaterials({ status: 'ACTIVE' });
   const products = materials.filter((m) => ['FINISHED_GOOD', 'SEMI_FINISHED'].includes(m.classification));
   const mpns = useMpns();
+  const uoms = useUoms();
+  const [search] = useSearchParams();
   const [f, setF] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // Output UOM follows the product (e.g. when opened from Products > Create BOM)
+  useEffect(() => {
+    if (f && f.product_id && !f.output_uom) {
+      const p = materials.find((m) => m.id === f.product_id);
+      if (p) setF((x) => ({ ...x, output_uom: p.uom }));
+    }
+  }, [f, materials]);
+
   useEffect(() => {
     if (!id) {
-      setF({ product_id: '', location_id: def.locationId, warehouse_id: def.warehouseId, batch_size: '', batch_uom: 'kg',
+      // ?product_id= comes from Products > Create BOM
+      setF({ product_id: search.get('product_id') || '', location_id: def.locationId, warehouse_id: def.warehouseId, batch_size: '', batch_uom: 'kg',
         expected_output_qty: '', output_uom: '', notes: '', packing_cost: '', processing_cost: '', overhead_cost: '', freight_cost: '',
         lines: [emptyLine()] });
       return;
@@ -103,9 +114,9 @@ export default function BomEditPage() {
           </div>
           <div className="grid grid-cols-6 gap-3">
             <Field label="Batch Size" required><input className="input num" type="number" min="0" step="any" value={f.batch_size} onChange={(e) => setF({ ...f, batch_size: e.target.value })} /></Field>
-            <Field label="Batch UOM" required><input className="input" value={f.batch_uom} onChange={(e) => setF({ ...f, batch_uom: e.target.value })} /></Field>
+            <Field label="Batch UOM" required><UomSelect value={f.batch_uom} uoms={uoms} onChange={(u) => setF({ ...f, batch_uom: u })} placeholder="Select" /></Field>
             <Field label="Expected Output Qty" required><input className="input num" type="number" min="0" step="any" value={f.expected_output_qty} onChange={(e) => setF({ ...f, expected_output_qty: e.target.value })} /></Field>
-            <Field label="Output UOM" required hint={product ? `Product UOM: ${product.uom}` : ''}><input className="input" value={f.output_uom} onChange={(e) => setF({ ...f, output_uom: e.target.value })} /></Field>
+            <Field label="Output UOM" required hint={product ? `Product UOM: ${product.uom}` : ''}><UomSelect value={f.output_uom} uoms={uoms} onChange={(u) => setF({ ...f, output_uom: u })} placeholder="Select" /></Field>
             <Field label="Notes" className="col-span-2"><input className="input" value={f.notes || ''} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
           </div>
         </section>

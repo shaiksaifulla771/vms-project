@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Rows3, Trash2 } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
-import { Combobox, materialOptions, useMaterials, useVendors } from '../../components/pickers';
+import { Combobox, UomSelect, materialOptions, useMaterials, useUoms, useVendors } from '../../components/pickers';
 import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } from '../../components/masterKit';
 
 const money = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
@@ -27,14 +27,16 @@ export function sortedVendorOptions(vendors, supplierIds) {
     .sort((a, b) => a.s - b.s || a.label.localeCompare(b.label));
 }
 
-function MpnForm({ mpn, onClose, onDone }) {
+function MpnForm({ mpn, preset, onClose, onDone }) {
+  const uoms = useUoms();
   const materials = useMaterials({ status: 'ACTIVE' });
   const vendors = useVendors();
   const isNew = !mpn;
   const [f, setF] = useState(mpn
     ? { material_id: mpn.material_id, manufacturer: mpn.manufacturer || '', description: mpn.description || '', status: mpn.status,
       vendors: mpn.vendors.map((v) => ({ vendor_id: v.vendor_id, is_preferred: v.is_preferred, uom: v.uom || '', moq: v.moq ?? '', price: v.price ?? '', lead_time_days: v.lead_time_days ?? '' })) }
-    : { material_id: '', manufacturer: '', description: '', status: 'ACTIVE', vendors: [] });
+    : { material_id: preset?.material_id || '', manufacturer: '', description: '', status: 'ACTIVE',
+      vendors: preset?.vendor_id ? [{ vendor_id: preset.vendor_id, is_preferred: true, uom: '', moq: '', price: '', lead_time_days: '' }] : [] });
   const [err, setErr] = useState(null);
   const suppliers = useSuppliers(f.material_id);
   const mat = materials.find((m) => m.id === f.material_id);
@@ -81,7 +83,7 @@ function MpnForm({ mpn, onClose, onDone }) {
             {f.vendors.map((v, i) => (
               <tr key={i}>
                 <td className="td px-1 min-w-[220px]"><Combobox value={v.vendor_id} onChange={(x) => setVendor(i, { vendor_id: x })} options={vOpts} placeholder="Select vendor" /></td>
-                <td className="td px-1"><input className="input" value={v.uom} placeholder={mat?.uom || ''} onChange={(e) => setVendor(i, { uom: e.target.value })} /></td>
+                <td className="td px-1"><UomSelect value={v.uom} uoms={uoms} placeholder={mat?.uom || '-'} title="Blank = the material's UOM" onChange={(u) => setVendor(i, { uom: u })} /></td>
                 <td className="td px-1"><input className="input num" type="number" min="0" value={v.moq} onChange={(e) => setVendor(i, { moq: e.target.value })} /></td>
                 <td className="td px-1"><input className="input num" type="number" min="0" step="0.01" value={v.price} onChange={(e) => setVendor(i, { price: e.target.value })} /></td>
                 <td className="td px-1"><input className="input num" type="number" min="0" value={v.lead_time_days} onChange={(e) => setVendor(i, { lead_time_days: e.target.value })} /></td>
@@ -148,9 +150,11 @@ function MpnView({ id, canWrite, onClose, onEdit }) {
 export default function MpnsPage() {
   const { canWrite, notify } = useApp();
   const navigate = useNavigate();
-  const [modal, setModal] = useState(null);
+  const [search, setSearch] = useSearchParams();
+  // /masters/mpns?new=1&vendor_id=..&material_id=.. opens New MPN pre-filled (from a vendor page)
+  const [modal, setModal] = useState(() => (search.get('new') ? { type: 'edit', preset: { vendor_id: search.get('vendor_id'), material_id: search.get('material_id') } } : null));
   const { data, loading, error, reload } = useData(() => api.get('/mpns', { scoped: false }), []);
-  const close = () => setModal(null);
+  const close = () => { setModal(null); if (search.get('new')) setSearch({}, { replace: true }); };
   const pref = (r) => r.vendors.find((v) => v.is_preferred) || r.vendors[0];
 
   const columns = [
@@ -162,6 +166,7 @@ export default function MpnsPage() {
     { key: 'moq', label: 'MOQ', align: 'right', value: (r) => (pref(r)?.moq ?? null), render: (r) => fmtQty(pref(r)?.moq) },
     { key: 'price', label: 'Price (₹)', align: 'right', value: (r) => (pref(r)?.price ?? null), render: (r) => money(pref(r)?.price) },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => setModal({ type: 'view', id: r.id }),
@@ -181,9 +186,9 @@ export default function MpnsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} onRowClick={(r) => setModal({ type: 'view', id: r.id })} />
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" onRowClick={(r) => setModal({ type: 'view', id: r.id })} />
       </div>
-      {modal?.type === 'edit' && <MpnForm mpn={modal.mpn} onClose={close} onDone={(r) => { close(); notify(modal.mpn ? 'MPN saved' : `MPN ${r.mpn_code} created`); reload(); }} />}
+      {modal?.type === 'edit' && <MpnForm mpn={modal.mpn} preset={modal.preset} onClose={close} onDone={(r) => { close(); notify(modal.mpn ? 'MPN saved' : `MPN ${r.mpn_code} created`); reload(); }} />}
       {modal?.type === 'view' && <MpnView id={modal.id} canWrite={canWrite} onClose={close} onEdit={(p) => setModal({ type: 'edit', mpn: p })} />}
       {modal?.type === 'delete' && <DeleteDialog label={modal.row.mpn_code} path={`/mpns/${modal.row.id}`} onClose={close} onDone={() => { close(); reload(); }} />}
       {modal?.type === 'bulk' && <BulkDialog entity="mpns" mode={modal.mode} onClose={close} onDone={() => { close(); reload(); }} />}

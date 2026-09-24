@@ -29,6 +29,8 @@ function createApp() {
   app.use('/api/vendors', require('./routes/vendors'));
   app.use('/api/materials', require('./routes/materials'));
   app.use('/api/categories', require('./routes/categories'));
+  app.use('/api/uoms', require('./routes/uoms'));
+  app.use('/api/products', require('./routes/products'));
   app.use('/api/bulk', require('./routes/bulk'));
   app.use('/api/mpns', require('./routes/mpns'));
   app.use('/api/boms', require('./routes/boms'));

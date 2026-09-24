@@ -3,9 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Star, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
+import { COUNTRIES, STATES } from '../../lib/format';
 import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
-import { materialOptions, useMaterials } from '../../components/pickers';
-import { MultiSelect, Section } from '../../components/masterKit';
+import { Section } from '../../components/masterKit';
 
 const newAddress = (n) => ({ _k: Math.random(), address_name: n === 0 ? 'Head Office' : `Address ${n + 1}`, address_type: n === 0 ? 'PRIMARY' : 'SECONDARY',
   is_default: n === 0, line1: '', line2: '', city: '', state: '', pincode: '', country: 'India', gstin: '' });
@@ -24,10 +24,9 @@ export default function VendorFormPage() {
   const isNew = !id;
   const navigate = useNavigate();
   const { notify } = useApp();
-  const materials = useMaterials();
   const [f, setF] = useState(isNew ? {
     name: '', status: 'ACTIVE', phone: '', contact_email: '', gstin: '', fssai_no: '', fssai_expiry: '',
-    material_ids: [], addresses: [newAddress(0)], contacts: [newContact()], bank_accounts: [],
+    addresses: [newAddress(0)], contacts: [newContact()], bank_accounts: [],
   } : null);
   const [code, setCode] = useState('');
   const [err, setErr] = useState(null);
@@ -42,7 +41,6 @@ export default function VendorFormPage() {
       setF({
         name: v.name, status: v.status, phone: v.phone || '', contact_email: v.contact_email || '', gstin: v.gstin || '',
         fssai_no: v.fssai_no || '', fssai_expiry: v.fssai_expiry ? String(v.fssai_expiry).slice(0, 10) : '',
-        material_ids: v.material_ids,
         addresses: keyed(v.addresses).map(blankNull),
         contacts: keyed(v.contacts).map(blankNull),
         bank_accounts: keyed(v.bank_accounts).map(blankNull),
@@ -102,15 +100,6 @@ export default function VendorFormPage() {
           </div>
         </Section>
 
-        <Section title="Supplied materials">
-          {/* not a <label>: a label would forward clicks to the first checkbox inside the list */}
-          <div>
-            <span className="label">Materials this vendor supplies</span>
-            <MultiSelect values={f.material_ids} onChange={(v) => setF({ ...f, material_ids: v })} options={materialOptions(materials)} placeholder="Select materials" />
-            <span className="block text-xs2 text-ink-faint mt-0.5">Used to suggest vendors when creating MPNs. Price and MOQ are set per MPN.</span>
-          </div>
-        </Section>
-
         <Section title="Addresses"
           actions={<button type="button" className="btn-link" onClick={() => setF({ ...f, addresses: [...f.addresses, newAddress(f.addresses.length)] })}><Plus size={13} /> Add another address</button>}>
           {f.addresses.length === 0 && <p className="text-ink-muted text-[13px]">No address yet.</p>}
@@ -133,9 +122,23 @@ export default function VendorFormPage() {
                   <Field label="Address Line 1" className="col-span-2"><input className="input" value={a.line1} onChange={(e) => setList('addresses', i, { line1: e.target.value })} /></Field>
                   <Field label="Address Line 2" className="col-span-2"><input className="input" value={a.line2} onChange={(e) => setList('addresses', i, { line2: e.target.value })} /></Field>
                   <Field label="City"><input className="input" value={a.city} onChange={(e) => setList('addresses', i, { city: e.target.value })} /></Field>
-                  <Field label="State"><input className="input" value={a.state} onChange={(e) => setList('addresses', i, { state: e.target.value })} /></Field>
+                  <Field label="State">
+                    {(a.country || 'India') === 'India' ? (
+                      <select className="input" value={a.state || ''} onChange={(e) => setList('addresses', i, { state: e.target.value })}>
+                        <option value="">-</option>
+                        {a.state && !STATES.includes(a.state) && <option value={a.state}>{a.state}</option>}
+                        {STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    ) : <input className="input" value={a.state} onChange={(e) => setList('addresses', i, { state: e.target.value })} />}
+                  </Field>
                   <Field label="PIN Code"><input className="input" maxLength={10} value={a.pincode} onChange={(e) => setList('addresses', i, { pincode: e.target.value })} /></Field>
-                  <Field label="Country"><input className="input" value={a.country} onChange={(e) => setList('addresses', i, { country: e.target.value })} /></Field>
+                  <Field label="Country">
+                    <select className="input" value={a.country || ''} onChange={(e) => setList('addresses', i, { country: e.target.value })}>
+                      <option value="">-</option>
+                      {a.country && !COUNTRIES.includes(a.country) && <option value={a.country}>{a.country}</option>}
+                      {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </Field>
                   <Field label="GSTIN for this address" hint="If different from the vendor GSTIN"><input className="input uppercase" maxLength={15} value={a.gstin} onChange={(e) => setList('addresses', i, { gstin: e.target.value })} /></Field>
                 </div>
               </div>

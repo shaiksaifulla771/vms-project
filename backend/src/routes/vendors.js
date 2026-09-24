@@ -12,12 +12,14 @@ router.get('/', h(async (req, res) => {
   const { clause, params } = where([
     ['(v.code ilike ? or v.name ilike ? or v.gstin ilike ?)', q],
     ['v.status = ?', req.query.status],
-    ['exists (select 1 from public.vendor_materials x where x.vendor_id = v.id and x.material_id = ?)', req.query.material_id],
+    // Vendors that supply a material = vendors with an MPN for it (MPN is the only vendor-material link)
+    [`exists (select 1 from public.mpn_vendors x join public.mpns p on p.id = x.mpn_id where x.vendor_id = v.id and p.material_id = ?)`, req.query.material_id],
   ]);
   const { rows } = await query(`
     select v.*,
            (select count(*) from public.mpn_vendors mv where mv.vendor_id = v.id)::int as mpn_count,
-           (select count(*) from public.vendor_materials vm where vm.vendor_id = v.id)::int as material_count,
+           (select count(distinct p.material_id) from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
+             where mv.vendor_id = v.id)::int as material_count,
            (select a.address_name || coalesce(' - ' || a.city, '') from public.vendor_addresses a
              where a.vendor_id = v.id and a.is_default) as default_address,
            (select c.name from public.vendor_contacts c where c.vendor_id = v.id order by c.sort_order limit 1) as primary_contact
@@ -37,9 +39,17 @@ router.get('/:id', h(async (req, res) => {
     query('select * from public.vendor_addresses where vendor_id = $1 order by sort_order, created_at', [id]),
     query('select * from public.vendor_contacts where vendor_id = $1 order by sort_order, created_at', [id]),
     query('select * from public.vendor_bank_accounts where vendor_id = $1 order by is_primary desc, created_at', [id]),
-    query(`select m.id, m.code, m.name, m.classification, m.uom from public.vendor_materials vm
-             join public.materials m on m.id = vm.material_id where vm.vendor_id = $1 order by m.code`, [id]),
+    // Materials this vendor supplies, from its MPNs
+    query(`select distinct m.id, m.code, m.name, m.classification, m.uom from public.mpn_vendors mv
+             join public.mpns p on p.id = mv.mpn_id join public.materials m on m.id = p.material_id
+            where mv.vendor_id = $1 order by m.code`, [id]),
   ]);
+  // Older manual links (made before v6 without an MPN, so without a price) are shown so they can be turned into MPNs.
+  const unpriced = (await query(`
+    select m.id, m.code, m.name, m.classification, m.uom from public.vendor_materials vm join public.materials m on m.id = vm.material_id
+     where vm.vendor_id = $1 and not exists (select 1 from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
+                                              where mv.vendor_id = vm.vendor_id and p.material_id = vm.material_id)
+     order by m.code`, [id])).rows;
   // Full account numbers only when the caller is going to edit (?full=true); masked otherwise.
   const full = req.query.full === 'true';
   res.json({
@@ -49,7 +59,7 @@ router.get('/:id', h(async (req, res) => {
     contacts: contacts.rows,
     bank_accounts: banks.rows.map((b) => (full ? b : { ...b, account_number: mask(b.account_number) })),
     materials: materials.rows,
-    material_ids: materials.rows.map((m) => m.id),
+    unpriced_links: unpriced,
   });
 }));
 

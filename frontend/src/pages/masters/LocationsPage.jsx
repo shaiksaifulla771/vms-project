@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
-import { ErrorBox, Field, Modal, PageHeader } from '../../components/ui';
+import { ErrorBox, Field, isNewToday, Modal, NewTag, PageHeader } from '../../components/ui';
 
 export default function LocationsPage() {
   const { locations, company, canWrite, reload, notify } = useApp();
@@ -34,15 +34,15 @@ export default function LocationsPage() {
         {locations.map((l) => (
           <section key={l.id} className="card">
             <div className="flex items-center justify-between px-3 py-2 border-b border-line">
-              <div><span className="font-semibold">{l.code}</span> - {l.name} <span className="text-ink-muted text-xs">{l.address}</span></div>
+              <div><span className="font-semibold">{l.code}</span> - {l.name}<NewTag ts={l.created_at} /> <span className="text-ink-muted text-xs">{l.address}</span></div>
               {canWrite && <button type="button" className="btn-link" onClick={() => open('warehouse', { location_id: l.id })}><Plus size={13} /> Add Warehouse</button>}
             </div>
             <table className="w-full">
               <thead><tr><th className="th w-40">WH Code</th><th className="th">Name</th><th className="th w-32">Default</th><th className="th w-24">Active</th></tr></thead>
               <tbody>
                 {l.warehouses.map((w) => (
-                  <tr key={w.id}>
-                    <td className="td">{w.code}</td>
+                  <tr key={w.id} className={isNewToday(w.created_at) ? 'bg-accent-soft/40' : ''}>
+                    <td className="td">{w.code}<NewTag ts={w.created_at} /></td>
                     <td className="td">{w.name}</td>
                     <td className="td">{w.is_default ? 'Default' : (canWrite && <button type="button" className="btn-link" onClick={() => makeDefault(w)}>Make default</button>)}</td>
                     <td className="td">{w.is_active ? 'Yes' : 'No'}</td>

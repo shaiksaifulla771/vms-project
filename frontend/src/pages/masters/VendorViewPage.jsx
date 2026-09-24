@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Plus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { CLASS_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
@@ -34,12 +34,28 @@ export default function VendorViewPage() {
           ]} />
         </Section>
 
-        <Section title={`Supplied materials (${v.materials.length})`}>
-          {v.materials.length === 0 ? <p className="text-ink-muted text-[13px]">None linked.</p> : (
+        <Section title={`Materials supplied, from MPNs (${v.mpns.length})`}
+          actions={canWrite && <button type="button" className="btn-link" onClick={() => navigate(`/masters/mpns?new=1&vendor_id=${id}`)}><Plus size={13} /> Add MPN for this vendor</button>}>
+          {v.mpns.length === 0 ? <p className="text-ink-muted text-[13px]">No MPNs yet. Add one to record what this vendor supplies and at what price.</p> : (
             <table className="w-full border-collapse">
-              <thead><tr><th className="th">Code</th><th className="th">Material</th><th className="th">Classification</th><th className="th">UOM</th></tr></thead>
-              <tbody>{v.materials.map((m) => <tr key={m.id}><td className="td">{m.code}</td><td className="td">{m.name}</td><td className="td">{CLASS_LABEL[m.classification]}</td><td className="td">{m.uom}</td></tr>)}</tbody>
+              <thead><tr><th className="th">MPN</th><th className="th">Material</th><th className="th">UOM</th><th className="th text-right">MOQ</th><th className="th text-right">Price (₹)</th><th className="th text-right">Lead time (d)</th><th className="th" /></tr></thead>
+              <tbody>{v.mpns.map((p) => (
+                <tr key={p.id}><td className="td">{p.mpn_code}</td><td className="td">{p.material_code} - {p.material_name}</td><td className="td">{p.uom}</td>
+                  <td className="td num">{fmtQty(p.moq)}</td><td className="td num">{p.price == null ? '' : Number(p.price).toFixed(2)}</td>
+                  <td className="td num">{p.lead_time_days}</td><td className="td text-ink-muted">{p.is_preferred ? 'Preferred' : ''}</td></tr>
+              ))}</tbody>
             </table>
+          )}
+          {v.unpriced_links?.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs2 uppercase tracking-wide text-ink-muted mb-1">Linked without MPN (add price)</div>
+              <table className="w-full border-collapse">
+                <tbody>{v.unpriced_links.map((m) => (
+                  <tr key={m.id}><td className="td w-32">{m.code}</td><td className="td">{m.name}</td><td className="td text-ink-muted">{CLASS_LABEL[m.classification]} · {m.uom}</td>
+                    <td className="td text-right">{canWrite && <button type="button" className="btn-link" onClick={() => navigate(`/masters/mpns?new=1&vendor_id=${id}&material_id=${m.id}`)}>Create MPN</button>}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
           )}
         </Section>
 
@@ -84,18 +100,6 @@ export default function VendorViewPage() {
           <p className="text-xs2 text-ink-faint mt-2">Account numbers are masked here. Open Edit to see them in full.</p>
         </Section>
 
-        <Section title={`MPNs and prices (${v.mpns.length})`}>
-          {v.mpns.length === 0 ? <p className="text-ink-muted text-[13px]">No MPNs for this vendor.</p> : (
-            <table className="w-full border-collapse">
-              <thead><tr><th className="th">MPN</th><th className="th">Material</th><th className="th">UOM</th><th className="th text-right">MOQ</th><th className="th text-right">Price (₹)</th><th className="th text-right">Lead time (d)</th><th className="th" /></tr></thead>
-              <tbody>{v.mpns.map((p) => (
-                <tr key={p.id}><td className="td">{p.mpn_code}</td><td className="td">{p.material_code} - {p.material_name}</td><td className="td">{p.uom}</td>
-                  <td className="td num">{fmtQty(p.moq)}</td><td className="td num">{p.price == null ? '' : Number(p.price).toFixed(2)}</td>
-                  <td className="td num">{p.lead_time_days}</td><td className="td text-ink-muted">{p.is_preferred ? 'Preferred' : ''}</td></tr>
-              ))}</tbody>
-            </table>
-          )}
-        </Section>
       </div>
       {del && <DeleteDialog label={`${v.code} ${v.name}`} path={`/vendors/${id}`} onClose={() => setDel(false)} onDone={() => navigate('/masters/vendors')} />}
     </div>

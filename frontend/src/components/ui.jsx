@@ -108,10 +108,28 @@ export function Stat({ label, value, sub }) {
  * Data grid: sortable columns, quick search, CSV export.
  * columns: [{ key, label, render?(row), value?(row) (for sort/search/csv), align:'right', width }]
  */
+/** Added today (local date)? Used for the NEW tag and the "added today" counter. */
+export const isNewToday = (ts) => {
+  if (!ts) return false;
+  const d = new Date(ts); const n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+};
+
+/** Small NEW tag for records added today. */
+export function NewTag({ ts }) {
+  return isNewToday(ts) ? <span className="ml-1.5 inline-block rounded px-1 py-px text-[10px] font-semibold leading-none tracking-wide bg-accent text-white align-middle">NEW</span> : null;
+}
+
+/**
+ * Data grid. With `newField` (e.g. 'created_at') the list opens newest first, records added today get a NEW tag
+ * and a light-blue row, and the top right shows an "N added today" filter plus a "Newest first" reset.
+ */
 export function DataTable({ columns, rows, loading, empty = 'No records', searchable = true, exportName,
-  onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer }) {
+  onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer, newField }) {
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState(initialSort || null);
+  const defaultSort = initialSort || (newField ? { key: newField, dir: 'desc' } : null);
+  const [sort, setSort] = useState(defaultSort);
+  const [onlyNew, setOnlyNew] = useState(false);
   const box = useRef(null);
   const [boxH, setBoxH] = useState(null);
   // Fit the scroll box to the space left on screen, so its sideways scrollbar is always visible.
@@ -128,8 +146,10 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
   }, [scroll, footer ? 1 : 0, toolbar ? 1 : 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const val = (c, r) => (c.value ? c.value(r) : r[c.key]);
 
+  const newCount = newField ? (rows || []).filter((r) => isNewToday(r[newField])).length : 0;
   const shown = useMemo(() => {
     let list = rows || [];
+    if (onlyNew && newField) list = list.filter((r) => isNewToday(r[newField]));
     if (q.trim()) {
       const needle = q.trim().toLowerCase();
       list = list.filter((r) => columns.some((c) => {
@@ -152,7 +172,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, q, sort, columns]);
+  }, [rows, q, sort, columns, onlyNew]);
 
   const toggleSort = (key) => setSort((s) => (s && s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
 
@@ -168,6 +188,15 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           )}
           {toolbar}
           <div className="ml-auto flex items-center gap-3 text-xs text-ink-muted">
+            {newField && newCount > 0 && (
+              <button type="button" title={onlyNew ? 'Show all records' : 'Show only records added today'} onClick={() => setOnlyNew((x) => !x)}
+                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 ${onlyNew ? 'border-accent bg-accent text-white' : 'border-accent text-accent hover:bg-accent-soft'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${onlyNew ? 'bg-white' : 'bg-accent'}`} />{newCount} added today
+              </button>
+            )}
+            {newField && (sort?.key !== newField || sort?.dir !== 'desc') && (
+              <button type="button" className="btn-link" onClick={() => setSort({ key: newField, dir: 'desc' })}>Newest first</button>
+            )}
             <span>{shown.length} record{shown.length === 1 ? '' : 's'}</span>
             {exportName && (
               <button type="button" className="btn-link" onClick={() => downloadCsv(`${exportName}.csv`, columns.filter((c) => !c.noExport), shown)}>
@@ -203,10 +232,11 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
             )}
             {!loading && shown.map((r, i) => (
               <tr key={r[rowKey] ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
-                className={`${onRowClick ? 'cursor-pointer hover:bg-accent-soft' : 'hover:bg-panel'}`}>
-                {columns.map((c) => (
+                className={`${newField && isNewToday(r[newField]) ? 'bg-accent-soft/40' : ''} ${onRowClick ? 'cursor-pointer hover:bg-accent-soft' : 'hover:bg-panel'}`}>
+                {columns.map((c, ci) => (
                   <td key={c.key} className={`td ${dense ? 'py-1' : ''} ${c.align === 'right' ? 'num' : ''} ${c.className || ''}`}>
                     {c.render ? c.render(r) : (c.value ? c.value(r) : r[c.key])}
+                    {newField && ci === 0 && <NewTag ts={r[newField]} />}
                   </td>
                 ))}
               </tr>
@@ -222,7 +252,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
 export function Toast({ toast }) {
   if (!toast) return null;
   return (
-    <div className={`fixed bottom-4 right-4 z-50 max-w-sm rounded border px-4 py-2.5 text-[13px] shadow bg-white no-print
+    <div className={`fixed top-14 right-4 z-50 max-w-sm rounded border px-4 py-2.5 text-[13px] shadow bg-white no-print
       ${toast.type === 'error' ? 'border-red-200 text-danger' : 'border-line-strong text-ink'}`}>
       {toast.message}
     </div>
