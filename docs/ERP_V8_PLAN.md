@@ -87,3 +87,5 @@ Example: pick **FG-RL1 Rice O Lentil 100g Pouch** → Location = **MUM - Mumbai 
 - 2026-09-24: Request analysed; plan written.
 - 2026-09-24: Changed on your request: Purchase = any material except finished goods (not raw materials only). Plan approved; build started.
 - 2026-09-24: Built. Inward Entry Type (Purchase / Opening Stock / Adjustment, admin only) in API + form; finished goods hidden from MPN list, detail, forms, bulk files and pickers, shown as "–" in stock screens; New Plan and Batch Entry (ad hoc) fill the location from the active BOM. Backend tests 70/70 (6 new in `tests/v8.test.js`); UI walkthrough clean.
+- 2026-09-24: Changed on your request: **Purchase removed from the Inward form for now.** Entry Type = Opening Stock (default; reasons: Opening stock, Goods receipt, Return from production, Other) or Adjustment (admin). The API still accepts Purchase, so it can be switched back on by adding it to `ENTRY_TYPES` in `StockModals.jsx`.
+

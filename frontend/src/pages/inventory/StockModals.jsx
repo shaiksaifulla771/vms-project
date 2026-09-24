@@ -29,15 +29,15 @@ function useSubmit(onDone) {
   return { busy, error, setError, run };
 }
 
-// Entry type decides the ledger type and which materials are allowed (finished goods cannot be purchased).
+// Entry type decides the ledger type. Purchase is switched off for now (the API still supports it):
+// to bring it back, add { value: 'PURCHASE', label: 'Purchase', hint: 'Bought from a vendor. Any material except finished goods.' } here.
 const ENTRY_TYPES = [
-  { value: 'PURCHASE', label: 'Purchase', hint: 'Bought from a vendor. Any material except finished goods.' },
   { value: 'OPENING', label: 'Opening Stock', hint: 'Balances at go-live or first-time loading. Any material.' },
   { value: 'ADJUSTMENT', label: 'Adjustment', hint: 'Admin only. Stock found without a lot yet. Reason required.', admin: true },
 ];
 const INWARD_REASONS = {
   PURCHASE: ['Goods receipt', 'Return from production', 'Other'],
-  OPENING: ['Opening stock', 'Other'],
+  OPENING: ['Opening stock', 'Goods receipt', 'Return from production', 'Other'],
   ADJUSTMENT: ['Found extra in store', 'Correction of earlier entry', 'Other'],
 };
 const OUTWARD_REASONS = ['Production issue', 'Sample / QC', 'Damaged', 'Expired disposal', 'Sale / dispatch', 'Other'];
@@ -72,8 +72,8 @@ export function InwardModal({ onClose, onDone }) {
   const mpns = useMpns();
   const materials = useMaterials({ status: 'ACTIVE' });
   const def = useDefaultScope();
-  const [f, setF] = useState({ entry_type: 'PURCHASE', material_id: '', mpn_id: '', location_id: def.locationId, warehouse_id: def.warehouseId, lot_no: '', qty: '',
-    mfg_date: today(), expiry_date: '', vendor_id: '', reason: 'Goods receipt', reference: '' });
+  const [f, setF] = useState({ entry_type: 'OPENING', material_id: '', mpn_id: '', location_id: def.locationId, warehouse_id: def.warehouseId, lot_no: '', qty: '',
+    mfg_date: today(), expiry_date: '', vendor_id: '', reason: 'Opening stock', reference: '' });
   const [hint, setHint] = useState('');
   const set = (k) => (e) => setF({ ...f, [k]: e.target ? e.target.value : e });
   const material = materials.find((m) => m.id === f.material_id);
