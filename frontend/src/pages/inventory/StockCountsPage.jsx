@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtByUom, fmtDateTime } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { LocationWarehouse, useCategories, useDefaultScope } from '../../components/pickers';
 
@@ -18,7 +18,7 @@ const STATUS_HELP = {
 function NewCountDialog({ onClose, onDone }) {
   const def = useDefaultScope();
   const cats = useCategories();
-  const [f, setF] = useState({ location_id: def.locationId, warehouse_id: def.warehouseId, classification: '', category_id: '', blind: false, counted_by: '', notes: '' });
+  const [f, setF] = useState({ location_id: def.locationId, warehouse_id: def.warehouseId, classification: '', category_id: '', blind: false, include_zero: false, counted_by: '', notes: '' });
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const start = async () => {
@@ -30,7 +30,8 @@ function NewCountDialog({ onClose, onDone }) {
       footer={<><button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         <button type="button" className="btn-primary" disabled={busy || !f.location_id} onClick={start}>Start count</button></>}>
       <ErrorBox message={err} />
-      <p className="text-[13px] text-ink-soft">The system takes a snapshot of every lot with stock in the area you choose. Nothing changes in stock until an Admin approves the finished count.</p>
+      <p className="text-[13px] text-ink-soft">The system takes a snapshot of every lot with stock in the area you choose. Nothing changes in stock until an Admin approves the finished count.
+        Goods received or issued while you count are taken into account: each line is compared with the stock at the time it was counted.</p>
       <LocationWarehouse locationId={f.location_id} warehouseId={f.warehouse_id} required allowAllWarehouses
         onChange={(l, w) => setF({ ...f, location_id: l, warehouse_id: w })} />
       <div className="grid grid-cols-2 gap-3">
@@ -50,6 +51,13 @@ function NewCountDialog({ onClose, onDone }) {
         <Field label="Counted by"><input className="input" value={f.counted_by} placeholder="Name of the person counting" onChange={(e) => setF({ ...f, counted_by: e.target.value })} /></Field>
         <Field label="Notes"><input className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
       </div>
+      <label className="flex items-start gap-2 text-[13px] border border-line rounded p-3">
+        <input type="checkbox" className="mt-0.5" checked={f.include_zero} onChange={(e) => setF({ ...f, include_zero: e.target.checked })} />
+        <span>
+          <span className="font-medium">Include lots with zero stock</span>
+          <span className="block text-ink-muted text-xs">Lets you record stock found on the shelf for a lot the system shows as empty.</span>
+        </span>
+      </label>
       <label className="flex items-start gap-2 text-[13px] border border-line rounded p-3">
         <input type="checkbox" className="mt-0.5" checked={f.blind} onChange={(e) => setF({ ...f, blind: e.target.checked })} />
         <span>
@@ -77,7 +85,7 @@ export default function StockCountsPage() {
     { key: 'blind', label: 'Hidden qty', value: (r) => (r.blind ? 'Yes' : '') },
     { key: 'progress', label: 'Counted', align: 'right', value: (r) => `${r.counted_count} / ${r.line_count}` },
     { key: 'variance_count', label: 'Lines with difference', align: 'right', value: (r) => (r.variance_count ?? 'hidden') },
-    { key: 'net', label: 'Total + / -', align: 'right', value: (r) => (r.variance_plus == null ? '' : `+${fmtQty(r.variance_plus)} / ${fmtQty(r.variance_minus)}`) },
+    { key: 'net', label: 'Total + / -', align: 'right', value: (r) => (r.variance_by_uom == null ? '' : fmtByUom(r.variance_by_uom)) },
     { key: 'counted_by', label: 'Counted by' },
     { key: 'approved_by_name', label: 'Approved by' },
     { key: 'status', label: 'Status', render: (r) => <span title={STATUS_HELP[r.status]}><Status value={r.status} /></span>, value: (r) => r.status },

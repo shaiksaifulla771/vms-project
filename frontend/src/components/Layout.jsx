@@ -30,6 +30,7 @@ const NAV = [
     { to: '/reports/stock-balance', label: 'Stock Balance' },
     { to: '/reports/transactions', label: 'Transactions' },
     { to: '/reports/traceability', label: 'Traceability' },
+    { to: '/reports/reorder', label: 'Reorder Alerts' },
   ] },
   { title: 'Settings', icon: Cog, items: [
     { to: '/settings', label: 'General', end: true },

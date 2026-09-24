@@ -65,8 +65,13 @@ async function parseLines(c, productId, lines) {
     if (materialId === productId) throw badRequest('A product cannot be an ingredient of itself');
     if (seen.has(materialId)) throw badRequest(`Line ${i + 1}: material is listed twice`);
     seen.add(materialId);
-    const mat = (await c.query('select uom from public.materials where id = $1', [materialId])).rows[0];
+    const mat = (await c.query('select code, uom from public.materials where id = $1', [materialId])).rows[0];
     if (!mat) throw badRequest(`Line ${i + 1}: material not found`);
+    // Stock, planning and consumption all use the material's base UOM (no conversion), so the line must too.
+    const lineUom = v.str(l.uom, `Line ${i + 1} UOM`, { max: 20 });
+    if (lineUom && lineUom.toLowerCase() !== String(mat.uom).toLowerCase()) {
+      throw badRequest(`Line ${i + 1}: UOM must be the material's stock UOM (${mat.code}: ${mat.uom}); enter the quantity in ${mat.uom}`);
+    }
     out.push({
       materialId,
       mpnId: v.uuid(l.mpn_id, `Line ${i + 1} MPN`),

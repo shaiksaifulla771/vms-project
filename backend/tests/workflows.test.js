@@ -89,7 +89,7 @@ describe('Inventory (Workflow 1)', () => {
     expect(r.status).toBe(403);
   });
 
-  test('transfer: stock moves only on COMPLETED, with two ledger rows and lot dates preserved', async () => {
+  test('transfer: stock leaves the source on dispatch, arrives on COMPLETED, lot dates preserved', async () => {
     const before = await C.lot('LEN-L1');
     const t = await editor.post('/transfers', {
       mpn_id: before.mpn_id, lot_no: 'LEN-L1', qty: 30, from_location_id: C.mum.id, from_warehouse_id: C.wh1.id,
@@ -101,6 +101,7 @@ describe('Inventory (Workflow 1)', () => {
     const done1 = await editor.post(`/transfers/${t.body.id}/complete`);
     expect(done1.status).toBe(409); // must be IN_TRANSIT first
     expect((await editor.post(`/transfers/${t.body.id}/dispatch`)).body.status).toBe('IN_TRANSIT');
+    expect(Number((await C.lot('LEN-L1')).quantity)).toBe(70); // in transit: not available at the source
     const done = await editor.post(`/transfers/${t.body.id}/complete`);
     expect(done.body.status).toBe('COMPLETED');
     const rows = await q(`select * from public.inventory where lot_no = 'LEN-L1' order by quantity desc`);
@@ -109,6 +110,24 @@ describe('Inventory (Workflow 1)', () => {
     const ledger = await q(`select txn_type from public.stock_ledger where reference_id = $1 order by txn_no`, [t.body.transfer_no]);
     expect(ledger.map((l) => l.txn_type)).toEqual(['TRANSFER_OUT', 'TRANSFER_IN']);
     expect((await editor.post(`/transfers/${t.body.id}/cancel`)).status).toBe(409);
+  });
+
+  test('cancelling an in-transit transfer returns the stock to the source automatically', async () => {
+    const lot = await C.lot('LEN-L1');
+    const start = Number(lot.quantity);
+    const t = await editor.post('/transfers', { mpn_id: lot.mpn_id, lot_no: 'LEN-L1', qty: 10, from_location_id: C.mum.id,
+      from_warehouse_id: C.wh1.id, to_location_id: C.mum.id, to_warehouse_id: C.wh2.id });
+    await editor.post(`/transfers/${t.body.id}/dispatch`);
+    const src = async () => Number((await q(`select quantity from public.inventory where lot_no = 'LEN-L1' and warehouse_id = $1`, [C.wh1.id]))[0].quantity);
+    expect(await src()).toBe(start - 10);
+    // the in-transit qty cannot be issued a second time
+    const over = await editor.post('/inventory/outward', { inventory_id: lot.id, qty: start - 5, reason: 'Production issue' });
+    expect(over.status).toBe(400);
+    const c = await editor.post(`/transfers/${t.body.id}/cancel`);
+    expect(c.body.status).toBe('CANCELLED');
+    expect(await src()).toBe(start);
+    const led = await q(`select txn_type, qty_change from public.stock_ledger where reference_id = $1 order by txn_no`, [t.body.transfer_no]);
+    expect(led.map((l) => [l.txn_type, Number(l.qty_change)])).toEqual([['TRANSFER_OUT', -10], ['TRANSFER_IN', 10]]);
   });
 });
 

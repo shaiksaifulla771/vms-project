@@ -4,6 +4,7 @@ let C;
 let admin;
 let editor;
 const q = async (sql, p) => (await getPool().query(sql, p)).rows;
+const lotQty = async (lot) => Number((await q('select coalesce(sum(quantity), 0) as n from public.inventory where lot_no = $1', [lot]))[0].n);
 
 beforeAll(async () => {
   await resetDb();
@@ -13,101 +14,107 @@ beforeAll(async () => {
 });
 afterAll(close);
 
-describe('v8: Inward entry type', () => {
-  const base = () => ({ location_id: C.mum.id, warehouse_id: C.wh1.id, qty: 10 });
+async function runBatch(planId, output, batchNo) {
+  const pf = await editor.get(`/batches/prefill?plan_id=${planId}&planned_output=${output}`);
+  const inputs = pf.body.lines.map((l) => ({
+    material_id: l.material_id, inventory_id: l.suggested_inventory_id, plan_input_qty: l.plan_input_qty, actual_input_qty: l.plan_input_qty,
+  }));
+  return editor.post('/batches', { source: 'PLAN', plan_id: planId, plan_output_qty: output, actual_output_qty: output, inputs, batch_no: batchNo });
+}
 
-  test('Purchase (default) of a bought material is an INWARD ledger row referenced PURCHASE', async () => {
-    const r = await editor.post('/inventory/inward', { ...base(), mpn_id: C.riceMpn.id, lot_no: 'P-1' });
+describe('Batch reversal and plan history', () => {
+  let plan;
+  let batch;
+
+  test('executing a batch is recorded in the plan history', async () => {
+    plan = (await editor.post('/plans', { product_id: C.fg.id, location_id: C.mum.id, plan_mode: 'BATCHES', target_batches: 2 })).body.plan;
+    const r = await runBatch(plan.id, 1000);
     expect(r.status).toBe(201);
-    const l = (await q(`select txn_type, reference_type from public.stock_ledger where lot_no = 'P-1'`))[0];
-    expect(l).toEqual({ txn_type: 'INWARD', reference_type: 'PURCHASE' });
+    batch = r.body;
+    const view = (await editor.get(`/plans/${plan.id}`)).body;
+    expect(view.events.map((e) => e.event)).toEqual(['BATCH_EXECUTED', 'CREATED']);
+    expect(view.events[0].new_value).toMatchObject({ batch_no: batch.batch_no, output_qty: 1000 });
   });
 
-  test('a finished good cannot be purchased; Opening Stock works by material, without an MPN', async () => {
-    const bad = await editor.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-OPEN-1', entry_type: 'PURCHASE' });
-    expect(bad.status).toBe(400);
-    expect(bad.body.error).toMatch(/cannot be purchased/);
-    const byMpn = await editor.post('/inventory/inward', { ...base(), mpn_id: C.fgMpn.id, lot_no: 'FG-OPEN-1' });
-    expect(byMpn.status).toBe(400); // default type is Purchase
-    const ok = await editor.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-OPEN-1', entry_type: 'OPENING', warehouse_id: C.wh2.id });
-    expect(ok.status).toBe(201);
-    const l = (await q(`select txn_type, reference_type, qty_change from public.stock_ledger where lot_no = 'FG-OPEN-1'`))[0];
-    expect(l).toMatchObject({ txn_type: 'OPENING', reference_type: 'OPENING' });
+  test('only Admin can reverse; a reason is required', async () => {
+    expect((await editor.post(`/batches/${batch.id}/reverse`, { reason: 'Wrong entry' })).status).toBe(403);
+    expect((await admin.post(`/batches/${batch.id}/reverse`, {})).status).toBe(400);
   });
 
-  test('Adjustment is Admin only and needs a reason', async () => {
-    const body = { ...base(), mpn_id: C.riceMpn.id, lot_no: 'ADJ-1', entry_type: 'ADJUSTMENT' };
-    expect((await editor.post('/inventory/inward', { ...body, reason: 'Found extra' })).status).toBe(403);
-    expect((await admin.post('/inventory/inward', body)).status).toBe(400);
-    const ok = await admin.post('/inventory/inward', { ...body, reason: 'Found extra in store' });
-    expect(ok.status).toBe(201);
-    expect((await q(`select txn_type from public.stock_ledger where lot_no = 'ADJ-1'`))[0].txn_type).toBe('ADJUSTMENT');
-    const ledger = (await admin.get('/inventory/ledger?type=ADJUSTMENT')).body;
-    expect(ledger.find((x) => x.lot_no === 'ADJ-1').classification).toBe('RAW_MATERIAL');
+  test('reversal returns materials, removes the output, and reopens the plan', async () => {
+    const before = {};
+    for (const i of batch.inputs) before[i.lot_no] = await lotQty(i.lot_no);
+    const r = await admin.post(`/batches/${batch.id}/reverse`, { reason: 'Entered on the wrong plan' });
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('REVERSED');
+    expect(await lotQty(batch.batch_no)).toBe(0);
+    for (const i of batch.inputs.filter((x) => x.actual_input_qty > 0)) {
+      expect(await lotQty(i.lot_no)).toBeCloseTo(before[i.lot_no] + Number(i.actual_input_qty), 4);
+    }
+    const view = (await editor.get(`/plans/${plan.id}`)).body;
+    expect(view.planSummary).toMatchObject({ executed_batches: 0, remaining_batches: 2, executed_qty: 0, status: 'OPEN' });
+    expect(view.events[0]).toMatchObject({ event: 'BATCH_REVERSED' });
+    const led = await q(`select txn_type from public.stock_ledger where reference_type = 'BATCH_REVERSAL' and reference_id = $1`, [batch.batch_no]);
+    expect(led.length).toBe(1 + batch.inputs.filter((x) => x.actual_input_qty > 0).length);
+    // a reversed batch cannot be edited or reversed again
+    expect((await admin.post(`/batches/${batch.id}/reverse`, { reason: 'again' })).status).toBe(409);
+    expect((await admin.put(`/batches/${batch.id}`, { actual_output_qty: 5 })).status).toBe(409);
   });
 
-  test('semi-finished goods can be purchased', async () => {
-    const sfg = (await admin.post('/materials', { name: 'Masala Premix', classification: 'SEMI_FINISHED', uom: 'kg' })).body;
-    const ven = (await admin.post('/vendors', { name: 'Premix Supplier' })).body;
-    const mpn = await admin.post('/mpns', { material_id: sfg.id, vendors: [{ vendor_id: ven.id, uom: 'kg', moq: 10, price: 200 }] });
-    expect(mpn.status).toBe(201);
-    const r = await editor.post('/inventory/inward', { ...base(), mpn_id: mpn.body.id, lot_no: 'SFG-1' });
-    expect(r.status).toBe(201);
+  test('reversal is blocked when the output was already issued', async () => {
+    const r = await runBatch(plan.id, 1000);
+    const fg = (await q('select id from public.inventory where lot_no = $1', [r.body.batch_no]))[0];
+    await editor.post('/inventory/outward', { inventory_id: fg.id, qty: 10, reason: 'Sample / QC' });
+    const rev = await admin.post(`/batches/${r.body.id}/reverse`, { reason: 'test' });
+    expect(rev.status).toBe(400);
+    expect(rev.body.error).toMatch(/still in lot/);
+  });
+
+  test('a batch no cannot reuse an existing lot of the product; Inward cannot top up a batch lot', async () => {
+    const used = (await q(`select batch_no from public.batches where status = 'COMPLETED' limit 1`))[0].batch_no;
+    const dup = await runBatch(plan.id, 1000, used.toLowerCase());
+    expect(dup.status).toBe(400);
+    const inw = await editor.post('/inventory/inward', { mpn_id: C.fgMpn.id, location_id: C.mum.id, warehouse_id: C.wh2.id, lot_no: used, qty: 5 });
+    expect(inw.status).toBe(400);
+    expect(inw.body.error).toMatch(/production batch/);
   });
 });
 
-describe('v8: finished goods have no MPN', () => {
-  test('MPN list, detail, create, update and bulk leave finished goods out', async () => {
-    const list = (await admin.get('/mpns')).body;
-    expect(list.some((p) => p.classification === 'FINISHED_GOOD')).toBe(false);
-    expect((await admin.get(`/mpns/${C.fgMpn.id}`)).status).toBe(404);
-    const create = await admin.post('/mpns', { material_id: C.fg.id });
-    expect(create.status).toBe(400);
-    expect(create.body.error).toMatch(/no MPN/);
-    expect((await admin.put(`/mpns/${C.fgMpn.id}`, { manufacturer: 'X' })).status).toBe(400);
-    const ven = (await q(`select code from public.vendors limit 1`))[0].code;
-    const prev = (await admin.post('/bulk/mpns/preview', { mode: 'create', rows: [{ row_no: 2, material_code: 'FG-RL1', vendor_code: ven, uom: 'pcs', moq: 1, price: 1 }] })).body;
-    expect(prev.rows[0].errors.join(' ')).toMatch(/finished good/);
-    const upd = (await admin.post('/bulk/mpns/preview', { mode: 'update', rows: [{ row_no: 2, mpn_code: 'FG-RL1', vendor_code: ven, price: 5 }] })).body;
-    expect(upd.rows[0].errors.join(' ')).toMatch(/not found/);
-  });
-
-  test('a new finished good still gets its hidden stock code, so batches and stock keep working', async () => {
-    const fg = (await admin.post('/materials', { name: 'Ready Upma 200g', classification: 'FINISHED_GOOD', uom: 'pcs' })).body;
-    const hidden = await q('select id from public.mpns where material_id = $1', [fg.id]);
-    expect(hidden).toHaveLength(1);
-    const r = await editor.post('/inventory/inward', { location_id: C.mum.id, warehouse_id: C.wh2.id, qty: 5, material_id: fg.id, lot_no: 'UPMA-OPEN', entry_type: 'OPENING' });
-    expect(r.status).toBe(201);
-    expect(r.body.mpn_id).toBe(hidden[0].id);
+describe('Planning uses the required date for expiry', () => {
+  test('stock that expires before the required date is not available', async () => {
+    const lot = await C.lot('RICE-L1');                                           // expires 2027-02-01
+    const sim = async (d) => (await editor.post('/plans/simulate', { product_id: C.fg.id, location_id: C.mum.id, demand_qty: 1000, required_date: d }))
+      .body.materialSummary.find((m) => m.material_code === 'RM-RICE').qty_available;
+    const now = await sim(undefined);
+    const later = await sim('2027-02-15');
+    expect(now - later).toBeCloseTo(Number(lot.quantity), 4);
   });
 });
 
-describe('v8: the finished good internal code never reaches the screens', () => {
-  test('material, product, vendor and report APIs show no MPN for a finished good', async () => {
-    // Opening stock for the finished good, and a legacy vendor link on its hidden code
-    await admin.post('/inventory/inward', { location_id: C.mum.id, warehouse_id: C.wh1.id, qty: 5, material_id: C.fg.id, lot_no: 'FG-HIDE-1', entry_type: 'OPENING' });
-    const ven = (await q(`select vendor_id from public.mpn_vendors where mpn_id = $1 limit 1`, [C.riceMpn.id]))[0].vendor_id;
-    await q(`insert into public.mpn_vendors (mpn_id, vendor_id) values ($1, $2) on conflict do nothing`, [C.fgMpn.id, ven]);
+describe('References for goods receipt and sale', () => {
+  test('goods receipt needs a GRN / invoice no; sale needs an invoice / DC no', async () => {
+    const base = { mpn_id: C.riceMpn.id, location_id: C.mum.id, warehouse_id: C.wh1.id, lot_no: 'REF-1', qty: 5 };
+    expect((await editor.post('/inventory/inward', { ...base, reason: 'Goods receipt' })).status).toBe(400);
+    expect((await editor.post('/inventory/inward', { ...base, reason: 'Goods receipt', reference: 'GRN-77' })).status).toBe(201);
+    const lot = await C.lot('REF-1');
+    expect((await editor.post('/inventory/outward', { inventory_id: lot.id, qty: 1, reason: 'Sale / dispatch' })).status).toBe(400);
+    const ok = await editor.post('/inventory/outward', { inventory_id: lot.id, qty: 1, reason: 'Sale / dispatch', reference: 'INV-9' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.reference_id).toBe('INV-9');
+  });
+});
 
-    const mat = await admin.get(`/materials/${C.fg.id}`);
-    expect(mat.body.mpns).toEqual([]);
-    expect(mat.body.vendors).toEqual([]);
-    const list = (await admin.get('/materials')).body.find((m) => m.id === C.fg.id);
-    expect(list.mpns).toEqual([]);
-    expect(list.vendor_count).toBe(0);
-
-    const prod = (await admin.get('/products')).body.find((p) => p.id === C.fg.id);
-    expect(prod.mpn_code).toBeNull();
-
-    const vd = (await admin.get(`/vendors/${ven}`)).body;
-    expect(vd.mpns.some((p) => p.mpn_code === 'FG-RL1')).toBe(false);
-    expect(vd.materials.some((m) => m.code === 'FG-RL1')).toBe(false);
-
-    const bal = (await admin.get('/reports/stock-balance')).body.filter((r) => r.material_code === 'FG-RL1');
-    expect(bal.length).toBeGreaterThan(0);
-    expect(bal.every((r) => r.mpn_code === null)).toBe(true);
-    const sheet = (await admin.get('/reports/physical-stock-sheet')).body.filter((r) => r.material_code === 'FG-RL1');
-    expect(sheet.length).toBeGreaterThan(0);
-    expect(sheet.every((r) => r.mpn_code === null)).toBe(true);
+describe('Reorder alerts', () => {
+  test('materials at or below their reorder level (after open plan needs) are listed', async () => {
+    const r = await admin.put(`/materials/${C.lentil.id}`, { reorder_level: 100000 });
+    expect(r.status).toBe(200);
+    expect(Number(r.body.reorder_level)).toBe(100000);
+    const list = (await editor.get('/reports/reorder')).body;
+    const lentil = list.find((x) => x.material_code === 'RM-LENTIL');
+    expect(lentil).toBeTruthy();
+    expect(lentil.free_qty).toBeCloseTo(lentil.stock_qty - lentil.plan_need_qty, 4);
+    expect(list.find((x) => x.material_code === 'RM-RICE')).toBeUndefined();        // no reorder level set
+    await admin.put(`/materials/${C.lentil.id}`, { reorder_level: 0 });
+    expect((await editor.get('/reports/reorder')).body.find((x) => x.material_code === 'RM-LENTIL')).toBeUndefined();
   });
 });

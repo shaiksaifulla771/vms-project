@@ -98,6 +98,8 @@ router.post('/inward', h(async (req, res) => {
   const materialId = v.uuid(b.material_id, 'Material');
   if (!p.mpnId && !materialId) throw badRequest('MPN is required');
   if (p.mfgDate && p.expiryDate && p.expiryDate < p.mfgDate) throw badRequest('Expiry date must be after Mfg date');
+  // A goods receipt must be traceable to its purchase document.
+  if (/^goods receipt/i.test(p.reason) && !p.referenceId) throw badRequest('Enter the GRN / invoice no for a goods receipt');
   const uom = v.str(b.uom, 'UOM', { max: 20 });
   const ledger = await withTransaction(async (c) => {
     let mat;
@@ -112,6 +114,10 @@ router.post('/inward', h(async (req, res) => {
       if (mat.classification !== 'FINISHED_GOOD') throw badRequest('MPN is required');
       p.mpnId = await outputMpn(c, mat.id, req.user.id); // hidden internal stock code of the finished good
     }
+    // A production batch lot is changed from the batch (Edit IP / OP), never topped up by Inward.
+    const batchLot = (await c.query('select 1 from public.batches where output_mpn_id = $1 and upper(batch_no) = upper($2) limit 1',
+      [p.mpnId, p.lotNo])).rows[0];
+    if (batchLot) throw badRequest(`Lot ${p.lotNo} is a production batch; change its output from the batch (Edit IP / OP), not by Inward`);
     if (entryType === 'PURCHASE' && mat.classification === 'FINISHED_GOOD') {
       throw badRequest('Finished goods cannot be purchased. Use Opening Stock or Adjustment, or record a production batch.');
     }
@@ -128,13 +134,16 @@ router.post('/outward', h(async (req, res) => {
   const inventoryId = v.uuid(b.inventory_id, 'Lot', { required: true });
   const qty = v.num(b.qty, 'Quantity', { required: true, gt: 0 });
   const reason = v.str(b.reason, 'Reason', { required: true, max: 500 });
+  const reference = v.str(b.reference, 'Reference', { max: 100 });
+  // A sale / dispatch must be traceable to its invoice or delivery challan.
+  if (/^sale/i.test(reason) && !reference) throw badRequest('Enter the invoice / delivery challan no for a sale or dispatch');
   const ledger = await withTransaction(async (c) => {
     const inv = await lockInventory(c, inventoryId);
     if (!inv) throw notFound('Lot not found');
     return postStock(c, {
       type: 'OUTWARD', mpnId: inv.mpn_id, locationId: inv.location_id, warehouseId: inv.warehouse_id,
       lotNo: inv.lot_no, qtyChange: -qty, userId: req.user.id, reason,
-      referenceType: 'OUTWARD', referenceId: v.str(b.reference, 'Reference', { max: 100 }),
+      referenceType: 'OUTWARD', referenceId: reference,
     });
   });
   res.status(201).json(ledger);

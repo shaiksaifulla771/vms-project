@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDate, fmtDateTime } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { Link } from 'react-router-dom';
 import { UomSelect, categoriesFor, useCategories, useUoms } from '../../components/pickers';
@@ -35,9 +35,9 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
   const { canWrite } = useApp();
   const isNew = !material;
   const [f, setF] = useState(material
-    ? { ...material, shelf_life_days: material.shelf_life_days ?? '', category_id: material.category_id || '',
+    ? { ...material, shelf_life_days: material.shelf_life_days ?? '', reorder_level: material.reorder_level ?? '', category_id: material.category_id || '',
       sub_category_id: material.sub_category_id || '', description: material.description || '' }
-    : { name: '', classification: 'RAW_MATERIAL', uom: 'kg', shelf_life_days: '', status: 'ACTIVE', category_id: '',
+    : { name: '', classification: 'RAW_MATERIAL', uom: 'kg', shelf_life_days: '', reorder_level: '', status: 'ACTIVE', category_id: '',
       sub_category_id: '', description: '', ...preset });
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -80,6 +80,7 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
       const body = {
         name: f.name, classification: f.classification, uom: f.uom, status: f.status,
         shelf_life_days: f.shelf_life_days === '' ? null : Number(f.shelf_life_days),
+        reorder_level: f.reorder_level === '' ? null : Number(f.reorder_level),
         category_id: f.category_id || null, sub_category_id: f.sub_category_id || null, description: f.description || null,
       };
       const saved = isNew
@@ -126,6 +127,7 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
           <UomSelect value={f.uom} uoms={uoms} onChange={(u) => setF({ ...f, uom: u })} placeholder="Select UOM" />
         </Field>
         <Field label="Shelf Life (days)" hint="Suggests expiry dates"><input className="input num" type="number" min="1" value={f.shelf_life_days} onChange={set('shelf_life_days')} /></Field>
+        <Field label={`Reorder Level${f.uom ? ` (${f.uom})` : ''}`} hint="Alert when free stock falls to this level"><input className="input num" type="number" min="0" step="any" value={f.reorder_level} onChange={set('reorder_level')} /></Field>
         <Field label="Status">
           <select className="input" value={f.status} onChange={set('status')}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select>
         </Field>
@@ -156,6 +158,7 @@ function MaterialView({ id, onClose, onEdit, canWrite }) {
             ['Material Code', m.code], ['Material Name', m.name, 'col-span-2'],
             ['Classification', CLASS_LABEL[m.classification]], ['Category', m.category_name], ['Sub-category', m.sub_category_name],
             ['Base UOM', m.uom], ['Shelf Life (days)', m.shelf_life_days], ['Status', <Status key="s" value={m.status} />],
+            ['Reorder Level', m.reorder_level == null ? '' : `${fmtQty(m.reorder_level)} ${m.uom}`],
             ['Description', m.description, 'col-span-3'],
             ['Created', fmtDateTime(m.created_at)], ['Last updated', fmtDateTime(m.updated_at)],
           ]} />

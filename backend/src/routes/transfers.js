@@ -77,46 +77,69 @@ async function lockTransfer(c, id) {
   return t;
 }
 
-// DRAFT -> IN_TRANSIT (validates availability, stock still at source)
+/** Has the stock of this transfer already left the source? (Transfers dispatched before this rule have not.) */
+async function stockSent(c, t) {
+  const r = await c.query(`select 1 from public.stock_ledger where reference_type = 'TRANSFER' and reference_id = $1
+                             and txn_type = 'TRANSFER_OUT' limit 1`, [t.transfer_no]);
+  return r.rowCount > 0;
+}
+
+async function sendOut(c, t, userId) {
+  const lot = await availableInLot(c, t);
+  if (!lot || Number(lot.quantity) < Number(t.qty)) {
+    throw badRequest(`Insufficient stock in lot ${t.lot_no}: available ${lot ? lot.quantity : 0}`);
+  }
+  await postStock(c, { type: 'TRANSFER_OUT', mpnId: t.mpn_id, lotNo: t.lot_no, userId, referenceType: 'TRANSFER',
+    referenceId: t.transfer_no, locationId: t.from_location_id, warehouseId: t.from_warehouse_id,
+    qtyChange: -Number(t.qty), reason: t.reason || 'Stock transfer out', allowExpired: true });
+}
+
+/** Post the transfer qty into a warehouse, keeping the source lot's dates and vendor. */
+async function receiveIn(c, t, userId, locationId, warehouseId, reason) {
+  const src = (await c.query(`select * from public.inventory where mpn_id = $1 and location_id = $2 and warehouse_id = $3 and lot_no = $4`,
+    [t.mpn_id, t.from_location_id, t.from_warehouse_id, t.lot_no])).rows[0];
+  await postStock(c, { type: 'TRANSFER_IN', mpnId: t.mpn_id, lotNo: t.lot_no, userId, referenceType: 'TRANSFER',
+    referenceId: t.transfer_no, locationId, warehouseId, qtyChange: Number(t.qty), reason,
+    mfgDate: src?.mfg_date, expiryDate: src?.expiry_date, vendorId: src?.vendor_id });
+}
+
+// DRAFT -> IN_TRANSIT: the stock leaves the source warehouse now (it is on the way, in neither warehouse),
+// so it cannot be issued, consumed or counted at the source while in transit.
 router.post('/:id/dispatch', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
   await withTransaction(async (c) => {
     const t = await lockTransfer(c, id);
     if (t.status !== 'DRAFT') throw conflict(`Transfer is ${t.status}; only DRAFT can be dispatched`);
-    const lot = await availableInLot(c, t);
-    if (!lot || Number(lot.quantity) < Number(t.qty)) throw badRequest('Insufficient stock in source lot');
+    await sendOut(c, t, req.user.id);
     await c.query(`update public.stock_transfers set status = 'IN_TRANSIT', dispatched_by = $2, dispatched_at = now() where id = $1`,
       [id, req.user.id]);
   });
   res.json(await load({ query }, id));
 }));
 
-// IN_TRANSIT -> COMPLETED: stock moves now (two ledger entries, atomic)
+// IN_TRANSIT -> COMPLETED: the stock arrives at the destination (lot dates preserved)
 router.post('/:id/complete', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
   await withTransaction(async (c) => {
     const t = await lockTransfer(c, id);
     if (t.status !== 'IN_TRANSIT') throw conflict(`Transfer is ${t.status}; only IN_TRANSIT can be completed`);
-    const src = (await c.query(`select * from public.inventory where mpn_id = $1 and location_id = $2 and warehouse_id = $3 and lot_no = $4`,
-      [t.mpn_id, t.from_location_id, t.from_warehouse_id, t.lot_no])).rows[0];
-    if (!src) throw badRequest('Source lot no longer exists');
-    const common = { mpnId: t.mpn_id, lotNo: t.lot_no, userId: req.user.id, referenceType: 'TRANSFER', referenceId: t.transfer_no };
-    await postStock(c, { ...common, type: 'TRANSFER_OUT', locationId: t.from_location_id, warehouseId: t.from_warehouse_id,
-      qtyChange: -Number(t.qty), reason: t.reason || 'Stock transfer out', allowExpired: true });
-    await postStock(c, { ...common, type: 'TRANSFER_IN', locationId: t.to_location_id, warehouseId: t.to_warehouse_id,
-      qtyChange: Number(t.qty), reason: t.reason || 'Stock transfer in', mfgDate: src.mfg_date,
-      expiryDate: src.expiry_date, vendorId: src.vendor_id });
+    if (!(await stockSent(c, t))) await sendOut(c, t, req.user.id);   // dispatched under the old rule
+    await receiveIn(c, t, req.user.id, t.to_location_id, t.to_warehouse_id, t.reason || 'Stock transfer in');
     await c.query(`update public.stock_transfers set status = 'COMPLETED', completed_by = $2, completed_at = now() where id = $1`,
       [id, req.user.id]);
   });
   res.json(await load({ query }, id));
 }));
 
+// Cancel: DRAFT has nothing to undo; IN_TRANSIT puts the stock back into the source lot automatically.
 router.post('/:id/cancel', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
   await withTransaction(async (c) => {
     const t = await lockTransfer(c, id);
     if (!['DRAFT', 'IN_TRANSIT'].includes(t.status)) throw conflict(`Transfer is ${t.status}; it cannot be cancelled`);
+    if (t.status === 'IN_TRANSIT' && (await stockSent(c, t))) {
+      await receiveIn(c, t, req.user.id, t.from_location_id, t.from_warehouse_id, 'Transfer cancelled - stock returned to source');
+    }
     await c.query(`update public.stock_transfers set status = 'CANCELLED', cancelled_by = $2, cancelled_at = now() where id = $1`,
       [id, req.user.id]);
   });
