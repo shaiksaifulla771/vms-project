@@ -1,12 +1,12 @@
 # VMS ERP v8: Inward Entry Type, No MPN for Finished Goods, Plan Location from BOM
 
-Owner: Shaik Saifulla · Written: 2026-09-24 · Base: v7 (`feat/v7-quick-categories`) · Branch: `feat/v8-entry-type` · Status: **waiting for approval**
+Owner: Shaik Saifulla · Written: 2026-09-24 · Base: v7 (`feat/v7-quick-categories`) · Branch: `feat/v8-entry-type` · Status: **approved 2026-09-24, in progress**
 
 ## 0. Tracker
 
 | Phase | Scope | Status |
 |---|---|---|
-| A | Inward **Entry Type**: Opening Stock · Adjustment · Purchase (bought materials only) | Pending |
+| A | Inward **Entry Type**: Opening Stock · Adjustment · Purchase (any material except finished goods) | Pending |
 | B | Finished goods have **no MPN** anywhere in the screens; they only enter stock by Opening Stock, Adjustment or a batch | Pending |
 | C | New Plan (and Batch Entry): choosing the product fills the **manufacturing location** from its active BOM | Pending |
 | D | Verify: old tests pass, new tests, UI walkthrough, bundle for push | Pending |
@@ -30,12 +30,12 @@ Rule: nothing existing is removed or broken; old stock, ledger rows and batches 
 
 | Entry Type | Who | Allowed materials | Ledger type | Notes |
 |---|---|---|---|---|
-| **Purchase** (default) | Editor, Admin | Raw Material, Packaging, Consumable (bought items) | INWARD, reference "PURCHASE" | Vendor from the MPN; Reference = GRN / invoice no |
+| **Purchase** (default) | Editor, Admin | **Any material except Finished Good** (Raw Material, Packaging, Consumable, Semi-Finished) | INWARD, reference "PURCHASE" | Vendor from the MPN; Reference = GRN / invoice no |
 | **Opening Stock** | Editor, Admin | All, including finished / semi-finished | OPENING | For go-live balances and first-time loading |
 | **Adjustment** | **Admin only** | All | ADJUSTMENT | Reason required (e.g. "Found extra in store"). Same rule as today's Stock Adjustment |
 
 - The form changes with the type:
-  - **Purchase:** the material list shows only bought items; MPN + vendor are required.
+  - **Purchase:** the material list shows every material except finished goods; MPN + vendor are required.
   - **Opening Stock / Adjustment:** any material. For finished goods the MPN field is hidden (see §3) and vendor is not asked.
 - The old **Reason** list stays as a free note under the type (for example "GRN 4521 short-shipped").
 - The **Transaction Report** shows the entry type, and you can filter by it.
@@ -50,13 +50,13 @@ Example: Entry Type **Purchase** → material RM-RICE → MPN-RICE-AG, Agro Grai
 | Screen | Change |
 |---|---|
 | MPNs list, MPN export, MPN Bulk Update template | Finished / semi-finished goods removed |
-| New MPN / Bulk MPN Create / MPN Bulk Entry | Material list shows only bought items; a finished good is refused with "Finished goods are made, not bought: they have no MPN" |
+| New MPN / Bulk MPN Create / MPN Bulk Entry | Material list shows every material except finished goods; a finished good is refused with "Finished goods are made, not bought: they have no MPN" |
 | Material / Product view | "MPN" row hidden for finished goods; shows "Made in-house" |
 | Inward | No MPN field for finished goods (internal code used automatically) |
 | Stock, Stock Balance, Transactions, Traceability, Batch detail | MPN column shows **"–"** for finished-good lots (the product code and lot are already shown) |
 | Outward, Transfers, Physical Count | Unchanged behaviour; MPN shown as "–" for finished goods |
 
-Semi-finished goods are treated the same way (made in-house) (decision 2).
+Semi-finished goods are **not** affected: they can be purchased and keep their MPNs (decision 2).
 
 ## 4. Phase C: plan location from the BOM
 
@@ -77,11 +77,12 @@ Example: pick **FG-RL1 Rice O Lentil 100g Pouch** → Location = **MUM - Mumbai 
 
 ## 5. Decisions (defaults; change if you want)
 
-1. **Purchase** allows Raw Material, Packaging and Consumable (all bought items), not only "Raw Material". Say if packaging / consumables should be blocked too.
-2. **Semi-finished** goods follow the finished-good rules (no MPN, no Purchase).
+1. **Purchase** allows every material except Finished Good (your change, 2026-09-24).
+2. Only **Finished Good** has no MPN; semi-finished goods keep MPNs and can be purchased (follows from 1).
 3. **Batch Entry (ad hoc)** also takes its location from the active BOM.
 4. The old instant **Stock Adjustment** on a lot stays; Inward "Adjustment" is for adding stock that has no lot yet.
 
 ## 6. Session log
 
-- 2026-09-24: Request analysed; plan written. **No code until you approve.**
+- 2026-09-24: Request analysed; plan written.
+- 2026-09-24: Changed on your request: Purchase = any material except finished goods (not raw materials only). Plan approved; build started.
