@@ -75,8 +75,11 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
    fixed list (kg, g, ltr, pcs, packet, box, carton, pouch ...; case-insensitive, checked in the database). **Products** lists finished / semi-finished goods with
    active BOM, cost per unit, stock and open plans. Company set-up lives in **Settings**: Locations & WH, Categories.
 5. **Physical Stock Count** - start a count (snapshot of lots by Location / WH / classification / category, optional
-   hidden system qty), print the sheet, enter counts, a reason for every difference, submit; only an Admin approves,
-   which posts each difference as an ADJUSTMENT referenced to the count number (movements after the snapshot are kept).
+   hidden system qty, optional zero-stock lots), print the sheet, enter counts, a reason for every difference, submit; only an
+   Admin approves, which posts each difference as an ADJUSTMENT referenced to the count number. Each line is compared with
+   the system stock **at the time the shelf was counted** (start qty + movements up to "counted at"), so goods received or
+   issued after the sheet was started are never a false +/- and are never posted twice. "Add new lots" brings lots received
+   after the start onto the sheet. A lot can be on only one open count. BOM lines always use the material's stock UOM.
 6. **Reports** - Stock Balance Sheet,
    Transaction Report (filters: date, location/WH, MPN, type; CSV), Traceability (backward + forward, recursive).
 
@@ -85,7 +88,7 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 `session`, `settings`, `locations` (+`/:id/warehouses`), `warehouses`, `vendors`, `materials`, `categories`,
 `mpns` (+`POST /bulk`), `bulk/:entity/template|export|parse|preview|commit` (entity = materials, vendors, mpns),
 `boms` (+`/active`, `/:id/activate|obsolete|revise|scale`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
-`transfers` (+`/:id/dispatch|complete|cancel`), `stock-counts` (+`/:id/lines|submit|return|approve|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
+`transfers` (+`/:id/dispatch|complete|cancel`), `stock-counts` (+`/:id/lines|add-lots|submit|return|approve|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
 `batches` (+`/prefill`, `PUT /:id`), `reports/stock-balance|physical-stock-sheet|lots|trace`.
 Headers: `X-User-Id` (acting user), `X-Location-Id`, `X-Warehouse-Id` (global scope).
 

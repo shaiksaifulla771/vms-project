@@ -127,16 +127,13 @@ describe('Physical stock count', () => {
     expect((await editor.put(`/stock-counts/${count.id}/lines`, { lines: [{ id: l1.id, counted_qty: 1 }] })).status).toBe(409);
   });
 
-  test('only Admin approves; stock moved after the snapshot needs confirmation; variance posted with reason', async () => {
+  test('only Admin approves; stock moved after counting is kept; variance posted with reason', async () => {
     expect((await editor.post(`/stock-counts/${count.id}/approve`)).status).toBe(403);
     const l1 = count.lines[0];
     const inv = (await q('select * from public.inventory where id = $1', [l1.inventory_id]))[0];
-    // a real movement after the snapshot: +3 inward on that lot
+    // a real movement after the shelf was counted: +3 inward on that lot
     await editor.post('/inventory/inward', { mpn_id: inv.mpn_id, location_id: inv.location_id, warehouse_id: inv.warehouse_id, lot_no: inv.lot_no, qty: 3 });
-    const warn = await admin.post(`/stock-counts/${count.id}/approve`);
-    expect(warn.status).toBe(409);
-    expect(warn.body.code).toBe('MOVED_SINCE_SNAPSHOT');
-    const ok = await admin.post(`/stock-counts/${count.id}/approve`, { acknowledge_movements: true });
+    const ok = await admin.post(`/stock-counts/${count.id}/approve`);
     expect(ok.status).toBe(200);
     expect(ok.body.status).toBe('POSTED');
     expect(ok.body.posted_lines).toBe(1);
@@ -183,5 +180,112 @@ describe('Physical stock count', () => {
     expect(p.body.total).toBeGreaterThan(0);
     const plain = await editor.get('/inventory/ledger');
     expect(Array.isArray(plain.body)).toBe(true);
+  });
+});
+
+describe('Stock count: movements between starting the sheet and counting the shelf', () => {
+  const lotQty = async (id) => Number((await q('select quantity from public.inventory where id = $1', [id]))[0].quantity);
+  const start = async (body) => (await editor.post('/stock-counts', { location_id: C.mum.id, warehouse_id: C.wh1.id, ...body })).body;
+  const lineOf = (count, lot) => count.lines.find((l) => l.lot_no === lot);
+  const finish = async (count, lines, extra = {}) => {
+    const s = await editor.put(`/stock-counts/${count.id}/lines`, { lines, ...extra });
+    expect(s.status).toBe(200);
+    const sub = await editor.post(`/stock-counts/${count.id}/submit`);
+    expect(sub.status).toBe(200);
+    const ap = await admin.post(`/stock-counts/${count.id}/approve`);
+    expect(ap.status).toBe(200);
+    return ap.body;
+  };
+
+  test('stock received after the sheet was started is not a false + and is not posted twice', async () => {
+    const count = await start({ classification: 'PACKAGING' });
+    const line = lineOf(count, 'POUCH-L1');
+    const inv = (await q('select * from public.inventory where id = $1', [line.inventory_id]))[0];
+    const snap = Number(line.snapshot_qty);
+    // next morning: 100 pouches received, 40 issued - then the shelf is counted and matches the system
+    await editor.post('/inventory/inward', { mpn_id: inv.mpn_id, location_id: inv.location_id, warehouse_id: inv.warehouse_id, lot_no: inv.lot_no, qty: 100 });
+    await editor.post('/inventory/outward', { inventory_id: inv.id, qty: 40, reason: 'Production issue' });
+    const s = await editor.put(`/stock-counts/${count.id}/lines`, { lines: [{ id: line.id, counted_qty: snap + 60 }] });
+    const saved = lineOf(s.body, 'POUCH-L1');
+    expect(saved.book_qty).toBe(snap + 60);
+    expect(saved.moved_before_count).toBe(60);
+    expect(saved.variance_qty).toBe(0);
+    await editor.post(`/stock-counts/${count.id}/submit`);
+    const ap = await admin.post(`/stock-counts/${count.id}/approve`);
+    expect(ap.body.posted_lines).toBe(0);
+    expect(await lotQty(inv.id)).toBe(snap + 60);
+  });
+
+  test('a real shortage found after a receipt posts only the shortage', async () => {
+    const count = await start({ classification: 'PACKAGING' });
+    const line = lineOf(count, 'POUCH-L1');
+    const snap = Number(line.snapshot_qty);
+    const inv = (await q('select * from public.inventory where id = $1', [line.inventory_id]))[0];
+    await editor.post('/inventory/inward', { mpn_id: inv.mpn_id, location_id: inv.location_id, warehouse_id: inv.warehouse_id, lot_no: inv.lot_no, qty: 50 });
+    const res = await finish(count, [{ id: line.id, counted_qty: snap + 50 - 7, reason_code: 'DAMAGED' }]);
+    expect(lineOf(res, 'POUCH-L1').posted_qty).toBe(-7);
+    expect(await lotQty(inv.id)).toBe(snap + 50 - 7);
+  });
+
+  test('paper sheet counted yesterday and typed in today: counted_at excludes later movements', async () => {
+    const count = await start({ classification: 'PACKAGING' });
+    const line = lineOf(count, 'POUCH-L1');
+    const snap = Number(line.snapshot_qty);
+    const countedAt = new Date().toISOString();            // shelf counted now (matches the system)...
+    await new Promise((r) => setTimeout(r, 20));
+    await editor.post('/inventory/outward', { inventory_id: line.inventory_id, qty: 30, reason: 'Production issue' }); // ...then 30 issued
+    const res = await finish(count, [{ id: line.id, counted_qty: snap }], { counted_at: countedAt });
+    const l = lineOf(res, 'POUCH-L1');
+    expect(l.variance_qty).toBe(0);
+    expect(l.moved_after_count).toBe(-30);
+    expect(await lotQty(line.inventory_id)).toBe(snap - 30);
+    const bad = await editor.post('/stock-counts', { location_id: C.mum.id, warehouse_id: C.wh1.id, classification: 'PACKAGING' });
+    const tooEarly = await editor.put(`/stock-counts/${bad.body.id}/lines`, { counted_at: '2020-01-01T00:00:00Z',
+      lines: [{ id: bad.body.lines[0].id, counted_qty: 1 }] });
+    expect(tooEarly.status).toBe(400);
+    await editor.post(`/stock-counts/${bad.body.id}/cancel`);
+  });
+
+  test('a lot can be on only one open count', async () => {
+    const a = await start({ classification: 'RAW_MATERIAL' });
+    const b = await editor.post('/stock-counts', { location_id: C.mum.id });
+    expect(b.status).toBe(409);
+    expect(b.body.error).toContain(a.count_no);
+    await editor.post(`/stock-counts/${a.id}/cancel`);
+    const c2 = await editor.post('/stock-counts', { location_id: C.mum.id });
+    expect(c2.status).toBe(201);
+    await editor.post(`/stock-counts/${c2.body.id}/cancel`);
+  });
+
+  test('lots received after the count started can be added; found stock on an empty lot can be counted', async () => {
+    const count = await start({ classification: 'RAW_MATERIAL' });
+    const rice = (await q(`select id from public.mpns where mpn_code = 'MPN-RICE-AG'`))[0];
+    await editor.post('/inventory/inward', { mpn_id: rice.id, location_id: C.mum.id, warehouse_id: C.wh1.id, lot_no: 'RICE-NEW', qty: 25 });
+    const add = await editor.post(`/stock-counts/${count.id}/add-lots`);
+    expect(add.status).toBe(200);
+    expect(add.body.added_lines).toBe(1);
+    const nl = lineOf(add.body, 'RICE-NEW');
+    expect(nl).toMatchObject({ snapshot_qty: 0, added_after_start: true });
+    const res = await finish(count, [{ id: nl.id, counted_qty: 25 }]);
+    expect(lineOf(res, 'RICE-NEW').variance_qty).toBe(0);
+    expect(res.posted_lines).toBe(0);
+
+    // empty lot with stock found on the shelf
+    const empty = (await q(`select id, quantity from public.inventory where lot_no = 'RICE-NEW'`))[0];
+    await editor.post('/inventory/outward', { inventory_id: empty.id, qty: 25, reason: 'Production issue' });
+    const z = await start({ classification: 'RAW_MATERIAL', include_zero: true });
+    const zl = lineOf(z, 'RICE-NEW');
+    expect(zl.snapshot_qty).toBe(0);
+    await finish(z, [{ id: zl.id, counted_qty: 4, reason_code: 'FOUND_EXTRA' }]);
+    expect(await lotQty(empty.id)).toBe(4);
+  });
+});
+
+describe('BOM line UOM', () => {
+  test('a BOM line must use the material stock UOM (no silent g vs kg mix-up)', async () => {
+    const r = await admin.post('/boms', { product_id: C.fg.id, location_id: C.mum.id, batch_size: 100, batch_uom: 'kg',
+      expected_output_qty: 1000, output_uom: 'pcs', lines: [{ material_id: C.rice.id, qty_per_batch: 60000, uom: 'g' }] });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/stock UOM/);
   });
 });
