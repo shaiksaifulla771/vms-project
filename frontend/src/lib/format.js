@@ -43,7 +43,7 @@ export const CLASS_LABEL = {
 
 export const TXN_LABEL = {
   OPENING: 'Opening',
-  INWARD: 'Inward',
+  INWARD: 'Inward (Purchase)',
   OUTWARD: 'Outward',
   TRANSFER_OUT: 'Transfer Out',
   TRANSFER_IN: 'Transfer In',
@@ -81,3 +81,6 @@ export const STATES = [
   'Ladakh', 'Lakshadweep', 'Puducherry',
 ];
 export const COUNTRIES = ['India', 'Bangladesh', 'Bhutan', 'China', 'Nepal', 'Sri Lanka', 'United Arab Emirates', 'United Kingdom', 'United States', 'Other'];
+
+/** Finished goods are made in-house and have no MPN: show a dash instead of their internal stock code. */
+export const mpnLabel = (code, classification) => (classification === 'FINISHED_GOOD' ? '–' : (code || '–'));

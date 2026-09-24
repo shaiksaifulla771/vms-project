@@ -2,11 +2,11 @@ import { useMemo } from 'react';
 import { Printer } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { downloadCsv, fmtDate, fmtQty } from '../../lib/format';
+import { downloadCsv, fmtDate, fmtQty, mpnLabel } from '../../lib/format';
 import { ErrorBox, Loading, PageHeader } from '../../components/ui';
 
 const COLS = [
-  { key: 'mpn_code', label: 'MPN' }, { key: 'material_name', label: 'Material Name' }, { key: 'lot_no', label: 'Lot No' },
+  { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) }, { key: 'material_name', label: 'Material Name' }, { key: 'lot_no', label: 'Lot No' },
   { key: 'quantity', label: 'Qty' }, { key: 'uom', label: 'UOM' }, { key: 'location_code', label: 'Location' },
   { key: 'warehouse_code', label: 'WH' }, { key: 'expiry_date', label: 'Expiry' },
 ];
@@ -46,7 +46,7 @@ export default function StockBalancePage() {
               <tbody>
                 {g.rows.map((r) => (
                   <tr key={`${r.mpn_code}-${r.lot_no}`}>
-                    <td className="td">{r.mpn_code}</td><td className="td">{r.material_name}</td><td className="td">{r.lot_no}</td>
+                    <td className="td">{mpnLabel(r.mpn_code, r.classification)}</td><td className="td">{r.material_name}</td><td className="td">{r.lot_no}</td>
                     <td className="td num">{fmtQty(r.quantity)}</td><td className="td">{r.uom}</td>
                     <td className={`td ${r.is_expired ? 'text-danger' : ''}`}>{fmtDate(r.expiry_date)}</td>
                   </tr>

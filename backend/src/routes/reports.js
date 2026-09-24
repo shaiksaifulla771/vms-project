@@ -13,7 +13,8 @@ router.get('/stock-balance', h(async (req, res) => {
     ['s.quantity > ?', req.query.include_zero === 'true' ? null : 0],
   ]);
   const { rows } = await query(`
-    select s.location_code, s.location_name, s.warehouse_code, s.warehouse_name, s.mpn_code, s.material_code,
+    select s.location_code, s.location_name, s.warehouse_code, s.warehouse_name,
+           case when s.classification = 'FINISHED_GOOD' then null else s.mpn_code end as mpn_code, s.material_code,
            s.material_name, s.classification, s.lot_no, s.quantity, s.uom, s.mfg_date, s.expiry_date, s.is_expired, s.vendor_name
       from public.v_stock s ${clause}
      order by s.location_code, s.warehouse_code, s.material_code, s.lot_no`, params);
@@ -67,7 +68,8 @@ router.get('/physical-stock-sheet', h(async (req, res) => {
     ['s.quantity > ?', req.query.include_zero === 'true' ? null : 0],
   ]);
   const { rows } = await query(`
-    select s.id as inventory_id, s.location_code, s.warehouse_code, s.mpn_code, s.material_name, s.lot_no,
+    select s.id as inventory_id, s.location_code, s.warehouse_code,
+           case when s.classification = 'FINISHED_GOOD' then null else s.mpn_code end as mpn_code, s.classification, s.material_code, s.material_name, s.lot_no,
            s.quantity as system_qty, s.uom, s.expiry_date
       from public.v_stock s ${clause}
      order by s.location_code, s.warehouse_code, s.mpn_code, s.lot_no`, params);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
-import { TXN_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
+import { TXN_LABEL, fmtDate, fmtDateTime, fmtQty, mpnLabel } from '../../lib/format';
 import { ErrorBox, PageHeader } from '../../components/ui';
 
 function Backward({ batches, depth = 0 }) {
@@ -86,7 +86,7 @@ export default function TraceabilityPage() {
                 {hits.map((h) => (
                   <tr key={`${h.mpn_id}-${h.lot_no}`} className="cursor-pointer hover:bg-accent-soft"
                     onClick={() => { setHits([]); setParams({ mpn_id: h.mpn_id, lot_no: h.lot_no }); }}>
-                    <td className="td">{h.lot_no}</td><td className="td">{h.mpn_code}</td><td className="td">{h.material_code} - {h.material_name}</td>
+                    <td className="td">{h.lot_no}</td><td className="td">{mpnLabel(h.mpn_code, h.classification)}</td><td className="td">{h.material_code} - {h.material_name}</td>
                     <td className="td">{h.classification.replace(/_/g, ' ')}</td>
                   </tr>
                 ))}
@@ -98,7 +98,7 @@ export default function TraceabilityPage() {
         {trace && (
           <>
             <div className="card px-3 py-2">
-              <span className="font-semibold">Lot {trace.lot.lot_no}</span> · {trace.lot.material_code} - {trace.lot.material_name} · MPN {trace.lot.mpn_code}
+              <span className="font-semibold">Lot {trace.lot.lot_no}</span> · {trace.lot.material_code} - {trace.lot.material_name}{trace.lot.classification === 'FINISHED_GOOD' ? ' · made in-house' : ` · MPN ${trace.lot.mpn_code}`}
               <span className="text-ink-muted"> · On hand now: {fmtQty(trace.lot.on_hand || 0)}</span>
             </div>
             <div className="grid grid-cols-2 gap-4">

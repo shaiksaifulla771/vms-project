@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Minus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDate, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtQty, mpnLabel } from '../../lib/format';
 import { DataTable, ErrorBox, PageHeader, Stat } from '../../components/ui';
 import { AdjustModal, InwardModal, OutwardModal, TransferModal } from './StockModals';
 
@@ -31,7 +31,7 @@ export default function StockPage() {
   const done = () => { setModal(null); reload(); };
 
   const columns = [
-    { key: 'mpn_code', label: 'MPN' },
+    { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) },
     { key: 'material_code', label: 'Material Code' },
     { key: 'material_name', label: 'Material Name', className: 'whitespace-normal min-w-[180px]' },
     { key: 'classification', label: 'Classification', render: (r) => CLASS_LABEL[r.classification], value: (r) => CLASS_LABEL[r.classification] },

@@ -5,10 +5,12 @@ const { notFound, badRequest } = require('../utils/errors');
 const v = require('../utils/validate');
 const md = require('../services/masterData');
 
-// MPN list with material and mapped vendors (price, MOQ, UOM per vendor)
+// MPN list with material and mapped vendors (price, MOQ, UOM per vendor).
+// Finished goods have no MPN (they are made, not bought), so they are never listed.
 router.get('/', h(async (req, res) => {
   const q = req.query.q ? `%${req.query.q}%` : null;
   const { clause, params } = where([
+    [`m.classification <> 'FINISHED_GOOD' and ?::int = 1`, 1],
     ['p.material_id = ?', req.query.material_id],
     ['(p.mpn_code ilike ? or m.code ilike ? or m.name ilike ? or p.manufacturer ilike ?)', q],
     ['p.status = ?', req.query.status],
@@ -33,9 +35,10 @@ router.get('/', h(async (req, res) => {
 
 router.get('/:id', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
-  const mpn = (await query(`select p.*, m.code as material_code, m.name as material_name, m.uom as material_uom
+  const mpn = (await query(`select p.*, m.code as material_code, m.name as material_name, m.uom as material_uom, m.classification
                               from public.mpns p join public.materials m on m.id = p.material_id where p.id = $1`, [id])).rows[0];
   if (!mpn) throw notFound('MPN not found');
+  if (mpn.classification === 'FINISHED_GOOD') throw notFound('Finished goods are made, not bought: they have no MPN');
   const vendors = (await query(`
     select mv.*, ve.code as vendor_code, ve.name as vendor_name from public.mpn_vendors mv
       join public.vendors ve on ve.id = mv.vendor_id where mv.mpn_id = $1 order by mv.is_preferred desc, ve.name`, [id])).rows;
@@ -87,6 +90,7 @@ router.put('/:id', h(async (req, res) => {
   const vendors = md.parseMpnVendors(b.vendors);
   const row = await withTransaction(async (c) => {
     await md.actAs(c, req.user.id);
+    await md.assertNotFinishedGoodMpn(c, id);
     const r = (await c.query(`update public.mpns
          set manufacturer = case when $6 then $2 else manufacturer end,
              description = case when $7 then $3 else description end,

@@ -8,9 +8,9 @@ const md = require('../services/masterData');
 const LIST_SQL = `
   select m.*, c.name as category_name, sc.name as sub_category_name,
          coalesce((select json_agg(json_build_object('id', p.id, 'mpn_code', p.mpn_code, 'status', p.status) order by p.mpn_code)
-                     from public.mpns p where p.material_id = m.id), '[]') as mpns,
+                     from public.mpns p where p.material_id = m.id and m.classification <> 'FINISHED_GOOD'), '[]') as mpns,
          (select count(distinct mv.vendor_id) from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
-           where p.material_id = m.id)::int as vendor_count
+           where p.material_id = m.id and m.classification <> 'FINISHED_GOOD')::int as vendor_count
     from public.materials m
     left join public.material_categories c on c.id = m.category_id
     left join public.material_categories sc on sc.id = m.sub_category_id`;
@@ -46,6 +46,8 @@ router.get('/:id', h(async (req, res) => {
     select distinct ve.id, ve.code, ve.name, ve.status from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
       join public.vendors ve on ve.id = mv.vendor_id
      where p.material_id = $1 order by ve.name`, [id])).rows;
+  // Finished goods are made, not bought: no MPNs or vendors (their internal stock code stays hidden).
+  if (m.classification === 'FINISHED_GOOD') return res.json({ ...m, mpns: [], vendors: [] });
   res.json({ ...m, mpns, vendors });
 }));
 

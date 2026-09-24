@@ -13,7 +13,8 @@ const { loadBom } = require('../services/boms');
 const PRODUCT_SQL = `
   select m.id, m.code, m.name, m.classification, m.uom, m.shelf_life_days, m.status, m.description, m.created_at,
          m.category_id, m.sub_category_id, c.name as category_name, sc.name as sub_category_name,
-         (select p.mpn_code from public.mpns p where p.material_id = m.id order by p.created_at limit 1) as mpn_code,
+         case when m.classification = 'FINISHED_GOOD' then null -- made in-house: no MPN
+           else (select p.mpn_code from public.mpns p where p.material_id = m.id order by p.created_at limit 1) end as mpn_code,
          (select count(*) from public.boms b where b.product_id = m.id)::int as bom_versions,
          coalesce((select json_agg(json_build_object('id', b.id, 'bom_no', b.bom_no, 'version', b.version,
                     'location_id', b.location_id, 'location_code', l.code, 'warehouse_code', w.code,

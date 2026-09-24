@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ChevronLeft, Printer } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
-import { CLASS_LABEL, fmtByUom, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtByUom, fmtDate, fmtDateTime, fmtQty, mpnLabel } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader, Stat, Status } from '../../components/ui';
 
 const num = (x) => (x === '' || x === null || x === undefined ? null : Number(x));
@@ -188,7 +188,7 @@ export default function StockCountPage() {
                     <tr key={l.id} className={needsReason(l) ? 'bg-red-50' : ''}>
                       <td className="td">{l.line_no}</td>
                       <td className="td">{l.warehouse_code}</td>
-                      <td className="td whitespace-normal break-all min-w-[110px] max-w-[160px]">{l.mpn_code}</td>
+                      <td className="td whitespace-normal break-all min-w-[110px] max-w-[160px]">{mpnLabel(l.mpn_code, l.classification)}</td>
                       <td className="td whitespace-normal min-w-[160px]">{l.material_code} - {l.material_name}</td>
                       <td className="td whitespace-normal break-all min-w-[110px] max-w-[170px]">{l.lot_no}{l.added_after_start && <span className="text-xs text-ink-faint"> (new)</span>}</td>
                       <td className="td">{fmtDate(l.expiry_date)}{l.is_expired ? <span className="text-danger"> (expired)</span> : ''}</td>

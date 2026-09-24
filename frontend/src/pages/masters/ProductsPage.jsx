@@ -29,7 +29,7 @@ function ProductView({ id, canWrite, onClose, onEdit }) {
             ['Product Code', p.code], ['Product Name', p.name, 'col-span-2'],
             ['Type', CLASS_LABEL[p.classification]], ['Category', p.category_name], ['Sub-category', p.sub_category_name],
             ['UOM', p.uom], ['Shelf Life (days)', p.shelf_life_days], ['Status', <Status key="s" value={p.status} />],
-            ['MPN', p.mpn_code], ['Stock (selected scope)', `${fmtQty(p.stock_qty)} ${p.uom}`],
+            ['MPN', p.classification === 'FINISHED_GOOD' ? 'None (made in-house)' : p.mpn_code], ['Stock (selected scope)', `${fmtQty(p.stock_qty)} ${p.uom}`],
             ['Cost per unit (active BOM)', b ? money(p.cost_per_unit) : 'No active BOM here'],
             ['Description', p.description, 'col-span-3'],
           ]} />

@@ -5,7 +5,7 @@ import { api, qs } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtDate, fmtPct, fmtQty } from '../../lib/format';
 import { ErrorBox, Field, PageHeader } from '../../components/ui';
-import { Combobox, materialOptions, useMaterials } from '../../components/pickers';
+import { BomLocationSelect, Combobox, activeBomLocations, bomLocationHint, materialOptions, pickBomLocation, useMaterials } from '../../components/pickers';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
 const variance = (actual, plan) => ({ qty: r4(Number(actual || 0) - Number(plan || 0)), pct: Number(plan) > 0 ? ((Number(actual || 0) - Number(plan)) / Number(plan)) * 100 : 0 });
@@ -31,6 +31,15 @@ export default function BatchEntryPage() {
   const [planId, setPlanId] = useState(params.get('plan_id') || '');
   const [productId, setProductId] = useState('');
   const [locationId, setLocationId] = useState(scopeLoc || '');
+  const [boms, setBoms] = useState([]);
+  // Ad hoc: the manufacturing location comes from the product's active BOM.
+  const chooseProduct = async (v) => {
+    setProductId(v);
+    if (!v) { setBoms([]); return; }
+    const list = await activeBomLocations(v).catch(() => []);
+    setBoms(list);
+    setLocationId(pickBomLocation(list, locationId || scopeLoc));
+  };
   const [pf, setPf] = useState(null);
   const [head, setHead] = useState({ batch_no: '', mfg_date: '', expiry_date: '', executed_by: user?.full_name || '', warehouse_id: '' });
   const [out, setOut] = useState({ plan: '', actual: '', reason: '' });
@@ -140,13 +149,10 @@ export default function BatchEntryPage() {
             ) : (
               <>
                 <Field label="Product" required className="col-span-2">
-                  <Combobox value={productId} onChange={setProductId} options={materialOptions(products)} placeholder="Select product" />
+                  <Combobox value={productId} onChange={chooseProduct} options={materialOptions(products)} placeholder="Select product" />
                 </Field>
-                <Field label="Location" required>
-                  <select className="input" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-                    <option value="">Select</option>
-                    {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
-                  </select>
+                <Field label="Location" required hint={bomLocationHint(boms, productId, locationId) ?? <span className="text-danger">No active BOM for this product</span>}>
+                  <BomLocationSelect value={locationId} onChange={setLocationId} boms={boms} productId={productId} />
                 </Field>
               </>
             )}

@@ -6,7 +6,7 @@ const { postStock } = require('../services/stock');
 const v = require('../utils/validate');
 
 const SELECT = `
-  select t.*, p.mpn_code, m.code as material_code, m.name as material_name, m.uom,
+  select t.*, p.mpn_code, m.code as material_code, m.name as material_name, m.uom, m.classification,
          fl.code as from_location_code, fw.code as from_warehouse_code,
          tl.code as to_location_code, tw.code as to_warehouse_code,
          cu.full_name as created_by_name

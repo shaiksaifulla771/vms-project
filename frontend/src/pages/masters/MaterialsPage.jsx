@@ -137,8 +137,8 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
       </div>
       {isNew && (
         <p className="border-t border-line pt-3 text-xs2 text-ink-muted">
-          Vendors and prices are added in <b>MPNs</b> (material + vendor + UOM + MOQ + price) after saving.
-          {['FINISHED_GOOD', 'SEMI_FINISHED'].includes(f.classification) && ' Finished and semi-finished goods get their own MPN automatically.'}
+          {f.classification !== 'FINISHED_GOOD' && <>Vendors and prices are added in <b>MPNs</b> (material + vendor + UOM + MOQ + price) after saving.</>}
+          {f.classification === 'FINISHED_GOOD' && ' Finished goods are made in-house: they have no MPN and cannot be purchased.'}
         </p>
       )}
     </Modal>
@@ -162,6 +162,9 @@ function MaterialView({ id, onClose, onEdit, canWrite }) {
             ['Description', m.description, 'col-span-3'],
             ['Created', fmtDateTime(m.created_at)], ['Last updated', fmtDateTime(m.updated_at)],
           ]} />
+          {m.classification === 'FINISHED_GOOD' ? (
+            <p className="text-[13px] text-ink-muted">Finished good: made in-house, so it has no MPN or vendor. Stock comes from production batches, Opening Stock or Adjustment.</p>
+          ) : (<>
           <div>
             <div className="text-xs2 uppercase tracking-wide text-ink-muted mb-1">MPNs and vendor prices</div>
             <table className="w-full border-collapse border border-line">
@@ -180,6 +183,7 @@ function MaterialView({ id, onClose, onEdit, canWrite }) {
             </table>
           </div>
           <div className="text-[13px]"><span className="text-ink-muted">Supplied by (from MPNs): </span>{m.vendors.length ? m.vendors.map((v) => `${v.code} - ${v.name}`).join(', ') : '-'}</div>
+          </>)}
         </div>
       )}
     </Modal>
@@ -204,7 +208,7 @@ export default function MaterialsPage() {
     { key: 'classification', label: 'Classification', value: (r) => CLASS_LABEL[r.classification] },
     { key: 'category_name', label: 'Category' },
     { key: 'sub_category_name', label: 'Sub-category' },
-    { key: 'mpns', label: 'MPN(s)', value: (r) => r.mpns.map((m) => m.mpn_code).join(', '), className: 'whitespace-normal max-w-[220px]' },
+    { key: 'mpns', label: 'MPN(s)', value: (r) => (r.classification === 'FINISHED_GOOD' ? 'Made in-house' : r.mpns.map((m) => m.mpn_code).join(', ')), className: 'whitespace-normal max-w-[220px]' },
     { key: 'uom', label: 'UOM' },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
     { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
