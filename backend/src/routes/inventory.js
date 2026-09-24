@@ -1,9 +1,9 @@
 const router = require('express').Router();
 const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
-const { badRequest, notFound } = require('../utils/errors');
-const { requireAdmin } = require('../middleware/session');
-const { postStock, lockInventory } = require('../services/stock');
+const { badRequest, notFound, forbidden } = require('../utils/errors');
+const { requireAdmin, isAdmin } = require('../middleware/session');
+const { postStock, lockInventory, outputMpn } = require('../services/stock');
 const v = require('../utils/validate');
 
 // Centralized Inventory (lots) for the selected Location / WH
@@ -68,12 +68,21 @@ router.get('/inward-defaults', h(async (req, res) => {
     suggested_lot_no: `${prefix}${used.length ? Math.max(...used) + 1 : 1}` });
 }));
 
-// Inward (add stock): creates the lot or increases MPN + Location + WH + Lot
+// Inward (add stock): creates the lot or increases MPN + Location + WH + Lot.
+// Entry type:  PURCHASE (default)  any material except finished goods, needs an MPN     -> ledger INWARD, ref PURCHASE
+//              OPENING             any material (go-live / first balances)                -> ledger OPENING
+//              ADJUSTMENT          Admin only, reason required                            -> ledger ADJUSTMENT
+// Finished goods have no MPN on screen: send material_id and the internal stock code is used.
+const ENTRY_TYPES = { PURCHASE: 'INWARD', OPENING: 'OPENING', ADJUSTMENT: 'ADJUSTMENT' };
+
 router.post('/inward', h(async (req, res) => {
   const b = req.body || {};
+  const entryType = v.oneOf(b.entry_type, 'Entry type', Object.keys(ENTRY_TYPES), { def: 'PURCHASE' });
+  if (entryType === 'ADJUSTMENT' && !isAdmin(req.user)) throw forbidden('Only Admins can add stock as an Adjustment');
+  const reason = v.str(b.reason, 'Reason', { required: entryType === 'ADJUSTMENT', max: 500 });
   const p = {
-    type: 'INWARD',
-    mpnId: v.uuid(b.mpn_id, 'MPN', { required: true }),
+    type: ENTRY_TYPES[entryType],
+    mpnId: v.uuid(b.mpn_id, 'MPN'),
     locationId: v.uuid(b.location_id, 'Location', { required: true }),
     warehouseId: v.uuid(b.warehouse_id, 'Warehouse', { required: true }),
     lotNo: v.str(b.lot_no, 'Lot No', { required: true, max: 100 }),
@@ -81,20 +90,33 @@ router.post('/inward', h(async (req, res) => {
     mfgDate: v.date(b.mfg_date, 'Mfg date'),
     expiryDate: v.date(b.expiry_date, 'Expiry date'),
     vendorId: v.uuid(b.vendor_id, 'Vendor'),
-    reason: v.str(b.reason, 'Reason', { max: 500 }) || 'Stock inward',
-    referenceType: 'INWARD',
+    reason: reason || { PURCHASE: 'Purchase', OPENING: 'Opening stock', ADJUSTMENT: 'Adjustment' }[entryType],
+    referenceType: entryType === 'PURCHASE' ? 'PURCHASE' : entryType,
     referenceId: v.str(b.reference, 'Reference', { max: 100 }),
     userId: req.user.id,
   };
+  const materialId = v.uuid(b.material_id, 'Material');
+  if (!p.mpnId && !materialId) throw badRequest('MPN is required');
   if (p.mfgDate && p.expiryDate && p.expiryDate < p.mfgDate) throw badRequest('Expiry date must be after Mfg date');
   const uom = v.str(b.uom, 'UOM', { max: 20 });
   const ledger = await withTransaction(async (c) => {
-    if (uom) {
-      const m = (await c.query('select m.uom from public.mpns p join public.materials m on m.id = p.material_id where p.id = $1', [p.mpnId])).rows[0];
-      if (m && m.uom.toLowerCase() !== uom.toLowerCase()) {
-        throw badRequest(`UOM must be the material's base UOM (${m.uom})`);
-      }
+    let mat;
+    if (p.mpnId) {
+      mat = (await c.query(`select m.id, m.uom, m.classification from public.mpns p join public.materials m on m.id = p.material_id
+                             where p.id = $1`, [p.mpnId])).rows[0];
+      if (!mat) throw badRequest('MPN not found');
+      if (materialId && materialId !== mat.id) throw badRequest('MPN does not belong to the selected material');
+    } else {
+      mat = (await c.query('select id, uom, classification from public.materials where id = $1', [materialId])).rows[0];
+      if (!mat) throw badRequest('Material not found');
+      if (mat.classification !== 'FINISHED_GOOD') throw badRequest('MPN is required');
+      p.mpnId = await outputMpn(c, mat.id, req.user.id); // hidden internal stock code of the finished good
     }
+    if (entryType === 'PURCHASE' && mat.classification === 'FINISHED_GOOD') {
+      throw badRequest('Finished goods cannot be purchased. Use Opening Stock or Adjustment, or record a production batch.');
+    }
+    if (mat.classification === 'FINISHED_GOOD') p.vendorId = null;
+    if (uom && mat.uom.toLowerCase() !== uom.toLowerCase()) throw badRequest(`UOM must be the material's base UOM (${mat.uom})`);
     return postStock(c, p);
   });
   res.status(201).json(ledger);
@@ -159,13 +181,13 @@ router.get('/ledger', h(async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const size = Math.min(Math.max(parseInt(req.query.page_size || '100', 10) || 100, 10), 1000);
     const [list, total] = await Promise.all([
-      query(`select * from public.v_ledger l ${clause} order by l.txn_no desc limit ${size} offset ${(page - 1) * size}`, params),
+      query(`select l.*, (select x.classification from public.materials x where x.id = l.material_id) as classification from public.v_ledger l ${clause} order by l.txn_no desc limit ${size} offset ${(page - 1) * size}`, params),
       query(`select count(*)::int as n from public.v_ledger l ${clause}`, params),
     ]);
     return res.json({ rows: list.rows, total: total.rows[0].n, page, page_size: size });
   }
   const limit = Math.min(parseInt(req.query.limit || '1000', 10) || 1000, 5000);
-  const { rows } = await query(`select * from public.v_ledger l ${clause} order by l.txn_no desc limit ${limit}`, params);
+  const { rows } = await query(`select l.*, (select x.classification from public.materials x where x.id = l.material_id) as classification from public.v_ledger l ${clause} order by l.txn_no desc limit ${limit}`, params);
   res.json(rows);
 }));
 

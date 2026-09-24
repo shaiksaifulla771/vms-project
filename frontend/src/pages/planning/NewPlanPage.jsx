@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtQty } from '../../lib/format';
 import { ErrorBox, Field, PageHeader } from '../../components/ui';
-import { Combobox, materialOptions, useMaterials } from '../../components/pickers';
+import { BomLocationSelect, Combobox, activeBomLocations, bomLocationHint, materialOptions, pickBomLocation, useMaterials } from '../../components/pickers';
 import PlanSummaries from './PlanSummaries';
 
 export default function NewPlanPage() {
-  const { locations, locationId, settings, canWrite, notify } = useApp();
+  const { locationId, settings, canWrite, notify } = useApp();
   const navigate = useNavigate();
   const products = useMaterials({ producible: 'true', status: 'ACTIVE' });
   const [f, setF] = useState({ product_id: '', location_id: locationId || '', plan_mode: 'BATCHES', target_batches: '', demand_qty: '', required_date: '', notes: '',
     apply_scrap_allowance: settings?.apply_scrap_allowance ?? true });
   const [sim, setSim] = useState(null);
+  const [boms, setBoms] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -54,13 +55,19 @@ export default function NewPlanPage() {
           <div className="grid grid-cols-6 gap-3 items-end">
             <Field label="Product" required className="col-span-2">
               <Combobox value={f.product_id} options={materialOptions(products)} placeholder="Select finished good"
-                onChange={(v) => { const n = { ...f, product_id: v }; setF(n); simulate(n); }} />
+                onChange={async (v) => {
+                  // The manufacturing location comes from where the product has an active BOM.
+                  let list = [];
+                  try { list = await activeBomLocations(v); } catch (e) { setError(e.message); }
+                  setBoms(list);
+                  const n = { ...f, product_id: v, location_id: pickBomLocation(list, f.location_id || locationId) };
+                  setF(n); simulate(n, true);
+                }} />
             </Field>
-            <Field label="Manufacturing Location" required>
-              <select className="input" value={f.location_id} onChange={(e) => { const n = { ...f, location_id: e.target.value }; setF(n); simulate(n); }}>
-                <option value="">Select</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
-              </select>
+            <Field label="Manufacturing Location" required
+              hint={bomLocationHint(boms, f.product_id, f.location_id) ?? <span className="text-danger">No active BOM for this product. <Link className="text-accent" to={`/masters/boms/new?product_id=${f.product_id}`}>Create BOM</Link></span>}>
+              <BomLocationSelect value={f.location_id} boms={boms} productId={f.product_id}
+                onChange={(v) => { const n = { ...f, location_id: v }; setF(n); simulate(n); }} />
             </Field>
             {f.plan_mode === 'BATCHES' ? (
               <Field label="Number of Batches" required hint="Whole batches of the active BOM">

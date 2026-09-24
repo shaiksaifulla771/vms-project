@@ -1,15 +1,15 @@
 # VMS ERP v8: Inward Entry Type, No MPN for Finished Goods, Plan Location from BOM
 
-Owner: Shaik Saifulla · Written: 2026-09-24 · Base: v7 (`feat/v7-quick-categories`) · Branch: `feat/v8-entry-type` · Status: **approved 2026-09-24, in progress**
+Owner: Shaik Saifulla · Written: 2026-09-24 · Base: v7 (`feat/v7-quick-categories`) · Branch: `feat/v8-entry-type` · Status: **approved 2026-09-24, built 2026-09-24**
 
 ## 0. Tracker
 
 | Phase | Scope | Status |
 |---|---|---|
-| A | Inward **Entry Type**: Opening Stock · Adjustment · Purchase (any material except finished goods) | Pending |
-| B | Finished goods have **no MPN** anywhere in the screens; they only enter stock by Opening Stock, Adjustment or a batch | Pending |
-| C | New Plan (and Batch Entry): choosing the product fills the **manufacturing location** from its active BOM | Pending |
-| D | Verify: old tests pass, new tests, UI walkthrough, bundle for push | Pending |
+| A | Inward **Entry Type**: Opening Stock · Adjustment · Purchase (any material except finished goods) | Done |
+| B | Finished goods have **no MPN** anywhere in the screens; they only enter stock by Opening Stock, Adjustment or a batch | Done |
+| C | New Plan (and Batch Entry): choosing the product fills the **manufacturing location** from its active BOM | Done |
+| D | Verify: old tests pass, new tests, UI walkthrough, bundle for push | Done |
 
 Rule: nothing existing is removed or broken; old stock, ledger rows and batches keep working. No database change is needed.
 
@@ -86,3 +86,4 @@ Example: pick **FG-RL1 Rice O Lentil 100g Pouch** → Location = **MUM - Mumbai 
 
 - 2026-09-24: Request analysed; plan written.
 - 2026-09-24: Changed on your request: Purchase = any material except finished goods (not raw materials only). Plan approved; build started.
+- 2026-09-24: Built. Inward Entry Type (Purchase / Opening Stock / Adjustment, admin only) in API + form; finished goods hidden from MPN list, detail, forms, bulk files and pickers, shown as "–" in stock screens; New Plan and Batch Entry (ad hoc) fill the location from the active BOM. Backend tests 70/70 (6 new in `tests/v8.test.js`); UI walkthrough clean.

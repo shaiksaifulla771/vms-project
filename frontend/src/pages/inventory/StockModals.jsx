@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, qs } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
-import { fmtDate, fmtQty, today } from '../../lib/format';
+import { fmtDate, fmtQty, today, mpnLabel } from '../../lib/format';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { Combobox, LocationWarehouse, materialOptions, mpnOptions, useDefaultScope, useMaterials, useMpns } from '../../components/pickers';
 
@@ -29,7 +29,17 @@ function useSubmit(onDone) {
   return { busy, error, setError, run };
 }
 
-const INWARD_REASONS = ['Goods receipt', 'Opening stock', 'Return from production', 'Other'];
+// Entry type decides the ledger type and which materials are allowed (finished goods cannot be purchased).
+const ENTRY_TYPES = [
+  { value: 'PURCHASE', label: 'Purchase', hint: 'Bought from a vendor. Any material except finished goods.' },
+  { value: 'OPENING', label: 'Opening Stock', hint: 'Balances at go-live or first-time loading. Any material.' },
+  { value: 'ADJUSTMENT', label: 'Adjustment', hint: 'Admin only. Stock found without a lot yet. Reason required.', admin: true },
+];
+const INWARD_REASONS = {
+  PURCHASE: ['Goods receipt', 'Return from production', 'Other'],
+  OPENING: ['Opening stock', 'Other'],
+  ADJUSTMENT: ['Found extra in store', 'Correction of earlier entry', 'Other'],
+};
 const OUTWARD_REASONS = ['Production issue', 'Sample / QC', 'Damaged', 'Expired disposal', 'Sale / dispatch', 'Other'];
 
 /** Reason dropdown; "Other" asks for a short note. Value sent: "Reason" or "Other: note". */
@@ -58,11 +68,11 @@ function ReasonField({ options, value, onChange, required, className = '' }) {
  * Location / WH: top selector, else where the material was last received, else the default WH.
  */
 export function InwardModal({ onClose, onDone }) {
-  const { settings, notify, locations, locationId: scopeLoc, warehouseId: scopeWh } = useApp();
+  const { settings, notify, locations, locationId: scopeLoc, warehouseId: scopeWh, isAdmin } = useApp();
   const mpns = useMpns();
   const materials = useMaterials({ status: 'ACTIVE' });
   const def = useDefaultScope();
-  const [f, setF] = useState({ material_id: '', mpn_id: '', location_id: def.locationId, warehouse_id: def.warehouseId, lot_no: '', qty: '',
+  const [f, setF] = useState({ entry_type: 'PURCHASE', material_id: '', mpn_id: '', location_id: def.locationId, warehouse_id: def.warehouseId, lot_no: '', qty: '',
     mfg_date: today(), expiry_date: '', vendor_id: '', reason: 'Goods receipt', reference: '' });
   const [hint, setHint] = useState('');
   const set = (k) => (e) => setF({ ...f, [k]: e.target ? e.target.value : e });
@@ -72,13 +82,22 @@ export function InwardModal({ onClose, onDone }) {
   const s = useSubmit((r) => { notify(`Stock added. New balance ${fmtQty(r.new_balance)}`); onDone(); });
   const life = (mat) => mat?.shelf_life_days || settings?.default_shelf_life_days || 365;
   const prefVendor = (p) => (p?.vendors?.find((x) => x.is_preferred) || p?.vendors?.[0])?.vendor_id || '';
-  const stocked = materials.filter((m) => mpns.some((p) => p.material_id === m.id));
+  const isFG = material?.classification === 'FINISHED_GOOD';
+  // Purchase: bought items that have an MPN. Opening / Adjustment: those plus finished goods (no MPN).
+  const choices = materials.filter((m) => (m.classification === 'FINISHED_GOOD'
+    ? f.entry_type !== 'PURCHASE' : mpns.some((p) => p.material_id === m.id)));
+  const setType = (t) => {
+    const keep = material && !(t === 'PURCHASE' && isFG);
+    setF({ ...f, entry_type: t, reason: INWARD_REASONS[t][0] === 'Other' ? '' : (t === 'ADJUSTMENT' ? '' : INWARD_REASONS[t][0]),
+      ...(keep ? {} : { material_id: '', mpn_id: '', vendor_id: '' }) });
+  };
+  const ready = f.material_id && (isFG || f.mpn_id) && (f.entry_type !== 'ADJUSTMENT' || f.reason);
 
   const pickMaterial = async (id) => {
     const mat = materials.find((m) => m.id === id);
     const list = mpns.filter((p) => p.material_id === id)
       .sort((a, b) => Number(Boolean(b.vendors?.some((x) => x.is_preferred))) - Number(Boolean(a.vendors?.some((x) => x.is_preferred))));
-    const p = list[0];
+    const p = mat?.classification === 'FINISHED_GOOD' ? null : list[0];
     const next = { ...f, material_id: id, mpn_id: p?.id || '', vendor_id: prefVendor(p),
       expiry_date: f.mfg_date ? addDays(f.mfg_date, life(mat)) : '' };
     setF(next);
@@ -97,14 +116,27 @@ export function InwardModal({ onClose, onDone }) {
     <Modal title="Inward Stock" onClose={onClose} width="max-w-2xl"
       footer={<>
         <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn-primary" disabled={s.busy || !f.mpn_id}
-          onClick={() => s.run(() => api.post('/inventory/inward', { ...f, qty: Number(f.qty) }))}>Save</button>
+        <button type="button" className="btn-primary" disabled={s.busy || !ready}
+          onClick={() => s.run(() => api.post('/inventory/inward', { ...f, mpn_id: isFG ? undefined : f.mpn_id, vendor_id: isFG ? undefined : f.vendor_id, qty: Number(f.qty) }))}>Save</button>
       </>}>
       <ErrorBox message={s.error} onClose={() => s.setError(null)} />
+      <Field label="Entry Type" required hint={ENTRY_TYPES.find((t) => t.value === f.entry_type).hint}>
+        <div className="flex gap-2">
+          {ENTRY_TYPES.filter((t) => !t.admin || isAdmin).map((t) => (
+            <button key={t.value} type="button" onClick={() => setType(t.value)}
+              className={`px-3 h-8 rounded border text-[13px] ${f.entry_type === t.value ? 'border-accent bg-accent-soft text-accent font-medium' : 'border-line-strong text-ink-soft hover:bg-panel'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Material" required hint={f.material_id && !matMpns.length ? 'This material has no MPN yet: add one in MPNs first' : 'Only materials with an MPN can be received'}>
-          <Combobox value={f.material_id} onChange={pickMaterial} options={materialOptions(stocked)} placeholder="Select material" />
+        <Field label="Material" required hint={f.entry_type === 'PURCHASE' ? 'Finished goods cannot be purchased' : 'Materials with an MPN, and finished goods'}>
+          <Combobox value={f.material_id} onChange={pickMaterial} options={materialOptions(choices)} placeholder="Select material" />
         </Field>
+        {isFG ? (
+          <Field label="MPN" hint="Finished goods are made in-house and have no MPN"><input className="input" disabled value="None (made in-house)" /></Field>
+        ) : (
         <Field label="MPN" required hint={matMpns.length > 1 ? `${matMpns.length} MPNs for this material` : ''}>
           <select className="input" value={f.mpn_id} disabled={!matMpns.length}
             onChange={(e) => { const p = mpns.find((x) => x.id === e.target.value); setF({ ...f, mpn_id: e.target.value, vendor_id: prefVendor(p) }); }}>
@@ -112,6 +144,7 @@ export function InwardModal({ onClose, onDone }) {
             {matMpns.map((p) => <option key={p.id} value={p.id}>{p.mpn_code}{p.vendors?.length ? ` · ${p.vendors.map((x) => x.vendor_name).join(', ')}` : ''}</option>)}
           </select>
         </Field>
+        )}
       </div>
       {material && (
         <div className="text-xs text-ink-muted">{material.code} - {material.name} · {material.classification?.replace(/_/g, ' ')} · UOM {material.uom} · shelf life {life(material)} days</div>
@@ -123,7 +156,7 @@ export function InwardModal({ onClose, onDone }) {
         <Field label="Lot No" required hint="Suggested; type the vendor's lot if it has one"><input className="input" value={f.lot_no} onChange={set('lot_no')} /></Field>
         <Field label={`Quantity${material ? ` (${material.uom})` : ''}`} required><input className="input num" type="number" min="0" step="any" value={f.qty} onChange={set('qty')} /></Field>
         <Field label="Vendor">
-          <select className="input" value={f.vendor_id} onChange={set('vendor_id')}>
+          <select className="input" value={f.vendor_id} onChange={set('vendor_id')} disabled={isFG}>
             <option value="">-</option>
             {(mpn?.vendors || []).map((x) => <option key={x.vendor_id} value={x.vendor_id}>{x.vendor_name}{x.is_preferred ? ' (preferred)' : ''}</option>)}
           </select>
@@ -133,7 +166,8 @@ export function InwardModal({ onClose, onDone }) {
         <Field label="Expiry Date" hint="Mfg date + shelf life"><input className="input" type="date" value={f.expiry_date} onChange={set('expiry_date')} /></Field>
         <Field label="Reference"><input className="input" placeholder="GRN / invoice no" value={f.reference} onChange={set('reference')} /></Field>
       </div>
-      <ReasonField options={INWARD_REASONS} value={f.reason} onChange={(r) => setF((x) => ({ ...x, reason: r }))} />
+      <ReasonField key={f.entry_type} options={INWARD_REASONS[f.entry_type]} value={f.reason} required={f.entry_type === 'ADJUSTMENT'}
+        onChange={(r) => setF((x) => ({ ...x, reason: r }))} />
     </Modal>
   );
 }
@@ -195,7 +229,7 @@ export function OutwardModal({ lot: presetLot, onClose, onDone }) {
               <tr key={x.id} className={x.is_expired ? 'text-ink-faint' : 'hover:bg-panel cursor-pointer'} onClick={() => !x.is_expired && setLotId(x.id)}>
                 <td className="td"><input type="radio" disabled={x.is_expired} checked={lotId === x.id} onChange={() => setLotId(x.id)} /></td>
                 <td className="td">{x.lot_no}</td>
-                <td className="td">{x.mpn_code}</td>
+                <td className="td">{mpnLabel(x.mpn_code, x.classification)}</td>
                 <td className="td">{x.location_code} / {x.warehouse_code}</td>
                 <td className={`td ${x.is_expired ? 'text-danger' : ''}`}>{fmtDate(x.expiry_date)}{x.is_expired ? ' (expired)' : ''}</td>
                 <td className="td num">{fmtQty(x.quantity)} {x.uom}</td>
@@ -231,7 +265,7 @@ export function AdjustModal({ lot, onClose, onDone }) {
       </>}>
       <ErrorBox message={s.error} onClose={() => s.setError(null)} />
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[13px]">
-        <span className="text-ink-muted">MPN</span><span>{lot.mpn_code}</span>
+        <span className="text-ink-muted">MPN</span><span>{mpnLabel(lot.mpn_code, lot.classification)}</span>
         <span className="text-ink-muted">Material</span><span>{lot.material_name}</span>
         <span className="text-ink-muted">Location / WH</span><span>{lot.location_code} / {lot.warehouse_code}</span>
         <span className="text-ink-muted">Lot No</span><span>{lot.lot_no}</span>
@@ -265,7 +299,7 @@ export function TransferModal({ lot, onClose, onDone }) {
       </>}>
       <ErrorBox message={s.error} onClose={() => s.setError(null)} />
       <div className="text-[13px]">
-        From <b>{lot.location_code} / {lot.warehouse_code}</b> · {lot.mpn_code} · Lot <b>{lot.lot_no}</b> · Available {fmtQty(lot.quantity)} {lot.uom}
+        From <b>{lot.location_code} / {lot.warehouse_code}</b> · {mpnLabel(lot.mpn_code, lot.classification)} · Lot <b>{lot.lot_no}</b> · Available {fmtQty(lot.quantity)} {lot.uom}
       </div>
       <div className="text-xs text-ink-muted">Stock moves only when the transfer is marked Completed (Draft → In-Transit → Completed).</div>
       <LocationWarehouse locationId={to.l} warehouseId={to.w} required onChange={(l, w) => setTo({ l, w })} />

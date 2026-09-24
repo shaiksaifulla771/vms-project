@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { fmtDateTime, fmtQty } from '../../lib/format';
+import { fmtDateTime, fmtQty, mpnLabel } from '../../lib/format';
 import { DataTable, ErrorBox, PageHeader, Status } from '../../components/ui';
 
 export default function TransfersPage() {
@@ -22,7 +22,7 @@ export default function TransfersPage() {
   const columns = [
     { key: 'transfer_no', label: 'Transfer No' },
     { key: 'created_at', label: 'Created', render: (r) => fmtDateTime(r.created_at) },
-    { key: 'mpn_code', label: 'MPN' },
+    { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) },
     { key: 'material_name', label: 'Material' },
     { key: 'lot_no', label: 'Lot No' },
     { key: 'qty', label: 'Qty', align: 'right', render: (r) => `${fmtQty(r.qty)} ${r.uom}`, value: (r) => Number(r.qty) },

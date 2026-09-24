@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, qs } from '../../lib/api';
 import { useData } from '../../lib/app-context';
-import { TXN_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
+import { TXN_LABEL, fmtDateTime, fmtQty, mpnLabel } from '../../lib/format';
 import { DataTable, ErrorBox, Field, PageHeader } from '../../components/ui';
 import { Combobox, mpnOptions, useMpns } from '../../components/pickers';
 
@@ -23,7 +23,7 @@ export default function TransactionsPage() {
     { key: 'txn_at', label: 'Timestamp', render: (r) => fmtDateTime(r.txn_at) },
     { key: 'user_name', label: 'User' },
     { key: 'txn_type', label: 'Type', value: (r) => TXN_LABEL[r.txn_type] || r.txn_type },
-    { key: 'mpn_code', label: 'MPN' },
+    { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) },
     { key: 'material_name', label: 'Material', className: 'whitespace-normal min-w-[180px]' },
     { key: 'lot_no', label: 'Lot No', render: (r) => <Link className="text-accent hover:underline" onClick={(e) => e.stopPropagation()} to={`/reports/traceability?mpn_id=${r.mpn_id}&lot_no=${encodeURIComponent(r.lot_no)}`}>{r.lot_no}</Link>, value: (r) => r.lot_no },
     { key: 'qty_change', label: 'Qty Change', align: 'right', render: (r) => `${r.qty_change > 0 ? '+' : ''}${fmtQty(r.qty_change)}`, value: (r) => Number(r.qty_change) },

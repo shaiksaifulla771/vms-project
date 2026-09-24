@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { fmtDate, fmtDateTime, fmtPct, fmtQty } from '../../lib/format';
+import { fmtDate, fmtDateTime, fmtPct, fmtQty, mpnLabel } from '../../lib/format';
 import { ErrorBox, Loading, PageHeader } from '../../components/ui';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
@@ -60,7 +60,7 @@ export default function BatchDetailPage() {
           <div className="grid grid-cols-4 gap-x-6 gap-y-2 p-3 text-[13px]">
             {[
               ['Source', b.source === 'PLAN' ? 'Plan' : 'Ad Hoc'], ['Product', `${b.product_code} - ${b.product_name}`],
-              ['Batch No / FG Lot', b.batch_no], ['Output MPN', b.output_mpn_code],
+              ['Batch No / FG Lot', b.batch_no], ['Made', 'In-house (no MPN)'],
               ['Mfg Date', fmtDate(b.mfg_date)], ['Expiry Date', fmtDate(b.expiry_date)],
               ['Executed By', b.executed_by], ['BOM', b.bom_no ? `${b.bom_no} v${b.bom_version}` : '-'],
             ].map(([k, v]) => <div key={k}><div className="text-xs text-ink-muted">{k}</div><div>{v}</div></div>)}
@@ -140,7 +140,7 @@ export default function BatchDetailPage() {
               {(ledger.data || []).map((l) => (
                 <tr key={l.id}>
                   <td className="td">{l.txn_no}</td><td className="td">{fmtDateTime(l.txn_at)}</td><td className="td">{l.txn_type.replace(/_/g, ' ')}</td>
-                  <td className="td">{l.mpn_code}</td><td className="td">{l.lot_no}</td><td className="td">{l.warehouse_code}</td>
+                  <td className="td">{mpnLabel(l.mpn_code, l.classification)}</td><td className="td">{l.lot_no}</td><td className="td">{l.warehouse_code}</td>
                   <td className="td num">{l.qty_change > 0 ? '+' : ''}{fmtQty(l.qty_change)}</td><td className="td num">{fmtQty(l.new_balance)}</td>
                   <td className="td">{l.user_name}</td>
                 </tr>

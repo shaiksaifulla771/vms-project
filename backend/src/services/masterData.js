@@ -323,9 +323,16 @@ async function writeMpnVendors(c, mpnId, vendors, userId) {
   }
 }
 
+/** Finished goods keep only a hidden internal stock code; it cannot be edited as an MPN. */
+async function assertNotFinishedGoodMpn(c, mpnId) {
+  const r = (await c.query(`select m.classification from public.mpns p join public.materials m on m.id = p.material_id where p.id = $1`, [mpnId])).rows[0];
+  if (r && r.classification === 'FINISHED_GOOD') throw badRequest('Finished goods are made, not bought: they have no MPN');
+}
+
 async function createMpn(c, { materialId, manufacturer, description, vendors, legacyCode }, userId) {
-  const mat = (await c.query('select id, status from public.materials where id = $1', [materialId])).rows[0];
+  const mat = (await c.query('select id, status, classification from public.materials where id = $1', [materialId])).rows[0];
   if (!mat) throw badRequest('Material not found');
+  if (mat.classification === 'FINISHED_GOOD') throw badRequest('Finished goods are made, not bought: they have no MPN');
   const mpn = (await c.query(`insert into public.mpns(mpn_code, material_id, manufacturer, description, created_by)
                               values ($1,$2,$3,$4,$5) returning *`,
   [legacyCode || null, materialId, manufacturer, description, userId])).rows[0];
@@ -343,6 +350,6 @@ module.exports = {
   CLASSES, STATUSES, EMAIL_RE, IFSC_RE, GSTIN_RE,
   actAs, deleteOrDeactivate,
   parseMaterial, createMaterial, updateMaterial,
-  parseVendor, parseVendorBasic, createVendor, updateVendor, linkVendorMaterial,
+  parseVendor, parseVendorBasic, createVendor, updateVendor, linkVendorMaterial, assertNotFinishedGoodMpn,
   parseMpnVendors, writeMpnVendors, createMpn, existingMpnFor,
 };

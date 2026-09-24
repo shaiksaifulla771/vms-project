@@ -159,3 +159,37 @@ export function UomSelect({ value, onChange, uoms, placeholder, className = 'inp
     </select>
   );
 }
+
+/**
+ * Active BOMs of a product (all locations). The manufacturing location of a plan / ad hoc batch is taken from here:
+ * one active BOM -> that location; several -> the preferred one if it has a BOM, else the first; none -> ''.
+ */
+export async function activeBomLocations(productId) {
+  if (!productId) return [];
+  const boms = await api.get(`/boms${qs({ product_id: productId, status: 'ACTIVE' })}`, { scoped: false });
+  return boms.map((b) => ({ location_id: b.location_id, location_code: b.location_code, bom_no: b.bom_no, version: b.version }));
+}
+export const pickBomLocation = (boms, preferred) => (boms.find((b) => b.location_id === preferred) || boms[0])?.location_id || '';
+
+/** Location dropdown limited to locations with an active BOM for the product (others shown disabled). */
+export function BomLocationSelect({ value, onChange, boms, productId, disabled }) {
+  const { locations } = useApp();
+  const has = (id) => boms.some((b) => b.location_id === id);
+  return (
+    <select className="input" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{productId && !boms.length ? 'No active BOM' : 'Select'}</option>
+      {locations.map((l) => (
+        <option key={l.id} value={l.id} disabled={Boolean(productId) && !has(l.id)}>
+          {l.code} - {l.name}{productId && !has(l.id) ? ' (no active BOM)' : ''}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export function bomLocationHint(boms, productId, locationId) {
+  if (!productId) return '';
+  if (!boms.length) return null;
+  const b = boms.find((x) => x.location_id === locationId);
+  return b ? `From active ${b.bom_no} v${b.version}${boms.length > 1 ? ` · ${boms.length} locations have a BOM` : ''}` : '';
+}

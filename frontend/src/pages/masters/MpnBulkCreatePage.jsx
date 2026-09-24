@@ -97,7 +97,7 @@ export default function MpnBulkCreatePage() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <FragmentRow uoms={uoms} key={r._k} i={i} r={r} errors={errors[i + 1]} set={set} matOpts={materialOptions(materials)} vOpts={vOpts}
+                <FragmentRow uoms={uoms} key={r._k} i={i} r={r} errors={errors[i + 1]} set={set} matOpts={materialOptions(materials.filter((m) => m.classification !== 'FINISHED_GOOD'))} vOpts={vOpts}
                   onCopy={() => setRows((rs) => [...rs.slice(0, i + 1), { ...blankRow(r), uom: '' }, ...rs.slice(i + 1)])}
                   onRemove={() => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : [blankRow()]))} />
               ))}

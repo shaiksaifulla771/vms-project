@@ -66,7 +66,7 @@ function MpnForm({ mpn, preset, onClose, onDone }) {
         <Field label="MPN Code" hint={isNew ? 'Assigned on save (MPN1001, ...)' : 'Cannot be changed'}><input className="input" value={isNew ? 'Auto' : mpn.mpn_code} disabled /></Field>
         <div className="col-span-2">
           <span className="label">Material<span className="text-danger"> *</span></span>
-          <Combobox value={f.material_id} disabled={!isNew} onChange={(v) => setF({ ...f, material_id: v })} options={materialOptions(materials)} />
+          <Combobox value={f.material_id} disabled={!isNew} onChange={(v) => setF({ ...f, material_id: v })} options={materialOptions(materials.filter((m) => m.classification !== 'FINISHED_GOOD'))} />
         </div>
         <Field label="Manufacturer"><input className="input" value={f.manufacturer} onChange={(e) => setF({ ...f, manufacturer: e.target.value })} /></Field>
         <Field label="Description"><input className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>

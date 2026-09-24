@@ -67,7 +67,8 @@ async function loadLookups(db) {
   const vens = await db.query('select id, code, name, status, phone, contact_email, gstin, fssai_no, fssai_expiry from public.vendors');
   const mpns = await db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.material_id, mv.vendor_id,
                      mv.uom, mv.moq, mv.price, mv.lead_time_days, mv.is_preferred
-                from public.mpns p left join public.mpn_vendors mv on mv.mpn_id = p.id`);
+                from public.mpns p left join public.mpn_vendors mv on mv.mpn_id = p.id
+               where not exists (select 1 from public.materials m where m.id = p.material_id and m.classification = 'FINISHED_GOOD')`);
   const uoms = await loadUoms(db);
 
   const catTop = new Map();
@@ -380,6 +381,7 @@ function validateMpnCreate(rows, lk) {
     const ven = r.vendor_id ? lk.venById.get(r.vendor_id) : lk.venByCode.get(String(text(r.vendor_code) || '').toUpperCase());
     if (!mat) errors.push(blank(r.material_code) && !r.material_id ? 'Material is required' : `Material ${r.material_code || ''} not found`);
     else if (mat.status !== 'ACTIVE') errors.push(`Material ${mat.code} is inactive`);
+    else if (mat.classification === 'FINISHED_GOOD') errors.push(`${mat.code} is a finished good: finished goods are made, not bought, and have no MPN`);
     if (!ven) errors.push(blank(r.vendor_code) && !r.vendor_id ? 'Vendor is required' : `Vendor ${r.vendor_code || ''} not found`);
     else if (ven.status !== 'ACTIVE') errors.push(`Vendor ${ven.code} is inactive`);
     const moq = toNum(r.moq);
@@ -628,7 +630,7 @@ async function exportRows(entity, db = { query }, { forUpdate = false } = {}) {
              mv.lead_time_days, mv.is_preferred, p.manufacturer, p.status
         from public.mpns p join public.materials m on m.id = p.material_id
         left join public.mpn_vendors mv on mv.mpn_id = p.id left join public.vendors ve on ve.id = mv.vendor_id
-       ${forUpdate ? 'where mv.id is not null' : ''}
+       where m.classification <> 'FINISHED_GOOD' ${forUpdate ? 'and mv.id is not null' : ''}
        order by p.mpn_code, ve.code`);
     return rows.map((r) => ({ ...r, is_preferred: r.vendor_code ? (r.is_preferred ? 'Yes' : 'No') : null, status: STATUS_LABEL[r.status] }));
   }
