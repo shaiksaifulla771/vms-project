@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtByUom, fmtDateTime } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { LocationWarehouse, useCategories, useDefaultScope } from '../../components/pickers';
 
@@ -85,7 +85,7 @@ export default function StockCountsPage() {
     { key: 'blind', label: 'Hidden qty', value: (r) => (r.blind ? 'Yes' : '') },
     { key: 'progress', label: 'Counted', align: 'right', value: (r) => `${r.counted_count} / ${r.line_count}` },
     { key: 'variance_count', label: 'Lines with difference', align: 'right', value: (r) => (r.variance_count ?? 'hidden') },
-    { key: 'net', label: 'Total + / -', align: 'right', value: (r) => (r.variance_plus == null ? '' : `+${fmtQty(r.variance_plus)} / ${fmtQty(r.variance_minus)}`) },
+    { key: 'net', label: 'Total + / -', align: 'right', value: (r) => (r.variance_by_uom == null ? '' : fmtByUom(r.variance_by_uom)) },
     { key: 'counted_by', label: 'Counted by' },
     { key: 'approved_by_name', label: 'Approved by' },
     { key: 'status', label: 'Status', render: (r) => <span title={STATUS_HELP[r.status]}><Status value={r.status} /></span>, value: (r) => r.status },

@@ -28,6 +28,28 @@ async function usableStock(db, materialIds, locationId) {
   return Object.fromEntries(rows.map((r) => [r.material_id, Number(r.qty)]));
 }
 
+/**
+ * Material still needed by the other open plans at a location (their remaining batches x BOM qty, incl. scrap),
+ * so two plans cannot both count on the same stock.
+ */
+async function reservedByOtherPlans(db, materialIds, locationId, excludePlanId) {
+  if (!materialIds.length) return {};
+  const { rows } = await db.query(`
+    select bl.material_id,
+           sum(bl.qty_per_batch * x.batches
+               * case when p.apply_scrap_allowance then 1 + bl.scrap_allowance_pct / 100 else 1 end) as qty
+      from public.plans p
+      join public.boms b on b.id = p.bom_id
+      join public.bom_lines bl on bl.bom_id = b.id
+      cross join lateral (select case when p.plan_mode = 'BATCHES'
+                                      then greatest(p.target_batches - (select count(*) from public.batches x where x.plan_id = p.id), 0)
+                                      else ceil(round(p.remaining_qty / b.expected_output_qty, 4)) end as batches) x
+     where p.location_id = $2 and p.status in ('OPEN', 'IN_PROGRESS')
+       and ($3::uuid is null or p.id <> $3) and bl.material_id = any($1::uuid[])
+     group by bl.material_id`, [materialIds, locationId, excludePlanId || null]);
+  return Object.fromEntries(rows.map((r) => [r.material_id, round4(r.qty)]));
+}
+
 /** Preferred vendor per BOM line (line MPN, else any MPN of the material). */
 async function lineVendors(db, bomId) {
   const { rows } = await db.query(`
@@ -43,14 +65,18 @@ async function lineVendors(db, bomId) {
   return Object.fromEntries(rows.map((r) => [r.line_id, r]));
 }
 
-async function materialSummary(db, bom, qty, applyScrap, locationId) {
+async function materialSummary(db, bom, qty, applyScrap, locationId, excludePlanId = null) {
   const batches = requiredBatches(qty, bom.expected_output_qty);
-  const stock = await usableStock(db, bom.lines.map((l) => l.material_id), locationId);
+  const ids = bom.lines.map((l) => l.material_id);
+  const stock = await usableStock(db, ids, locationId);
+  const reserved = await reservedByOtherPlans(db, ids, locationId, excludePlanId);
   const vend = await lineVendors(db, bom.id);
   return bom.lines.map((l) => {
     const req = lineRequirement(l, batches, applyScrap);
     const avail = round4(stock[l.material_id] || 0);
-    const diff = round4(avail - req);
+    const other = round4(reserved[l.material_id] || 0);
+    const free = round4(avail - other);
+    const diff = round4(free - req);
     return {
       material_id: l.material_id,
       material_code: l.material_code,
@@ -61,6 +87,8 @@ async function materialSummary(db, bom, qty, applyScrap, locationId) {
       scrap_allowance_pct: Number(l.scrap_allowance_pct),
       qty_required: req,
       qty_available: avail,
+      qty_reserved: other,
+      qty_free: free,
       short_long: diff,
       status: diff < 0 ? 'SHORT' : 'LONG',
       uom: l.uom,

@@ -54,7 +54,7 @@ async function buildPlanView(db, planId) {
     ...(active ? planning.plannedBatches(remaining, bom.expected_output_qty, executed.length + 1) : []),
   ];
   const materialSummary = await planning.materialSummary(db, bom, active ? remaining : 0,
-    plan.apply_scrap_allowance, plan.location_id);
+    plan.apply_scrap_allowance, plan.location_id, plan.id);
   const events = (await db.query(`select e.*, u.full_name as user_name from public.plan_events e
                                     left join public.user_profiles u on u.id = e.user_id
                                    where e.plan_id = $1 order by e.created_at desc`, [planId])).rows;

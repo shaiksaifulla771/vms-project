@@ -37,8 +37,11 @@ const HEADER_SQL = `
          (select count(*) from public.stock_count_lines x where x.count_id = sc.id)::int as line_count,
          (select count(*) from public.stock_count_lines x where x.count_id = sc.id and x.counted_qty is not null)::int as counted_count,
          (select count(*) from public.stock_count_lines x where x.count_id = sc.id and x.variance_qty <> 0)::int as variance_count,
-         (select coalesce(sum(x.variance_qty) filter (where x.variance_qty > 0), 0) from public.stock_count_lines x where x.count_id = sc.id) as variance_plus,
-         (select coalesce(sum(x.variance_qty) filter (where x.variance_qty < 0), 0) from public.stock_count_lines x where x.count_id = sc.id) as variance_minus
+         (select coalesce(json_agg(json_build_object('uom', t.uom, 'plus', t.plus, 'minus', t.minus) order by t.uom), '[]')
+            from (select i.uom, coalesce(sum(x.variance_qty) filter (where x.variance_qty > 0), 0)::float as plus,
+                         coalesce(sum(x.variance_qty) filter (where x.variance_qty < 0), 0)::float as minus
+                    from public.stock_count_lines x join public.inventory i on i.id = x.inventory_id
+                   where x.count_id = sc.id and x.variance_qty <> 0 group by i.uom) t) as variance_by_uom
     from public.stock_counts sc
     join public.locations l on l.id = sc.location_id
     left join public.warehouses w on w.id = sc.warehouse_id
@@ -114,7 +117,7 @@ async function loadCount(db, id, user) {
      where cl.count_id = $1 order by cl.line_no`, [id])).rows;
   const hide = hideSystemQty(count, user);
   count.system_qty_hidden = hide;
-  if (hide) Object.assign(count, { variance_count: null, variance_plus: null, variance_minus: null });
+  if (hide) Object.assign(count, { variance_count: null, variance_by_uom: null });
   count.lines = lines.map((l) => {
     const out = {
       ...l,
@@ -142,7 +145,7 @@ router.get('/', h(async (req, res) => {
     ['sc.status = ?', req.query.status],
   ]);
   const { rows } = await query(`${HEADER_SQL} ${clause} order by sc.created_at desc limit 500`, params);
-  res.json(rows.map((r) => (hideSystemQty(r, req.user) ? { ...r, variance_count: null, variance_plus: null, variance_minus: null } : r)));
+  res.json(rows.map((r) => (hideSystemQty(r, req.user) ? { ...r, variance_count: null, variance_by_uom: null } : r)));
 }));
 
 router.get('/:id', h(async (req, res) => {

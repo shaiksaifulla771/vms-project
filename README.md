@@ -52,12 +52,12 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 ## Workflows
 
 1. **Inventory** - Stock page: Inward (MPN, Location, WH, Lot, Qty, Mfg/Expiry, Vendor), Outward (FEFO lot list,
-   expired blocked), Transfers (Draft -> In-Transit -> Completed; stock moves only on Completed, two ledger rows,
-   lot dates preserved), Adjustment (Admin: New Physical - System).
+   expired blocked), Transfers (Draft -> In-Transit -> Completed; Dispatch takes the stock out of the source, Completed adds it at the
+   destination, cancelling an In-Transit transfer returns it automatically; lot dates preserved), Adjustment (Admin: New Physical - System).
 2. **Planning** - Plan by **number of batches** (e.g. 10; each Batch Entry counts one; remaining = planned - executed;
    Admin can raise or lower the count, never below executed) or by quantity. Product + Demand + Location -> active BOM, `batches = ceil(demand / expected output)`,
    `required = qty_per_batch x batches x (1 + scrap%)` (scrap optional per plan / default in Settings),
-   availability = non-expired stock at the location. Plan, Batch and Material summaries.
+   availability = non-expired stock at the location, minus what the other open plans there still need (Free). Plan, Batch and Material summaries.
    Editing the target (Admin) recalculates Remaining = Target - Executed and re-explodes the BOM for the remainder.
 3. **Manufacturing** - Batch Entry: Batch Detail, Output vs Plan, Material Inputs with a lot per material (FEFO
    suggested), variance per material; above tolerance needs a reason (Admin can override). Edit IP/OP posts deltas only.

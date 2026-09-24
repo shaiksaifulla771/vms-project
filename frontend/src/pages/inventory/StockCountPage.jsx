@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ChevronLeft, Printer } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtByUom, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader, Stat, Status } from '../../components/ui';
 
 const num = (x) => (x === '' || x === null || x === undefined ? null : Number(x));
@@ -54,8 +54,12 @@ export default function StockCountPage() {
   const stats = {
     counted: lines.filter((l) => l.counted !== null).length,
     diff: hidden ? null : lines.filter((l) => l.variance).length,
-    plus: hidden ? null : lines.reduce((a, l) => a + (l.variance > 0 ? l.variance : 0), 0),
-    minus: hidden ? null : lines.reduce((a, l) => a + (l.variance < 0 ? l.variance : 0), 0),
+    byUom: hidden ? null : Object.values(lines.reduce((a, l) => {
+      if (!l.variance) return a;
+      const u = a[l.uom] || (a[l.uom] = { uom: l.uom, plus: 0, minus: 0 });
+      if (l.variance > 0) u.plus += l.variance; else u.minus += l.variance;
+      return a;
+    }, {})),
     missing: lines.filter(needsReason).length,
   };
 
@@ -123,7 +127,7 @@ export default function StockCountPage() {
         <Stat label="Location / WH" value={`${count.location_code} / ${count.warehouse_code || 'All'}`} />
         <Stat label="Counted" value={`${stats.counted} / ${lines.length}`} />
         <Stat label="Lines with difference" value={stats.diff ?? 'hidden'} />
-        <Stat label="Total + / -" value={stats.plus === null ? 'hidden' : `+${fmtQty(stats.plus)} / ${fmtQty(stats.minus)}`} />
+        <Stat label="Total + / - (per unit)" value={stats.byUom === null ? 'hidden' : fmtByUom(stats.byUom)} />
         <Stat label="Reasons missing" value={stats.missing} />
       </div>
 

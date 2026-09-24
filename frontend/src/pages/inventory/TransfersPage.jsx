@@ -33,9 +33,9 @@ export default function TransfersPage() {
     ...(canWrite ? [{
       key: 'actions', label: '', noSort: true, noExport: true, render: (r) => (
         <span className="flex gap-3 justify-end">
-          {r.status === 'DRAFT' && <button type="button" className="btn-link" onClick={() => act(r, 'dispatch', 'dispatched (In-Transit)')}>Dispatch</button>}
-          {r.status === 'IN_TRANSIT' && <button type="button" className="btn-link" onClick={() => act(r, 'complete', 'completed - stock moved')}>Mark Completed</button>}
-          {['DRAFT', 'IN_TRANSIT'].includes(r.status) && <button type="button" className="btn-danger-link" onClick={() => act(r, 'cancel', 'cancelled')}>Cancel</button>}
+          {r.status === 'DRAFT' && <button type="button" className="btn-link" onClick={() => act(r, 'dispatch', 'dispatched - stock left the source warehouse')}>Dispatch</button>}
+          {r.status === 'IN_TRANSIT' && <button type="button" className="btn-link" onClick={() => act(r, 'complete', 'completed - stock received at the destination')}>Mark Completed</button>}
+          {['DRAFT', 'IN_TRANSIT'].includes(r.status) && <button type="button" className="btn-danger-link" onClick={() => act(r, 'cancel', r.status === 'IN_TRANSIT' ? 'cancelled - stock returned to the source' : 'cancelled')}>Cancel</button>}
         </span>
       ),
     }] : []),
@@ -43,7 +43,7 @@ export default function TransfersPage() {
 
   return (
     <div>
-      <PageHeader title="Stock Transfers" subtitle="Draft → In-Transit → Completed. Inventory updates only when a transfer is Completed. Create a transfer from the Stock page (row action)." />
+      <PageHeader title="Stock Transfers" subtitle="Draft → In-Transit → Completed. Dispatch takes the stock out of the source; Completed adds it at the destination; cancelling an In-Transit transfer puts it back. Create a transfer from the Stock page (row action)." />
       <div className="p-5 space-y-3">
         <ErrorBox message={err || error} onClose={() => setErr(null)} />
         <DataTable columns={columns} rows={data || []} loading={loading} exportName="transfers"
