@@ -11,7 +11,7 @@ const v = require('../utils/validate');
 const { loadBom } = require('../services/boms');
 
 const PRODUCT_SQL = `
-  select m.id, m.code, m.name, m.classification, m.uom, m.shelf_life_days, m.status, m.description,
+  select m.id, m.code, m.name, m.classification, m.uom, m.shelf_life_days, m.status, m.description, m.created_at,
          m.category_id, m.sub_category_id, c.name as category_name, sc.name as sub_category_name,
          (select p.mpn_code from public.mpns p where p.material_id = m.id order by p.created_at limit 1) as mpn_code,
          (select count(*) from public.boms b where b.product_id = m.id)::int as bom_versions,

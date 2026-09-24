@@ -91,7 +91,7 @@ describe('Vendor master', () => {
       ],
       contacts: [{ name: 'Ravi', designation: 'Sales', phone: '9820011111', email: 'ravi@freshfarms.in' }],
       bank_accounts: [{ account_holder: 'Fresh Farms LLP', account_number: '123456789012', ifsc: 'HDFC0001234', bank_name: 'HDFC' }],
-      material_ids: [C.rice.id, C.lentil.id],
+      material_ids: [C.rice.id, C.lentil.id], // ignored since v6: supplied materials come from MPNs
     };
     const r = await admin.post('/vendors', body);
     expect(r.status).toBe(201);
@@ -102,7 +102,7 @@ describe('Vendor master', () => {
     expect(v.contacts[0].name).toBe('Ravi');
     expect(v.bank_accounts[0].account_number).toBe('XXXXXXXX9012');
     expect(v.bank_accounts[0].is_primary).toBe(true);
-    expect(v.material_ids.sort()).toEqual([C.rice.id, C.lentil.id].sort());
+    expect(v.materials).toEqual([]); // no MPN yet, so no supplied materials
     const full = (await admin.get(`/vendors/${r.body.id}?full=true`)).body;
     expect(full.bank_accounts[0].account_number).toBe('123456789012');
 
@@ -193,10 +193,10 @@ describe('Bulk entry / bulk update / export', () => {
     expect((await q(`select name from public.materials where code = 'RM-RICE'`))[0].name).toBe('Rice (Sona Masoori)');
   });
 
-  test('vendors bulk entry creates address, contact, bank and material links', async () => {
+  test('vendors bulk entry creates address, contact and bank (materials come from MPNs)', async () => {
     const rows = [{ row_no: 2, name: 'Bulk Vendor One', phone: '9820000000', city: 'Mumbai', line1: 'Plot 4',
       contact_name: 'Asha', account_holder: 'Bulk Vendor One', account_number: '000111222333', ifsc: 'SBIN0000123',
-      material_codes: 'RM-RICE, PK-POUCH', fssai_expiry: '31/12/2027' }];
+      fssai_expiry: '31/12/2027' }];
     const r = await admin.post('/bulk/vendors/commit', { mode: 'create', rows });
     expect(r.status).toBe(201);
     const id = (await q(`select id from public.vendors where name = 'Bulk Vendor One'`))[0].id;
@@ -204,7 +204,7 @@ describe('Bulk entry / bulk update / export', () => {
     expect(v.addresses[0].address_name).toBe('Head Office');
     expect(v.contacts[0].name).toBe('Asha');
     expect(v.bank_accounts[0].ifsc).toBe('SBIN0000123');
-    expect(v.materials.map((m) => m.code).sort()).toEqual(['PK-POUCH', 'RM-RICE']);
+    expect(v.materials).toEqual([]);
     expect(String(v.fssai_expiry).slice(0, 10)).toBe('2027-12-31');
   });
 

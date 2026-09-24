@@ -40,6 +40,7 @@ export default function VendorsPage() {
     { key: 'material_count', label: 'Materials', align: 'right' },
     { key: 'mpn_count', label: 'MPNs', align: 'right' },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => navigate(`/masters/vendors/${r.id}`),
@@ -57,7 +58,7 @@ export default function VendorsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} onRowClick={(r) => navigate(`/masters/vendors/${r.id}`)}
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" onRowClick={(r) => navigate(`/masters/vendors/${r.id}`)}
           toolbar={(
             <select className="input w-32" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Any status</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>

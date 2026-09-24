@@ -105,6 +105,7 @@ export default function ProductsPage() {
     { key: 'stock_qty', label: 'Stock', align: 'right', render: (r) => `${fmtQty(r.stock_qty)} ${r.uom}`, value: (r) => Number(r.stock_qty) },
     { key: 'open_plans', label: 'Open Plans', align: 'right' },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => setModal({ type: 'view', id: r.id }),
@@ -119,7 +120,7 @@ export default function ProductsPage() {
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => setModal({ type: 'edit' })}><Plus size={14} /> New Product</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} exportName="products"
+        <DataTable columns={columns} rows={data || []} loading={loading} exportName="products" newField="created_at"
           onRowClick={(r) => setModal({ type: 'view', id: r.id })}
           toolbar={<>
             <select className="input w-44" value={type} onChange={(e) => setType(e.target.value)}>

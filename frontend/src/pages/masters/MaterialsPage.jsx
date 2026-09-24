@@ -2,16 +2,15 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDateTime } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtDateTime } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { Link } from 'react-router-dom';
-import { UomSelect, categoriesFor, useCategories, useUoms, useVendors } from '../../components/pickers';
+import { UomSelect, categoriesFor, useCategories, useUoms } from '../../components/pickers';
 import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } from '../../components/masterKit';
 
 const CLASSES = Object.entries(CLASS_LABEL);
 
 export function MaterialForm({ material, onClose, onDone, preset }) {
-  const vendors = useVendors();
   const cats = useCategories();
   const uoms = useUoms();
   const { canWrite } = useApp();
@@ -20,7 +19,7 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
     ? { ...material, shelf_life_days: material.shelf_life_days ?? '', category_id: material.category_id || '',
       sub_category_id: material.sub_category_id || '', description: material.description || '' }
     : { name: '', classification: 'RAW_MATERIAL', uom: 'kg', shelf_life_days: '', status: 'ACTIVE', category_id: '',
-      sub_category_id: '', description: '', vendor_id: '', ...preset });
+      sub_category_id: '', description: '', ...preset });
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -42,7 +41,7 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
         category_id: f.category_id || null, sub_category_id: f.sub_category_id || null, description: f.description || null,
       };
       const saved = isNew
-        ? await api.post('/materials', { ...body, vendor_id: f.vendor_id || undefined })
+        ? await api.post('/materials', body)
         : await api.put(`/materials/${material.id}`, body);
       onDone(saved);
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -87,15 +86,10 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
         </Field>
       </div>
       {isNew && (
-        <div className="border-t border-line pt-3 grid grid-cols-3 gap-3">
-          <Field label="First vendor (optional)" className="col-span-2"
-            hint="Creates an MPN for this vendor. Price and MOQ can be set in MPNs, or use MPNs > Bulk MPN Create.">
-            <select className="input" value={f.vendor_id} onChange={set('vendor_id')}>
-              <option value="">-</option>
-              {vendors.filter((v) => v.status === 'ACTIVE').map((v) => <option key={v.id} value={v.id}>{v.code} - {v.name}</option>)}
-            </select>
-          </Field>
-        </div>
+        <p className="border-t border-line pt-3 text-xs2 text-ink-muted">
+          Vendors and prices are added in <b>MPNs</b> (material + vendor + UOM + MOQ + price) after saving.
+          {['FINISHED_GOOD', 'SEMI_FINISHED'].includes(f.classification) && ' Finished and semi-finished goods get their own MPN automatically.'}
+        </p>
       )}
     </Modal>
   );
@@ -134,7 +128,7 @@ function MaterialView({ id, onClose, onEdit, canWrite }) {
               </tbody>
             </table>
           </div>
-          <div className="text-[13px]"><span className="text-ink-muted">Supplied by: </span>{m.vendors.length ? m.vendors.map((v) => `${v.code} - ${v.name}`).join(', ') : '-'}</div>
+          <div className="text-[13px]"><span className="text-ink-muted">Supplied by (from MPNs): </span>{m.vendors.length ? m.vendors.map((v) => `${v.code} - ${v.name}`).join(', ') : '-'}</div>
         </div>
       )}
     </Modal>
@@ -162,6 +156,7 @@ export default function MaterialsPage() {
     { key: 'mpns', label: 'MPN(s)', value: (r) => r.mpns.map((m) => m.mpn_code).join(', '), className: 'whitespace-normal max-w-[220px]' },
     { key: 'uom', label: 'UOM' },
     { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => setModal({ type: 'view', id: r.id }),
@@ -179,7 +174,7 @@ export default function MaterialsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading}
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at"
           onRowClick={(r) => setModal({ type: 'view', id: r.id })}
           toolbar={<>
             <select className="input w-40" value={cls} onChange={(e) => {

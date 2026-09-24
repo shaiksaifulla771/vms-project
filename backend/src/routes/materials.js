@@ -9,7 +9,8 @@ const LIST_SQL = `
   select m.*, c.name as category_name, sc.name as sub_category_name,
          coalesce((select json_agg(json_build_object('id', p.id, 'mpn_code', p.mpn_code, 'status', p.status) order by p.mpn_code)
                      from public.mpns p where p.material_id = m.id), '[]') as mpns,
-         (select count(*) from public.vendor_materials vm where vm.material_id = m.id)::int as vendor_count
+         (select count(distinct mv.vendor_id) from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
+           where p.material_id = m.id)::int as vendor_count
     from public.materials m
     left join public.material_categories c on c.id = m.category_id
     left join public.material_categories sc on sc.id = m.sub_category_id`;
@@ -42,8 +43,9 @@ router.get('/:id', h(async (req, res) => {
       left join public.vendors ve on ve.id = mv.vendor_id
      where p.material_id = $1 group by p.id order by p.mpn_code`, [id])).rows;
   const vendors = (await query(`
-    select ve.id, ve.code, ve.name, ve.status from public.vendor_materials vm join public.vendors ve on ve.id = vm.vendor_id
-     where vm.material_id = $1 order by ve.name`, [id])).rows;
+    select distinct ve.id, ve.code, ve.name, ve.status from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
+      join public.vendors ve on ve.id = mv.vendor_id
+     where p.material_id = $1 order by ve.name`, [id])).rows;
   res.json({ ...m, mpns, vendors });
 }));
 

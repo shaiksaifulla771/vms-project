@@ -202,3 +202,44 @@ describe('Products', () => {
     expect((await admin.get(`/products/${C.rice.id}`)).status).toBe(404);
   });
 });
+
+describe('v6: MPN is the vendor-material link; smart Inward / Outward', () => {
+  test('vendor supplied materials come from MPNs; old manual links are listed as unpriced', async () => {
+    const ven = (await admin.post('/vendors', { name: 'Link Test Vendor' })).body;
+    await q('insert into public.vendor_materials(vendor_id, material_id) values ($1, $2)', [ven.id, C.pouch.id]); // pre-v6 manual link
+    let v = (await admin.get(`/vendors/${ven.id}`)).body;
+    expect(v.materials).toEqual([]);
+    expect(v.unpriced_links.map((m) => m.code)).toEqual(['PK-POUCH']);
+    const mpn = await admin.post('/mpns', { material_id: C.pouch.id, vendors: [{ vendor_id: ven.id, uom: 'pcs', moq: 500, price: 3 }] });
+    expect(mpn.status).toBe(201);
+    v = (await admin.get(`/vendors/${ven.id}`)).body;
+    expect(v.materials.map((m) => m.code)).toEqual(['PK-POUCH']);
+    expect(v.unpriced_links).toEqual([]);
+    const suppliers = (await admin.get(`/vendors?material_id=${C.pouch.id}`)).body.map((x) => x.id);
+    expect(suppliers).toContain(ven.id);
+    expect((await admin.put(`/vendors/${ven.id}`, { material_ids: [C.rice.id] })).status).toBe(200); // ignored
+    expect((await admin.get(`/vendors/${ven.id}`)).body.materials.map((m) => m.code)).toEqual(['PK-POUCH']);
+  });
+
+  test('inward defaults: last received location / WH and the next lot number', async () => {
+    const d = (await admin.get(`/inventory/inward-defaults?material_id=${C.rice.id}`)).body;
+    expect(d.last_location_id).toBe(C.mum.id);
+    expect(d.last_warehouse_id).toBe(C.wh1.id);
+    expect(d.suggested_lot_no).toMatch(/^RM-RICE-\d{6}-1$/);
+    const r = await admin.post('/inventory/inward', { mpn_id: C.riceMpn.id, location_id: C.pun.id, warehouse_id: C.punWh.id,
+      lot_no: d.suggested_lot_no, qty: 10, reason: 'Goods receipt' });
+    expect(r.status).toBe(201);
+    const d2 = (await admin.get(`/inventory/inward-defaults?material_id=${C.rice.id}`)).body;
+    expect(d2.last_location_id).toBe(C.pun.id); // most recent receipt
+    expect(d2.suggested_lot_no).toMatch(/-2$/);
+    const inMum = (await admin.get(`/inventory/inward-defaults?material_id=${C.rice.id}&location_id=${C.mum.id}`)).body;
+    expect(inMum.last_location_id).toBe(C.mum.id);
+  });
+
+  test('outward lots: all locations when no location is chosen', async () => {
+    const all = (await admin.get(`/inventory/lots?material_id=${C.rice.id}`)).body;
+    expect(new Set(all.map((l) => l.location_code))).toEqual(new Set(['MUM', 'PUN']));
+    const mum = (await admin.get(`/inventory/lots?material_id=${C.rice.id}&location_id=${C.mum.id}`)).body;
+    expect(mum.every((l) => l.location_code === 'MUM')).toBe(true);
+  });
+});

@@ -125,7 +125,6 @@ const VENDOR_COLS = [
   { key: 'ifsc', header: 'IFSC', width: 13, createOnly: true },
   { key: 'bank_name', header: 'Bank Name', width: 18, createOnly: true },
   { key: 'branch', header: 'Branch', width: 16, createOnly: true },
-  { key: 'material_codes', header: 'Supplied Material Codes (comma separated)', width: 30, createOnly: true },
 ];
 
 const MPN_COLS = [
@@ -301,12 +300,6 @@ function validateVendorCreate(rows, lk) {
     const hasAddr = ['line1', 'line2', 'city', 'state', 'pincode'].some((k) => !blank(r[k]));
     const hasContact = ['contact_name', 'contact_phone', 'contact_email2', 'contact_designation'].some((k) => !blank(r[k]));
     const hasBank = ['account_holder', 'account_number', 'ifsc', 'bank_name', 'branch'].some((k) => !blank(r[k]));
-    const materialIds = [];
-    for (const code of String(r.material_codes || '').split(/[,;\n]/).map((s) => s.trim().toUpperCase()).filter(Boolean)) {
-      const m = lk.matByCode.get(code);
-      if (!m) errors.push(`Material ${code} not found`);
-      else materialIds.push(m.id);
-    }
     const data = capture(errors, () => md.parseVendor({
       name: text(r.name), status: status || 'ACTIVE', phone: text(r.phone), contact_email: text(r.contact_email),
       gstin: text(r.gstin), fssai_no: text(r.fssai_no), fssai_expiry: expiry || null,
@@ -316,7 +309,6 @@ function validateVendorCreate(rows, lk) {
         phone: text(r.contact_phone), email: text(r.contact_email2) }] : [],
       bank_accounts: hasBank ? [{ account_holder: text(r.account_holder), account_number: text(r.account_number),
         ifsc: text(r.ifsc), bank_name: text(r.bank_name), branch: text(r.branch), is_primary: true }] : [],
-      material_ids: materialIds,
     }));
     const key = norm(r.name);
     if (key) {
@@ -625,7 +617,10 @@ async function buildWorkbook(entity, mode, rows, db = { query }) {
   ];
   if (entity === 'materials') lines.push(['Classification', Object.values(CLASS_LABEL).join(', ')]);
   if (entity !== 'vendors') lines.push(['UOM', L.uomCodes.join(', ')]);
-  if (entity === 'vendors' && mode === 'create') lines.push(['Addresses / contacts / bank', 'One of each per row. Add more later from the vendor form.']);
+  if (entity === 'vendors' && mode === 'create') {
+    lines.push(['Addresses / contacts / bank', 'One of each per row. Add more later from the vendor form.']);
+    lines.push(['Materials and prices', 'Not set here. Add them as MPNs (MPNs > Bulk MPN Create or MPN Bulk Entry): material + vendor + UOM + MOQ + price.']);
+  }
   if (entity === 'mpns' && mode === 'create') lines.push(['MPN code', 'Assigned automatically (MPN1001, MPN1002, ...). One MPN is created per row.']);
   lines.forEach((l) => help.addRow(l));
   help.getColumn(1).font = { bold: true };

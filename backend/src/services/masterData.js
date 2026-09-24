@@ -207,19 +207,13 @@ function parseBanks(list) {
   return out;
 }
 
-function parseMaterialIds(list) {
-  if (list === undefined) return undefined;
-  if (!Array.isArray(list)) throw badRequest('material_ids must be a list');
-  return [...new Set(list.map((x, i) => v.uuid(x, `Material ${i + 1}`, { required: true })))];
-}
-
 function parseVendor(b, opts) {
   return {
     basic: parseVendorBasic(b, opts),
     addresses: parseAddresses(b.addresses),
     contacts: parseContacts(b.contacts),
     banks: parseBanks(b.bank_accounts),
-    materialIds: parseMaterialIds(b.material_ids),
+    // Supplied materials are no longer set on the vendor: they come from MPNs (v6).
   };
 }
 
@@ -260,16 +254,6 @@ async function writeVendorChildren(c, vendorId, d, userId) {
                      values ($1,$2,$3,$4,$5,$6,$7)`,
       [vendorId, x.account_holder, x.account_number, x.ifsc, x.bank_name, x.branch, x.is_primary]);
     }
-  }
-  if (d.materialIds) {
-    const bad = (await c.query('select count(*)::int n from public.materials where id = any($1::uuid[])', [d.materialIds])).rows[0].n;
-    if (bad !== d.materialIds.length) throw badRequest('One of the selected materials does not exist');
-    // A material that already has an MPN with this vendor stays linked.
-    await c.query(`delete from public.vendor_materials vm where vm.vendor_id = $1 and not (vm.material_id = any($2::uuid[]))
-                     and not exists (select 1 from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
-                                      where mv.vendor_id = vm.vendor_id and p.material_id = vm.material_id)`,
-    [vendorId, d.materialIds]);
-    for (const m of d.materialIds) await linkVendorMaterial(c, vendorId, m, userId);
   }
 }
 

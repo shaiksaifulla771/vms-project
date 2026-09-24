@@ -5,8 +5,7 @@ import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { COUNTRIES, STATES } from '../../lib/format';
 import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
-import { materialOptions, useMaterials } from '../../components/pickers';
-import { MultiSelect, Section } from '../../components/masterKit';
+import { Section } from '../../components/masterKit';
 
 const newAddress = (n) => ({ _k: Math.random(), address_name: n === 0 ? 'Head Office' : `Address ${n + 1}`, address_type: n === 0 ? 'PRIMARY' : 'SECONDARY',
   is_default: n === 0, line1: '', line2: '', city: '', state: '', pincode: '', country: 'India', gstin: '' });
@@ -25,10 +24,9 @@ export default function VendorFormPage() {
   const isNew = !id;
   const navigate = useNavigate();
   const { notify } = useApp();
-  const materials = useMaterials();
   const [f, setF] = useState(isNew ? {
     name: '', status: 'ACTIVE', phone: '', contact_email: '', gstin: '', fssai_no: '', fssai_expiry: '',
-    material_ids: [], addresses: [newAddress(0)], contacts: [newContact()], bank_accounts: [],
+    addresses: [newAddress(0)], contacts: [newContact()], bank_accounts: [],
   } : null);
   const [code, setCode] = useState('');
   const [err, setErr] = useState(null);
@@ -43,7 +41,6 @@ export default function VendorFormPage() {
       setF({
         name: v.name, status: v.status, phone: v.phone || '', contact_email: v.contact_email || '', gstin: v.gstin || '',
         fssai_no: v.fssai_no || '', fssai_expiry: v.fssai_expiry ? String(v.fssai_expiry).slice(0, 10) : '',
-        material_ids: v.material_ids,
         addresses: keyed(v.addresses).map(blankNull),
         contacts: keyed(v.contacts).map(blankNull),
         bank_accounts: keyed(v.bank_accounts).map(blankNull),
@@ -100,15 +97,6 @@ export default function VendorFormPage() {
             <div />
             <Field label="FSSAI Licence No."><input className="input" maxLength={20} value={f.fssai_no} onChange={set('fssai_no')} /></Field>
             <Field label="FSSAI Expiry"><input className="input" type="date" value={f.fssai_expiry} onChange={set('fssai_expiry')} /></Field>
-          </div>
-        </Section>
-
-        <Section title="Supplied materials">
-          {/* not a <label>: a label would forward clicks to the first checkbox inside the list */}
-          <div>
-            <span className="label">Materials this vendor supplies</span>
-            <MultiSelect values={f.material_ids} onChange={(v) => setF({ ...f, material_ids: v })} options={materialOptions(materials)} placeholder="Select materials" />
-            <span className="block text-xs2 text-ink-faint mt-0.5">Used to suggest vendors when creating MPNs. Price and MOQ are set per MPN.</span>
           </div>
         </Section>
 

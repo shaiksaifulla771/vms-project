@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CLASS_LABEL } from '../lib/format';
-import { ErrorBox, Field, Modal, PageHeader, Status, Tabs } from '../components/ui';
+import { ErrorBox, Field, Modal, NewTag, PageHeader, Status, Tabs, isNewToday } from '../components/ui';
 import { useCategories } from '../components/pickers';
 import { DeleteDialog } from '../components/masterKit';
 
@@ -68,12 +68,13 @@ export default function CategoriesPage() {
   ];
   const shown = cats.filter((c) => !tab || (tab === 'NONE' ? !c.classification : c.classification === tab));
   const order = Object.keys(CLASS_LABEL);
-  shown.sort((a, b) => (order.indexOf(a.classification) + 1 || 99) - (order.indexOf(b.classification) + 1 || 99) || a.name.localeCompare(b.name));
+  shown.sort((a, b) => (order.indexOf(a.classification) + 1 || 99) - (order.indexOf(b.classification) + 1 || 99)
+    || String(b.created_at).localeCompare(String(a.created_at)) || a.name.localeCompare(b.name));
 
   const Row = ({ c, sub }) => (
-    <tr className="hover:bg-panel">
+    <tr className={`hover:bg-panel ${isNewToday(c.created_at) ? 'bg-accent-soft/40' : ''}`}>
       <td className="td text-ink-muted">{sub ? '' : (CLASS_LABEL[c.classification] || <span className="text-ink-faint">Any (not assigned)</span>)}</td>
-      <td className={`td ${sub ? 'pl-8 text-ink-soft' : 'font-medium'}`}>{sub ? '└ ' : ''}{c.name}</td>
+      <td className={`td ${sub ? 'pl-8 text-ink-soft' : 'font-medium'}`}>{sub ? '└ ' : ''}{c.name}<NewTag ts={c.created_at} /></td>
       <td className="td text-ink-muted">{sub ? 'Sub-category' : 'Category'}</td>
       <td className="td num">{c.material_count}</td>
       <td className="td"><Status value={c.status} /></td>
