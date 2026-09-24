@@ -81,3 +81,33 @@ describe('v8: finished goods have no MPN', () => {
     expect(r.body.mpn_id).toBe(hidden[0].id);
   });
 });
+
+describe('v8: the finished good internal code never reaches the screens', () => {
+  test('material, product, vendor and report APIs show no MPN for a finished good', async () => {
+    // Opening stock for the finished good, and a legacy vendor link on its hidden code
+    await admin.post('/inventory/inward', { location_id: C.mum.id, warehouse_id: C.wh1.id, qty: 5, material_id: C.fg.id, lot_no: 'FG-HIDE-1', entry_type: 'OPENING' });
+    const ven = (await q(`select vendor_id from public.mpn_vendors where mpn_id = $1 limit 1`, [C.riceMpn.id]))[0].vendor_id;
+    await q(`insert into public.mpn_vendors (mpn_id, vendor_id) values ($1, $2) on conflict do nothing`, [C.fgMpn.id, ven]);
+
+    const mat = await admin.get(`/materials/${C.fg.id}`);
+    expect(mat.body.mpns).toEqual([]);
+    expect(mat.body.vendors).toEqual([]);
+    const list = (await admin.get('/materials')).body.find((m) => m.id === C.fg.id);
+    expect(list.mpns).toEqual([]);
+    expect(list.vendor_count).toBe(0);
+
+    const prod = (await admin.get('/products')).body.find((p) => p.id === C.fg.id);
+    expect(prod.mpn_code).toBeNull();
+
+    const vd = (await admin.get(`/vendors/${ven}`)).body;
+    expect(vd.mpns.some((p) => p.mpn_code === 'FG-RL1')).toBe(false);
+    expect(vd.materials.some((m) => m.code === 'FG-RL1')).toBe(false);
+
+    const bal = (await admin.get('/reports/stock-balance')).body.filter((r) => r.material_code === 'FG-RL1');
+    expect(bal.length).toBeGreaterThan(0);
+    expect(bal.every((r) => r.mpn_code === null)).toBe(true);
+    const sheet = (await admin.get('/reports/physical-stock-sheet')).body.filter((r) => r.material_code === 'FG-RL1');
+    expect(sheet.length).toBeGreaterThan(0);
+    expect(sheet.every((r) => r.mpn_code === null)).toBe(true);
+  });
+});

@@ -17,9 +17,11 @@ router.get('/', h(async (req, res) => {
   ]);
   const { rows } = await query(`
     select v.*,
-           (select count(*) from public.mpn_vendors mv where mv.vendor_id = v.id)::int as mpn_count,
+           (select count(*) from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id join public.materials m on m.id = p.material_id
+             where mv.vendor_id = v.id and m.classification <> 'FINISHED_GOOD')::int as mpn_count,
            (select count(distinct p.material_id) from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id
-             where mv.vendor_id = v.id)::int as material_count,
+             join public.materials m on m.id = p.material_id
+             where mv.vendor_id = v.id and m.classification <> 'FINISHED_GOOD')::int as material_count,
            (select a.address_name || coalesce(' - ' || a.city, '') from public.vendor_addresses a
              where a.vendor_id = v.id and a.is_default) as default_address,
            (select c.name from public.vendor_contacts c where c.vendor_id = v.id order by c.sort_order limit 1) as primary_contact
@@ -35,14 +37,14 @@ router.get('/:id', h(async (req, res) => {
     query(`select p.id, p.mpn_code, m.code as material_code, m.name as material_name, mv.is_preferred, mv.lead_time_days,
                   mv.uom, mv.moq, mv.price, mv.currency
              from public.mpn_vendors mv join public.mpns p on p.id = mv.mpn_id join public.materials m on m.id = p.material_id
-            where mv.vendor_id = $1 order by p.mpn_code`, [id]),
+            where mv.vendor_id = $1 and m.classification <> 'FINISHED_GOOD' order by p.mpn_code`, [id]),
     query('select * from public.vendor_addresses where vendor_id = $1 order by sort_order, created_at', [id]),
     query('select * from public.vendor_contacts where vendor_id = $1 order by sort_order, created_at', [id]),
     query('select * from public.vendor_bank_accounts where vendor_id = $1 order by is_primary desc, created_at', [id]),
     // Materials this vendor supplies, from its MPNs
     query(`select distinct m.id, m.code, m.name, m.classification, m.uom from public.mpn_vendors mv
              join public.mpns p on p.id = mv.mpn_id join public.materials m on m.id = p.material_id
-            where mv.vendor_id = $1 order by m.code`, [id]),
+            where mv.vendor_id = $1 and m.classification <> 'FINISHED_GOOD' order by m.code`, [id]),
   ]);
   // Older manual links (made before v6 without an MPN, so without a price) are shown so they can be turned into MPNs.
   const unpriced = (await query(`
