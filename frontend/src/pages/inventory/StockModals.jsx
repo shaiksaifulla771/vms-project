@@ -131,7 +131,7 @@ export function InwardModal({ onClose, onDone }) {
         <Field label="Mfg Date"><input className="input" type="date" value={f.mfg_date}
           onChange={(e) => setF({ ...f, mfg_date: e.target.value, expiry_date: e.target.value && material ? addDays(e.target.value, life(material)) : f.expiry_date })} /></Field>
         <Field label="Expiry Date" hint="Mfg date + shelf life"><input className="input" type="date" value={f.expiry_date} onChange={set('expiry_date')} /></Field>
-        <Field label="Reference"><input className="input" placeholder="GRN / invoice no" value={f.reference} onChange={set('reference')} /></Field>
+        <Field label="Reference" required={/^goods receipt/i.test(f.reason)}><input className="input" placeholder="GRN / invoice no" value={f.reference} onChange={set('reference')} /></Field>
       </div>
       <ReasonField options={INWARD_REASONS} value={f.reason} onChange={(r) => setF((x) => ({ ...x, reason: r }))} />
     </Modal>
@@ -151,6 +151,8 @@ export function OutwardModal({ lot: presetLot, onClose, onDone }) {
   const [lotId, setLotId] = useState(presetLot?.id || '');
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const needsRef = /^sale/i.test(reason);
   const s = useSubmit((r) => { notify(`Stock issued. Lot balance ${fmtQty(r.new_balance)}`); onDone(); });
 
   useEffect(() => {
@@ -170,8 +172,8 @@ export function OutwardModal({ lot: presetLot, onClose, onDone }) {
     <Modal title="Outward Stock" onClose={onClose} width="max-w-3xl"
       footer={<>
         <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn-primary" disabled={s.busy || !lotId || !reason}
-          onClick={() => s.run(() => api.post('/inventory/outward', { inventory_id: lotId, qty: Number(qty), reason }))}>Remove Stock</button>
+        <button type="button" className="btn-primary" disabled={s.busy || !lotId || !reason || (needsRef && !reference.trim())}
+          onClick={() => s.run(() => api.post('/inventory/outward', { inventory_id: lotId, qty: Number(qty), reason, reference }))}>Remove Stock</button>
       </>}>
       <ErrorBox message={s.error} onClose={() => s.setError(null)} />
       <div className="grid grid-cols-3 gap-3">
@@ -210,6 +212,7 @@ export function OutwardModal({ lot: presetLot, onClose, onDone }) {
           <input className="input num" type="number" min="0" step="any" max={lot?.quantity} value={qty} onChange={(e) => setQty(e.target.value)} />
         </Field>
         <ReasonField options={OUTWARD_REASONS} value={reason} onChange={setReason} required className="col-span-2" />
+        <Field label="Reference" required={needsRef}><input className="input" placeholder="Invoice / DC no" value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
       </div>
     </Modal>
   );
@@ -267,7 +270,7 @@ export function TransferModal({ lot, onClose, onDone }) {
       <div className="text-[13px]">
         From <b>{lot.location_code} / {lot.warehouse_code}</b> · {lot.mpn_code} · Lot <b>{lot.lot_no}</b> · Available {fmtQty(lot.quantity)} {lot.uom}
       </div>
-      <div className="text-xs text-ink-muted">Stock moves only when the transfer is marked Completed (Draft → In-Transit → Completed).</div>
+      <div className="text-xs text-ink-muted">Draft → In-Transit → Completed. Dispatch takes the stock out of this warehouse; Completed adds it at the destination; cancelling an In-Transit transfer puts it back.</div>
       <LocationWarehouse locationId={to.l} warehouseId={to.w} required onChange={(l, w) => setTo({ l, w })} />
       <div className="grid grid-cols-3 gap-3">
         <Field label={`Qty (${lot.uom})`} required><input className="input num" type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} /></Field>

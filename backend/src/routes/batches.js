@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { query, withTransaction, getPool } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
-const { isAdmin } = require('../middleware/session');
+const { isAdmin, requireAdmin } = require('../middleware/session');
 const { loadBom } = require('./boms');
 const { getSettings } = require('../services/settings');
 const { postStock, outputMpn } = require('../services/stock');
@@ -35,6 +35,13 @@ async function loadBatch(db, id) {
                                   and i.lot_no = bi.lot_no and i.location_id = $2
      where bi.batch_id = $1 order by m.code, bi.lot_no`, [id, batch.location_id])).rows;
   return batch;
+}
+
+/** Plan history row (batch executed / corrected / reversed). */
+async function planEvent(c, planId, event, oldValue, newValue, userId) {
+  if (!planId) return;
+  await c.query(`insert into public.plan_events(plan_id, event, old_value, new_value, user_id) values ($1,$2,$3,$4,$5)`,
+    [planId, event, oldValue ? JSON.stringify(oldValue) : null, newValue ? JSON.stringify(newValue) : null, userId]);
 }
 
 const pct = (actual, plan) => (plan > 0 ? ((actual - plan) / plan) * 100 : 0);
@@ -123,7 +130,7 @@ router.get('/prefill', h(async (req, res) => {
     plan: plan ? { id: plan.id, plan_no: plan.plan_no, remaining_qty: Number(plan.remaining_qty),
       target_qty: Number(plan.target_qty), executed_qty: Number(plan.executed_qty), plan_mode: plan.plan_mode,
       target_batches: plan.target_batches, executed_batches: (await db.query(
-        'select count(*)::int as n from public.batches where plan_id = $1', [plan.id])).rows[0].n } : null,
+        `select count(*)::int as n from public.batches where plan_id = $1 and status <> 'REVERSED'`, [plan.id])).rows[0].n } : null,
     product: { id: product.id, code: product.code, name: product.name, uom: product.uom },
     location_id: locationId,
     warehouse_id: plan?.warehouse_id || bom?.warehouse_id || null,
@@ -234,6 +241,10 @@ router.post('/', h(async (req, res) => {
 
     // --- save batch ---
     const outMpn = await outputMpn(c, productId, req.user.id);
+    // The FG lot is the batch no: it must be a new lot, never merged into existing stock of the product.
+    const clash = (await c.query('select 1 from public.inventory where material_id = $1 and upper(lot_no) = upper($2) limit 1',
+      [productId, batchNo])).rows[0];
+    if (clash) throw badRequest(`Batch No ${batchNo} is already used as a lot of ${product.code}; use another Batch No`);
     const batch = (await c.query(`
       insert into public.batches(batch_no, source, plan_id, product_id, output_mpn_id, bom_id, location_id, warehouse_id,
                                  mfg_date, expiry_date, executed_by, plan_output_qty, actual_output_qty, variance_reason,
@@ -273,6 +284,8 @@ router.post('/', h(async (req, res) => {
                             updated_by = $3
                       where id = $1`, [plan.id, actualOutput, req.user.id]);
       await planning.refreshPlanStatus(c, plan.id);
+      await planEvent(c, plan.id, 'BATCH_EXECUTED', null,
+        { batch_no: batchNo, output_qty: actualOutput, uom: product.uom }, req.user.id);
     }
     return batch.id;
   });
@@ -294,6 +307,7 @@ router.put('/:id', h(async (req, res) => {
 
     const batch = (await c.query('select * from public.batches where id = $1 for update', [id])).rows[0];
     if (!batch) throw notFound('Batch not found');
+    if (batch.status === 'REVERSED') throw conflict('This batch was reversed and cannot be edited');
     const common = { userId: req.user.id, referenceType: 'BATCH_EDIT', referenceId: batch.batch_no };
 
     // Output
@@ -313,6 +327,8 @@ router.put('/:id', h(async (req, res) => {
                                        when greatest(executed_qty + $2, 0) > 0 then 'IN_PROGRESS' else 'OPEN' end,
                          updated_by = $3 where id = $1`, [batch.plan_id, outDelta, req.user.id]);
         await planning.refreshPlanStatus(c, batch.plan_id);
+        await planEvent(c, batch.plan_id, 'BATCH_CORRECTED', { batch_no: batch.batch_no, output_qty: Number(batch.actual_output_qty) },
+          { batch_no: batch.batch_no, output_qty: newOutput }, req.user.id);
       }
     }
     await c.query(`update public.batches set actual_output_qty = $2, variance_reason = $3,
@@ -363,6 +379,48 @@ router.put('/:id', h(async (req, res) => {
       }
       await c.query(`update public.batch_inputs set actual_input_qty = $2, variance_reason = coalesce($3, variance_reason)
                       where id = $1`, [row.id, newQty, reason]);
+    }
+  });
+  res.json(await loadBatch(getPool(), id));
+}));
+
+/**
+ * Reverse a wrong batch (Admin). One transaction: the FG lot loses the output, every consumed lot gets its
+ * material back (MFG_CORRECTION rows, reference BATCH_REVERSAL), the plan's executed qty / batch count go back.
+ * The batch stays on record with status REVERSED. Blocked if the FG output was already issued or used.
+ */
+router.post('/:id/reverse', requireAdmin, h(async (req, res) => {
+  const id = v.uuid(req.params.id, 'id', { required: true });
+  const reason = v.str((req.body || {}).reason, 'Reason', { required: true, max: 1000 });
+  await withTransaction(async (c) => {
+    const batch = (await c.query('select * from public.batches where id = $1 for update', [id])).rows[0];
+    if (!batch) throw notFound('Batch not found');
+    if (batch.status === 'REVERSED') throw conflict('This batch is already reversed');
+    const common = { userId: req.user.id, referenceType: 'BATCH_REVERSAL', referenceId: batch.batch_no, allowExpired: true };
+    const fg = (await c.query(`select quantity from public.inventory where mpn_id = $1 and location_id = $2 and warehouse_id = $3
+                                 and lot_no = $4 for update`, [batch.output_mpn_id, batch.location_id, batch.warehouse_id, batch.batch_no])).rows[0];
+    const out = Number(batch.actual_output_qty);
+    if (!fg || Number(fg.quantity) < out) {
+      throw badRequest(`Only ${fg ? fg.quantity : 0} of the ${out} ${batch.output_uom} produced is still in lot ${batch.batch_no}; `
+        + 'the rest was issued, used or moved. Bring it back first, or correct the batch with Edit IP / OP.');
+    }
+    await postStock(c, { ...common, type: 'MFG_CORRECTION', mpnId: batch.output_mpn_id, locationId: batch.location_id,
+      warehouseId: batch.warehouse_id, lotNo: batch.batch_no, qtyChange: -out, reason: `Batch reversed: ${reason}` });
+    const inputs = (await c.query(`select * from public.batch_inputs where batch_id = $1 and actual_input_qty > 0`, [id])).rows;
+    for (const i of inputs) {
+      await postStock(c, { ...common, type: 'MFG_CORRECTION', mpnId: i.mpn_id, locationId: batch.location_id,
+        warehouseId: i.warehouse_id, lotNo: i.lot_no, qtyChange: Number(i.actual_input_qty), reason: `Batch ${batch.batch_no} reversed: material returned` });
+    }
+    await c.query(`update public.batches set status = 'REVERSED', reversed_by = $2, reversed_at = now(), reversal_reason = $3, updated_by = $2
+                    where id = $1`, [id, req.user.id, reason]);
+    if (batch.plan_id) {
+      await c.query(`update public.plans set executed_qty = greatest(executed_qty - $2, 0),
+                       status = case when status = 'CANCELLED' then status
+                                     when target_qty <= greatest(executed_qty - $2, 0) then 'COMPLETED'
+                                     when greatest(executed_qty - $2, 0) > 0 then 'IN_PROGRESS' else 'OPEN' end,
+                       updated_by = $3 where id = $1`, [batch.plan_id, out, req.user.id]);
+      await planning.refreshPlanStatus(c, batch.plan_id);
+      await planEvent(c, batch.plan_id, 'BATCH_REVERSED', { batch_no: batch.batch_no, output_qty: out }, { reason }, req.user.id);
     }
   });
   res.json(await loadBatch(getPool(), id));

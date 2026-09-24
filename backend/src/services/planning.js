@@ -16,15 +16,18 @@ function lineRequirement(line, batches, applyScrap) {
   return round4(Number(line.qty_per_batch) * batches * factor);
 }
 
-/** Usable stock per material at a location: non-expired, quantity > 0, all warehouses of the location. */
-async function usableStock(db, materialIds, locationId) {
+/**
+ * Usable stock per material at a location: quantity > 0, all warehouses of the location, and not expired
+ * on the day it is needed (the plan's required date when that is later than today).
+ */
+async function usableStock(db, materialIds, locationId, onDate = null) {
   if (!materialIds.length) return {};
   const { rows } = await db.query(`
     select material_id, sum(quantity) as qty
       from public.inventory
      where material_id = any($1::uuid[]) and location_id = $2 and quantity > 0
-       and (expiry_date is null or expiry_date >= current_date)
-     group by material_id`, [materialIds, locationId]);
+       and (expiry_date is null or expiry_date >= greatest(current_date, coalesce($3::date, current_date)))
+     group by material_id`, [materialIds, locationId, onDate]);
   return Object.fromEntries(rows.map((r) => [r.material_id, Number(r.qty)]));
 }
 
@@ -42,7 +45,7 @@ async function reservedByOtherPlans(db, materialIds, locationId, excludePlanId) 
       join public.boms b on b.id = p.bom_id
       join public.bom_lines bl on bl.bom_id = b.id
       cross join lateral (select case when p.plan_mode = 'BATCHES'
-                                      then greatest(p.target_batches - (select count(*) from public.batches x where x.plan_id = p.id), 0)
+                                      then greatest(p.target_batches - (select count(*) from public.batches x where x.plan_id = p.id and x.status <> 'REVERSED'), 0)
                                       else ceil(round(p.remaining_qty / b.expected_output_qty, 4)) end as batches) x
      where p.location_id = $2 and p.status in ('OPEN', 'IN_PROGRESS')
        and ($3::uuid is null or p.id <> $3) and bl.material_id = any($1::uuid[])
@@ -65,10 +68,10 @@ async function lineVendors(db, bomId) {
   return Object.fromEntries(rows.map((r) => [r.line_id, r]));
 }
 
-async function materialSummary(db, bom, qty, applyScrap, locationId, excludePlanId = null) {
+async function materialSummary(db, bom, qty, applyScrap, locationId, excludePlanId = null, onDate = null) {
   const batches = requiredBatches(qty, bom.expected_output_qty);
   const ids = bom.lines.map((l) => l.material_id);
-  const stock = await usableStock(db, ids, locationId);
+  const stock = await usableStock(db, ids, locationId, onDate);
   const reserved = await reservedByOtherPlans(db, ids, locationId, excludePlanId);
   const vend = await lineVendors(db, bom.id);
   return bom.lines.map((l) => {
@@ -119,7 +122,7 @@ async function refreshPlanStatus(c, planId) {
     update public.plans p
        set status = case when x.n >= p.target_batches then 'COMPLETED'
                          when x.n > 0 or p.executed_qty > 0 then 'IN_PROGRESS' else 'OPEN' end
-      from (select count(*)::int as n from public.batches where plan_id = $1) x
+      from (select count(*)::int as n from public.batches where plan_id = $1 and status <> 'REVERSED') x
      where p.id = $1 and p.plan_mode = 'BATCHES' and p.status <> 'CANCELLED'`, [planId]);
 }
 

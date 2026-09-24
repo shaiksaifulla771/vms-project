@@ -73,6 +73,13 @@ export default function PlanDetailPage() {
                     <td className="td w-44">{fmtDateTime(e.created_at)}</td>
                     <td className="td w-40">{e.event.replace(/_/g, ' ')}</td>
                     <td className="td">
+                      {['BATCH_EXECUTED', 'BATCH_CORRECTED', 'BATCH_REVERSED'].includes(e.event) && (
+                        <>
+                          {e.event === 'BATCH_EXECUTED' && `${e.new_value?.batch_no}: +${fmtQty(e.new_value?.output_qty)} ${e.new_value?.uom || ''}`}
+                          {e.event === 'BATCH_CORRECTED' && `${e.new_value?.batch_no}: output ${fmtQty(e.old_value?.output_qty)} → ${fmtQty(e.new_value?.output_qty)}`}
+                          {e.event === 'BATCH_REVERSED' && `${e.old_value?.batch_no}: -${fmtQty(e.old_value?.output_qty)} (${e.new_value?.reason})`}
+                        </>
+                      )}
                       {e.old_value?.target_qty !== undefined ? `Target ${fmtQty(e.old_value.target_qty)} → ${fmtQty(e.new_value?.target_qty)}` : ''}
                       {e.old_value?.target_batches !== undefined ? `Batches ${e.old_value.target_batches} → ${e.new_value?.target_batches}` : ''}
                       {e.event === 'CREATED' && e.new_value ? (e.new_value.target_batches ? `${e.new_value.target_batches} batches (${fmtQty(e.new_value.target_qty)})` : `Target ${fmtQty(e.new_value.target_qty)}`) : ''}

@@ -57,12 +57,15 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 2. **Planning** - Plan by **number of batches** (e.g. 10; each Batch Entry counts one; remaining = planned - executed;
    Admin can raise or lower the count, never below executed) or by quantity. Product + Demand + Location -> active BOM, `batches = ceil(demand / expected output)`,
    `required = qty_per_batch x batches x (1 + scrap%)` (scrap optional per plan / default in Settings),
-   availability = non-expired stock at the location, minus what the other open plans there still need (Free). Plan, Batch and Material summaries.
+   availability = stock at the location not expired on the required date (today if none), minus what the other open
+   plans there still need (Free). Plan, Batch and Material summaries.
    Editing the target (Admin) recalculates Remaining = Target - Executed and re-explodes the BOM for the remainder.
 3. **Manufacturing** - Batch Entry: Batch Detail, Output vs Plan, Material Inputs with a lot per material (FEFO
    suggested), variance per material; above tolerance needs a reason (Admin can override). Edit IP/OP posts deltas only.
-4. **Auto inventory update** - on submit: RM lots deducted, FG lot (= batch no) created, plan executed qty updated,
-   every posting referenced to the batch in the ledger.
+4. **Auto inventory update** - on submit: RM lots deducted, FG lot (= batch no, must be a new lot) created, plan executed qty
+   updated, every posting referenced to the batch in the ledger, and the plan History records it. **Reverse Batch** (Admin,
+   with a reason) undoes a wrong batch in one transaction: output removed, materials returned, plan reopened; the batch stays
+   on record as Reversed (blocked if its output was already issued).
 0. **Master data** - Materials (code M1001.., category / sub-category, description, status), Vendors (V1001..,
    FSSAI + expiry, several addresses with editable name / Primary-Secondary / one Default, contact directory,
    bank accounts with IFSC check, supplied materials), MPNs (MPN1001.., per-vendor UOM / MOQ / price with price
@@ -80,7 +83,7 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
    the system stock **at the time the shelf was counted** (start qty + movements up to "counted at"), so goods received or
    issued after the sheet was started are never a false +/- and are never posted twice. "Add new lots" brings lots received
    after the start onto the sheet. A lot can be on only one open count. BOM lines always use the material's stock UOM.
-6. **Reports** - Stock Balance Sheet,
+6. **Reports** - Reorder Alerts (materials at or below their reorder level after open plans), Stock Balance Sheet,
    Transaction Report (filters: date, location/WH, MPN, type; CSV), Traceability (backward + forward, recursive).
 
 ## API (all under `/api`)
@@ -89,7 +92,8 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 `mpns` (+`POST /bulk`), `bulk/:entity/template|export|parse|preview|commit` (entity = materials, vendors, mpns),
 `boms` (+`/active`, `/:id/activate|obsolete|revise|scale`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
 `transfers` (+`/:id/dispatch|complete|cancel`), `stock-counts` (+`/:id/lines|add-lots|submit|return|approve|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
-`batches` (+`/prefill`, `PUT /:id`), `reports/stock-balance|physical-stock-sheet|lots|trace`.
+`batches` (+`/prefill`, `PUT /:id`, `/:id/reverse`), `reports/stock-balance|physical-stock-sheet|reorder|lots|trace`.
+Inward with reason "Goods receipt" needs a GRN / invoice no; Outward "Sale / dispatch" needs an invoice / DC no.
 Headers: `X-User-Id` (acting user), `X-Location-Id`, `X-Warehouse-Id` (global scope).
 
 ## Migration history

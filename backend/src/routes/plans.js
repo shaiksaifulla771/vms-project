@@ -12,7 +12,7 @@ const PLAN_SELECT = `
   select pl.*, m.code as product_code, m.name as product_name, m.uom as product_uom,
          l.code as location_code, l.name as location_name, w.code as warehouse_code,
          b.bom_no, b.version as bom_version, b.expected_output_qty, b.output_uom,
-         (select count(*) from public.batches x where x.plan_id = pl.id)::int as batch_count,
+         (select count(*) from public.batches x where x.plan_id = pl.id and x.status <> 'REVERSED')::int as batch_count,
          case when pl.plan_mode = 'BATCHES' then pl.target_batches
               else ceil(round(pl.target_qty / b.expected_output_qty, 4))::int end as planned_batches
     from public.plans pl
@@ -41,7 +41,7 @@ async function buildPlanView(db, planId) {
   const bom = await loadBom(db, plan.bom_id);
   const executed = (await db.query(`
     select id, batch_no, mfg_date, expiry_date, actual_output_qty as qty
-      from public.batches where plan_id = $1 order by created_at`, [planId])).rows;
+      from public.batches where plan_id = $1 and status <> 'REVERSED' order by created_at`, [planId])).rows;
 
   const active = plan.status !== 'CANCELLED' && plan.status !== 'COMPLETED';
   const eo = Number(bom.expected_output_qty);
@@ -54,7 +54,7 @@ async function buildPlanView(db, planId) {
     ...(active ? planning.plannedBatches(remaining, bom.expected_output_qty, executed.length + 1) : []),
   ];
   const materialSummary = await planning.materialSummary(db, bom, active ? remaining : 0,
-    plan.apply_scrap_allowance, plan.location_id, plan.id);
+    plan.apply_scrap_allowance, plan.location_id, plan.id, plan.required_date);
   const events = (await db.query(`select e.*, u.full_name as user_name from public.plan_events e
                                     left join public.user_profiles u on u.id = e.user_id
                                    where e.plan_id = $1 order by e.created_at desc`, [planId])).rows;
@@ -121,7 +121,8 @@ router.post('/simulate', h(async (req, res) => {
       expected_output_per_batch: Number(bom.expected_output_qty), status: 'SIMULATION', uom: bom.output_uom,
     },
     batchSummary: planning.plannedBatches(demand, bom.expected_output_qty),
-    materialSummary: await planning.materialSummary(db, bom, demand, applyScrap, locationId),
+    materialSummary: await planning.materialSummary(db, bom, demand, applyScrap, locationId, null,
+      v.date(b.required_date, 'Required date')),
   });
 }));
 
@@ -174,7 +175,7 @@ router.patch('/:id', h(async (req, res) => {
       const tb = wholeBatches(b.target_batches);
       if (tb !== Number(plan.target_batches)) {
         if (!isAdmin(req.user)) throw forbidden('Only Admins can change the number of batches in a plan');
-        const done = (await c.query('select count(*)::int as n from public.batches where plan_id = $1', [id])).rows[0].n;
+        const done = (await c.query(`select count(*)::int as n from public.batches where plan_id = $1 and status <> 'REVERSED'`, [id])).rows[0].n;
         if (tb < done) throw badRequest(`Number of batches cannot be less than the batches already executed (${done})`);
         const eo = (await c.query('select expected_output_qty from public.boms where id = $1', [plan.bom_id])).rows[0].expected_output_qty;
         await c.query('update public.plans set target_batches = $2, target_qty = $3, updated_by = $4 where id = $1',

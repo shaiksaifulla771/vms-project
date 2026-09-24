@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtDateTime, fmtPct, fmtQty } from '../../lib/format';
-import { ErrorBox, Loading, PageHeader } from '../../components/ui';
+import { ErrorBox, Field, Loading, Modal, PageHeader } from '../../components/ui';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
 
@@ -15,6 +15,7 @@ export default function BatchDetailPage() {
   const [edit, setEdit] = useState(null);
   const [override, setOverride] = useState(false);
   const [err, setErr] = useState(null);
+  const [reversing, setReversing] = useState(null);   // reason text while the dialog is open
   const tolerance = settings?.variance_tolerance_pct ?? 5;
 
   if (loading && !b) return <Loading />;
@@ -40,6 +41,17 @@ export default function BatchDetailPage() {
     } catch (e) { setErr(e.message); }
   };
 
+  const reverse = async () => {
+    setErr(null);
+    try {
+      setData(await api.post(`/batches/${id}/reverse`, { reason: reversing }));
+      setReversing(null);
+      ledger.reload();
+      notify('Batch reversed: output removed, materials returned, plan updated');
+    } catch (e) { setErr(e.message); setReversing(null); }
+  };
+  const reversed = b.status === 'REVERSED';
+
   const outDelta = edit ? r4(Number(edit.actual_output_qty) - Number(b.actual_output_qty)) : 0;
 
   return (
@@ -50,10 +62,17 @@ export default function BatchDetailPage() {
           <Link className="btn-secondary" to="/manufacturing/batches">Back</Link>
           {b.plan_id && <Link className="btn-secondary" to={`/planning/plans/${b.plan_id}`}>Open Plan</Link>}
           <Link className="btn-secondary" to={`/reports/traceability?mpn_id=${b.output_mpn_id}&lot_no=${encodeURIComponent(b.batch_no)}`}>Trace Lot</Link>
-          {canWrite && !edit && <button type="button" className="btn-primary" onClick={startEdit}>Edit IP / OP</button>}
+          {isAdmin && !edit && !reversed && <button type="button" className="btn-secondary" onClick={() => setReversing('')}>Reverse Batch</button>}
+          {canWrite && !edit && !reversed && <button type="button" className="btn-primary" onClick={startEdit}>Edit IP / OP</button>}
         </>} />
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
+        {reversed && (
+          <div className="border border-line-strong rounded px-3 py-2 text-[13px] bg-panel">
+            <b>Reversed</b> on {fmtDateTime(b.reversed_at)}: {b.reversal_reason}. Its output was removed from stock, the materials were
+            returned to their lots, and the plan no longer counts it.
+          </div>
+        )}
 
         <section className="card">
           <div className="px-3 py-2 border-b border-line text-[13px] font-semibold">Section 1: Batch Detail</div>
@@ -149,6 +168,15 @@ export default function BatchDetailPage() {
           </table>
         </section>
       </div>
+      {reversing !== null && (
+        <Modal title={`Reverse batch ${b.batch_no}`} onClose={() => setReversing(null)}
+          footer={<><button type="button" className="btn-secondary" onClick={() => setReversing(null)}>Cancel</button>
+            <button type="button" className="btn-primary" disabled={!reversing.trim()} onClick={reverse}>Reverse Batch</button></>}>
+          <p className="text-[13px]">This removes the {fmtQty(b.actual_output_qty)} {b.output_uom} produced from lot {b.batch_no}, returns every material to
+            the lot it came from, and takes the batch off its plan. The batch stays on record as Reversed.</p>
+          <Field label="Reason" required><input className="input" autoFocus value={reversing} onChange={(e) => setReversing(e.target.value)} placeholder="e.g. Entered on the wrong plan" /></Field>
+        </Modal>
+      )}
     </div>
   );
 }

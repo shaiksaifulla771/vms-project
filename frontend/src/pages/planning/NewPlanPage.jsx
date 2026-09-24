@@ -21,7 +21,7 @@ export default function NewPlanPage() {
   const simulate = async (next = f, force = false) => {
     // Skip if nothing changed (e.g. the input loses focus when Create Plan is clicked);
     // keep the current result on screen until the new one arrives so buttons don't jump.
-    const key = JSON.stringify([next.product_id, next.location_id, next.plan_mode, next.target_batches, next.demand_qty, next.apply_scrap_allowance]);
+    const key = JSON.stringify([next.product_id, next.location_id, next.plan_mode, next.target_batches, next.demand_qty, next.apply_scrap_allowance, next.required_date]);
     if (!force && key === lastKey) return;
     setLastKey(key);
     setError(null);
@@ -76,7 +76,7 @@ export default function NewPlanPage() {
               </Field>
             )}
             <Field label="Required By">
-              <input className="input" type="date" value={f.required_date} onChange={(e) => setF({ ...f, required_date: e.target.value })} />
+              <input className="input" type="date" value={f.required_date} onChange={(e) => { const n = { ...f, required_date: e.target.value }; setF(n); if (n.product_id) simulate(n); }} />
             </Field>
             <button type="button" className="btn-secondary" disabled={busy} onClick={() => simulate(f, true)}>Calculate</button>
           </div>
