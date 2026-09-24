@@ -23,16 +23,18 @@ describe('v8: Inward entry type', () => {
     expect(l).toEqual({ txn_type: 'INWARD', reference_type: 'PURCHASE' });
   });
 
-  test('a finished good cannot be purchased; Opening Stock works by material, without an MPN', async () => {
-    const bad = await editor.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-OPEN-1', entry_type: 'PURCHASE' });
-    expect(bad.status).toBe(400);
-    expect(bad.body.error).toMatch(/cannot be purchased/);
-    const byMpn = await editor.post('/inventory/inward', { ...base(), mpn_id: C.fgMpn.id, lot_no: 'FG-OPEN-1' });
-    expect(byMpn.status).toBe(400); // default type is Purchase
-    const ok = await editor.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-OPEN-1', entry_type: 'OPENING', warehouse_id: C.wh2.id });
-    expect(ok.status).toBe(201);
-    const l = (await q(`select txn_type, reference_type, qty_change from public.stock_ledger where lot_no = 'FG-OPEN-1'`))[0];
-    expect(l).toMatchObject({ txn_type: 'OPENING', reference_type: 'OPENING' });
+  test('a finished good can never be added by Inward, whatever the entry type or how it is addressed', async () => {
+    for (const entry of ['PURCHASE', 'OPENING', 'ADJUSTMENT']) {
+      // Adjustment is Admin-only, so an editor is turned away before the material is even looked at.
+      for (const who of entry === 'ADJUSTMENT' ? [admin] : [editor, admin]) {
+        for (const id of [{ material_id: C.fg.id }, { mpn_id: C.fgMpn.id }]) {
+          const r = await who.post('/inventory/inward', { ...base(), ...id, lot_no: 'FG-OPEN-1', entry_type: entry, reason: 'Found extra' });
+          expect(r.status).toBe(400);
+          expect(r.body.error).toMatch(/only from a manufacturing batch/);
+        }
+      }
+    }
+    expect(await q(`select 1 from public.stock_ledger where lot_no = 'FG-OPEN-1'`)).toHaveLength(0);
   });
 
   test('Adjustment is Admin only and needs a reason', async () => {
@@ -72,20 +74,24 @@ describe('v8: finished goods have no MPN', () => {
     expect(upd.rows[0].errors.join(' ')).toMatch(/not found/);
   });
 
-  test('a new finished good still gets its hidden stock code, so batches and stock keep working', async () => {
+  test('a new finished good still gets its hidden stock code, so batches can post its output', async () => {
     const fg = (await admin.post('/materials', { name: 'Ready Upma 200g', classification: 'FINISHED_GOOD', uom: 'pcs' })).body;
     const hidden = await q('select id from public.mpns where material_id = $1', [fg.id]);
     expect(hidden).toHaveLength(1);
+    // ... but it still cannot be stocked by hand
     const r = await editor.post('/inventory/inward', { location_id: C.mum.id, warehouse_id: C.wh2.id, qty: 5, material_id: fg.id, lot_no: 'UPMA-OPEN', entry_type: 'OPENING' });
-    expect(r.status).toBe(201);
-    expect(r.body.mpn_id).toBe(hidden[0].id);
+    expect(r.status).toBe(400);
+    const batch = await editor.post('/batches', { source: 'AD_HOC', product_id: fg.id, location_id: C.mum.id, actual_output_qty: 5, inputs: [] });
+    expect(batch.status).toBe(201);
+    expect((await q('select mpn_id from public.inventory where lot_no = $1', [batch.body.batch_no]))[0].mpn_id).toBe(hidden[0].id);
   });
 });
 
 describe('v8: the finished good internal code never reaches the screens', () => {
   test('material, product, vendor and report APIs show no MPN for a finished good', async () => {
-    // Opening stock for the finished good, and a legacy vendor link on its hidden code
-    await admin.post('/inventory/inward', { location_id: C.mum.id, warehouse_id: C.wh1.id, qty: 5, material_id: C.fg.id, lot_no: 'FG-HIDE-1', entry_type: 'OPENING' });
+    // Finished-goods stock as a batch would post it, and a legacy vendor link on its hidden code
+    await q(`select erp.post_stock('MFG_OUTPUT',$1,$2,$3,'FG-HIDE-1',5,$4,'BATCH','B-HIDE','test',null,null,null,true)`,
+      [C.fgMpn.id, C.mum.id, C.wh1.id, C.admin.id]);
     const ven = (await q(`select vendor_id from public.mpn_vendors where mpn_id = $1 limit 1`, [C.riceMpn.id]))[0].vendor_id;
     await q(`insert into public.mpn_vendors (mpn_id, vendor_id) values ($1, $2) on conflict do nothing`, [C.fgMpn.id, ven]);
 

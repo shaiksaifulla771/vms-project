@@ -22,8 +22,8 @@ router.get('/stock-balance', h(async (req, res) => {
 }));
 
 /**
- * Reorder alerts: active materials with a reorder level whose usable stock (not expired) minus what open plans
- * still need is at or below that level. Location from the top selector, else all locations.
+ * Reorder alerts: active materials whose actual stock (not expired) is at or below their reorder level.
+ * Plain stock vs level - this system does not reserve or allocate stock.
  */
 router.get('/reorder', h(async (req, res) => {
   const loc = req.scope.locationId || null;
@@ -31,31 +31,15 @@ router.get('/reorder', h(async (req, res) => {
     with stock as (
       select material_id, sum(quantity) as qty from public.inventory
        where quantity > 0 and (expiry_date is null or expiry_date >= current_date) and ($1::uuid is null or location_id = $1)
-       group by material_id),
-    need as (
-      select bl.material_id,
-             sum(bl.qty_per_batch * x.batches
-                 * case when p.apply_scrap_allowance then 1 + bl.scrap_allowance_pct / 100 else 1 end) as qty
-        from public.plans p
-        join public.boms b on b.id = p.bom_id
-        join public.bom_lines bl on bl.bom_id = b.id
-        cross join lateral (select case when p.plan_mode = 'BATCHES'
-                                        then greatest(p.target_batches - (select count(*) from public.batches x
-                                                                           where x.plan_id = p.id and x.status <> 'REVERSED'), 0)
-                                        else ceil(round(p.remaining_qty / b.expected_output_qty, 4)) end as batches) x
-       where p.status in ('OPEN', 'IN_PROGRESS') and ($1::uuid is null or p.location_id = $1)
-       group by bl.material_id)
+       group by material_id)
     select m.id as material_id, m.code as material_code, m.name as material_name, m.classification, m.uom,
-           m.reorder_level::float as reorder_level, coalesce(s.qty, 0)::float as stock_qty, coalesce(n.qty, 0)::float as plan_need_qty,
-           round(coalesce(s.qty, 0) - coalesce(n.qty, 0), 4)::float as free_qty,
-           round(m.reorder_level - (coalesce(s.qty, 0) - coalesce(n.qty, 0)), 4)::float as to_order_qty,
+           m.reorder_level::float as reorder_level, coalesce(s.qty, 0)::float as stock_qty,
+           round(m.reorder_level - coalesce(s.qty, 0), 4)::float as to_order_qty,
            (select ve.name from public.mpns mp join public.mpn_vendors mv on mv.mpn_id = mp.id join public.vendors ve on ve.id = mv.vendor_id
              where mp.material_id = m.id order by mv.is_preferred desc, ve.name limit 1) as vendor_name
       from public.materials m
       left join stock s on s.material_id = m.id
-      left join need n on n.material_id = m.id
-     where m.status = 'ACTIVE' and m.reorder_level is not null
-       and coalesce(s.qty, 0) - coalesce(n.qty, 0) <= m.reorder_level
+     where m.status = 'ACTIVE' and m.reorder_level is not null and coalesce(s.qty, 0) <= m.reorder_level
      order by m.code`, [loc]);
   res.json(rows);
 }));

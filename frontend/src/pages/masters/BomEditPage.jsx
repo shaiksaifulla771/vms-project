@@ -1,24 +1,35 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
 import { Combobox, LocationWarehouse, UomSelect, materialOptions, useDefaultScope, useMaterials, useMpns, useUoms } from '../../components/pickers';
 
-const emptyLine = () => ({ material_id: '', mpn_id: '', qty_per_batch: '', uom: '', scrap_allowance_pct: '0', unit_price: '', notes: '' });
+const emptyLine = () => ({ material_id: '', mpn_id: '', qty_per_batch: '', scrap_allowance_pct: '0', notes: '' });
+const srcKey = (l) => `${l.material_id}|${l.mpn_id || ''}`;
 const COSTS = [['packing_cost', 'Packing Cost'], ['processing_cost', 'Processing Cost'], ['overhead_cost', 'Overhead Cost'], ['freight_cost', 'Freight Cost']];
 const money = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Default price for a line: the chosen MPN's preferred vendor, else any priced MPN of the material. */
-function priceSource(mpns, l) {
-  const cands = l.mpn_id ? mpns.filter((p) => p.id === l.mpn_id) : mpns.filter((p) => p.material_id === l.material_id);
-  for (const p of cands) {
-    const v = [...p.vendors].sort((a, b) => Number(b.is_preferred) - Number(a.is_preferred)).find((x) => x.price !== null && x.price !== undefined);
-    if (v) return { price: Number(v.price), vendor: v.vendor_name, uom: v.uom };
-  }
-  const v = cands[0]?.vendors?.[0];
-  return { price: null, vendor: v?.vendor_name || null };
+/**
+ * Vendor, UOM and price of an ingredient come from its MPN and are never typed here.
+ * The server answers (the same answer the BOM, planning and costing use), so nothing can drift.
+ */
+function useLineSources(lines) {
+  const [map, setMap] = useState({});
+  const seen = useRef(new Set());
+  const keys = lines.filter((l) => l.material_id).map(srcKey).join(',');
+  useEffect(() => {
+    keys.split(',').filter(Boolean).forEach((key) => {
+      if (seen.current.has(key)) return;
+      seen.current.add(key);
+      const [materialId, mpnId] = key.split('|');
+      api.get(`/boms/line-source?material_id=${materialId}${mpnId ? `&mpn_id=${mpnId}` : ''}`, { scoped: false })
+        .then((src) => setMap((m) => ({ ...m, [key]: src })))
+        .catch(() => { seen.current.delete(key); });
+    });
+  }, [keys]);
+  return map;
 }
 
 export default function BomEditPage() {
@@ -34,6 +45,7 @@ export default function BomEditPage() {
   const [f, setF] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const sources = useLineSources(f?.lines || []);
 
   // Output UOM follows the product (e.g. when opened from Products > Create BOM)
   useEffect(() => {
@@ -55,20 +67,23 @@ export default function BomEditPage() {
       ...b,
       ...Object.fromEntries(COSTS.map(([k]) => [k, b[k] ? String(b[k]) : ''])),
       lines: b.lines.map((l) => ({ material_id: l.material_id, mpn_id: l.mpn_id || '', qty_per_batch: String(l.qty_per_batch),
-        uom: l.uom, scrap_allowance_pct: String(l.scrap_allowance_pct), unit_price: l.unit_price == null ? '' : String(l.unit_price), notes: l.notes || '' })),
+        scrap_allowance_pct: String(l.scrap_allowance_pct), notes: l.notes || '' })),
     })).catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (!f) return err ? <div className="p-5"><ErrorBox message={err} /></div> : <Loading />;
 
+
   const setLine = (i, patch) => setF({ ...f, lines: f.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
-  const batchTotal = f.lines.reduce((s, l) => s + (l.uom === f.batch_uom ? Number(l.qty_per_batch || 0) : 0), 0);
+  const lineUom = (l) => sources[srcKey(l)]?.uom || materials.find((m) => m.id === l.material_id)?.uom || '';
+  const batchTotal = f.lines.reduce((s, l) => s + (lineUom(l) === f.batch_uom ? Number(l.qty_per_batch || 0) : 0), 0);
   const priced = f.lines.map((l) => {
-    const src = l.material_id ? priceSource(mpns, l) : { price: null };
-    const price = l.unit_price !== '' ? Number(l.unit_price) : src.price;
+    const src = (l.material_id && sources[srcKey(l)]) || {};
+    const price = src.price == null ? null : Number(src.price);
     const gross = Number(l.qty_per_batch || 0) * (1 + Number(l.scrap_allowance_pct || 0) / 100);
-    return { ...src, price, cost: price == null ? null : gross * price };
+    return { vendor: src.vendor_name || null, mpn_code: src.mpn_code || null, uom: lineUom(l),
+      price, cost: price == null ? null : gross * price };
   });
   const materialCost = priced.reduce((a, p) => a + (p.cost || 0), 0);
   const extraCost = COSTS.reduce((a, [k]) => a + Number(f[k] || 0), 0);
@@ -83,9 +98,10 @@ export default function BomEditPage() {
         ...f, activate,
         batch_size: Number(f.batch_size), expected_output_qty: Number(f.expected_output_qty),
         ...Object.fromEntries(COSTS.map(([k]) => [k, f[k] === '' ? 0 : Number(f[k])])),
-        lines: f.lines.filter((l) => l.material_id).map((l) => ({ ...l, mpn_id: l.mpn_id || null,
+        lines: f.lines.filter((l) => l.material_id).map((l) => ({
+          material_id: l.material_id, mpn_id: l.mpn_id || null, uom: lineUom(l),
           qty_per_batch: Number(l.qty_per_batch), scrap_allowance_pct: Number(l.scrap_allowance_pct || 0),
-          unit_price: l.unit_price === '' ? null : Number(l.unit_price), notes: l.notes || null })),
+          notes: l.notes || null })),
       };
       const r = id ? await api.put(`/boms/${id}`, body) : await api.post('/boms', body);
       if (id && activate) await api.post(`/boms/${id}/activate`);
@@ -98,7 +114,7 @@ export default function BomEditPage() {
   return (
     <div>
       <PageHeader title={id ? `Edit ${f.bom_no} (Draft v${f.version})` : 'New BOM'}
-        subtitle="Header: batch size, expected output, location, WH and batch costs. Ingredients: material / MPN, qty, loss %, price." />
+        subtitle="Header: batch size, expected output, location, WH and batch costs. Ingredients: pick the material and MPN, then enter quantity and loss % - vendor, UOM and price come from the MPN." />
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
         <section className="card p-3 space-y-3">
@@ -149,7 +165,7 @@ export default function BomEditPage() {
                   <td className="td">{i + 1}</td>
                   <td className="td px-1"><div className="w-[300px]">
                     <Combobox value={l.material_id} options={materialOptions(materials.filter((m) => m.id !== f.product_id))}
-                      onChange={(v) => { const m = materials.find((x) => x.id === v); setLine(i, { material_id: v, uom: m?.uom || '', mpn_id: '' }); }} />
+                      onChange={(v) => setLine(i, { material_id: v, mpn_id: '' })} />
                   </div></td>
                   <td className="td px-1"><div className="w-40">
                     <select className="input" value={l.mpn_id} onChange={(e) => setLine(i, { mpn_id: e.target.value })} disabled={!l.material_id}>
@@ -157,13 +173,16 @@ export default function BomEditPage() {
                       {mpns.filter((p) => p.material_id === l.material_id).map((p) => <option key={p.id} value={p.id}>{p.mpn_code}</option>)}
                     </select>
                   </div></td>
-                  <td className="td text-ink-soft">{priced[i].vendor || <span className="text-ink-faint">-</span>}</td>
+                  <td className="td text-ink-soft whitespace-normal">{l.material_id
+                    ? (priced[i].vendor || <span className="text-ink-faint">No vendor</span>)
+                    : <span className="text-ink-faint">-</span>}</td>
                   <td className="td px-1"><input className="input num w-28 ml-auto" type="number" min="0" step="any" value={l.qty_per_batch} onChange={(e) => setLine(i, { qty_per_batch: e.target.value })} /></td>
-                  <td className="td px-1"><input className="input" value={l.uom} readOnly title="Material base UOM" /></td>
+                  <td className="td text-ink-soft" title="Stock UOM of the material">{priced[i].uom || <span className="text-ink-faint">-</span>}</td>
                   <td className="td px-1"><input className="input num w-16 ml-auto" type="number" min="0" max="99" step="any" value={l.scrap_allowance_pct} onChange={(e) => setLine(i, { scrap_allowance_pct: e.target.value })} /></td>
-                  <td className="td px-1"><input className="input num w-24 ml-auto" type="number" min="0" step="0.01" value={l.unit_price}
-                    placeholder={priced[i].price != null && l.unit_price === '' ? String(priced[i].price) : ''}
-                    title="Leave blank to use the MPN price; type a value to override" onChange={(e) => setLine(i, { unit_price: e.target.value })} /></td>
+                  <td className="td num" title="From the MPN; change it in Master Data > MPNs">
+                    {priced[i].price != null ? money(priced[i].price)
+                      : l.material_id ? <Link to="/masters/mpns" className="btn-link text-xs">Set price in MPNs</Link>
+                        : <span className="text-ink-faint">-</span>}</td>
                   <td className="td num">{priced[i].cost == null ? <span className="text-ink-faint" title="No price">-</span> : money(priced[i].cost)}</td>
                   <td className="td px-1"><input className="input w-36" value={l.notes} onChange={(e) => setLine(i, { notes: e.target.value })} /></td>
                   <td className="td"><button type="button" className="btn-danger-link" onClick={() => setF({ ...f, lines: f.lines.filter((_, j) => j !== i) })}><Trash2 size={13} /></button></td>
@@ -174,7 +193,7 @@ export default function BomEditPage() {
           </div>
           <div className="flex items-center justify-between px-3 py-2 border-t border-line">
             <button type="button" className="btn-link" onClick={() => setF({ ...f, lines: [...f.lines, emptyLine()] })}><Plus size={13} /> Add line</button>
-            <span className="text-xs text-ink-muted">Sum of lines in {f.batch_uom}: {batchTotal.toLocaleString('en-IN', { maximumFractionDigits: 4 })} (batch size {f.batch_size || 0}) · Price blank = MPN price; line cost includes loss %</span>
+            <span className="text-xs text-ink-muted">Sum of lines in {f.batch_uom}: {batchTotal.toLocaleString('en-IN', { maximumFractionDigits: 4 })} (batch size {f.batch_size || 0}) · Vendor, UOM and price come from the MPN and are changed there · Line cost includes loss %</span>
           </div>
         </section>
 

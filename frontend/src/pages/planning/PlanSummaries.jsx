@@ -71,8 +71,6 @@ export default function PlanSummaries({ planSummary: p, batchSummary, materialSu
           <thead><tr>
             <th className="th">Material (MPN)</th><th className="th">Vendor</th><th className="th text-right">Qty / Batch</th>
             <th className="th text-right">Scrap %</th><th className="th text-right">Qty Req</th><th className="th text-right">Qty Avail</th>
-            <th className="th text-right" title="Still needed by the other open plans at this location">Other Plans</th>
-            <th className="th text-right" title="Available minus other open plans">Free</th>
             <th className="th text-right">Short / Long</th><th className="th">UOM</th>
           </tr></thead>
           <tbody>
@@ -84,8 +82,6 @@ export default function PlanSummaries({ planSummary: p, batchSummary, materialSu
                 <td className="td num">{fmtQty(m.scrap_allowance_pct)}</td>
                 <td className="td num">{fmtQty(m.qty_required)}</td>
                 <td className="td num">{fmtQty(m.qty_available)}</td>
-                <td className="td num">{m.qty_reserved ? fmtQty(m.qty_reserved) : <span className="text-ink-faint">-</span>}</td>
-                <td className="td num">{fmtQty(m.qty_free ?? m.qty_available)}</td>
                 <td className={`td num font-medium ${m.status === 'SHORT' ? 'text-danger' : ''}`}>
                   {m.short_long > 0 ? '+' : ''}{fmtQty(m.short_long)} {m.status === 'SHORT' ? 'Short' : 'Long'}
                 </td>

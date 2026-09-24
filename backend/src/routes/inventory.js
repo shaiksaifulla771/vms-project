@@ -3,7 +3,7 @@ const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { badRequest, notFound, forbidden } = require('../utils/errors');
 const { requireAdmin, isAdmin } = require('../middleware/session');
-const { postStock, lockInventory, outputMpn } = require('../services/stock');
+const { postStock, lockInventory } = require('../services/stock');
 const v = require('../utils/validate');
 
 // Centralized Inventory (lots) for the selected Location / WH
@@ -69,10 +69,14 @@ router.get('/inward-defaults', h(async (req, res) => {
 }));
 
 // Inward (add stock): creates the lot or increases MPN + Location + WH + Lot.
-// Entry type:  PURCHASE (default)  any material except finished goods, needs an MPN     -> ledger INWARD, ref PURCHASE
-//              OPENING             any material (go-live / first balances)                -> ledger OPENING
-//              ADJUSTMENT          Admin only, reason required                            -> ledger ADJUSTMENT
-// Finished goods have no MPN on screen: send material_id and the internal stock code is used.
+// Entry type:  PURCHASE (default)  needs an MPN                            -> ledger INWARD, ref PURCHASE
+//              OPENING             go-live / first balances                -> ledger OPENING
+//              ADJUSTMENT          Admin only, reason required             -> ledger ADJUSTMENT
+//
+// Finished goods can NEVER be entered here, whatever the entry type: their stock comes only from a
+// manufacturing batch, so that what the system holds always matches what was actually produced.
+// They still leave through Outward, move by Transfer, and are corrected by an Admin adjustment on an
+// existing lot (Stock > Adjust) or an approved physical stock count.
 const ENTRY_TYPES = { PURCHASE: 'INWARD', OPENING: 'OPENING', ADJUSTMENT: 'ADJUSTMENT' };
 
 router.post('/inward', h(async (req, res) => {
@@ -97,6 +101,8 @@ router.post('/inward', h(async (req, res) => {
   };
   const materialId = v.uuid(b.material_id, 'Material');
   if (!p.mpnId && !materialId) throw badRequest('MPN is required');
+  const FG_BLOCKED = 'Finished goods cannot be added here. Their stock comes only from a manufacturing batch '
+    + '(Manufacturing > Batch Entry). To correct an existing finished-goods lot, use Stock > Adjust or a physical stock count.';
   if (p.mfgDate && p.expiryDate && p.expiryDate < p.mfgDate) throw badRequest('Expiry date must be after Mfg date');
   // A goods receipt must be traceable to its purchase document.
   if (/^goods receipt/i.test(p.reason) && !p.referenceId) throw badRequest('Enter the GRN / invoice no for a goods receipt');
@@ -111,17 +117,14 @@ router.post('/inward', h(async (req, res) => {
     } else {
       mat = (await c.query('select id, uom, classification from public.materials where id = $1', [materialId])).rows[0];
       if (!mat) throw badRequest('Material not found');
-      if (mat.classification !== 'FINISHED_GOOD') throw badRequest('MPN is required');
-      p.mpnId = await outputMpn(c, mat.id, req.user.id); // hidden internal stock code of the finished good
+      if (mat.classification === 'FINISHED_GOOD') throw badRequest(FG_BLOCKED);
+      throw badRequest('MPN is required');
     }
+    if (mat.classification === 'FINISHED_GOOD') throw badRequest(FG_BLOCKED);
     // A production batch lot is changed from the batch (Edit IP / OP), never topped up by Inward.
     const batchLot = (await c.query('select 1 from public.batches where output_mpn_id = $1 and upper(batch_no) = upper($2) limit 1',
       [p.mpnId, p.lotNo])).rows[0];
     if (batchLot) throw badRequest(`Lot ${p.lotNo} is a production batch; change its output from the batch (Edit IP / OP), not by Inward`);
-    if (entryType === 'PURCHASE' && mat.classification === 'FINISHED_GOOD') {
-      throw badRequest('Finished goods cannot be purchased. Use Opening Stock or Adjustment, or record a production batch.');
-    }
-    if (mat.classification === 'FINISHED_GOOD') p.vendorId = null;
     if (uom && mat.uom.toLowerCase() !== uom.toLowerCase()) throw badRequest(`UOM must be the material's base UOM (${mat.uom})`);
     return postStock(c, p);
   });

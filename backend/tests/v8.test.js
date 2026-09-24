@@ -70,24 +70,22 @@ describe('Batch reversal and plan history', () => {
     expect(rev.body.error).toMatch(/still in lot/);
   });
 
-  test('a batch no cannot reuse an existing lot of the product; Inward cannot top up a batch lot', async () => {
+  test('a batch no cannot reuse an existing lot of the product', async () => {
     const used = (await q(`select batch_no from public.batches where status = 'COMPLETED' limit 1`))[0].batch_no;
     const dup = await runBatch(plan.id, 1000, used.toLowerCase());
     expect(dup.status).toBe(400);
-    const inw = await editor.post('/inventory/inward', { mpn_id: C.fgMpn.id, location_id: C.mum.id, warehouse_id: C.wh2.id, lot_no: used, qty: 5 });
+  });
+
+  test('Inward cannot top up the output lot of a batch', async () => {
+    // Finished goods are refused outright, so this uses a semi-finished good, which may be bought.
+    const semi = (await admin.post('/materials', { name: 'Roasted Base', classification: 'SEMI_FINISHED', uom: 'kg' })).body;
+    const mpnId = (await q('select id from public.mpns where material_id = $1', [semi.id]))[0].id;
+    const b = await editor.post('/batches', { source: 'AD_HOC', product_id: semi.id, location_id: C.mum.id, actual_output_qty: 20, inputs: [] });
+    expect(b.status).toBe(201);
+    const inw = await editor.post('/inventory/inward', { mpn_id: mpnId, location_id: b.body.location_id,
+      warehouse_id: b.body.warehouse_id, lot_no: b.body.batch_no, qty: 5 });
     expect(inw.status).toBe(400);
     expect(inw.body.error).toMatch(/production batch/);
-  });
-});
-
-describe('Planning uses the required date for expiry', () => {
-  test('stock that expires before the required date is not available', async () => {
-    const lot = await C.lot('RICE-L1');                                           // expires 2027-02-01
-    const sim = async (d) => (await editor.post('/plans/simulate', { product_id: C.fg.id, location_id: C.mum.id, demand_qty: 1000, required_date: d }))
-      .body.materialSummary.find((m) => m.material_code === 'RM-RICE').qty_available;
-    const now = await sim(undefined);
-    const later = await sim('2027-02-15');
-    expect(now - later).toBeCloseTo(Number(lot.quantity), 4);
   });
 });
 
@@ -105,14 +103,20 @@ describe('References for goods receipt and sale', () => {
 });
 
 describe('Reorder alerts', () => {
-  test('materials at or below their reorder level (after open plan needs) are listed', async () => {
+  test('materials at or below their reorder level are listed; open plans do not change the figure', async () => {
     const r = await admin.put(`/materials/${C.lentil.id}`, { reorder_level: 100000 });
     expect(r.status).toBe(200);
     expect(Number(r.body.reorder_level)).toBe(100000);
     const list = (await editor.get('/reports/reorder')).body;
     const lentil = list.find((x) => x.material_code === 'RM-LENTIL');
     expect(lentil).toBeTruthy();
-    expect(lentil.free_qty).toBeCloseTo(lentil.stock_qty - lentil.plan_need_qty, 4);
+    const actual = Number((await q(`select coalesce(sum(quantity), 0) as n from public.inventory
+                                     where material_id = $1 and quantity > 0
+                                       and (expiry_date is null or expiry_date >= current_date)`, [C.lentil.id]))[0].n);
+    expect(lentil.stock_qty).toBeCloseTo(actual, 4);                               // plain stock, nothing reserved
+    expect(lentil.to_order_qty).toBeCloseTo(100000 - actual, 4);
+    expect(lentil.plan_need_qty).toBeUndefined();
+    expect(lentil.free_qty).toBeUndefined();
     expect(list.find((x) => x.material_code === 'RM-RICE')).toBeUndefined();        // no reorder level set
     await admin.put(`/materials/${C.lentil.id}`, { reorder_level: 0 });
     expect((await editor.get('/reports/reorder')).body.find((x) => x.material_code === 'RM-LENTIL')).toBeUndefined();

@@ -51,14 +51,15 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 
 ## Workflows
 
-1. **Inventory** - Stock page: Inward (MPN, Location, WH, Lot, Qty, Mfg/Expiry, Vendor), Outward (FEFO lot list,
+1. **Inventory** - Stock page: Inward (MPN, Location, WH, Lot, Qty, Mfg/Expiry, Vendor; **finished goods can never be
+   entered here** - their stock comes only from a manufacturing batch, whatever the entry type), Outward (FEFO lot list,
    expired blocked), Transfers (Draft -> In-Transit -> Completed; Dispatch takes the stock out of the source, Completed adds it at the
    destination, cancelling an In-Transit transfer returns it automatically; lot dates preserved), Adjustment (Admin: New Physical - System).
 2. **Planning** - Plan by **number of batches** (e.g. 10; each Batch Entry counts one; remaining = planned - executed;
    Admin can raise or lower the count, never below executed) or by quantity. Product + Demand + Location -> active BOM, `batches = ceil(demand / expected output)`,
    `required = qty_per_batch x batches x (1 + scrap%)` (scrap optional per plan / default in Settings),
-   availability = stock at the location not expired on the required date (today if none), minus what the other open
-   plans there still need (Free). Plan, Batch and Material summaries.
+   Qty Available = the **actual** non-expired stock at the location. **There is no stock reservation in this system**:
+   nothing is allocated or held back, so two open plans both see the same real stock. Plan, Batch and Material summaries.
    Editing the target (Admin) recalculates Remaining = Target - Executed and re-explodes the BOM for the remainder.
 3. **Manufacturing** - Batch Entry: Batch Detail, Output vs Plan, Material Inputs with a lot per material (FEFO
    suggested), variance per material; above tolerance needs a reason (Admin can override). Edit IP/OP posts deltas only.
@@ -69,8 +70,10 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
 0. **Master data** - Materials (code M1001.., category / sub-category, description, status), Vendors (V1001..,
    FSSAI + expiry, several addresses with editable name / Primary-Secondary / one Default, contact directory,
    bank accounts with IFSC check, supplied materials), MPNs (MPN1001.., per-vendor UOM / MOQ / price with price
-   history, Bulk MPN Create grid), BOMs (packing / processing / overhead / freight cost, ingredient price and notes,
-   cost per batch and per unit, Scale Recipe into a new draft). Every list has a Functions menu (Manual Entry,
+   history, Bulk MPN Create grid), BOMs (packing / processing / overhead / freight cost, ingredient notes,
+   cost per batch and per unit, Scale Recipe into a new draft). A BOM line carries only the material, MPN, quantity,
+   loss % and notes: **vendor, UOM and price always come from the MPN** (one rule, used by the BOM screen, the saved
+   BOM, costing and planning alike) and can only be changed in MPNs - the API rejects a price sent from a BOM. Every list has a Functions menu (Manual Entry,
    Bulk Entry, Bulk Update, Export) and View / Edit / Delete actions. Codes come from database sequences and are
    never reused; existing codes are kept. Delete becomes Deactivate when a record is in use.
    **Option lists (v5):** each category belongs to a classification, so the Material form and bulk template offer
@@ -83,14 +86,14 @@ plan-target changes, variance-tolerance override, settings), `editor` (day-to-da
    the system stock **at the time the shelf was counted** (start qty + movements up to "counted at"), so goods received or
    issued after the sheet was started are never a false +/- and are never posted twice. "Add new lots" brings lots received
    after the start onto the sheet. A lot can be on only one open count. BOM lines always use the material's stock UOM.
-6. **Reports** - Reorder Alerts (materials at or below their reorder level after open plans), Stock Balance Sheet,
+6. **Reports** - Reorder Alerts (materials whose actual stock is at or below their reorder level), Stock Balance Sheet,
    Transaction Report (filters: date, location/WH, MPN, type; CSV), Traceability (backward + forward, recursive).
 
 ## API (all under `/api`)
 
 `session`, `settings`, `locations` (+`/:id/warehouses`), `warehouses`, `vendors`, `materials`, `categories`,
 `mpns` (+`POST /bulk`), `bulk/:entity/template|export|parse|preview|commit` (entity = materials, vendors, mpns),
-`boms` (+`/active`, `/:id/activate|obsolete|revise|scale`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
+`boms` (+`/active`, `/line-source`, `/:id/activate|obsolete|revise|scale`), `inventory/stock|lots|inward|outward|adjustments|ledger`,
 `transfers` (+`/:id/dispatch|complete|cancel`), `stock-counts` (+`/:id/lines|add-lots|submit|return|approve|cancel`), `plans` (+`/simulate`, `PATCH /:id`, `/:id/cancel`),
 `batches` (+`/prefill`, `PUT /:id`, `/:id/reverse`), `reports/stock-balance|physical-stock-sheet|reorder|lots|trace`.
 Inward with reason "Goods receipt" needs a GRN / invoice no; Outward "Sale / dispatch" needs an invoice / DC no.

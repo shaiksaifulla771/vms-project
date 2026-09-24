@@ -289,21 +289,3 @@ describe('BOM line UOM', () => {
     expect(r.body.error).toMatch(/stock UOM/);
   });
 });
-
-describe('Planning: stock needed by other open plans', () => {
-  test('a new plan sees what other open plans still need; a plan does not reserve against itself', async () => {
-    const sim = async () => (await editor.post('/plans/simulate', { product_id: C.fg.id, location_id: C.mum.id, demand_qty: 1000 }))
-      .body.materialSummary.find((m) => m.material_code === 'RM-RICE');
-    const before = await sim();
-    const p = await editor.post('/plans', { product_id: C.fg.id, location_id: C.mum.id, plan_mode: 'BATCHES', target_batches: 2 });
-    expect(p.status).toBe(201);
-    const own = p.body.materialSummary.find((m) => m.material_code === 'RM-RICE');
-    expect(own.qty_reserved).toBe(before.qty_reserved);        // not counted against itself
-    const after = await sim();
-    expect(after.qty_reserved).toBeCloseTo(before.qty_reserved + 60 * 2 * 1.02, 4);
-    expect(after.qty_free).toBeCloseTo(after.qty_available - after.qty_reserved, 4);
-    expect(after.short_long).toBeCloseTo(after.qty_free - after.qty_required, 4);
-    await admin.post(`/plans/${p.body.plan.id}/cancel`);
-    expect((await sim()).qty_reserved).toBe(before.qty_reserved); // cancelled plans release the stock
-  });
-});

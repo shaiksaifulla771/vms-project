@@ -54,7 +54,7 @@ async function buildPlanView(db, planId) {
     ...(active ? planning.plannedBatches(remaining, bom.expected_output_qty, executed.length + 1) : []),
   ];
   const materialSummary = await planning.materialSummary(db, bom, active ? remaining : 0,
-    plan.apply_scrap_allowance, plan.location_id, plan.id, plan.required_date);
+    plan.apply_scrap_allowance, plan.location_id);
   const events = (await db.query(`select e.*, u.full_name as user_name from public.plan_events e
                                     left join public.user_profiles u on u.id = e.user_id
                                    where e.plan_id = $1 order by e.created_at desc`, [planId])).rows;
@@ -121,8 +121,7 @@ router.post('/simulate', h(async (req, res) => {
       expected_output_per_batch: Number(bom.expected_output_qty), status: 'SIMULATION', uom: bom.output_uom,
     },
     batchSummary: planning.plannedBatches(demand, bom.expected_output_qty),
-    materialSummary: await planning.materialSummary(db, bom, demand, applyScrap, locationId, null,
-      v.date(b.required_date, 'Required date')),
+    materialSummary: await planning.materialSummary(db, bom, demand, applyScrap, locationId),
   });
 }));
 
