@@ -232,8 +232,16 @@ describe('Bulk entry / bulk update / export', () => {
 describe('BOM costing and scaling', () => {
   test('costs roll up per batch and per unit; scale creates a new draft version', async () => {
     const active = (await admin.get(`/boms/active?product_id=${C.fg.id}&location_id=${C.mum.id}`)).body;
+    // A BOM never carries a price: the cost comes from each line's MPN.
     const lines = active.lines.map((l) => ({ material_id: l.material_id, mpn_id: l.mpn_id, qty_per_batch: l.qty_per_batch,
-      uom: l.uom, scrap_allowance_pct: l.scrap_allowance_pct, unit_price: 10, notes: `n${l.line_no}` }));
+      uom: l.uom, scrap_allowance_pct: l.scrap_allowance_pct, notes: `n${l.line_no}` }));
+    const withPrice = await admin.post('/boms', {
+      product_id: C.fg.id, location_id: C.mum.id, batch_size: active.batch_size, batch_uom: active.batch_uom,
+      expected_output_qty: active.expected_output_qty, output_uom: active.output_uom,
+      lines: lines.map((l, i) => (i === 0 ? { ...l, unit_price: 10 } : l)),
+    });
+    expect(withPrice.status).toBe(400);
+    expect(withPrice.body.error).toMatch(/price cannot be set on a BOM/);
     const draft = await admin.post('/boms', {
       product_id: C.fg.id, location_id: C.mum.id, batch_size: active.batch_size, batch_uom: active.batch_uom,
       expected_output_qty: active.expected_output_qty, output_uom: active.output_uom, lines,
@@ -241,7 +249,7 @@ describe('BOM costing and scaling', () => {
     });
     expect(draft.status).toBe(201);
     const c = draft.body.costing;
-    const expectedMaterial = lines.reduce((a, l) => a + l.qty_per_batch * (1 + l.scrap_allowance_pct / 100) * 10, 0);
+    const expectedMaterial = active.lines.reduce((a, l) => a + l.qty_per_batch * (1 + l.scrap_allowance_pct / 100) * Number(l.mpn_price), 0);
     expect(c.material_cost).toBeCloseTo(expectedMaterial, 1);
     expect(c.total_batch_cost).toBeCloseTo(expectedMaterial + 200, 1);
     expect(c.cost_per_output_unit).toBeCloseTo((expectedMaterial + 200) / active.expected_output_qty, 3);

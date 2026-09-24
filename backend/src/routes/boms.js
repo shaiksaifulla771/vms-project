@@ -5,7 +5,7 @@ const { notFound, badRequest, conflict } = require('../utils/errors');
 const v = require('../utils/validate');
 const { loadUoms, matchUom } = require('../services/options');
 
-const { BOM_SELECT, loadBom, r2, r4 } = require('../services/boms');
+const { BOM_SELECT, loadBom, lineSource, r2, r4 } = require('../services/boms');
 
 router.get('/', h(async (req, res) => {
   const { clause, params } = where([
@@ -27,6 +27,17 @@ router.get('/active', h(async (req, res) => {
     [productId, locationId]);
   if (!r.rows[0]) throw notFound('No active BOM for this product at this location');
   res.json(await loadBom({ query }, r.rows[0].id));
+}));
+
+/**
+ * Vendor, UOM and price for one ingredient, straight from the MPN - what the BOM screen shows
+ * when a material is picked. The BOM never stores a price of its own, so this is the only answer.
+ */
+router.get('/line-source', h(async (req, res) => {
+  const materialId = v.uuid(req.query.material_id, 'Material', { required: true });
+  const src = await lineSource({ query }, materialId, v.uuid(req.query.mpn_id, 'MPN'));
+  if (!src) throw notFound('Material not found');
+  res.json(src);
 }));
 
 router.get('/:id', h(async (req, res) => {
@@ -62,6 +73,10 @@ async function parseLines(c, productId, lines) {
   for (let i = 0; i < lines.length; i += 1) {
     const l = lines[i] || {};
     const materialId = v.uuid(l.material_id, `Line ${i + 1} material`, { required: true });
+    // The price lives on the MPN; a BOM can never carry its own.
+    if (l.unit_price !== undefined && l.unit_price !== null && String(l.unit_price).trim() !== '') {
+      throw badRequest(`Line ${i + 1}: a price cannot be set on a BOM. Change it on the MPN of this material.`);
+    }
     if (materialId === productId) throw badRequest('A product cannot be an ingredient of itself');
     if (seen.has(materialId)) throw badRequest(`Line ${i + 1}: material is listed twice`);
     seen.add(materialId);
@@ -78,7 +93,6 @@ async function parseLines(c, productId, lines) {
       qty: v.num(l.qty_per_batch, `Line ${i + 1} qty per batch`, { required: true, gt: 0 }),
       uom: matchUom(uoms, v.str(l.uom, `Line ${i + 1} UOM`, { max: 20 }) || mat.uom, `Line ${i + 1} UOM`, { current: mat.uom }),
       scrap: v.num(l.scrap_allowance_pct, `Line ${i + 1} loss %`, { min: 0, max: 99.999 }) || 0,
-      price: v.num(l.unit_price, `Line ${i + 1} price`, { min: 0 }),
       notes: v.str(l.notes, `Line ${i + 1} notes`, { max: 500 }),
     });
   }
@@ -88,9 +102,8 @@ async function parseLines(c, productId, lines) {
 async function insertLines(c, bomId, lines) {
   let n = 1;
   for (const l of lines) {
-    await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct,
-                     unit_price, notes)
-                   values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [bomId, n, l.materialId, l.mpnId, l.qty, l.uom, l.scrap, l.price, l.notes]);
+    await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes)
+                   values ($1,$2,$3,$4,$5,$6,$7,$8)`, [bomId, n, l.materialId, l.mpnId, l.qty, l.uom, l.scrap, l.notes]);
     n += 1;
   }
 }
@@ -191,9 +204,8 @@ router.post('/:id/revise', h(async (req, res) => {
                                       packing_cost, processing_cost, overhead_cost, freight_cost
                                  from public.boms where id = $1 returning id`,
       [id, ver, req.user.id])).rows[0];
-    await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct,
-                     unit_price, notes)
-                   select $2, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, unit_price, notes
+    await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes)
+                   select $2, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes
                      from public.bom_lines where bom_id = $1`, [id, nb.id]);
     return nb.id;
   });
@@ -240,10 +252,9 @@ router.post('/:id/scale', h(async (req, res) => {
       req.user.id, scaled.costs.packing_cost.to, scaled.costs.processing_cost.to, scaled.costs.overhead_cost.to,
       scaled.costs.freight_cost.to, src.id])).rows[0];
     for (const l of src.lines) {
-      await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct,
-                       unit_price, notes) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [nb.id, l.line_no, l.material_id, l.mpn_id, r4(Number(l.qty_per_batch) * factor), l.uom, l.scrap_allowance_pct,
-        l.unit_price, l.notes]);
+      await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes)
+                     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [nb.id, l.line_no, l.material_id, l.mpn_id, r4(Number(l.qty_per_batch) * factor), l.uom, l.scrap_allowance_pct, l.notes]);
     }
     return nb.id;
   });

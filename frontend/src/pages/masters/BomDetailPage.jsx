@@ -131,7 +131,7 @@ export default function BomDetailPage() {
                   <td className="td num">{fmtQty(l.qty_per_batch, 4)}</td>
                   <td className="td">{l.uom}</td>
                   <td className="td num">{fmtQty(l.scrap_allowance_pct)}</td>
-                  <td className="td num">{l.effective_price == null ? '-' : money(l.effective_price)}{l.price_source === 'OVERRIDE' && <span className="text-ink-faint" title="Price overridden on this BOM"> *</span>}</td>
+                  <td className="td num" title="From the MPN">{l.effective_price == null ? <span className="text-ink-faint">No price</span> : money(l.effective_price)}</td>
                   <td className="td num">{money(l.line_cost)}</td>
                   <td className="td text-ink-soft whitespace-normal">{l.notes}</td>
                 </tr>
