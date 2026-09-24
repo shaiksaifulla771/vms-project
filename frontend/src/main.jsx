@@ -29,6 +29,7 @@ import StockCountsPage from './pages/inventory/StockCountsPage';
 import StockCountPage from './pages/inventory/StockCountPage';
 import TransactionsPage from './pages/reports/TransactionsPage';
 import TraceabilityPage from './pages/reports/TraceabilityPage';
+import ReorderPage from './pages/reports/ReorderPage';
 import SettingsPage from './pages/SettingsPage';
 
 function Gate({ children }) {
@@ -82,6 +83,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="reports/physical-sheet" element={<Navigate to="/inventory/stock-counts" replace />} />
               <Route path="reports/transactions" element={<TransactionsPage />} />
               <Route path="reports/traceability" element={<TraceabilityPage />} />
+              <Route path="reports/reorder" element={<ReorderPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="settings/categories" element={<CategoriesPage />} />
               <Route path="*" element={<div className="p-6 text-ink-muted">Page not found</div>} />

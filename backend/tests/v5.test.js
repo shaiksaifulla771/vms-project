@@ -227,7 +227,7 @@ describe('v6: MPN is the vendor-material link; smart Inward / Outward', () => {
     expect(d.last_warehouse_id).toBe(C.wh1.id);
     expect(d.suggested_lot_no).toMatch(/^RM-RICE-\d{6}-1$/);
     const r = await admin.post('/inventory/inward', { mpn_id: C.riceMpn.id, location_id: C.pun.id, warehouse_id: C.punWh.id,
-      lot_no: d.suggested_lot_no, qty: 10, reason: 'Goods receipt' });
+      lot_no: d.suggested_lot_no, qty: 10, reason: 'Goods receipt', reference: 'GRN-001' });
     expect(r.status).toBe(201);
     const d2 = (await admin.get(`/inventory/inward-defaults?material_id=${C.rice.id}`)).body;
     expect(d2.last_location_id).toBe(C.pun.id); // most recent receipt

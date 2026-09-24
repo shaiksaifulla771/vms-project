@@ -50,6 +50,7 @@ function parseMaterial(b, { partial = false } = {}) {
   put('classification', v.oneOf(b.classification, 'Classification', CLASSES, { required: req }));
   put('uom', v.str(b.uom, 'UOM', { required: req, max: 20 }));
   put('shelf_life_days', v.num(b.shelf_life_days, 'Shelf life (days)', { min: 1 }));
+  put('reorder_level', v.num(b.reorder_level, 'Reorder level', { min: 0 }));
   put('status', v.oneOf(b.status, 'Status', STATUSES, { def: partial ? undefined : 'ACTIVE' }));
   put('category_id', v.uuid(b.category_id, 'Category'));
   put('sub_category_id', v.uuid(b.sub_category_id, 'Sub-category'));
@@ -65,10 +66,10 @@ async function createMaterial(c, d, userId, { legacyCode, mpnCode, vendorId } = 
   d = { ...d, uom: await canonUom(c, d.uom, 'UOM', { required: true }) };
   const mat = (await c.query(`
     insert into public.materials(code, name, classification, uom, shelf_life_days, status, category_id, sub_category_id,
-                                 description, created_by)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+                                 description, created_by, reorder_level)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
   [legacyCode || null, d.name, d.classification, d.uom, d.shelf_life_days, d.status || 'ACTIVE', d.category_id,
-    d.sub_category_id, d.description, userId])).rows[0];
+    d.sub_category_id, d.description, userId, d.reorder_level ?? null])).rows[0];
   // Finished / semi-finished goods get an MPN automatically so they can hold stock.
   if (mpnCode || vendorId || ['FINISHED_GOOD', 'SEMI_FINISHED'].includes(mat.classification)) {
     const mpn = (await c.query(`insert into public.mpns(mpn_code, material_id, created_by) values ($1,$2,$3) returning id`,

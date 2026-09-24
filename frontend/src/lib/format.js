@@ -25,6 +25,12 @@ export function fmtDateTime(v) {
   return d.toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Count differences per unit: [{uom, plus, minus}] -> "+5 kg / -2 kg · +20 pcs" (kg and pcs are never added together). */
+export function fmtByUom(list) {
+  if (!list || !list.length) return '0';
+  return list.map((u) => [u.plus ? `+${fmtQty(u.plus)}` : null, u.minus ? fmtQty(u.minus) : null].filter(Boolean).join(' / ') + ` ${u.uom}`).join(' · ');
+}
+
 export const today = () => new Date().toISOString().slice(0, 10);
 
 export const CLASS_LABEL = {

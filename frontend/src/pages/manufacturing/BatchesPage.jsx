@@ -21,6 +21,7 @@ export default function BatchesPage() {
     { key: 'output_uom', label: 'UOM' },
     { key: 'variance_pct', label: 'Variance %', align: 'right', render: (r) => fmtPct(r.variance_pct), value: (r) => Number(r.variance_pct) },
     { key: 'executed_by', label: 'Executed By' },
+    { key: 'status', label: 'Status', value: (r) => (r.status === 'REVERSED' ? 'Reversed' : 'Completed') },
   ];
   return (
     <div>
