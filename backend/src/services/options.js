@@ -36,7 +36,7 @@ function matchUom(uoms, value, label, { required = false, current = null, errors
   }
   const u = uoms.byLower.get(lc(value));
   const active = uoms.list.filter((x) => x.status === 'ACTIVE').map((x) => x.code);
-  if (!u) return fail(`${label} "${String(value).trim()}" is not in the UOM list. Use one of: ${active.join(', ')} (or add it under Settings > UOMs)`);
+  if (!u) return fail(`${label} "${String(value).trim()}" is not in the UOM list. Use one of: ${active.join(', ')}`);
   if (u.status !== 'ACTIVE' && lc(current) !== lc(u.code)) return fail(`UOM "${u.code}" is inactive`);
   return u.code;
 }

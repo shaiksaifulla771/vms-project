@@ -35,7 +35,6 @@ const NAV = [
     { to: '/settings', label: 'General', end: true },
     { to: '/settings/locations', label: 'Locations & WH' },
     { to: '/settings/categories', label: 'Categories' },
-    { to: '/settings/uoms', label: 'UOMs' },
   ] },
 ];
 

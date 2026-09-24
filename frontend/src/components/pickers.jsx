@@ -127,7 +127,7 @@ export const vendorOptions = (rows) => rows.filter((v) => v.status === 'ACTIVE')
 export const categoriesFor = (cats, cls, keepId) => cats.filter((c) => c.id === keepId
   || (c.status === 'ACTIVE' && (!cls || !c.classification || c.classification === cls)));
 
-/** UOM list from Settings > UOMs */
+/** Fixed UOM list (kg, g, ltr, pcs, packet, box, ...) shown as a dropdown */
 export function useUoms(reloadKey = 0) {
   const [rows, setRows] = useState([]);
   useEffect(() => { api.get('/uoms', { scoped: false }).then(setRows).catch(() => setRows([])); }, [reloadKey]);

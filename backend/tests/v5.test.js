@@ -75,23 +75,26 @@ describe('UOM list', () => {
     const bad = await admin.post('/materials', { name: 'Odd Unit', classification: 'RAW_MATERIAL', uom: 'bucket' });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/not in the UOM list.*kg/);
+    expect(bad.body.error).not.toMatch(/Settings/);
   });
 
-  test('add, use, deactivate: inactive UOMs stay on old records but cannot be picked for new ones', async () => {
-    expect((await viewer.post('/uoms', { code: 'tin', name: 'Tin' })).status).toBe(403);
-    const add = await admin.post('/uoms', { code: 'tin', name: 'Tin', uom_type: 'COUNT' });
-    expect(add.status).toBe(201);
-    const m = await admin.post('/materials', { name: 'Oil Tin', classification: 'PACKAGING', uom: 'tin' });
+  test('the dropdown list includes packets, boxes and the other units; it is read-only', async () => {
+    const codes = (await admin.get('/uoms')).body.map((u) => u.code);
+    expect(codes).toEqual(expect.arrayContaining(['kg', 'g', 'ltr', 'ml', 'pcs', 'nos', 'packet', 'box', 'carton', 'pouch',
+      'sachet', 'bottle', 'jar', 'bag', 'roll', 'dozen', 'quintal', 'm']));
+    expect((await admin.post('/uoms', { code: 'tin2', name: 'x' })).status).toBe(404);
+    const m = await admin.post('/materials', { name: 'Chips Packet', classification: 'PACKAGING', uom: 'Packet' });
     expect(m.status).toBe(201);
-    const list = (await admin.get('/uoms')).body;
-    expect(list.find((u) => u.code === 'tin').use_count).toBe(1);
-    const del = await admin.del('/uoms/tin');
-    expect(del.body.action).toBe('deactivated');
-    expect((await admin.post('/materials', { name: 'Tin Two', classification: 'PACKAGING', uom: 'tin' })).status).toBe(400);
-    expect((await admin.put(`/materials/${m.body.id}`, { name: 'Oil Tin 15L', uom: 'tin' })).status).toBe(200);
-    const unused = await admin.post('/uoms', { code: 'sack', name: 'Sack' });
-    expect(unused.status).toBe(201);
-    expect((await admin.del('/uoms/sack')).body.action).toBe('deleted');
+    expect(m.body.uom).toBe('packet');
+  });
+
+  test('an inactive UOM stays on old records but cannot be picked for new ones', async () => {
+    await q(`update public.uoms set status = 'INACTIVE' where code = 'tin'`);
+    expect((await admin.get('/uoms?status=ACTIVE')).body.map((u) => u.code)).not.toContain('tin');
+    const old = await q(`insert into public.materials(code, name, classification, uom) values ('OLD-TIN', 'Old Tin', 'PACKAGING', 'tin') returning id`);
+    expect((await admin.post('/materials', { name: 'New Tin', classification: 'PACKAGING', uom: 'tin' })).status).toBe(400);
+    expect((await admin.put(`/materials/${old[0].id}`, { name: 'Old Tin 15L', uom: 'tin' })).status).toBe(200);
+    await q(`update public.uoms set status = 'ACTIVE' where code = 'tin'`);
   });
 
   test('BOM and MPN vendor UOMs must come from the list', async () => {

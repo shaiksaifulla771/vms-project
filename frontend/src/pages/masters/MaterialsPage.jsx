@@ -75,7 +75,7 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
             {subs.filter((s) => s.status === 'ACTIVE' || s.id === f.sub_category_id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
-        <Field label="Base UOM" required hint={<>Inventory is kept in this unit{canWrite && <> · <Link className="text-accent" to="/settings/uoms">UOM list</Link></>}</>}>
+        <Field label="Base UOM" required hint="Inventory is kept in this unit">
           <UomSelect value={f.uom} uoms={uoms} onChange={(u) => setF({ ...f, uom: u })} placeholder="Select UOM" />
         </Field>
         <Field label="Shelf Life (days)" hint="Suggests expiry dates"><input className="input num" type="number" min="1" value={f.shelf_life_days} onChange={set('shelf_life_days')} /></Field>

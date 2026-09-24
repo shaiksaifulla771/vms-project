@@ -19,7 +19,6 @@ import VendorFormPage from './pages/masters/VendorFormPage';
 import VendorViewPage from './pages/masters/VendorViewPage';
 import MpnBulkCreatePage from './pages/masters/MpnBulkCreatePage';
 import CategoriesPage from './pages/CategoriesPage';
-import UomsPage from './pages/UomsPage';
 import ProductsPage from './pages/masters/ProductsPage';
 import BomsPage from './pages/masters/BomsPage';
 import BomEditPage from './pages/masters/BomEditPage';
@@ -85,7 +84,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="reports/traceability" element={<TraceabilityPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="settings/categories" element={<CategoriesPage />} />
-              <Route path="settings/uoms" element={<UomsPage />} />
               <Route path="*" element={<div className="p-6 text-ink-muted">Page not found</div>} />
             </Route>
           </Routes>

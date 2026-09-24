@@ -7,7 +7,7 @@ Owner: Shaik Saifulla · Written: 2026-09-24 · Base: v4 (`feat/v4-count-plans`)
 | Phase | Scope | Status |
 |---|---|---|
 | A | Categories belong to a classification; starter category list | Done |
-| B | UOM master list (Settings → UOMs); UOM dropdowns everywhere | Done |
+| B | UOM is a dropdown list everywhere (no separate UOM screen) | Done |
 | C | Material form + list: dependent dropdowns | Done |
 | D | Bulk entry / update: dropdowns inside the Excel template, clearer errors | Done |
 | E | MPN, BOM and Vendor forms use the same option lists | Done |
@@ -25,7 +25,7 @@ Rule for every phase: **nothing existing is removed or broken.** Database change
 |---|---|---|
 | 1 | Bulk entry failed: "Category 'Grains' does not exist" on every row | Categories were free text that had to match Settings → Categories exactly, and the template gave no list to pick from. |
 | 2 | "Category and sub-category have to be list options depending on the classification selected" | Each category belongs to one classification. Choosing *Raw Material* shows only raw-material categories; choosing a category shows only its sub-categories. |
-| 3 | "UOM too has to be a list of options" | A managed UOM list (kg, g, ltr, ml, pcs, box, carton, roll ...). Every UOM field becomes a dropdown. |
+| 3 | "UOM too has to be a list of options" · later: "don't add a separate section for UOM, just the list, with packets, boxes and the others" | A fixed UOM list (kg, g, ltr, ml, pcs, packet, box, carton, pouch, sachet, bottle ...). Every UOM field is a dropdown. **No Settings → UOMs screen.** |
 | 4 | "Check material, vendor, MPN and BOM, because different sub-modules have different options and functions" | Review each form and replace free-text fields that should be choices (§5). |
 | 5 | "I can't see clearly the sub-module of Product" | Today products are hidden inside Material Master as *Finished Good* rows. Add **Master Data → Products** (§6). |
 | 6 | "The Location and Warehouse should be in Settings" (added 2026-09-24) | Locations & WH is company set-up, not day-to-day master data. Move it to **Settings → Locations & WH** (§6a). |
@@ -50,13 +50,21 @@ Rule for every phase: **nothing existing is removed or broken.** Database change
 
 - Settings → Categories: grouped by classification, classification chosen when creating a category, filter by classification.
 
-## 3. Phase B: UOM master
+## 3. Phase B: UOM dropdown list
 
-- New table `uoms` (code, name, type: Weight / Volume / Count / Length / Other, decimals allowed yes/no, status).
-- Starter list: kg, g, mg, ton, ltr, ml, pcs, nos, box, carton, pack, bag, roll, dozen, m, cm.
+- Every UOM field (Material, MPN vendor, Bulk MPN Create, BOM batch / output, bulk templates) is a **dropdown**, grouped by type. No typing, and **no separate UOM screen** (changed on your request).
+- The list:
+
+| Type | Units |
+|---|---|
+| Weight | kg, g, mg, ton, quintal |
+| Volume | ltr, ml |
+| Count | pcs, packet, pouch, sachet, nos, box, carton, pack, bag, bottle, jar, can, tin, roll, tray, case, bundle, dozen, set, pair, sheet |
+| Length | m, cm, mm |
+
 - **Existing values are kept**: every UOM already used in materials, MPNs or BOMs is added to the list as-is, so no old record breaks.
-- Typing "KG" or "Kg" is matched to "kg" (case-insensitive). Unknown UOMs are rejected with the list of valid ones.
-- Settings → UOMs: add, edit, deactivate (inactive = not offered for new records, old records keep it).
+- "KG" or "Kg" is matched to "kg". A unit that is not in the list is rejected (the database checks it too).
+- Need a new unit later? Tell me and it is added to the list in the next update.
 
 ## 4. Phase C/D: Material form and bulk upload
 
@@ -101,7 +109,7 @@ Actions: **New Product** (material form preset to Finished Good), **View** (deta
 
 1. A category belongs to **one** classification; sub-categories follow their parent.
 2. Old categories without a classification stay usable by all classifications until assigned.
-3. The starter category and UOM lists are added automatically; nothing existing is renamed.
+3. The starter category list and the UOM list are added automatically; nothing existing is renamed. UOMs have no settings screen.
 4. UOM values in old records are never rewritten.
 5. Products is a view over Material Master, not a separate table, so a product can never go out of sync.
 
@@ -115,7 +123,9 @@ Actions: **New Product** (material form preset to Finished Good), **View** (deta
     existing categories auto-assigned where all their materials agree; routes `/api/uoms`, `/api/products`, categories `?classification=`.
   - Bulk: errors name the valid choices; the Excel template has dropdowns (Classification, dependent Category / Sub-category, UOM,
     vendor State) fed from a hidden Lists sheet, plus a Categories reference sheet. Formulas checked in LibreOffice.
-  - Frontend: Material form/list dependent dropdowns; Settings → Categories grouped by classification; Settings → UOMs;
-    UOM dropdowns on MPN, Bulk MPN Create and BOM; vendor State / Country dropdowns; Master Data → Products (view, Create BOM);
+  - Frontend: Material form/list dependent dropdowns; Settings → Categories grouped by classification; UOM dropdowns on MPN, Bulk MPN Create and BOM; vendor State / Country dropdowns; Master Data → Products (view, Create BOM);
     Locations & WH under Settings (old link redirects).
   - Tests: 43 earlier + 12 new = 55 passing.
+- 2026-09-24: Change requested: no separate UOM section, only the dropdown list with packets, boxes etc. Settings → UOMs page removed;
+  UOM API is read-only; migration `009_uom_options.sql` adds packet, pouch, sachet, bottle, jar, can, tin, tray, case, bundle, set, pair,
+  sheet, quintal, mm. Tests: 56 passing.
