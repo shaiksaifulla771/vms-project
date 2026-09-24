@@ -175,7 +175,11 @@ function categoriesFor(lk, cls) {
 }
 const listOf = (names) => (names.length ? names.join(', ') : 'none yet - add them under Settings > Categories');
 
-function resolveCategory(lk, r, errors, cls) {
+/**
+ * Resolve Category / Sub-category names. Names that do not exist yet are errors, and are also collected in
+ * `needs` so the user can create them with one click (Create missing categories) and check again.
+ */
+function resolveCategory(lk, r, errors, cls, needs = []) {
   let categoryId = null;
   let subId = null;
   const clsLabel = cls ? CLASS_LABEL[cls] : null;
@@ -184,6 +188,7 @@ function resolveCategory(lk, r, errors, cls) {
     const choices = listOf(categoriesFor(lk, cls).map((c) => c.name));
     if (!cat) {
       errors.push(`Category "${r.category}" does not exist${clsLabel ? ` for ${clsLabel}` : ''}. Choose one of: ${choices}`);
+      if (cls) needs.push({ classification: cls, category: text(r.category), sub_category: text(r.sub_category) });
     } else if (cls && cat.classification && cat.classification !== cls) {
       errors.push(`Category "${cat.name}" is a ${CLASS_LABEL[cat.classification]} category, not ${clsLabel}. Choose one of: ${choices}`);
     } else categoryId = cat.id;
@@ -194,8 +199,11 @@ function resolveCategory(lk, r, errors, cls) {
     } else {
       const sub = lk.catSub.get(`${categoryId}|${norm(r.sub_category)}`);
       const subs = lk.cats.filter((c) => c.parent_id === categoryId && c.status === 'ACTIVE').map((c) => c.name);
-      if (!sub) errors.push(`Sub-category "${r.sub_category}" is not under "${lk.catById.get(categoryId).name}". Choose one of: ${listOf(subs)}`);
-      else subId = sub.id;
+      const top = lk.catById.get(categoryId);
+      if (!sub) {
+        errors.push(`Sub-category "${r.sub_category}" is not under "${top.name}". Choose one of: ${listOf(subs)}`);
+        needs.push({ classification: top.classification || cls, category: top.name, sub_category: text(r.sub_category), category_exists: true });
+      } else subId = sub.id;
     }
   }
   return { categoryId, subId };
@@ -211,7 +219,9 @@ function validateMaterialCreate(rows, lk) {
     if (status === undefined) errors.push('Status must be Active or Inactive');
     const shelf = toNum(r.shelf_life_days);
     if (shelf === undefined) errors.push('Shelf life must be a number');
-    const { categoryId, subId } = resolveCategory(lk, r, errors, cls || null);
+    const needs = [];
+    const before = errors.length;
+    const { categoryId, subId } = resolveCategory(lk, r, errors, cls || null, needs);
     const uom = blank(r.uom) ? null : matchUom(lk.uoms, r.uom, 'UOM', { errors });
     const data = capture(errors, () => md.parseMaterial({
       // an invalid classification / UOM is already reported above; don't report it twice
@@ -225,7 +235,8 @@ function validateMaterialCreate(rows, lk) {
       const ex = lk.matNames.get(key);
       if (ex) errors.push(`A material named "${ex.name}" already exists (${ex.code})`);
     }
-    return { row_no: r.row_no, values: r, data, errors, action: 'create' };
+    return { row_no: r.row_no, values: r, data, errors, action: 'create',
+      ...(needs.length ? { needs, needs_only: before === 0 && errors.length === needs.length } : {}) };
   });
 }
 
@@ -271,8 +282,10 @@ function validateMaterialUpdate(rows, lk) {
       // Old category belongs to the old classification: it is cleared (same as the form does).
       add('category_id', 'Category', exCat.name, null, null);
     }
+    const needs = [];
+    const before = errors.length;
     if (!blank(r.category) || !blank(r.sub_category)) {
-      const { categoryId, subId } = resolveCategory(lk, { category: r.category || exCat?.name, sub_category: r.sub_category }, errors, newCls);
+      const { categoryId, subId } = resolveCategory(lk, { category: r.category || exCat?.name, sub_category: r.sub_category }, errors, newCls, needs);
       if (categoryId && categoryId !== ex.category_id) {
         add('category_id', 'Category', lk.catById.get(ex.category_id)?.name || null, lk.catById.get(categoryId).name, categoryId);
         patch.sub_category_id = subId;
@@ -282,7 +295,9 @@ function validateMaterialUpdate(rows, lk) {
       }
     }
     capture(errors, () => md.parseMaterial(patch, { partial: true }));
-    return { row_no: r.row_no, values: r, id: ex.id, code: ex.code, patch, changes, errors, action: changes.length ? 'update' : 'unchanged' };
+    const onlyNeeds = needs.length > 0 && before === 0 && errors.length === needs.length;
+    return { row_no: r.row_no, values: r, id: ex.id, code: ex.code, patch, changes, errors, action: changes.length || needs.length ? 'update' : 'unchanged',
+      ...(needs.length ? { needs, needs_only: onlyNeeds } : {}) };
   });
 }
 
@@ -466,14 +481,67 @@ async function validate(entity, mode, rows, db = { query }) {
   if (!fn) throw badRequest('Unknown bulk operation');
   const lk = await loadLookups(db);
   const checked = fn(prepRows(rows), lk);
+  flagCategoryClashes(checked);
+  checked.missingCategories = missingCategories(checked, lk);
   // Mark in-file conflicts on preferred vendor for MPN updates is handled by the DB (one preferred per MPN).
   return checked;
+}
+
+/**
+ * One category belongs to one classification. If the file asks for the same NEW category name under two
+ * classifications, the first row's classification wins; the other rows get an error instead of a "create" offer.
+ */
+function flagCategoryClashes(checked) {
+  const owner = new Map(); // normalized category -> { classification, row_no }
+  for (const r of checked) {
+    for (const n of r.needs || []) {
+      if (n.category_exists) continue;
+      const k = norm(n.category);
+      if (!owner.has(k)) owner.set(k, { classification: n.classification, row_no: r.row_no });
+    }
+  }
+  for (const r of checked) {
+    if (!r.needs) continue;
+    const keep = [];
+    for (const n of r.needs) {
+      const o = n.category_exists ? null : owner.get(norm(n.category));
+      if (o && o.classification !== n.classification) {
+        r.errors.push(`New category "${n.category}" is already being created for ${CLASS_LABEL[o.classification]} (row ${o.row_no}). `
+          + `A category belongs to one classification: use a different name for ${CLASS_LABEL[n.classification]}`);
+        r.needs_only = false;
+      } else keep.push(n);
+    }
+    r.needs = keep;
+  }
+}
+
+/**
+ * Categories / sub-categories the file uses that do not exist yet, grouped for the "Create missing categories" button.
+ * [{ classification, category, category_exists, sub_categories: [...], similar: [...] }]
+ */
+function missingCategories(checked, lk) {
+  const groups = new Map();
+  for (const r of checked) {
+    for (const n of r.needs || []) {
+      const key = `${n.classification}|${norm(n.category)}`;
+      if (!groups.has(key)) {
+        const similar = n.category_exists ? [] : categoriesFor(lk, n.classification)
+          .filter((c) => { const a = norm(c.name); const b = norm(n.category); return a.includes(b) || b.includes(a) || a.split(' ')[0] === b.split(' ')[0]; })
+          .map((c) => c.name);
+        groups.set(key, { classification: n.classification, category: n.category, category_exists: Boolean(n.category_exists), sub_categories: [], similar });
+      }
+      const g = groups.get(key);
+      if (n.sub_category && !g.sub_categories.some((x) => norm(x) === norm(n.sub_category))) g.sub_categories.push(n.sub_category);
+    }
+  }
+  return [...groups.values()];
 }
 
 function summary(checked) {
   return {
     total: checked.length,
     errors: checked.filter((r) => r.errors.length).length,
+    needs_category: checked.filter((r) => r.needs_only).length,
     create: checked.filter((r) => !r.errors.length && r.action === 'create').length,
     update: checked.filter((r) => !r.errors.length && r.action === 'update').length,
     unchanged: checked.filter((r) => !r.errors.length && r.action === 'unchanged').length,

@@ -30,6 +30,50 @@ router.post('/', h(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+/**
+ * Create several categories / sub-categories at once (the "Create missing categories" button in Bulk Entry,
+ * and "+ Add new" in the Material form). Existing names are reused (case-insensitive); all or nothing.
+ * body: { items: [{ classification, category, sub_categories: [..] }] }
+ */
+router.post('/bulk-create', h(async (req, res) => {
+  const items = req.body?.items;
+  if (!Array.isArray(items) || !items.length) throw badRequest('Nothing to create');
+  if (items.length > 200) throw badRequest('At most 200 categories at a time');
+  const out = await withTransaction(async (c) => {
+    const created = { categories: [], sub_categories: [] };
+    for (const [i, it] of items.entries()) {
+      const cls = v.oneOf(it.classification, `Item ${i + 1} classification`, md.CLASSES, { required: true });
+      const name = v.str(it.category, `Item ${i + 1} category`, { required: true, max: 100 });
+      let top = (await c.query(`select * from public.material_categories where parent_id is null and lower(trim(name)) = lower(trim($1))`, [name])).rows[0];
+      if (top && top.classification && top.classification !== cls) {
+        throw badRequest(`Category "${top.name}" already belongs to another classification`);
+      }
+      if (!top) {
+        top = (await c.query(`insert into public.material_categories(name, classification, created_by) values ($1,$2,$3) returning *`,
+          [name, cls, req.user.id])).rows[0];
+        created.categories.push({ id: top.id, name: top.name, classification: cls });
+      } else if (top.status !== 'ACTIVE') {
+        await c.query(`update public.material_categories set status = 'ACTIVE', updated_by = $2 where id = $1`, [top.id, req.user.id]);
+      }
+      for (const raw of it.sub_categories || []) {
+        const sub = v.str(raw, `Sub-category of ${name}`, { max: 100 });
+        if (!sub) continue;
+        const ex = (await c.query(`select id, status from public.material_categories where parent_id = $1 and lower(trim(name)) = lower(trim($2))`,
+          [top.id, sub])).rows[0];
+        if (ex) {
+          if (ex.status !== 'ACTIVE') await c.query(`update public.material_categories set status = 'ACTIVE', updated_by = $2 where id = $1`, [ex.id, req.user.id]);
+          continue;
+        }
+        const row = (await c.query(`insert into public.material_categories(name, parent_id, created_by) values ($1,$2,$3) returning *`,
+          [sub, top.id, req.user.id])).rows[0];
+        created.sub_categories.push({ id: row.id, name: row.name, parent_id: top.id, category: top.name });
+      }
+    }
+    return created;
+  });
+  res.status(201).json(out);
+}));
+
 router.put('/:id', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
   const b = req.body || {};

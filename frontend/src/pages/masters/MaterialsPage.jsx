@@ -10,8 +10,27 @@ import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } fr
 
 const CLASSES = Object.entries(CLASS_LABEL);
 
+const NEW = '__new__';
+
+/** "+ Add new" box under a Category / Sub-category dropdown. */
+function QuickAdd({ label, onAdd, onCancel }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const add = async () => { if (!name.trim()) return; setBusy(true); await onAdd(name.trim()); setBusy(false); };
+  return (
+    <span className="mt-1 flex gap-1">
+      <input className="input" autoFocus placeholder={label} value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } if (e.key === 'Escape') onCancel(); }} />
+      <button type="button" className="btn-primary px-2" disabled={busy || !name.trim()} onClick={add}>Add</button>
+      <button type="button" className="btn-secondary px-2" onClick={onCancel}>Cancel</button>
+    </span>
+  );
+}
+
 export function MaterialForm({ material, onClose, onDone, preset }) {
-  const cats = useCategories();
+  const [catKey, setCatKey] = useState(0);
+  const cats = useCategories(catKey);
+  const [adding, setAdding] = useState(null); // 'cat' | 'sub' | null
   const uoms = useUoms();
   const { canWrite } = useApp();
   const isNew = !material;
@@ -30,6 +49,29 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
     const cat = cats.find((c) => c.id === f.category_id);
     const keep = cat && (!cat.classification || cat.classification === cls);
     setF({ ...f, classification: cls, category_id: keep ? f.category_id : '', sub_category_id: keep ? f.sub_category_id : '' });
+  };
+
+  // Create a category (under the chosen classification) or a sub-category (under the chosen category) and select it.
+  const quickAdd = async (name) => {
+    setErr(null);
+    try {
+      const cat = cats.find((c) => c.id === f.category_id);
+      const item = adding === 'cat'
+        ? { classification: f.classification, category: name }
+        : { classification: cat?.classification || f.classification, category: cat?.name, sub_categories: [name] };
+      await api.post('/categories/bulk-create', { items: [item] }, { scoped: false });
+      const tree = await api.get('/categories', { scoped: false });
+      const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+      if (adding === 'cat') {
+        const c = tree.find((x) => same(x.name, name));
+        setF((x) => ({ ...x, category_id: c?.id || '', sub_category_id: '' }));
+      } else {
+        const sc = tree.find((x) => x.id === f.category_id)?.children.find((x) => same(x.name, name));
+        setF((x) => ({ ...x, sub_category_id: sc?.id || '' }));
+      }
+      setAdding(null);
+      setCatKey((k) => k + 1);
+    } catch (e) { setErr(e.message); }
   };
 
   const save = async () => {
@@ -63,16 +105,22 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
           </select>
         </Field>
         <Field label="Category" hint={catChoices.length ? `${CLASS_LABEL[f.classification]} categories` : <>No {CLASS_LABEL[f.classification]} categories yet{canWrite && <> · <Link className="text-accent" to="/settings/categories">add one</Link></>}</>}>
-          <select className="input" value={f.category_id} onChange={(e) => setF({ ...f, category_id: e.target.value, sub_category_id: '' })}>
+          <select className="input" value={f.category_id}
+            onChange={(e) => (e.target.value === NEW ? setAdding('cat') : setF({ ...f, category_id: e.target.value, sub_category_id: '' }))}>
             <option value="">-</option>
             {catChoices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.status !== 'ACTIVE' ? ' (inactive)' : ''}</option>)}
+            {canWrite && <option value={NEW}>+ Add new category…</option>}
           </select>
+          {adding === 'cat' && <QuickAdd label={`New ${CLASS_LABEL[f.classification]} category`} onAdd={quickAdd} onCancel={() => setAdding(null)} />}
         </Field>
-        <Field label="Sub-category" hint={f.category_id && !subs.length ? 'No sub-categories under this category' : ''}>
-          <select className="input" value={f.sub_category_id} onChange={set('sub_category_id')} disabled={!f.category_id || !subs.length}>
+        <Field label="Sub-category" hint={f.category_id && !subs.length && adding !== 'sub' ? 'No sub-categories under this category yet' : ''}>
+          <select className="input" value={f.sub_category_id} disabled={!f.category_id}
+            onChange={(e) => (e.target.value === NEW ? setAdding('sub') : setF({ ...f, sub_category_id: e.target.value }))}>
             <option value="">-</option>
             {subs.filter((s) => s.status === 'ACTIVE' || s.id === f.sub_category_id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {canWrite && f.category_id && <option value={NEW}>+ Add new sub-category…</option>}
           </select>
+          {adding === 'sub' && <QuickAdd label="New sub-category" onAdd={quickAdd} onCancel={() => setAdding(null)} />}
         </Field>
         <Field label="Base UOM" required hint="Inventory is kept in this unit">
           <UomSelect value={f.uom} uoms={uoms} onChange={(u) => setF({ ...f, uom: u })} placeholder="Select UOM" />

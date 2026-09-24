@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CLASS_LABEL } from '../lib/format';
@@ -58,6 +58,9 @@ export default function CategoriesPage() {
   const cats = useCategories(k);
   const [tab, setTab] = useState('');
   const [modal, setModal] = useState(null);
+  // Categories open collapsed; click one to show its sub-categories.
+  const [openIds, setOpenIds] = useState(() => new Set());
+  const toggle = (id) => setOpenIds((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const done = (msg) => { setModal(null); if (msg) notify(msg); setK((x) => x + 1); };
 
   const count = (c) => cats.filter((x) => (c === 'NONE' ? !x.classification : x.classification === c)).length;
@@ -71,14 +74,21 @@ export default function CategoriesPage() {
   shown.sort((a, b) => (order.indexOf(a.classification) + 1 || 99) - (order.indexOf(b.classification) + 1 || 99)
     || String(b.created_at).localeCompare(String(a.created_at)) || a.name.localeCompare(b.name));
 
-  const Row = ({ c, sub }) => (
-    <tr className={`hover:bg-panel ${isNewToday(c.created_at) ? 'bg-accent-soft/40' : ''}`}>
+  const Row = ({ c, sub }) => {
+    const open = openIds.has(c.id);
+    const Arrow = open ? ChevronDown : ChevronRight;
+    return (
+    <tr className={`hover:bg-panel ${isNewToday(c.created_at) ? 'bg-accent-soft/40' : ''} ${sub ? '' : 'cursor-pointer'}`}
+      onClick={sub ? undefined : () => toggle(c.id)}>
       <td className="td text-ink-muted">{sub ? '' : (CLASS_LABEL[c.classification] || <span className="text-ink-faint">Any (not assigned)</span>)}</td>
-      <td className={`td ${sub ? 'pl-8 text-ink-soft' : 'font-medium'}`}>{sub ? '└ ' : ''}{c.name}<NewTag ts={c.created_at} /></td>
-      <td className="td text-ink-muted">{sub ? 'Sub-category' : 'Category'}</td>
+      <td className={`td ${sub ? 'pl-10 text-ink-soft' : 'font-medium'}`}>
+        {sub ? '└ ' : <Arrow size={14} className="inline -mt-0.5 mr-1 text-ink-muted" />}{c.name}<NewTag ts={c.created_at} />
+        {!sub && c.children.some((x) => isNewToday(x.created_at)) && !open && <span className="ml-2 text-xs2 text-accent">new sub-categories inside</span>}
+      </td>
+      <td className="td text-ink-muted">{sub ? 'Sub-category' : `${c.children.length} sub-categor${c.children.length === 1 ? 'y' : 'ies'}`}</td>
       <td className="td num">{c.material_count}</td>
       <td className="td"><Status value={c.status} /></td>
-      <td className="td text-right">
+      <td className="td text-right" onClick={(e) => e.stopPropagation()}>
         {canWrite && (
           <span className="inline-flex gap-1">
             {!sub && <button type="button" className="btn-link mr-2" onClick={() => setModal({ parent: c })}><Plus size={13} /> Sub-category</button>}
@@ -88,27 +98,35 @@ export default function CategoriesPage() {
         )}
       </td>
     </tr>
-  );
+    );
+  };
+  const allOpen = shown.length > 0 && shown.every((c) => openIds.has(c.id));
 
   return (
     <div>
       <PageHeader title="Material Categories" subtitle="Each category belongs to a classification; the Material form shows only the categories of the chosen classification"
-        actions={canWrite && <button type="button" className="btn-primary" onClick={() => setModal({ isNew: true })}><Plus size={14} /> New Category</button>} />
+        actions={<>
+          <button type="button" className="btn-secondary" onClick={() => setOpenIds(allOpen ? new Set() : new Set(shown.map((c) => c.id)))}>
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </button>
+          {canWrite && <button type="button" className="btn-primary" onClick={() => setModal({ isNew: true })}><Plus size={14} /> New Category</button>}
+        </>} />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div className="p-5">
         <div className="card overflow-hidden max-w-5xl">
           <table className="w-full border-collapse">
-            <thead><tr><th className="th w-44">Classification</th><th className="th">Name</th><th className="th">Level</th><th className="th text-right">Materials</th><th className="th">Status</th><th className="th" /></tr></thead>
+            <thead><tr><th className="th w-44">Classification</th><th className="th">Name</th><th className="th">Sub-categories</th><th className="th text-right">Materials</th><th className="th">Status</th><th className="th" /></tr></thead>
             <tbody>
               {shown.length === 0 && <tr><td className="td text-ink-muted" colSpan={6}>No categories here yet</td></tr>}
-              {shown.map((c) => [<Row key={c.id} c={c} />, ...c.children.map((s) => <Row key={s.id} c={s} sub />)])}
+              {shown.map((c) => [<Row key={c.id} c={c} />, ...(openIds.has(c.id) ? c.children.map((s) => <Row key={s.id} c={s} sub />) : [])])}
             </tbody>
           </table>
         </div>
       </div>
       {(modal?.isNew || modal?.cat || modal?.parent) && (
         <CategoryForm cat={modal.cat} parent={modal.parent} defaultClass={tab && tab !== 'NONE' ? tab : ''}
-          onClose={() => setModal(null)} onDone={() => done('Category saved')} />
+          onClose={() => setModal(null)}
+          onDone={() => { if (modal.parent) setOpenIds((o) => new Set(o).add(modal.parent.id)); done('Category saved'); }} />
       )}
       {modal?.del && <DeleteDialog label={modal.del.name} path={`/categories/${modal.del.id}`} onClose={() => setModal(null)} onDone={() => done()} />}
     </div>

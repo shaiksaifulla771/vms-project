@@ -48,7 +48,7 @@ router.post('/:entity/parse', h(async (req, res) => {
 router.post('/:entity/preview', h(async (req, res) => {
   const { entity, mode } = params(req);
   const rows = await bulk.validate(entity, mode, req.body?.rows);
-  res.json({ summary: bulk.summary(rows), rows: rows.map(({ data, patch, ...r }) => r) });
+  res.json({ summary: bulk.summary(rows), rows: rows.map(({ data, patch, ...r }) => r), missing_categories: rows.missingCategories });
 }));
 
 // Save every row or none
@@ -57,7 +57,7 @@ router.post('/:entity/commit', h(async (req, res) => {
   const result = await withTransaction(async (c) => {
     const rows = await bulk.validate(entity, mode, req.body?.rows, c);
     const sum = bulk.summary(rows);
-    if (sum.errors) return { failed: true, summary: sum, rows: rows.map(({ data, patch, ...r }) => r) };
+    if (sum.errors) return { failed: true, summary: sum, rows: rows.map(({ data, patch, ...r }) => r), missing_categories: rows.missingCategories };
     const saved = await bulk.commit(c, entity, mode, rows, req.user.id);
     return { summary: sum, saved };
   });
