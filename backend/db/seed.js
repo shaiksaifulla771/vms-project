@@ -32,11 +32,12 @@ async function seedDemo(c) {
   const fg = await mat('FG-RL1', 'Rice O Lentil 100g Pouch', 'FINISHED_GOOD', 'pcs', 270);
 
   // Categories (Settings > Categories)
-  const cat = async (name, parentId) => ins(`insert into public.material_categories(name, parent_id) values ($1,$2) returning id`, [name, parentId || null]);
-  const cereals = await cat('Cereals & Pulses');
+  const cat = async (name, parentId, cls) => ins(`insert into public.material_categories(name, parent_id, classification) values ($1,$2,$3) returning id`,
+    [name, parentId || null, cls || null]);
+  const cereals = await cat('Cereals & Pulses', null, 'RAW_MATERIAL');
   const flours = await cat('Flours', cereals.id);
   const pulses = await cat('Pulses', cereals.id);
-  const packing = await cat('Packing Material');
+  const packing = await cat('Packing Material', null, 'PACKAGING');
   const pouches = await cat('Pouches', packing.id);
   await cat('Cartons', packing.id);
   await c.query(`update public.materials set category_id = $2, sub_category_id = $3 where id = $1`, [rice.id, cereals.id, flours.id]);

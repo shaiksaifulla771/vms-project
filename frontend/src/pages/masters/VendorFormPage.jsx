@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Star, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
+import { COUNTRIES, STATES } from '../../lib/format';
 import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
 import { materialOptions, useMaterials } from '../../components/pickers';
 import { MultiSelect, Section } from '../../components/masterKit';
@@ -133,9 +134,23 @@ export default function VendorFormPage() {
                   <Field label="Address Line 1" className="col-span-2"><input className="input" value={a.line1} onChange={(e) => setList('addresses', i, { line1: e.target.value })} /></Field>
                   <Field label="Address Line 2" className="col-span-2"><input className="input" value={a.line2} onChange={(e) => setList('addresses', i, { line2: e.target.value })} /></Field>
                   <Field label="City"><input className="input" value={a.city} onChange={(e) => setList('addresses', i, { city: e.target.value })} /></Field>
-                  <Field label="State"><input className="input" value={a.state} onChange={(e) => setList('addresses', i, { state: e.target.value })} /></Field>
+                  <Field label="State">
+                    {(a.country || 'India') === 'India' ? (
+                      <select className="input" value={a.state || ''} onChange={(e) => setList('addresses', i, { state: e.target.value })}>
+                        <option value="">-</option>
+                        {a.state && !STATES.includes(a.state) && <option value={a.state}>{a.state}</option>}
+                        {STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    ) : <input className="input" value={a.state} onChange={(e) => setList('addresses', i, { state: e.target.value })} />}
+                  </Field>
                   <Field label="PIN Code"><input className="input" maxLength={10} value={a.pincode} onChange={(e) => setList('addresses', i, { pincode: e.target.value })} /></Field>
-                  <Field label="Country"><input className="input" value={a.country} onChange={(e) => setList('addresses', i, { country: e.target.value })} /></Field>
+                  <Field label="Country">
+                    <select className="input" value={a.country || ''} onChange={(e) => setList('addresses', i, { country: e.target.value })}>
+                      <option value="">-</option>
+                      {a.country && !COUNTRIES.includes(a.country) && <option value={a.country}>{a.country}</option>}
+                      {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </Field>
                   <Field label="GSTIN for this address" hint="If different from the vendor GSTIN"><input className="input uppercase" maxLength={15} value={a.gstin} onChange={(e) => setList('addresses', i, { gstin: e.target.value })} /></Field>
                 </div>
               </div>

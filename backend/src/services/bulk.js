@@ -9,6 +9,7 @@ const ExcelJS = require('exceljs');
 const { query } = require('../db/pool');
 const { badRequest } = require('../utils/errors');
 const md = require('./masterData');
+const { loadUoms, matchUom, STATES } = require('./options');
 
 const MAX_ROWS = 2000;
 
@@ -60,14 +61,15 @@ function capture(errors, fn) {
 
 // --- lookups ----------------------------------------------------------------
 async function loadLookups(db) {
-  const [cats, mats, vens, mpns] = await Promise.all([
-    db.query('select id, name, parent_id, status from public.material_categories'),
-    db.query('select id, code, name, status, uom, classification, category_id, sub_category_id, shelf_life_days, description from public.materials'),
-    db.query('select id, code, name, status, phone, contact_email, gstin, fssai_no, fssai_expiry from public.vendors'),
-    db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.material_id, mv.vendor_id,
+  // One after another: a pg client inside a transaction runs one query at a time.
+  const cats = await db.query('select id, name, parent_id, status, classification from public.material_categories order by lower(name)');
+  const mats = await db.query('select id, code, name, status, uom, classification, category_id, sub_category_id, shelf_life_days, description from public.materials');
+  const vens = await db.query('select id, code, name, status, phone, contact_email, gstin, fssai_no, fssai_expiry from public.vendors');
+  const mpns = await db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.material_id, mv.vendor_id,
                      mv.uom, mv.moq, mv.price, mv.lead_time_days, mv.is_preferred
-                from public.mpns p left join public.mpn_vendors mv on mv.mpn_id = p.id`),
-  ]);
+                from public.mpns p left join public.mpn_vendors mv on mv.mpn_id = p.id`);
+  const uoms = await loadUoms(db);
+
   const catTop = new Map();
   const catSub = new Map();
   const catById = new Map(cats.rows.map((c) => [c.id, c]));
@@ -77,7 +79,7 @@ async function loadLookups(db) {
   }
   const byCode = (rows) => new Map(rows.map((r) => [String(r.code).toUpperCase(), r]));
   return {
-    catTop, catSub, catById,
+    catTop, catSub, catById, cats: cats.rows, uoms,
     matByCode: byCode(mats.rows), matById: new Map(mats.rows.map((m) => [m.id, m])),
     matNames: new Map(mats.rows.map((m) => [norm(m.name), m])),
     venByCode: byCode(vens.rows), venById: new Map(vens.rows.map((x) => [x.id, x])),
@@ -92,9 +94,9 @@ async function loadLookups(db) {
 const MATERIAL_COLS = [
   { key: 'name', header: 'Material Name', required: true, width: 34 },
   { key: 'classification', header: 'Classification', required: true, width: 16, list: Object.values(CLASS_LABEL) },
-  { key: 'category', header: 'Category', width: 20 },
-  { key: 'sub_category', header: 'Sub-category', width: 20 },
-  { key: 'uom', header: 'UOM', required: true, width: 8 },
+  { key: 'category', header: 'Category', width: 24, dyn: 'category' },
+  { key: 'sub_category', header: 'Sub-category', width: 22, dyn: 'subcategory' },
+  { key: 'uom', header: 'UOM', required: true, width: 9, dyn: 'uom' },
   { key: 'shelf_life_days', header: 'Shelf Life (days)', width: 14 },
   { key: 'status', header: 'Status', width: 10, list: Object.values(STATUS_LABEL) },
   { key: 'description', header: 'Description', width: 40 },
@@ -112,7 +114,7 @@ const VENDOR_COLS = [
   { key: 'line1', header: 'Address Line 1', width: 28, createOnly: true },
   { key: 'line2', header: 'Address Line 2', width: 20, createOnly: true },
   { key: 'city', header: 'City', width: 14, createOnly: true },
-  { key: 'state', header: 'State', width: 14, createOnly: true },
+  { key: 'state', header: 'State', width: 18, createOnly: true, dyn: 'state' },
   { key: 'pincode', header: 'PIN Code', width: 10, createOnly: true },
   { key: 'contact_name', header: 'Contact Name', width: 20, createOnly: true },
   { key: 'contact_designation', header: 'Contact Designation', width: 16, createOnly: true },
@@ -129,7 +131,7 @@ const VENDOR_COLS = [
 const MPN_COLS = [
   { key: 'material_code', header: 'Material Code', required: true, width: 16 },
   { key: 'vendor_code', header: 'Vendor Code', required: true, width: 14 },
-  { key: 'uom', header: 'UOM', required: true, width: 8 },
+  { key: 'uom', header: 'UOM', required: true, width: 9, dyn: 'uom' },
   { key: 'moq', header: 'MOQ', required: true, width: 10 },
   { key: 'price', header: 'Price (INR)', required: true, width: 12 },
   { key: 'lead_time_days', header: 'Lead Time (days)', width: 14 },
@@ -140,7 +142,7 @@ const MPN_UPDATE_COLS = [
   { key: 'vendor_code', header: 'Vendor Code', required: true, width: 14, isKey: true },
   { key: 'material_code', header: 'Material Code', width: 16, readOnly: true },
   { key: 'material_name', header: 'Material Name', width: 30, readOnly: true },
-  { key: 'uom', header: 'UOM', width: 8 },
+  { key: 'uom', header: 'UOM', width: 9, dyn: 'uom' },
   { key: 'moq', header: 'MOQ', width: 10 },
   { key: 'price', header: 'Price (INR)', width: 12 },
   { key: 'lead_time_days', header: 'Lead Time (days)', width: 14 },
@@ -168,20 +170,32 @@ function columns(entity, mode) {
 // ============================================================================
 // Materials
 // ============================================================================
-function resolveCategory(lk, r, errors) {
+/** Active top-level categories a classification may use (its own + unassigned ones). */
+function categoriesFor(lk, cls) {
+  return lk.cats.filter((c) => !c.parent_id && c.status === 'ACTIVE' && (!cls || !c.classification || c.classification === cls));
+}
+const listOf = (names) => (names.length ? names.join(', ') : 'none yet - add them under Settings > Categories');
+
+function resolveCategory(lk, r, errors, cls) {
   let categoryId = null;
   let subId = null;
+  const clsLabel = cls ? CLASS_LABEL[cls] : null;
   if (!blank(r.category)) {
     const cat = lk.catTop.get(norm(r.category));
-    if (!cat) errors.push(`Category "${r.category}" does not exist (add it under Settings > Categories)`);
-    else categoryId = cat.id;
+    const choices = listOf(categoriesFor(lk, cls).map((c) => c.name));
+    if (!cat) {
+      errors.push(`Category "${r.category}" does not exist${clsLabel ? ` for ${clsLabel}` : ''}. Choose one of: ${choices}`);
+    } else if (cls && cat.classification && cat.classification !== cls) {
+      errors.push(`Category "${cat.name}" is a ${CLASS_LABEL[cat.classification]} category, not ${clsLabel}. Choose one of: ${choices}`);
+    } else categoryId = cat.id;
   }
   if (!blank(r.sub_category)) {
     if (!categoryId) {
       if (blank(r.category)) errors.push('Sub-category needs a Category');
     } else {
       const sub = lk.catSub.get(`${categoryId}|${norm(r.sub_category)}`);
-      if (!sub) errors.push(`Sub-category "${r.sub_category}" is not under "${r.category}"`);
+      const subs = lk.cats.filter((c) => c.parent_id === categoryId && c.status === 'ACTIVE').map((c) => c.name);
+      if (!sub) errors.push(`Sub-category "${r.sub_category}" is not under "${lk.catById.get(categoryId).name}". Choose one of: ${listOf(subs)}`);
       else subId = sub.id;
     }
   }
@@ -198,10 +212,11 @@ function validateMaterialCreate(rows, lk) {
     if (status === undefined) errors.push('Status must be Active or Inactive');
     const shelf = toNum(r.shelf_life_days);
     if (shelf === undefined) errors.push('Shelf life must be a number');
-    const { categoryId, subId } = resolveCategory(lk, r, errors);
+    const { categoryId, subId } = resolveCategory(lk, r, errors, cls || null);
+    const uom = blank(r.uom) ? null : matchUom(lk.uoms, r.uom, 'UOM', { errors });
     const data = capture(errors, () => md.parseMaterial({
-      // an invalid classification is already reported above; don't report it twice
-      name: text(r.name), classification: cls === undefined ? 'RAW_MATERIAL' : (cls || null), uom: text(r.uom), shelf_life_days: shelf ?? null,
+      // an invalid classification / UOM is already reported above; don't report it twice
+      name: text(r.name), classification: cls === undefined ? 'RAW_MATERIAL' : (cls || null), uom: uom || text(r.uom), shelf_life_days: shelf ?? null,
       status: status || 'ACTIVE', category_id: categoryId, sub_category_id: subId, description: text(r.description),
     }));
     const key = norm(r.name);
@@ -236,7 +251,10 @@ function validateMaterialUpdate(rows, lk) {
       if (cls === undefined) errors.push('Unknown classification');
       else if (cls !== ex.classification) add('classification', 'Classification', CLASS_LABEL[ex.classification], CLASS_LABEL[cls], cls);
     }
-    if (!blank(r.uom) && !same(r.uom, ex.uom)) add('uom', 'UOM', ex.uom, text(r.uom), text(r.uom));
+    if (!blank(r.uom) && !same(r.uom, ex.uom)) {
+      const u = matchUom(lk.uoms, r.uom, 'UOM', { errors, current: ex.uom });
+      if (u && u !== ex.uom) add('uom', 'UOM', ex.uom, u, u);
+    }
     if (!blank(r.shelf_life_days)) {
       const n = toNum(r.shelf_life_days);
       if (n === undefined) errors.push('Shelf life must be a number');
@@ -248,8 +266,14 @@ function validateMaterialUpdate(rows, lk) {
       else if (s !== ex.status) add('status', 'Status', STATUS_LABEL[ex.status], STATUS_LABEL[s], s);
     }
     if (!blank(r.description) && !same(r.description, ex.description)) add('description', 'Description', ex.description, text(r.description), text(r.description));
+    const newCls = patch.classification || ex.classification;
+    const exCat = lk.catById.get(ex.category_id);
+    if (patch.classification && blank(r.category) && exCat?.classification && exCat.classification !== newCls) {
+      // Old category belongs to the old classification: it is cleared (same as the form does).
+      add('category_id', 'Category', exCat.name, null, null);
+    }
     if (!blank(r.category) || !blank(r.sub_category)) {
-      const { categoryId, subId } = resolveCategory(lk, { category: r.category || lk.catById.get(ex.category_id)?.name, sub_category: r.sub_category }, errors);
+      const { categoryId, subId } = resolveCategory(lk, { category: r.category || exCat?.name, sub_category: r.sub_category }, errors, newCls);
       if (categoryId && categoryId !== ex.category_id) {
         add('category_id', 'Category', lk.catById.get(ex.category_id)?.name || null, lk.catById.get(categoryId).name, categoryId);
         patch.sub_category_id = subId;
@@ -355,6 +379,7 @@ function validateMpnCreate(rows, lk) {
     const price = toNum(r.price);
     const lead = toNum(r.lead_time_days);
     if (blank(r.uom) && !mat) errors.push('UOM is required');
+    const uom = blank(r.uom) ? null : matchUom(lk.uoms, r.uom, 'UOM', { errors });
     if (moq === null) errors.push('MOQ is required');
     else if (moq === undefined || moq <= 0) errors.push('MOQ must be a number greater than 0');
     if (price === null) errors.push('Price is required');
@@ -371,7 +396,7 @@ function validateMpnCreate(rows, lk) {
       row_no: r.row_no,
       values: { ...r, material_code: mat?.code || r.material_code, material_name: mat?.name, vendor_code: ven?.code || r.vendor_code, vendor_name: ven?.name },
       data: mat && ven ? {
-        materialId: mat.id, vendorId: ven.id, uom: text(r.uom) || mat.uom, moq, price, lead,
+        materialId: mat.id, vendorId: ven.id, uom: uom || mat.uom, moq, price, lead,
         manufacturer: text(r.manufacturer),
       } : null,
       errors,
@@ -401,7 +426,10 @@ function validateMpnUpdate(rows, lk) {
 
     const patch = {};
     const changes = [];
-    if (!blank(r.uom) && !same(r.uom, ex.uom)) { patch.uom = text(r.uom); changes.push({ field: 'UOM', from: ex.uom, to: patch.uom }); }
+    if (!blank(r.uom) && !same(r.uom, ex.uom)) {
+      const u = matchUom(lk.uoms, r.uom, 'UOM', { errors, current: ex.uom });
+      if (u && u !== ex.uom) { patch.uom = u; changes.push({ field: 'UOM', from: ex.uom, to: u }); }
+    }
     for (const [f, label, min, gt] of [['moq', 'MOQ', 0, true], ['price', 'Price', 0, false], ['lead_time_days', 'Lead time', 0, false]]) {
       if (blank(r[f])) continue;
       const n = toNum(r[f]);
@@ -562,14 +590,26 @@ async function buildWorkbook(entity, mode, rows, db = { query }) {
   ws.views = [{ state: 'frozen', ySplit: 1 }];
   for (const r of rows) ws.addRow(r);
   const last = Math.max(rows.length + 200, 500);
+  const L = await buildLists(db);
+  const clsCol = cols.findIndex((c) => c.key === 'classification') + 1;
+  const catCol = cols.findIndex((c) => c.key === 'category') + 1;
   cols.forEach((c, i) => {
     const col = ws.getColumn(i + 1);
     if (c.textCell) col.numFmt = '@';
     if (c.readOnly) col.font = { color: { argb: 'FF6B7280' } };
-    if (c.list) {
-      for (let n = 2; n <= last; n += 1) {
-        ws.getCell(n, i + 1).dataValidation = { type: 'list', allowBlank: true, formulae: [`"${c.list.join(',')}"`] };
-      }
+    if (!c.list && !c.dyn) return;
+    for (let n = 2; n <= last; n += 1) {
+      let formula = c.list ? `"${c.list.join(',')}"` : null;
+      let strict = true;
+      if (c.dyn === 'uom') formula = L.uom;
+      if (c.dyn === 'state') { formula = L.state; strict = false; }
+      if (c.dyn === 'category') { formula = clsCol ? L.categoryFor(`$${colLetter(clsCol)}${n}`) : L.allCategories; strict = false; }
+      if (c.dyn === 'subcategory') { formula = catCol ? L.subFor(`$${colLetter(catCol)}${n}`) : null; strict = false; }
+      if (!formula) continue;
+      ws.getCell(n, i + 1).dataValidation = {
+        type: 'list', allowBlank: true, formulae: [formula], showErrorMessage: true, errorStyle: strict ? 'stop' : 'warning',
+        errorTitle: c.header, error: `Pick ${c.header} from the list${strict ? '' : ' (the upload check will confirm it)'}`,
+      };
     }
   });
 
@@ -581,21 +621,81 @@ async function buildWorkbook(entity, mode, rows, db = { query }) {
       ? 'Change the cells you want to update. Leave a cell blank to keep its current value. Do not change the code columns.'
       : 'Fill one row per record. Columns marked * are required. Codes are assigned automatically - there is no code column.'],
     ['Saving', 'Upload the file, check the preview, then Save. If any row has an error, nothing is saved.'],
+    ['Dropdowns', 'Click a cell to pick from its list. Category shows only the categories of the Classification in the same row; Sub-category only those of the Category.'],
   ];
   if (entity === 'materials') lines.push(['Classification', Object.values(CLASS_LABEL).join(', ')]);
+  if (entity !== 'vendors') lines.push(['UOM', L.uomCodes.join(', ')]);
   if (entity === 'vendors' && mode === 'create') lines.push(['Addresses / contacts / bank', 'One of each per row. Add more later from the vendor form.']);
   if (entity === 'mpns' && mode === 'create') lines.push(['MPN code', 'Assigned automatically (MPN1001, MPN1002, ...). One MPN is created per row.']);
   lines.forEach((l) => help.addRow(l));
   help.getColumn(1).font = { bold: true };
   if (entity === 'materials') {
-    help.addRow([]);
-    help.addRow(['Category', 'Sub-categories']).font = { bold: true };
-    const cats = (await db.query(`select c.name, string_agg(s.name, ', ' order by s.name) subs from public.material_categories c
-                                  left join public.material_categories s on s.parent_id = c.id and s.status = 'ACTIVE'
-                                 where c.parent_id is null and c.status = 'ACTIVE' group by c.name order by c.name`)).rows;
-    cats.forEach((c) => help.addRow([c.name, c.subs || '']));
+    const ref = wb.addWorksheet('Categories');
+    ref.columns = [{ header: 'Classification', width: 18 }, { header: 'Category', width: 26 }, { header: 'Sub-categories', width: 70 }];
+    ref.getRow(1).font = { bold: true };
+    for (const c of L.tops) {
+      ref.addRow([c.classification ? CLASS_LABEL[c.classification] : 'Any', c.name, L.subsOf(c.id).join(', ')]);
+    }
   }
+  // Hidden sheet that feeds the dropdowns (kept last; the data sheet stays first for upload).
+  L.write(wb.addWorksheet('Lists', { state: 'hidden' }));
   return wb;
+}
+
+function colLetter(n) {
+  let s = '';
+  for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s;
+  return s;
+}
+
+/**
+ * Hidden "Lists" sheet feeding the dropdowns.
+ *   A: UOM codes · B: states · C: all active categories
+ *   From E: one column per classification (row 1 label, row 2 count, rows 3+ its categories)
+ *   Then: one column per category (row 1 name, row 2 count, rows 3+ its sub-categories)
+ * Dependent dropdowns use MATCH on row 1 and OFFSET down the matching column.
+ */
+async function buildLists(db) {
+  const [catRows, uoms] = await Promise.all([
+    db.query(`select id, name, parent_id, classification from public.material_categories where status = 'ACTIVE' order by lower(name)`),
+    loadUoms(db),
+  ]);
+  const uomCodes = uoms.list.filter((u) => u.status === 'ACTIVE').map((u) => u.code);
+  const tops = catRows.rows.filter((c) => !c.parent_id)
+    .sort((a, b) => (a.classification || 'ZZ').localeCompare(b.classification || 'ZZ') || a.name.localeCompare(b.name));
+  const subsOf = (id) => catRows.rows.filter((c) => c.parent_id === id).map((c) => c.name);
+  const clsCols = Object.entries(CLASS_LABEL).map(([k, label]) => ({
+    header: label, values: tops.filter((c) => !c.classification || c.classification === k).map((c) => c.name),
+  }));
+  const subCols = tops.map((c) => ({ header: c.name, values: subsOf(c.id) }));
+  const firstCls = 5;
+  const firstSub = firstCls + clsCols.length;
+  const lastSub = Math.max(firstSub, firstSub + subCols.length - 1);
+  const rng = (a, b, r1, r2) => `Lists!$${colLetter(a)}$${r1}:$${colLetter(b)}$${r2}`;
+  const colRange = (c, n) => (n ? `Lists!$${colLetter(c)}$3:$${colLetter(c)}$${n + 2}` : 'Lists!$D$1');
+  const dependent = (cell, from, to) => {
+    const m = `MATCH(${cell},${rng(from, to, 1, 1)},0)`;
+    return `IF(ISNA(${m}),Lists!$D$1,OFFSET(Lists!$${colLetter(from)}$3,0,${m}-1,MAX(1,INDEX(${rng(from, to, 2, 2)},${m})),1))`;
+  };
+  return {
+    tops, subsOf, uomCodes,
+    uom: colRange(1, uomCodes.length),
+    state: colRange(2, STATES.length),
+    allCategories: colRange(3, tops.length),
+    categoryFor: (cell) => dependent(cell, firstCls, firstCls + clsCols.length - 1),
+    subFor: (cell) => (subCols.length ? dependent(cell, firstSub, lastSub) : null),
+    write(ws) {
+      const put = (c, header, values) => {
+        if (header !== null) { ws.getCell(1, c).value = header; ws.getCell(2, c).value = values.length; }
+        values.forEach((val, i) => { ws.getCell(i + 3, c).value = val; });
+      };
+      put(1, 'UOM', uomCodes);
+      put(2, 'State', STATES);
+      put(3, 'Category', tops.map((c) => c.name));
+      clsCols.forEach((x, i) => put(firstCls + i, x.header, x.values));
+      subCols.forEach((x, i) => put(firstSub + i, x.header, x.values));
+    },
+  };
 }
 
 async function templateBuffer(entity, mode) {

@@ -4,6 +4,7 @@
  */
 const { badRequest, notFound } = require('../utils/errors');
 const v = require('../utils/validate');
+const { canonUom } = require('./options');
 
 const CLASSES = ['RAW_MATERIAL', 'PACKAGING', 'CONSUMABLE', 'SEMI_FINISHED', 'FINISHED_GOOD'];
 const STATUSES = ['ACTIVE', 'INACTIVE'];
@@ -61,6 +62,7 @@ function parseMaterial(b, { partial = false } = {}) {
 }
 
 async function createMaterial(c, d, userId, { legacyCode, mpnCode, vendorId } = {}) {
+  d = { ...d, uom: await canonUom(c, d.uom, 'UOM', { required: true }) };
   const mat = (await c.query(`
     insert into public.materials(code, name, classification, uom, shelf_life_days, status, category_id, sub_category_id,
                                  description, created_by)
@@ -81,6 +83,17 @@ async function createMaterial(c, d, userId, { legacyCode, mpnCode, vendorId } = 
 }
 
 async function updateMaterial(c, id, d, userId) {
+  d = { ...d };
+  const cur = (await c.query(`select m.uom, m.classification, m.category_id, c.classification as category_class
+                                from public.materials m left join public.material_categories c on c.id = m.category_id
+                               where m.id = $1`, [id])).rows[0];
+  if (!cur) throw notFound('Material not found');
+  if ('uom' in d) d.uom = await canonUom(c, d.uom, 'UOM', { required: true, current: cur.uom });
+  // A new classification drops a category that belongs to another classification.
+  if (d.classification && d.classification !== cur.classification && !('category_id' in d)
+      && cur.category_class && cur.category_class !== d.classification) {
+    d.category_id = null;
+  }
   const cols = Object.keys(d);
   if (!cols.length) return (await c.query('select * from public.materials where id = $1', [id])).rows[0];
   // Changing the category clears a sub-category that no longer belongs to it.
@@ -309,6 +322,9 @@ function parseMpnVendors(list) {
 /** Upsert vendor terms (keeps price history), removing vendors no longer listed. */
 async function writeMpnVendors(c, mpnId, vendors, userId) {
   const mpn = (await c.query('select material_id from public.mpns where id = $1', [mpnId])).rows[0];
+  const current = new Map((await c.query('select vendor_id, uom from public.mpn_vendors where mpn_id = $1', [mpnId])).rows
+    .map((r) => [r.vendor_id, r.uom]));
+  for (const x of vendors) x.uom = await canonUom(c, x.uom, 'Vendor UOM', { current: current.get(x.vendorId) });
   await c.query('delete from public.mpn_vendors where mpn_id = $1 and not (vendor_id = any($2::uuid[]))',
     [mpnId, vendors.map((x) => x.vendorId)]);
   await c.query('update public.mpn_vendors set is_preferred = false where mpn_id = $1 and is_preferred', [mpnId]);

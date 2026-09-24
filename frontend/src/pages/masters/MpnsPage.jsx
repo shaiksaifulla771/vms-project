@@ -5,7 +5,7 @@ import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { CLASS_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
-import { Combobox, materialOptions, useMaterials, useVendors } from '../../components/pickers';
+import { Combobox, UomSelect, materialOptions, useMaterials, useUoms, useVendors } from '../../components/pickers';
 import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } from '../../components/masterKit';
 
 const money = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
@@ -28,6 +28,7 @@ export function sortedVendorOptions(vendors, supplierIds) {
 }
 
 function MpnForm({ mpn, onClose, onDone }) {
+  const uoms = useUoms();
   const materials = useMaterials({ status: 'ACTIVE' });
   const vendors = useVendors();
   const isNew = !mpn;
@@ -81,7 +82,7 @@ function MpnForm({ mpn, onClose, onDone }) {
             {f.vendors.map((v, i) => (
               <tr key={i}>
                 <td className="td px-1 min-w-[220px]"><Combobox value={v.vendor_id} onChange={(x) => setVendor(i, { vendor_id: x })} options={vOpts} placeholder="Select vendor" /></td>
-                <td className="td px-1"><input className="input" value={v.uom} placeholder={mat?.uom || ''} onChange={(e) => setVendor(i, { uom: e.target.value })} /></td>
+                <td className="td px-1"><UomSelect value={v.uom} uoms={uoms} placeholder={mat?.uom ? `${mat.uom} (material)` : '-'} onChange={(u) => setVendor(i, { uom: u })} /></td>
                 <td className="td px-1"><input className="input num" type="number" min="0" value={v.moq} onChange={(e) => setVendor(i, { moq: e.target.value })} /></td>
                 <td className="td px-1"><input className="input num" type="number" min="0" step="0.01" value={v.price} onChange={(e) => setVendor(i, { price: e.target.value })} /></td>
                 <td className="td px-1"><input className="input num" type="number" min="0" value={v.lead_time_days} onChange={(e) => setVendor(i, { lead_time_days: e.target.value })} /></td>

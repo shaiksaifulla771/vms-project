@@ -122,3 +122,40 @@ export function useCategories(reloadKey = 0) {
 
 export const vendorOptions = (rows) => rows.filter((v) => v.status === 'ACTIVE')
   .map((v) => ({ value: v.id, label: `${v.code} - ${v.name}`, sub: [v.default_address, v.phone].filter(Boolean).join(' · ') }));
+
+/** Top-level categories a classification may use: its own plus unassigned ones. */
+export const categoriesFor = (cats, cls, keepId) => cats.filter((c) => c.id === keepId
+  || (c.status === 'ACTIVE' && (!cls || !c.classification || c.classification === cls)));
+
+/** UOM list from Settings > UOMs */
+export function useUoms(reloadKey = 0) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api.get('/uoms', { scoped: false }).then(setRows).catch(() => setRows([])); }, [reloadKey]);
+  return rows;
+}
+
+export const UOM_TYPE_LABEL = { WEIGHT: 'Weight', VOLUME: 'Volume', COUNT: 'Count', LENGTH: 'Length', OTHER: 'Other' };
+
+/**
+ * UOM dropdown grouped by type. Only active UOMs are offered; the current value is always kept
+ * (so an old record with an inactive or legacy UOM still shows it).
+ */
+export function UomSelect({ value, onChange, uoms, placeholder, className = 'input', disabled, title }) {
+  const lower = (x) => String(x || '').toLowerCase();
+  const inList = uoms.some((u) => lower(u.code) === lower(value));
+  const groups = Object.keys(UOM_TYPE_LABEL).map((t) => [t, uoms.filter((u) => u.uom_type === t
+    && (u.status === 'ACTIVE' || lower(u.code) === lower(value)))]).filter(([, l]) => l.length);
+  const match = uoms.find((u) => lower(u.code) === lower(value));
+  return (
+    <select className={className} value={match ? match.code : (value || '')} disabled={disabled} title={title}
+      onChange={(e) => onChange(e.target.value)}>
+      <option value="">{placeholder ?? '-'}</option>
+      {value && !inList && uoms.length > 0 && <option value={value}>{value}</option>}
+      {groups.map(([t, list]) => (
+        <optgroup key={t} label={UOM_TYPE_LABEL[t]}>
+          {list.map((u) => <option key={u.code} value={u.code}>{u.code} - {u.name}{u.status !== 'ACTIVE' ? ' (inactive)' : ''}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
