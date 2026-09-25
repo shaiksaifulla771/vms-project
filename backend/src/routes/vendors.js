@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { canWrite } = require('../middleware/session');
 const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { notFound } = require('../utils/errors');
@@ -53,7 +54,8 @@ router.get('/:id', h(async (req, res) => {
                                               where mv.vendor_id = vm.vendor_id and p.material_id = vm.material_id)
      order by m.code`, [id])).rows;
   // Full account numbers only when the caller is going to edit (?full=true); masked otherwise.
-  const full = req.query.full === 'true';
+  // Full account numbers only for users who can edit (the Edit form); everyone else sees them masked.
+  const full = req.query.full === 'true' && canWrite(req.user);
   res.json({
     ...vendor,
     mpns: mpns.rows,

@@ -8,7 +8,7 @@ const v = require('../utils/validate');
 // ?as_on=YYYY-MM-DD rebuilds the balance of every lot at the end of that day from the audit ledger.
 router.get('/stock-balance', h(async (req, res) => {
   const asOn = v.date(req.query.as_on, 'As on date');
-  if (asOn && asOn > new Date().toISOString().slice(0, 10)) throw badRequest('As on date cannot be in the future');
+  if (asOn && asOn > v.today()) throw badRequest('As on date cannot be in the future');
   const { clause, params } = where([
     ['s.location_id = ?', req.scope.locationId],
     ['s.warehouse_id = ?', req.scope.warehouseId],

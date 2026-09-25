@@ -37,7 +37,8 @@ router.post('/', h(async (req, res) => {
  */
 router.post('/bulk-create', h(async (req, res) => {
   const items = req.body?.items;
-  if (!Array.isArray(items) || !items.length) throw badRequest('Nothing to create');
+  v.objList(items, 'Items', { max: 200 });
+  if (!items || !items.length) throw badRequest('Nothing to create');
   if (items.length > 200) throw badRequest('At most 200 categories at a time');
   const out = await withTransaction(async (c) => {
     const created = { categories: [], sub_categories: [] };
@@ -54,6 +55,9 @@ router.post('/bulk-create', h(async (req, res) => {
         created.categories.push({ id: top.id, name: top.name, classification: cls });
       } else if (top.status !== 'ACTIVE') {
         await c.query(`update public.material_categories set status = 'ACTIVE', updated_by = $2 where id = $1`, [top.id, req.user.id]);
+      }
+      if (it.sub_categories !== undefined && it.sub_categories !== null && !Array.isArray(it.sub_categories)) {
+        throw badRequest(`Item ${i + 1}: sub-categories must be a list`);
       }
       for (const raw of it.sub_categories || []) {
         const sub = v.str(raw, `Sub-category of ${name}`, { max: 100 });

@@ -480,7 +480,8 @@ function validateMpnUpdate(rows, lk) {
 function prepRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) throw badRequest('No rows to process');
   if (rows.length > MAX_ROWS) throw badRequest(`At most ${MAX_ROWS} rows per upload`);
-  return rows.map((r, i) => ({ ...r, row_no: r.row_no || i + 1 }));
+  v.objList(rows, 'Rows', { max: MAX_ROWS });
+  return rows.map((r, i) => ({ ...r, row_no: Number.isInteger(r.row_no) ? r.row_no : i + 1 }));
 }
 
 const VALIDATORS = {
@@ -781,9 +782,11 @@ async function templateBuffer(entity, mode) {
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
+/** CSV cell. Text starting with = + - @ (or tab / CR) gets a leading ' so Excel never runs it as a formula. */
 function csvEscape(x) {
   if (x === null || x === undefined) return '';
-  const s = String(x);
+  let s = String(x);
+  if (typeof x === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -831,6 +834,25 @@ function cellValue(v) {
   return v;
 }
 
+/**
+ * Refuse "zip bomb" workbooks before unpacking them: an .xlsx is a zip, and a 5 MB upload could expand
+ * to gigabytes. The zip directory lists every entry's unpacked size without unpacking anything.
+ */
+async function assertSafeXlsx(buf) {
+  const MAX_TOTAL = 40 * 1024 * 1024;
+  let zip;
+  try { zip = await require('jszip').loadAsync(buf); } catch { throw badRequest('Could not read the file. Upload the .xlsx template or a .csv file.'); }
+  let total = 0;
+  for (const f of Object.values(zip.files)) {
+    const size = f._data && typeof f._data.uncompressedSize === 'number' ? f._data.uncompressedSize : 0;
+    const packed = f._data && typeof f._data.compressedSize === 'number' ? f._data.compressedSize : 0;
+    total += size;
+    if (total > MAX_TOTAL || (packed > 0 && size / packed > 200 && size > 1024 * 1024)) {
+      throw badRequest('This file is too large when unpacked. Use the template, with at most 2000 rows.');
+    }
+  }
+}
+
 /** Turn an uploaded xlsx/csv into row objects keyed by column key. */
 async function parseFile(entity, mode, filename, base64) {
   if (!base64) throw badRequest('Choose a file to upload');
@@ -842,12 +864,16 @@ async function parseFile(entity, mode, filename, base64) {
   if (/\.csv$/i.test(filename || '')) {
     grid = parseCsv(buf.toString('utf8'));
   } else {
+    await assertSafeXlsx(buf);
     const wb = new ExcelJS.Workbook();
     try { await wb.xlsx.load(buf); } catch { throw badRequest('Could not read the file. Upload the .xlsx template or a .csv file.'); }
     const ws = wb.worksheets[0];
+    if (!ws) throw badRequest('The file has no sheet');
+    if (ws.rowCount > MAX_ROWS + 50) throw badRequest(`At most ${MAX_ROWS} rows per upload`);
     ws.eachRow({ includeEmpty: true }, (row, n) => {
       const vals = [];
-      for (let i = 1; i <= Math.max(row.cellCount, cols.length); i += 1) vals.push(cellValue(row.getCell(i).value));
+      // Only the template's columns are read (a stray cell far to the right cannot blow up memory).
+      for (let i = 1; i <= cols.length + 5; i += 1) vals.push(cellValue(row.getCell(i).value));
       grid[n - 1] = vals;
     });
     grid = Array.from(grid, (r) => r || []);

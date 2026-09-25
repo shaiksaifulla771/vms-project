@@ -46,11 +46,34 @@ async function planEvent(c, planId, event, oldValue, newValue, userId) {
 
 const pct = (actual, plan) => (plan > 0 ? ((actual - plan) / plan) * 100 : 0);
 
-function checkVariance(label, actual, plan, reason, tolerance, override) {
-  const p = pct(actual, plan);
-  if (plan > 0 && Math.abs(p) > tolerance && !override && !(reason && reason.trim())) {
-    throw badRequest(`${label}: variance ${p.toFixed(2)}% exceeds the ${tolerance}% tolerance - enter a reason`);
+/**
+ * Actual vs plan beyond the tolerance needs a reason (or an Admin override for this request).
+ * strictZero: with a BOM, using a material the plan does not ask for (plan 0, actual > 0) is a variance too.
+ */
+function checkVariance(label, actual, plan, reason, tolerance, override, strictZero = false) {
+  if (override || (reason && String(reason).trim())) return;
+  if (plan > 0) {
+    const p = pct(actual, plan);
+    if (Math.abs(p) > tolerance) throw badRequest(`${label}: variance ${p.toFixed(2)}% exceeds the ${tolerance}% tolerance - enter a reason`);
+  } else if (strictZero && actual > 0) {
+    throw badRequest(`${label}: not in the BOM (plan 0) - enter a reason for using it`);
   }
+}
+
+/**
+ * Plan input per material for a planned output, from the BOM - the server's own numbers, never the
+ * browser's (so the tolerance check cannot be switched off by sending plan = actual).
+ */
+async function bomPlanInputs(c, bomId, plannedOutput, applyScrap) {
+  const bom = await loadBom(c, bomId);
+  const expected = Number(bom.expected_output_qty);
+  const scale = expected > 0 ? plannedOutput / expected : 0;
+  const out = {};
+  for (const l of bom.lines) {
+    const factor = applyScrap ? 1 + Number(l.scrap_allowance_pct) / 100 : 1;
+    out[l.material_id] = { qty: v.round4(Number(l.qty_per_batch) * scale * factor), code: l.material_code };
+  }
+  return { expected, lines: out };
 }
 
 function addDays(isoDate, days) {
@@ -130,7 +153,7 @@ router.get('/prefill', h(async (req, res) => {
       uom: l.uom, plan_input_qty: planned, lots, suggested_inventory_id: suggested ? suggested.id : null,
     });
   }
-  const mfg = new Date().toISOString().slice(0, 10);
+  const mfg = v.today();
   res.json({
     plan: plan ? { id: plan.id, plan_no: plan.plan_no, remaining_qty: Number(plan.remaining_qty),
       target_qty: Number(plan.target_qty), executed_qty: Number(plan.executed_qty), plan_mode: plan.plan_mode,
@@ -157,6 +180,7 @@ async function resolveLot(c, inventoryId, materialId, locationId, label) {
   if (!inv) throw badRequest(`${label}: selected lot not found`);
   if (inv.material_id !== materialId) throw badRequest(`${label}: selected lot is for a different material`);
   if (inv.location_id !== locationId) throw badRequest(`${label}: lot must be at the batch location`);
+  if (inv.expiry_date && inv.expiry_date < v.today()) throw badRequest(`${label}: lot ${inv.lot_no} is expired and cannot be consumed`);
   return inv;
 }
 
@@ -169,7 +193,13 @@ router.post('/', h(async (req, res) => {
   const b = req.body || {};
   const source = v.oneOf(b.source, 'Source', ['PLAN', 'AD_HOC'], { required: true });
   const actualOutput = v.num(b.actual_output_qty, 'Actual output qty', { required: true, gt: 0 });
-  const inputs = Array.isArray(b.inputs) ? b.inputs : [];
+  const inputs = v.objList(b.inputs, 'Inputs', { max: 200 }) || [];
+  // The form sends one id per submission: a double click or a retry returns the batch already made.
+  const requestId = v.str(b.client_request_id, 'Request id', { max: 64 });
+  if (requestId) {
+    const done = (await getPool().query('select id from public.batches where client_request_id = $1', [requestId])).rows[0];
+    if (done) return res.status(200).json(await loadBatch(getPool(), done.id));
+  }
 
   const id = await withTransaction(async (c) => {
     const settings = await getSettings(c);
@@ -207,11 +237,22 @@ router.post('/', h(async (req, res) => {
       || (await c.query('select id from public.warehouses where location_id = $1 and is_default', [locationId])).rows[0]?.id;
     if (!warehouseId) throw badRequest('Select the output warehouse');
 
-    const planOutput = v.num(b.plan_output_qty, 'Plan output qty', { min: 0 }) || 0;
+    // Plan output: what the user planned for this batch (defaults to one BOM batch, or what is left of a quantity plan).
+    const applyScrap = plan ? plan.apply_scrap_allowance : settings.apply_scrap_allowance;
+    let bomPlan = null;
+    let planOutput = v.num(b.plan_output_qty, 'Plan output qty', { min: 0 }) || 0;
+    if (bomId) {
+      const expected = Number((await c.query('select expected_output_qty from public.boms where id = $1', [bomId])).rows[0].expected_output_qty);
+      if (!(planOutput > 0)) {
+        planOutput = plan && plan.plan_mode !== 'BATCHES' ? Math.min(expected, Number(plan.remaining_qty)) || expected : expected;
+      }
+      bomPlan = await bomPlanInputs(c, bomId, planOutput, applyScrap);
+    }
     const outReason = v.str(b.variance_reason, 'Reason for variance', { max: 1000 });
     checkVariance('Output', actualOutput, planOutput, outReason, tolerance, override);
 
-    const mfgDate = v.date(b.mfg_date, 'Mfg date') || new Date().toISOString().slice(0, 10);
+    const mfgDate = v.date(b.mfg_date, 'Mfg date') || v.today();
+    if (mfgDate > v.today()) throw badRequest('Mfg date cannot be in the future');
     const expiryDate = v.date(b.expiry_date, 'Expiry date')
       || addDays(mfgDate, product.shelf_life_days || settings.default_shelf_life_days);
     if (expiryDate < mfgDate) throw badRequest('Expiry date must be on or after the Mfg date');
@@ -222,17 +263,23 @@ router.post('/', h(async (req, res) => {
     // --- validate inputs (per material: aggregate actual vs plan) ---
     const rows = [];
     const perMaterial = {};
+    const seenLots = new Set();
     for (let i = 0; i < inputs.length; i += 1) {
-      const x = inputs[i] || {};
+      const x = inputs[i];
       const label = `Input ${i + 1}`;
       const materialId = v.uuid(x.material_id, `${label} material`, { required: true });
       if (materialId === productId) throw badRequest(`${label}: the product cannot consume itself`);
-      const planQty = v.num(x.plan_input_qty, `${label} plan qty`, { min: 0 }) || 0;
+      // With a BOM the plan quantity is the server's (first row of each material); without one it is the user's.
+      const firstOfMaterial = !perMaterial[materialId];
+      const planQty = bomPlan ? (firstOfMaterial ? (bomPlan.lines[materialId]?.qty || 0) : 0)
+        : (v.num(x.plan_input_qty, `${label} plan qty`, { min: 0 }) || 0);
       const actualQty = v.num(x.actual_input_qty, `${label} actual qty`, { required: true, min: 0 });
       const reason = v.str(x.variance_reason, `${label} reason`, { max: 1000 });
       let inv = null;
       if (actualQty > 0) {
         const inventoryId = v.uuid(x.inventory_id, `${label} Lot No`, { required: true });
+        if (seenLots.has(inventoryId)) throw badRequest(`${label}: this lot is already listed above - put the whole quantity on one row`);
+        seenLots.add(inventoryId);
         inv = await resolveLot(c, inventoryId, materialId, locationId, label);
       }
       const mat = (await c.query('select code, uom from public.materials where id = $1', [materialId])).rows[0];
@@ -243,8 +290,14 @@ router.post('/', h(async (req, res) => {
       agg.actual += actualQty;
       agg.reason = agg.reason || reason;
     }
+    // BOM materials left out of the inputs count as 0 used.
+    if (bomPlan) {
+      for (const [mid, l] of Object.entries(bomPlan.lines)) {
+        if (!perMaterial[mid]) perMaterial[mid] = { plan: l.qty, actual: 0, reason: null, code: l.code };
+      }
+    }
     for (const agg of Object.values(perMaterial)) {
-      checkVariance(`Material ${agg.code}`, agg.actual, agg.plan, agg.reason, tolerance, override);
+      checkVariance(`Material ${agg.code}`, agg.actual, agg.plan, agg.reason, tolerance, override, Boolean(bomPlan));
     }
 
     // --- save batch ---
@@ -256,10 +309,10 @@ router.post('/', h(async (req, res) => {
     const batch = (await c.query(`
       insert into public.batches(batch_no, source, plan_id, product_id, output_mpn_id, bom_id, location_id, warehouse_id,
                                  mfg_date, expiry_date, executed_by, plan_output_qty, actual_output_qty, variance_reason,
-                                 output_uom, tolerance_override, created_by)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) returning *`,
+                                 output_uom, tolerance_override, created_by, client_request_id)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) returning *`,
     [batchNo, source, plan?.id || null, productId, outMpn, bomId, locationId, warehouseId, mfgDate, expiryDate,
-      executedBy, planOutput, actualOutput, outReason, product.uom, override, req.user.id])).rows[0];
+      executedBy, planOutput, actualOutput, outReason, product.uom, override, req.user.id, requestId])).rows[0];
 
     // --- consume raw material lots ---
     for (const r of rows) {
@@ -323,7 +376,8 @@ router.put('/:id', h(async (req, res) => {
       : v.num(b.actual_output_qty, 'Actual output qty', { required: true, gt: 0 });
     const outReason = b.variance_reason !== undefined ? v.str(b.variance_reason, 'Reason', { max: 1000 }) : batch.variance_reason;
     const outDelta = v.round4(newOutput - Number(batch.actual_output_qty));
-    checkVariance('Output', newOutput, Number(batch.plan_output_qty), outReason, tolerance, override || batch.tolerance_override);
+    // Only a change is checked, and an earlier Admin override does not carry over to later edits.
+    if (outDelta !== 0) checkVariance('Output', newOutput, Number(batch.plan_output_qty), outReason, tolerance, override);
     if (outDelta !== 0) {
       await postStock(c, { ...common, type: 'MFG_CORRECTION', mpnId: batch.output_mpn_id, locationId: batch.location_id,
         warehouseId: batch.warehouse_id, lotNo: batch.batch_no, qtyChange: outDelta,
@@ -344,9 +398,10 @@ router.put('/:id', h(async (req, res) => {
     [id, newOutput, outReason, override, req.user.id]);
 
     // Inputs
-    const edits = Array.isArray(b.inputs) ? b.inputs : [];
+    const edits = v.objList(b.inputs, 'Inputs', { max: 200 }) || [];
+    const changed = new Map();                                      // material_id -> reason given in this edit
     for (let i = 0; i < edits.length; i += 1) {
-      const x = edits[i] || {};
+      const x = edits[i];
       const label = `Input ${i + 1}`;
       const reason = v.str(x.variance_reason, `${label} reason`, { max: 1000 });
       const newQty = v.num(x.actual_input_qty, `${label} actual qty`, { required: true, min: 0 });
@@ -358,11 +413,12 @@ router.put('/:id', h(async (req, res) => {
       } else {
         // new lot / material added to the batch
         const materialId = v.uuid(x.material_id, `${label} material`, { required: true });
+        if (materialId === batch.product_id) throw badRequest(`${label}: the product cannot consume itself`);
         const mat = (await c.query('select uom from public.materials where id = $1', [materialId])).rows[0];
         if (!mat) throw badRequest(`${label}: material not found`);
+        // A new row never brings its own plan: the material's plan is already on its first row (or 0 if not in the BOM).
         row = (await c.query(`insert into public.batch_inputs(batch_id, material_id, plan_input_qty, actual_input_qty, uom)
-                              values ($1,$2,$3,0,$4) returning *`,
-        [id, materialId, v.num(x.plan_input_qty, `${label} plan qty`, { min: 0 }) || 0, mat.uom])).rows[0];
+                              values ($1,$2,0,0,$3) returning *`, [id, materialId, mat.uom])).rows[0];
       }
       // attach a lot if the row had none
       if (!row.lot_no && newQty > 0) {
@@ -371,13 +427,13 @@ router.put('/:id', h(async (req, res) => {
           [row.id, inv.mpn_id, inv.lot_no, inv.warehouse_id])).rows[0];
       }
       const delta = v.round4(newQty - Number(row.actual_input_qty));
-      checkVariance(`${label}`, newQty, Number(row.plan_input_qty), reason || row.variance_reason, tolerance, override || batch.tolerance_override);
+      if (delta !== 0) changed.set(row.material_id, changed.get(row.material_id) || reason || null);
       if (delta !== 0) {
         if (delta > 0) {
           const lot = (await c.query(`select expiry_date from public.inventory where mpn_id = $1 and location_id = $2
                                         and warehouse_id = $3 and lot_no = $4`,
           [row.mpn_id, batch.location_id, row.warehouse_id, row.lot_no])).rows[0];
-          if (lot && lot.expiry_date && lot.expiry_date < new Date().toISOString().slice(0, 10)) {
+          if (lot && lot.expiry_date && lot.expiry_date < v.today()) {
             throw badRequest(`${label}: lot ${row.lot_no} is expired; more cannot be consumed`);
           }
         }
@@ -387,6 +443,13 @@ router.put('/:id', h(async (req, res) => {
       }
       await c.query(`update public.batch_inputs set actual_input_qty = $2, variance_reason = coalesce($3, variance_reason)
                       where id = $1`, [row.id, newQty, reason]);
+    }
+    // Check every changed material as a whole (all its rows / lots), after the edit.
+    for (const [mid, reason] of changed) {
+      const agg = (await c.query(`select m.code, sum(bi.plan_input_qty) as plan, sum(bi.actual_input_qty) as actual
+                                    from public.batch_inputs bi join public.materials m on m.id = bi.material_id
+                                   where bi.batch_id = $1 and bi.material_id = $2 group by m.code`, [id, mid])).rows[0];
+      checkVariance(`Material ${agg.code}`, Number(agg.actual), Number(agg.plan), reason, tolerance, override, Boolean(batch.bom_id));
     }
   });
   res.json(await loadBatch(getPool(), id));

@@ -159,9 +159,10 @@ async function activate(c, bomId, userId) {
 
 /** Make an ACTIVE BOM the Default of its product + location. */
 async function setDefault(c, bomId, userId) {
-  const bom = (await c.query('select * from public.boms where id = $1', [bomId])).rows[0];
-  if (!bom) throw notFound('BOM not found');
-  await lockProductLocation(c, bom.product_id, bom.location_id);
+  const first = (await c.query('select product_id, location_id from public.boms where id = $1', [bomId])).rows[0];
+  if (!first) throw notFound('BOM not found');
+  await lockProductLocation(c, first.product_id, first.location_id);
+  const bom = (await c.query('select * from public.boms where id = $1 for update', [bomId])).rows[0];
   if (bom.status !== 'ACTIVE') throw conflict('Only an active BOM can be the Default');
   await c.query(`update public.boms set is_default = false, updated_by = $3
                   where product_id = $1 and location_id = $2 and is_default and id <> $4`,
@@ -278,9 +279,11 @@ router.post('/:id/rename', h(async (req, res) => {
 router.post('/:id/obsolete', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
   await withTransaction(async (c) => {
-    const bom = (await c.query('select * from public.boms where id = $1', [id])).rows[0];
-    if (!bom) throw notFound('BOM not found');
-    await lockProductLocation(c, bom.product_id, bom.location_id);
+    const first = (await c.query('select product_id, location_id from public.boms where id = $1', [id])).rows[0];
+    if (!first) throw notFound('BOM not found');
+    await lockProductLocation(c, first.product_id, first.location_id);
+    // Re-read under the lock: a concurrent Set as Default may have just changed it.
+    const bom = (await c.query('select * from public.boms where id = $1 for update', [id])).rows[0];
     await c.query(`update public.boms set status = 'OBSOLETE', is_default = false, updated_by = $2 where id = $1`, [id, req.user.id]);
     // The newest other active BOM takes over as Default, so planning keeps working.
     if (bom.is_default) {

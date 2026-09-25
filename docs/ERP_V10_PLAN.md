@@ -1,20 +1,21 @@
 # ERP.Rorosaur v10: Multiple BOMs, Location-first Planning, HSN, Full-page Views, Printing
 
-Owner: Shaik Saifulla · Written: 2026-09-25 · Base: master + v9 package upgrade (`feat/v9-clean-deps`) · Branch: `feat/v10-bom-print` · Status: **waiting for approval**
+Owner: Shaik Saifulla · Written: 2026-09-25 · Base: master + v9 package upgrade (`feat/v9-clean-deps`) · Branch: `feat/v10-bom-print` · Status: **approved 2026-09-25, built 2026-09-25**
 
 ## 0. Tracker
 
 | Phase | Scope | Status |
 |---|---|---|
-| A | **Multiple BOMs** per product and location, one marked Default | Pending |
-| B | **Plan and Batch Entry start from the location**: choose location, then only its products and BOMs are listed | Pending |
-| C | **Semi-finished goods in BOMs**: as a BOM product and as an ingredient (even without an MPN) | Pending |
-| D | **Finished goods through Inward** again (Opening Stock / Adjustment) | Pending |
-| E | **Vendor**: remove the address "Type" (Primary / Secondary) option | Pending |
-| F | **HSN code on MPN** (form, list, view, bulk files) | Pending |
-| G | **Full-page view**: clicking a record opens one page with everything about it | Pending |
-| H | **Printing**: print all, or only a date range / selection, from every report and list | Pending |
-| I | Verify: old tests pass, new tests, UI walkthrough, bundle for push | Pending |
+| A | **Multiple BOMs** per product and location, one marked Default | Done |
+| B | **Plan and Batch Entry start from the location**: choose location, then only its products and BOMs are listed | Done |
+| C | **Semi-finished goods in BOMs**: as a BOM product and as an ingredient (even without an MPN) | Done |
+| D | **Finished goods through Inward** again (Opening Stock / Adjustment) | Done |
+| E | **Vendor**: remove the address "Type" (Primary / Secondary) option | Done |
+| F | **HSN code on MPN** (form, list, view, bulk files) | Done |
+| G | **Full-page view**: clicking a record opens one page with everything about it | Done |
+| H | **Printing**: print all, or only a date range / selection, from every report and list | Done |
+| I | Verify: old tests pass, new tests, UI walkthrough, bundle for push | Done |
+| J | **Robustness audit** (added with approval): security, stock integrity, bad input; fixes + regression tests | Done |
 
 Rules: nothing existing is removed or broken; old BOMs, plans, batches and stock keep working. Database changes are additive only (one migration).
 
@@ -138,3 +139,29 @@ Print layout: company name, report title, filters used, printed by, date and tim
 ## 11. Session log
 
 - 2026-09-25: Request analysed; plan written. Waiting for approval.
+- 2026-09-25: Approved ("approve and check the project with multiple automated tests ... remove the vulnerabilities, errors and gaps"). Built phases A-H.
+- 2026-09-25: Robustness audit by three independent reviewers (security, stock / transaction integrity, bad-input fuzzing of the running API). Fixed, each with a regression test (`backend/tests/hardening.test.js`, 24 tests):
+  - Missing / malformed / unknown `X-User-Id` ran the request as the first admin. Now 401 (only the start-up `/api/session` call may omit it). This also stops cross-site form POSTs.
+  - Variance tolerance could be switched off by sending plan = actual. Plan inputs are now worked out on the server from the BOM; BOM materials left out, or materials not in the BOM, need a reason. An Admin override no longer carries over to later edits.
+  - Double-clicked Submit Batch posted twice. The form sends one request id; a repeat returns the same batch.
+  - About 26 inputs crashed with a server error (500): impossible dates (2026-02-30), huge numbers, NUL characters, `null` items in lists, `lines: [null]`. All now return a clear 400. Numbers must be plain decimals with at most 4 decimal places (no `0x10`, `true`, `[5]`); text fields refuse objects.
+  - Quantities with more than 4 decimals could make inventory and the ledger drift apart; stock changes are now rounded once.
+  - CSV exports could carry spreadsheet formulas (`=HYPERLINK(...)`); such cells are now prefixed with `'`.
+  - Oversized ("zip bomb") Excel uploads could take the server down; checked before unpacking.
+  - Full vendor bank account numbers were visible to viewers; now only to users who can edit.
+  - Plans with billions of batches could freeze the server; capped at 1,00,000 batches.
+  - Settings accepted nonsense (shelf life 1e300, company name as an object); now validated.
+  - A cancelled finished-good stock code could stop production; it can no longer be deleted and is reactivated if needed.
+  - A count waiting for approval could be cancelled by an Editor; now Admin only.
+  - BOM Default could be lost when two people obsoleted / set Default at the same moment; now locked and re-read.
+  - Dates used UTC: "today" and expiry now follow `APP_TIMEZONE` (default Asia/Kolkata).
+  - Mfg dates in the future are refused on Inward and Batch Entry; the product can no longer be added as its own input when editing a batch.
+  - ESLint added to backend and frontend (`npm run lint`, `npm run check`); it found and fixed an undefined name that would have crashed the Products page.
+- Not changed, by design or for a later decision:
+  - Editors can add Opening Stock (the v8 plan gives Opening Stock to editors; only Adjustment is Admin-only).
+  - Master-data deletes stay open to editors (roles are to be revisited later, as agreed).
+  - A plan's required date does not change availability (decided in PR #11, covered by a test).
+  - Transfers move stock at dispatch (In-Transit), not at completion (documented design).
+  - Database certificate check: set `DATABASE_SSL_CA` to the Supabase CA file to turn it on.
+  - Blind stock counts: the Stock list still shows quantities to counters (low risk; can be hidden later).
+

@@ -102,6 +102,7 @@ router.post('/inward', h(async (req, res) => {
   const materialId = v.uuid(b.material_id, 'Material');
   if (!p.mpnId && !materialId) throw badRequest('MPN is required');
   if (p.mfgDate && p.expiryDate && p.expiryDate < p.mfgDate) throw badRequest('Expiry date must be after Mfg date');
+  if (p.mfgDate && p.mfgDate > v.today()) throw badRequest('Mfg date cannot be in the future');
   // A goods receipt must be traceable to its purchase document.
   if (/^goods receipt/i.test(p.reason) && !p.referenceId) throw badRequest('Enter the GRN / invoice no for a goods receipt');
   const uom = v.str(b.uom, 'UOM', { max: 20 });

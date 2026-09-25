@@ -27,6 +27,8 @@ function wholeBatches(x, name = 'Number of batches') {
   return n;
 }
 
+const MAX_BATCHES = 100000;
+
 /** The BOM a plan uses: the one chosen, else the Default (or only) active BOM of product + location. */
 const activeBomId = (db, productId, locationId, bomId) => resolveBom(db, { productId, locationId, bomId });
 
@@ -107,6 +109,7 @@ router.post('/simulate', h(async (req, res) => {
   } else {
     demand = v.num(b.demand_qty, 'Required quantity', { required: true, gt: 0 });
     batches = planning.requiredBatches(demand, bom.expected_output_qty);
+    if (batches > MAX_BATCHES) throw badRequest(`That is ${batches.toLocaleString('en-IN')} batches: a plan can have at most ${MAX_BATCHES.toLocaleString('en-IN')}`);
   }
   res.json({
     bom,
@@ -133,6 +136,9 @@ router.post('/', h(async (req, res) => {
     const bomId = await activeBomId(c, productId, locationId, v.uuid(b.bom_id, 'BOM'));
     const bom = (await c.query('select warehouse_id, expected_output_qty from public.boms where id = $1', [bomId])).rows[0];
     if (mode === 'BATCHES') target = v.round4(targetBatches * Number(bom.expected_output_qty));
+    else if (planning.requiredBatches(target, bom.expected_output_qty) > MAX_BATCHES) {
+      throw badRequest(`A plan can have at most ${MAX_BATCHES.toLocaleString('en-IN')} batches: lower the target quantity`);
+    }
     const warehouseId = v.uuid(b.warehouse_id, 'Warehouse') || bom.warehouse_id;
     const applyScrap = b.apply_scrap_allowance === undefined ? settings.apply_scrap_allowance : v.bool(b.apply_scrap_allowance);
     const r = await c.query(`insert into public.plans(product_id, location_id, warehouse_id, bom_id, target_qty,

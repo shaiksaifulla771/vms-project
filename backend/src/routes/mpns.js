@@ -116,7 +116,10 @@ router.put('/:id', h(async (req, res) => {
 
 router.delete('/:id', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
-  const out = await withTransaction((c) => md.deleteOrDeactivate(c, { table: 'mpns', id, label: 'MPN', userId: req.user.id }));
+  const out = await withTransaction(async (c) => {
+    await md.assertNotFinishedGoodMpn(c, id);        // the hidden stock code of a finished good is never deleted
+    return md.deleteOrDeactivate(c, { table: 'mpns', id, label: 'MPN', userId: req.user.id });
+  });
   res.json(out);
 }));
 

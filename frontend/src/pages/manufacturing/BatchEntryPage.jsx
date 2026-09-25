@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { api, qs } from '../../lib/api';
@@ -96,11 +96,18 @@ export default function BatchEntryPage() {
     return m;
   }, [rows]);
 
+  // One id per submission: a double click or a network retry cannot post the batch twice.
+  const requestId = useRef(null);
+  const newRequestId = () => (window.crypto?.randomUUID ? window.crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`);
   const submit = async () => {
+    if (busy) return;
     setError(null);
     setBusy(true);
+    if (!requestId.current) requestId.current = newRequestId();
     try {
       const b = await api.post('/batches', {
+        client_request_id: requestId.current,
         source, plan_id: source === 'PLAN' ? planId : undefined,
         product_id: source === 'AD_HOC' ? productId : undefined, location_id: source === 'AD_HOC' ? locationId : undefined,
         bom_id: source === 'AD_HOC' ? (bomId || undefined) : undefined,
