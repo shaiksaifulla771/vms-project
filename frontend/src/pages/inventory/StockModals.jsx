@@ -3,7 +3,7 @@ import { api, qs } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtDate, fmtQty, today, mpnLabel } from '../../lib/format';
 import { ErrorBox, Field, Modal } from '../../components/ui';
-import { Combobox, LocationWarehouse, materialOptions, mpnOptions, useDefaultScope, useMaterials, useMpns } from '../../components/pickers';
+import { Combobox, LocationWarehouse, materialOptions, useDefaultScope, useMaterials, useMpns } from '../../components/pickers';
 
 function addDays(iso, days) {
   const d = new Date(`${iso}T00:00:00Z`);

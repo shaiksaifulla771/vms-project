@@ -793,14 +793,14 @@ async function exportFile(entity, format) {
     const cols = columns(entity, 'update');
     const out = [cols.map((c) => csvEscape(c.header)).join(',')];
     for (const r of rows) out.push(cols.map((c) => csvEscape(r[c.key])).join(','));
-    return { buffer: Buffer.from(`﻿${out.join('\r\n')}`, 'utf8'), type: 'text/csv; charset=utf-8', ext: 'csv' };
+    return { buffer: Buffer.from(`\uFEFF${out.join('\r\n')}`, 'utf8'), type: 'text/csv; charset=utf-8', ext: 'csv' };
   }
   const wb = await buildWorkbook(entity, 'update', rows);
   return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
 }
 
 function parseCsv(textIn) {
-  const s = textIn.replace(/^﻿/, '');
+  const s = textIn.replace(/^\uFEFF/, '');
   const rows = [];
   let row = [];
   let cell = '';

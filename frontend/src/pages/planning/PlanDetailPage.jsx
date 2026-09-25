@@ -5,6 +5,8 @@ import { useApp, useData } from '../../lib/app-context';
 import { fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Loading, Modal, PageHeader, Field } from '../../components/ui';
 import PlanSummaries from './PlanSummaries';
+import { Printer } from 'lucide-react';
+import { PrintHeader } from '../../components/print';
 
 export default function PlanDetailPage() {
   const { id } = useParams();
@@ -37,10 +39,14 @@ export default function PlanDetailPage() {
 
   return (
     <div>
+      <PrintHeader title={`Production Plan ${plan.plan_no} - required stock`}
+        filters={[['Product', `${plan.product_code} - ${plan.product_name}`], ['Location', `${plan.location_code} / ${plan.warehouse_code}`],
+          ['BOM', `${plan.bom_no} v${plan.bom_version}`], ['Status', plan.status]]} />
       <PageHeader title={`Plan ${plan.plan_no}`}
         subtitle={`${plan.product_code} - ${plan.product_name} · ${plan.location_code} / ${plan.warehouse_code} · BOM ${plan.bom_no} v${plan.bom_version}`}
         actions={<>
           <Link className="btn-secondary" to="/planning/plans">Back</Link>
+          <button type="button" className="btn-secondary" title="Plan, batches and material requirement (required stock)" onClick={() => window.print()}><Printer size={14} /> Print</button>
           {canWrite && open && <button type="button" className="btn-secondary" onClick={cancel}>Cancel Plan</button>}
           {isAdmin && plan.status !== 'CANCELLED' && (
             <button type="button" className="btn-secondary" onClick={() => { setTarget(String(byBatches ? plan.target_batches : plan.target_qty)); setEditing(true); }}>

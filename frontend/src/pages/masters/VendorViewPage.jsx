@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Plus } from 'lucide-react';
+import { ChevronLeft, Plus, Printer } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, TXN_LABEL, fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Loading, PageHeader, Status } from '../../components/ui';
 import { DeleteDialog, DetailGrid, Section } from '../../components/masterKit';
 import { FssaiExpiry } from './VendorsPage';
+import { PrintHeader } from '../../components/print';
 
 export default function VendorViewPage() {
   const { id } = useParams();
@@ -19,10 +20,12 @@ export default function VendorViewPage() {
 
   return (
     <div>
+      <PrintHeader title={`Vendor ${v.code} - ${v.name}`} />
       <PageHeader title={`${v.code} - ${v.name}`} subtitle={<Link to="/masters/vendors" className="inline-flex items-center gap-1 hover:text-accent"><ChevronLeft size={12} /> All vendors</Link>}
-        actions={canWrite && <>
-          <button type="button" className="btn-danger" onClick={() => setDel(true)}>Delete</button>
-          <button type="button" className="btn-primary" onClick={() => navigate(`/masters/vendors/${id}/edit`)}>Edit</button>
+        actions={<>
+          <button type="button" className="btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          {canWrite && <button type="button" className="btn-danger" onClick={() => setDel(true)}>Delete</button>}
+          {canWrite && <button type="button" className="btn-primary" onClick={() => navigate(`/masters/vendors/${id}/edit`)}>Edit</button>}
         </>} />
       <div className="p-5 space-y-4 max-w-6xl">
         <Section title="Vendor details">
@@ -98,6 +101,20 @@ export default function VendorViewPage() {
             </table>
           )}
           <p className="text-xs2 text-ink-faint mt-2">Account numbers are masked here. Open Edit to see them in full.</p>
+        </Section>
+
+        <Section title={`Recent receipts from this vendor (${v.recent_receipts?.length || 0})`}>
+          {!v.recent_receipts?.length ? <p className="text-ink-muted text-[13px]">No stock received from this vendor yet.</p> : (
+            <table className="w-full border-collapse">
+              <thead><tr><th className="th">When</th><th className="th">Type</th><th className="th">Material</th><th className="th">Lot</th>
+                <th className="th">Location</th><th className="th text-right">Qty</th><th className="th">Reference</th></tr></thead>
+              <tbody>{v.recent_receipts.map((r) => (
+                <tr key={r.txn_no}><td className="td">{fmtDateTime(r.txn_at)}</td><td className="td">{TXN_LABEL[r.txn_type] || r.txn_type}</td>
+                  <td className="td">{r.material_code} - {r.material_name}</td><td className="td">{r.lot_no}</td><td className="td">{r.location_code}</td>
+                  <td className="td num">{fmtQty(r.qty_change)} {r.uom}</td><td className="td">{r.reference_id || '-'}</td></tr>
+              ))}</tbody>
+            </table>
+          )}
         </Section>
 
       </div>

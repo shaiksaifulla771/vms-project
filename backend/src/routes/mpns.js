@@ -48,7 +48,12 @@ router.get('/:id', h(async (req, res) => {
       join public.mpn_vendors mv on mv.id = h.mpn_vendor_id join public.vendors ve on ve.id = mv.vendor_id
       left join public.user_profiles u on u.id = h.changed_by
      where mv.mpn_id = $1 order by h.changed_at desc limit 50`, [id])).rows;
-  res.json({ ...mpn, vendors, price_history: history });
+  const stock = (await query(`select id, location_code, warehouse_code, lot_no, quantity, uom, mfg_date, expiry_date, is_expired, vendor_name
+                                from public.v_stock where mpn_id = $1 and quantity > 0
+                               order by location_code, warehouse_code, expiry_date nulls last, lot_no`, [id])).rows;
+  const txns = (await query(`select txn_no, txn_at, txn_type, qty_change, new_balance, uom, lot_no, reference_id, location_code, warehouse_code
+                               from public.v_ledger where mpn_id = $1 order by txn_no desc limit 20`, [id])).rows;
+  res.json({ ...mpn, vendors, price_history: history, stock, transactions: txns });
 }));
 
 router.post('/', h(async (req, res) => {

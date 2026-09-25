@@ -57,6 +57,13 @@ router.get('/:id', h(async (req, res) => {
   res.json({
     ...vendor,
     mpns: mpns.rows,
+    // Recent receipts from this vendor (lots whose vendor it is)
+    recent_receipts: (await query(`select s.txn_no, s.txn_at, s.txn_type, s.qty_change, s.uom, s.lot_no, s.reference_id,
+                                          m.code as material_code, m.name as material_name, l.code as location_code
+                                     from public.stock_ledger s join public.inventory i on i.id = s.inventory_id
+                                     join public.materials m on m.id = s.material_id join public.locations l on l.id = s.location_id
+                                    where i.vendor_id = $1 and s.txn_type in ('INWARD', 'OPENING') and s.qty_change > 0
+                                    order by s.txn_no desc limit 20`, [id])).rows,
     addresses: addresses.rows,
     contacts: contacts.rows,
     bank_accounts: banks.rows.map((b) => (full ? b : { ...b, account_number: mask(b.account_number) })),

@@ -58,7 +58,7 @@ export default function VendorsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" onRowClick={(r) => navigate(`/masters/vendors/${r.id}`)}
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" printTitle="Vendors" onRowClick={(r) => navigate(`/masters/vendors/${r.id}`)}
           toolbar={(
             <select className="input w-32" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Any status</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>

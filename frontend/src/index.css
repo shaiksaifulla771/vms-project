@@ -27,11 +27,30 @@ body {
   .num { @apply text-right tabular-nums; }
 }
 
+/* ---- Printing: clean A4 pages, header on every report, repeated table headers, page numbers ---- */
+@page {
+  size: A4 portrait;
+  margin: 12mm 10mm 14mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9px; color: #6b7280; }
+}
+@page wide { size: A4 landscape; }
 @media print {
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  body { font-size: 11px; }
+  html, body, #root { height: auto !important; }
+  body { font-size: 10.5px; color: #000; background: #fff; }
   main { padding: 0 !important; overflow: visible !important; }
+  .print-wide { page: wide; }
+  body.printing-report > #root { display: none !important; }
+  .print-header { margin-bottom: 6px; }
+  .card { border: none !important; }
+  .th { background: #f3f4f6 !important; color: #000; border: 1px solid #9ca3af !important; padding: 3px 5px !important; white-space: normal; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .td { border: 1px solid #d1d5db !important; padding: 2px 5px !important; white-space: normal; }
+  thead { display: table-header-group; }
+  tfoot { display: table-row-group; }
+  tr, .break-inside-avoid { break-inside: avoid; }
+  a { color: inherit !important; text-decoration: none !important; }
+  .sticky { position: static !important; }
 }
 .print-only { display: none; }
 

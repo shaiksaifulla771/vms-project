@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Printer } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { downloadCsv, fmtDate, fmtQty, mpnLabel } from '../../lib/format';
-import { ErrorBox, Loading, PageHeader } from '../../components/ui';
+import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
+import { PrintDialog, PrintHeader, printAfterRender } from '../../components/print';
 
 const COLS = [
   { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) }, { key: 'material_name', label: 'Material Name' }, { key: 'lot_no', label: 'Lot No' },
@@ -12,8 +13,27 @@ const COLS = [
 ];
 
 export default function StockBalancePage() {
-  const { location, warehouse, company } = useApp();
-  const { data, loading, error } = useData(() => api.get('/reports/stock-balance'), []);
+  const { location, warehouse } = useApp();
+  const today = new Date().toISOString().slice(0, 10);
+  const [asOn, setAsOn] = useState('');
+  const [cls, setCls] = useState('');
+  const [ask, setAsk] = useState(false);
+  const { data, loading, error } = useData(() => api.get(`/reports/stock-balance${qs({ as_on: asOn, classification: cls })}`), [asOn, cls]);
+  const [printErr, setPrintErr] = useState(null);
+  // Print: All = every lot today; Current filter = what is on screen; either can be "as on" a past date.
+  const print = async (opt) => {
+    setAsk(false);
+    setPrintErr(null);
+    const date = opt.asOn && opt.asOn !== today ? opt.asOn : '';
+    const nextCls = opt.scope === 'all' ? '' : cls;
+    try {
+      if (date !== asOn || nextCls !== cls) {
+        await api.get(`/reports/stock-balance${qs({ as_on: date, classification: nextCls })}`);  // surface errors before switching
+        setAsOn(date); setCls(nextCls);
+        setTimeout(() => printAfterRender(), 600);
+      } else printAfterRender();
+    } catch (e) { setPrintErr(e.message); }
+  };
   const groups = useMemo(() => {
     const g = {};
     (data || []).forEach((r) => {
@@ -28,11 +48,25 @@ export default function StockBalancePage() {
       <PageHeader title="Stock Balance Sheet" subtitle={`Snapshot of current inventory grouped by Location / WH · ${location ? location.code : 'All locations'}${warehouse ? ` / ${warehouse.code}` : ''}`}
         actions={<>
           <button type="button" className="btn-secondary" onClick={() => downloadCsv('stock_balance.csv', COLS, data || [])}>CSV</button>
-          <button type="button" className="btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          <button type="button" className="btn-secondary" onClick={() => setAsk(true)}><Printer size={14} /> Print</button>
         </>} />
       <div className="p-5 space-y-4">
-        <div className="print-only mb-2"><b>{company?.name}</b> · Stock Balance Sheet · {new Date().toLocaleString('en-IN')}</div>
-        <ErrorBox message={error} />
+        <PrintHeader title="Stock Balance Sheet" filters={[['As on', asOn || `${today} (today)`],
+          ['Location', location ? location.code : 'All locations'], ['Warehouse', warehouse?.code], ['Classification', cls.replace(/_/g, ' ')],
+          ['Lots', String((data || []).length)]]} />
+        <div className="card p-3 flex items-end gap-3 no-print">
+          <Field label="Stock as on" hint="Blank = today">
+            <input className="input w-44" type="date" max={today} value={asOn} onChange={(e) => setAsOn(e.target.value)} />
+          </Field>
+          <Field label="Classification">
+            <select className="input w-44" value={cls} onChange={(e) => setCls(e.target.value)}>
+              <option value="">All</option><option value="RAW_MATERIAL">Raw material</option><option value="PACKAGING">Packaging</option>
+              <option value="CONSUMABLE">Consumable</option><option value="SEMI_FINISHED">Semi-finished</option><option value="FINISHED_GOOD">Finished good</option>
+            </select>
+          </Field>
+          {(asOn || cls) && <button type="button" className="btn-link mb-2" onClick={() => { setAsOn(''); setCls(''); }}>Reset</button>}
+        </div>
+        <ErrorBox message={error || printErr} />
         {loading && <Loading />}
         {!loading && groups.length === 0 && <div className="text-ink-muted">No stock</div>}
         {groups.map(([k, g]) => (
@@ -56,6 +90,8 @@ export default function StockBalancePage() {
           </section>
         ))}
       </div>
+      {ask && <PrintDialog title="Stock Balance Sheet" dateMode="asOn" allowSelected={false} viewCount={(data || []).length}
+        defaults={{ scope: cls ? 'view' : 'all', asOn: asOn || today }} onClose={() => setAsk(false)} onPrint={print} />}
     </div>
   );
 }

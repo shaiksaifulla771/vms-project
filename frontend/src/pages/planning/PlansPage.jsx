@@ -32,7 +32,7 @@ export default function PlansPage() {
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/planning/new')}><Plus size={14} /> New Plan</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} exportName="plans"
+        <DataTable columns={columns} rows={data || []} loading={loading} exportName="plans" printTitle="Production Plans" printDateKey="created_at"
           onRowClick={(r) => navigate(`/planning/plans/${r.id}`)}
           toolbar={(
             <select className="input w-40" value={status} onChange={(e) => setStatus(e.target.value)}>

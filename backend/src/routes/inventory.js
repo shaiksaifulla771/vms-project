@@ -182,8 +182,8 @@ router.get('/ledger', h(async (req, res) => {
   const { clause, params } = where([
     ['l.location_id = ?', req.scope.locationId],
     ['l.warehouse_id = ?', req.scope.warehouseId],
-    ['l.mpn_id = ?', req.query.mpn_id],
-    ['l.material_id = ?', req.query.material_id],
+    ['l.mpn_id = ?', v.uuid(req.query.mpn_id, 'MPN')],
+    ['l.material_id = ?', v.uuid(req.query.material_id, 'Material')],
     ['l.txn_type = ?', req.query.type],
     ['l.lot_no = ?', req.query.lot_no],
     ['l.reference_id = ?', req.query.reference_id],
@@ -202,7 +202,7 @@ router.get('/ledger', h(async (req, res) => {
     ]);
     return res.json({ rows: list.rows, total: total.rows[0].n, page, page_size: size });
   }
-  const limit = Math.min(parseInt(req.query.limit || '1000', 10) || 1000, 5000);
+  const limit = Math.min(Math.max(parseInt(req.query.limit || '1000', 10) || 1000, 1), 5000);
   const { rows } = await query(`select l.*, (select x.classification from public.materials x where x.id = l.material_id) as classification from public.v_ledger l ${clause} order by l.txn_no desc limit ${limit}`, params);
   res.json(rows);
 }));

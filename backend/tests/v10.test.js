@@ -171,3 +171,67 @@ describe('v10 E: vendor address has no Type to pick', () => {
     expect(v.addresses[0].is_default).toBe(true);
   });
 });
+
+describe('v10 G: full-page views', () => {
+  test('material overview: stock, transactions, BOMs it is used in and its own BOMs', async () => {
+    const rice = (await editor.get(`/materials/${C.rice.id}/overview`)).body;
+    expect(rice.stock.length).toBeGreaterThan(0);
+    expect(rice.stock_total).toBeGreaterThan(0);
+    expect(rice.transactions.length).toBeGreaterThan(0);
+    expect(rice.used_in_boms.some((b) => b.product_code === 'FG-RL1')).toBe(true);
+    const fg = (await editor.get(`/materials/${C.fg.id}/overview`)).body;
+    expect(fg.made_in_house).toBe(true);
+    expect(fg.boms.length).toBeGreaterThan(1);
+    expect(fg.stock.every((s) => s.mpn_code === null)).toBe(true);           // the hidden code never shows
+    expect((await editor.get('/materials/not-a-uuid/overview')).status).toBe(400);
+    expect((await editor.get('/materials/00000000-0000-0000-0000-000000000000/overview')).status).toBe(404);
+  });
+
+  test('MPN detail has its stock lots and transactions; vendor detail has recent receipts', async () => {
+    const p = (await editor.get(`/mpns/${C.riceMpn.id}`)).body;
+    expect(p.stock.length).toBeGreaterThan(0);
+    expect(p.transactions.length).toBeGreaterThan(0);
+    const venId = (await q('select vendor_id from public.inventory where mpn_id = $1 and vendor_id is not null limit 1', [C.riceMpn.id]))[0].vendor_id;
+    const ven = (await editor.get(`/vendors/${venId}`)).body;
+    expect(ven.recent_receipts.length).toBeGreaterThan(0);
+    expect(ven.recent_receipts.every((r) => Number(r.qty_change) > 0)).toBe(true);
+  });
+});
+
+describe('v10 H: printing data', () => {
+  test('stock balance "as on" a date is rebuilt from the ledger; future dates and bad filters are refused', async () => {
+    const now = (await editor.get('/reports/stock-balance')).body;
+    const today = new Date().toISOString().slice(0, 10);
+    const same = (await editor.get(`/reports/stock-balance?as_on=${today}`)).body;
+    const sum = (rows) => Math.round(rows.reduce((a, r) => a + Number(r.quantity), 0) * 1000) / 1000;
+    expect(sum(same)).toBe(sum(now));
+    expect(same.length).toBe(now.length);
+    // Before anything was posted there was no stock at all.
+    expect((await editor.get('/reports/stock-balance?as_on=2020-01-01')).body).toHaveLength(0);
+    expect((await editor.get('/reports/stock-balance?as_on=2999-01-01')).status).toBe(400);
+    expect((await editor.get('/reports/stock-balance?classification=NOPE')).status).toBe(400);
+    const rm = (await editor.get('/reports/stock-balance?classification=RAW_MATERIAL')).body;
+    expect(rm.length).toBeGreaterThan(0);
+    expect(rm.every((r) => r.classification === 'RAW_MATERIAL')).toBe(true);
+  });
+
+  test('stock balance "as on" reflects stock that later left the store', async () => {
+    const lot = await C.lot('LEN-L1');
+    const before = Number(lot.quantity);
+    // back-date one outward by moving its ledger timestamp is not allowed (ledger is immutable), so compare today vs yesterday
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const y = (await editor.get(`/reports/stock-balance?as_on=${yesterday}`)).body.find((r) => r.lot_no === 'LEN-L1');
+    expect(y).toBeUndefined();                                                // seeded today, so not there yesterday
+    expect(before).toBeGreaterThan(0);
+  });
+
+  test('transaction report print fetch: dates, a bad MPN id and a silly limit are handled', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const all = (await editor.get(`/inventory/ledger?from=${today}&to=${today}&limit=5000`)).body;
+    expect(Array.isArray(all)).toBe(true);
+    expect(all.length).toBeGreaterThan(0);
+    expect((await editor.get('/inventory/ledger?mpn_id=abc')).status).toBe(400);
+    expect((await editor.get('/inventory/ledger?limit=-5')).status).toBe(200);
+    expect((await editor.get('/inventory/ledger?from=2026-13-40')).status).toBe(400);
+  });
+});

@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader, Status } from '../../components/ui';
+import { PrintHeader } from '../../components/print';
 
 const money = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
@@ -126,6 +127,8 @@ export default function BomDetailPage() {
 
   return (
     <div>
+      <PrintHeader title={`BOM ${bom.bom_no} v${bom.version}${bom.name ? ` · ${bom.name}` : ''} - ${bom.product_code} ${bom.product_name}`}
+        filters={[['Location', `${bom.location_code} / ${bom.warehouse_code}`], ['Status', bom.status], ['Default', bom.is_default ? 'Yes' : 'No']]} />
       <PageHeader title={<span>{bom.bom_no} · v{bom.version}{bom.name ? ` · ${bom.name}` : ''}
         {bom.is_default && <span className="ml-2 align-middle text-xs2 px-1.5 py-0.5 rounded bg-accent-soft text-accent">Default</span>}</span>}
         subtitle={`${bom.product_code} - ${bom.product_name} · ${bom.location_code} / ${bom.warehouse_code}`}

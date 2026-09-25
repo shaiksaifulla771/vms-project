@@ -180,7 +180,7 @@ router.post('/', h(async (req, res) => {
     let plan = null;
     let productId;
     let locationId;
-    let bomId = null;
+    let bomId;
     if (source === 'PLAN') {
       const planId = v.uuid(b.plan_id, 'Plan', { required: true });
       plan = (await c.query('select * from public.plans where id = $1 for update', [planId])).rows[0];

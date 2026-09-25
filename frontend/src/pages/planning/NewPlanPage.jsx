@@ -52,21 +52,22 @@ export default function NewPlanPage() {
         <div className="card p-4">
           <div className="grid grid-cols-8 gap-3 items-end">
             <LocationProductBom value={f} productPlaceholder="Select finished or semi-finished good"
+              classes={{ location: 'col-span-2', product: 'col-span-3', bom: 'col-span-3' }}
               onChange={(v) => { const n = { ...f, ...v }; setF(n); simulate(n, true); }} />
             {f.plan_mode === 'BATCHES' ? (
-              <Field label="Number of Batches" required hint="Whole batches of the active BOM">
+              <Field label="Number of Batches" required hint="Whole batches of the chosen BOM" className="col-span-2">
                 <input className="input num" type="number" min="1" step="1" value={f.target_batches}
                   onChange={(e) => setF({ ...f, target_batches: e.target.value.replace(/[^0-9]/g, '') })} onBlur={() => simulate()}
                   onKeyDown={(e) => { if (e.key === 'Enter') simulate(); }} />
               </Field>
             ) : (
-              <Field label="Required Qty (Demand)" required>
+              <Field label="Required Qty (Demand)" required className="col-span-2">
                 <input className="input num" type="number" min="0" step="any" value={f.demand_qty}
                   onChange={(e) => setF({ ...f, demand_qty: e.target.value })} onBlur={() => simulate()}
                   onKeyDown={(e) => { if (e.key === 'Enter') simulate(); }} />
               </Field>
             )}
-            <Field label="Required By">
+            <Field label="Required By" className="col-span-2">
               <input className="input" type="date" value={f.required_date} onChange={(e) => { const n = { ...f, required_date: e.target.value }; setF(n); if (n.product_id) simulate(n); }} />
             </Field>
             <button type="button" className="btn-secondary" disabled={busy} onClick={() => simulate(f, true)}>Calculate</button>

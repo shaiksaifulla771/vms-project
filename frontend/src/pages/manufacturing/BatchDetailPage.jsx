@@ -4,6 +4,8 @@ import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtDateTime, fmtPct, fmtQty, mpnLabel } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader } from '../../components/ui';
+import { Printer } from 'lucide-react';
+import { PrintHeader } from '../../components/print';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
 
@@ -56,10 +58,14 @@ export default function BatchDetailPage() {
 
   return (
     <div>
+      <PrintHeader title={`Production Batch ${b.batch_no}`}
+        filters={[['Product', `${b.product_code} - ${b.product_name}`], ['Location', `${b.location_code} / ${b.warehouse_code}`],
+          ['Source', b.source === 'PLAN' ? `Plan ${b.plan_no}` : 'Ad Hoc']]} />
       <PageHeader title={`Batch ${b.batch_no}`}
         subtitle={`${b.product_code} - ${b.product_name} · ${b.location_code} / ${b.warehouse_code} · ${b.source === 'PLAN' ? `Plan ${b.plan_no}` : 'Ad Hoc'}`}
         actions={<>
           <Link className="btn-secondary" to="/manufacturing/batches">Back</Link>
+          <button type="button" className="btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print</button>
           {b.plan_id && <Link className="btn-secondary" to={`/planning/plans/${b.plan_id}`}>Open Plan</Link>}
           <Link className="btn-secondary" to={`/reports/traceability?mpn_id=${b.output_mpn_id}&lot_no=${encodeURIComponent(b.batch_no)}`}>Trace Lot</Link>
           {isAdmin && !edit && !reversed && <button type="button" className="btn-secondary" onClick={() => setReversing('')}>Reverse Batch</button>}

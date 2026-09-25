@@ -197,7 +197,8 @@ export function useLocationBoms(locationId) {
 export const defaultBomId = (list) => (list.find((b) => b.is_default) || list[0])?.id || '';
 
 /** Location -> Product (only those with a BOM there) -> BOM. Calls onChange({ location_id, product_id, bom_id }). */
-export function LocationProductBom({ value, onChange, disabled, productPlaceholder = 'Select product', extraProducts = [] }) {
+export function LocationProductBom({ value, onChange, disabled, productPlaceholder = 'Select product', extraProducts = [],
+  classes = { location: '', product: 'col-span-2', bom: '' } }) {
   const { locations } = useApp();
   const { products, bomsFor, loading } = useLocationBoms(value.location_id);
   const list = value.product_id ? bomsFor(value.product_id) : [];
@@ -209,20 +210,20 @@ export function LocationProductBom({ value, onChange, disabled, productPlacehold
   const setProduct = (pid) => onChange({ ...value, product_id: pid, bom_id: defaultBomId(bomsFor(pid)) });
   return (
     <>
-      <Field label="Manufacturing Location" required>
+      <Field label="Manufacturing Location" required className={classes.location}>
         <select className="input" value={value.location_id} disabled={disabled} onChange={(e) => setLoc(e.target.value)}>
           <option value="">Select</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
         </select>
       </Field>
-      <Field label="Product" required className="col-span-2"
+      <Field label="Product" required className={classes.product}
         hint={value.location_id && !loading && !products.length
           ? <span className="text-danger">No active BOMs at this location yet. <Link className="text-accent" to="/masters/boms/new">Create BOM</Link></span>
           : (value.location_id ? `${products.length} product${products.length === 1 ? '' : 's'} with a BOM here` : 'Choose the location first')}>
         <Combobox value={value.product_id} options={options} onChange={setProduct} disabled={disabled || !value.location_id}
           placeholder={value.location_id ? productPlaceholder : 'Choose the location first'} />
       </Field>
-      <Field label="BOM" required hint={list.length > 1 ? `${list.length} active BOMs; Default pre-selected` : ''}>
+      <Field label="BOM" required className={classes.bom} hint={list.length > 1 ? `${list.length} active BOMs; Default pre-selected` : ''}>
         <select className="input" value={value.bom_id} disabled={disabled || !value.product_id} onChange={(e) => onChange({ ...value, bom_id: e.target.value })}>
           {!list.length && <option value="">-</option>}
           {list.map((b) => <option key={b.id} value={b.id}>{b.bom_no} v{b.version}{b.name ? ` · ${b.name}` : ''}{b.is_default ? ' (Default)' : ''}</option>)}

@@ -3,7 +3,6 @@ const { resetDb, ctx, api, getPool, close } = require('./helpers');
 
 let C;
 let admin;
-let viewer;
 const q = async (sql, p) => (await getPool().query(sql, p)).rows;
 const catId = async (name) => (await q('select id from public.material_categories where name = $1 and parent_id is null', [name]))[0].id;
 const subId = async (parent, name) => (await q(`select s.id from public.material_categories s join public.material_categories c on c.id = s.parent_id
@@ -13,7 +12,6 @@ beforeAll(async () => {
   await resetDb();
   C = await ctx();
   admin = api(C.admin.id);
-  viewer = api(C.viewer.id);
 });
 afterAll(close);
 

@@ -3,10 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Rows3, Trash2 } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { Combobox, UomSelect, materialOptions, useMaterials, useUoms, useVendors } from '../../components/pickers';
-import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } from '../../components/masterKit';
+import { BulkDialog, DeleteDialog, FunctionsMenu, actionsColumn } from '../../components/masterKit';
 
 const money = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
@@ -27,7 +27,7 @@ export function sortedVendorOptions(vendors, supplierIds) {
     .sort((a, b) => a.s - b.s || a.label.localeCompare(b.label));
 }
 
-function MpnForm({ mpn, preset, onClose, onDone }) {
+export function MpnForm({ mpn, preset, onClose, onDone }) {
   const uoms = useUoms();
   const materials = useMaterials({ status: 'ACTIVE' });
   const vendors = useVendors();
@@ -102,53 +102,6 @@ function MpnForm({ mpn, preset, onClose, onDone }) {
   );
 }
 
-function MpnView({ id, canWrite, onClose, onEdit }) {
-  const { data: p, error } = useData(() => api.get(`/mpns/${id}`, { scoped: false }), [id]);
-  return (
-    <Modal title={p ? `${p.mpn_code} - ${p.material_name}` : 'MPN'} onClose={onClose} width="max-w-4xl"
-      footer={<><button type="button" className="btn-secondary" onClick={onClose}>Close</button>
-        {canWrite && p && <button type="button" className="btn-primary" onClick={() => onEdit(p)}>Edit</button>}</>}>
-      <ErrorBox message={error} />
-      {p && (
-        <div className="space-y-4">
-          <DetailGrid items={[
-            ['MPN Code', p.mpn_code], ['Material', `${p.material_code} - ${p.material_name}`, 'col-span-2'],
-            ['Manufacturer', p.manufacturer], ['HSN Code', p.hsn_code], ['Description', p.description], ['Status', <Status key="s" value={p.status} />],
-          ]} />
-          <div>
-            <div className="text-xs2 uppercase tracking-wide text-ink-muted mb-1">Vendors</div>
-            <table className="w-full border border-line border-collapse">
-              <thead><tr><th className="th">Vendor</th><th className="th">UOM</th><th className="th text-right">MOQ</th><th className="th text-right">Price (₹)</th><th className="th text-right">Lead (d)</th><th className="th">Price updated</th></tr></thead>
-              <tbody>
-                {p.vendors.length === 0 && <tr><td className="td text-ink-muted" colSpan={6}>No vendors</td></tr>}
-                {p.vendors.map((v) => (
-                  <tr key={v.id}><td className="td">{v.vendor_code} - {v.vendor_name}{v.is_preferred ? <span className="text-ink-muted"> (preferred)</span> : ''}</td>
-                    <td className="td">{v.uom}</td><td className="td num">{fmtQty(v.moq)}</td><td className="td num">{money(v.price)}</td>
-                    <td className="td num">{v.lead_time_days}</td><td className="td">{fmtDateTime(v.price_updated_at)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div>
-            <div className="text-xs2 uppercase tracking-wide text-ink-muted mb-1">Price history</div>
-            <table className="w-full border border-line border-collapse">
-              <thead><tr><th className="th">When</th><th className="th">Vendor</th><th className="th text-right">Old price</th><th className="th text-right">New price</th><th className="th text-right">Old MOQ</th><th className="th text-right">New MOQ</th><th className="th">By</th></tr></thead>
-              <tbody>
-                {p.price_history.length === 0 && <tr><td className="td text-ink-muted" colSpan={7}>No changes yet</td></tr>}
-                {p.price_history.map((h) => (
-                  <tr key={h.id}><td className="td">{fmtDateTime(h.changed_at)}</td><td className="td">{h.vendor_name}</td>
-                    <td className="td num">{money(h.old_price)}</td><td className="td num">{money(h.new_price)}</td>
-                    <td className="td num">{fmtQty(h.old_moq)}</td><td className="td num">{fmtQty(h.new_moq)}</td><td className="td">{h.changed_by_name}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
 export default function MpnsPage() {
   const { canWrite, notify } = useApp();
   const navigate = useNavigate();
@@ -172,7 +125,7 @@ export default function MpnsPage() {
     { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
-      onView: (r) => setModal({ type: 'view', id: r.id }),
+      onView: (r) => navigate(`/masters/mpns/${r.id}`),
       onEdit: (r) => setModal({ type: 'edit', mpn: r }),
       onDelete: (r) => setModal({ type: 'delete', row: r }),
     }),
@@ -189,10 +142,9 @@ export default function MpnsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" onRowClick={(r) => setModal({ type: 'view', id: r.id })} />
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" onRowClick={(r) => navigate(`/masters/mpns/${r.id}`)} printTitle="MPNs" />
       </div>
       {modal?.type === 'edit' && <MpnForm mpn={modal.mpn} preset={modal.preset} onClose={close} onDone={(r) => { close(); notify(modal.mpn ? 'MPN saved' : `MPN ${r.mpn_code} created`); reload(); }} />}
-      {modal?.type === 'view' && <MpnView id={modal.id} canWrite={canWrite} onClose={close} onEdit={(p) => setModal({ type: 'edit', mpn: p })} />}
       {modal?.type === 'delete' && <DeleteDialog label={modal.row.mpn_code} path={`/mpns/${modal.row.id}`} onClose={close} onDone={() => { close(); reload(); }} />}
       {modal?.type === 'bulk' && <BulkDialog entity="mpns" mode={modal.mode} onClose={close} onDone={() => { close(); reload(); }} />}
     </div>

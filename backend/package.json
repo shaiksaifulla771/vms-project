@@ -13,7 +13,8 @@
     "dev": "node --watch src/server.js",
     "migrate": "node db/migrate.js",
     "seed:demo": "node db/seed.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "lint": "eslint ."
   },
   "dependencies": {
     "compression": "^1.8.1",
@@ -25,6 +26,9 @@
     "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
     "jest": "^30.5.2",
     "supertest": "^7.0.0"
   },

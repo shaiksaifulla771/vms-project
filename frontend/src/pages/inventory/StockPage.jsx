@@ -39,7 +39,7 @@ export default function StockPage() {
     { key: 'location_code', label: 'Location' },
     { key: 'warehouse_code', label: 'WH' },
     { key: 'lot_no', label: 'Lot No' },
-    { key: 'quantity', label: 'Quantity', align: 'right', render: (r) => fmtQty(r.quantity), value: (r) => Number(r.quantity) },
+    { key: 'quantity', label: 'Quantity', align: 'right', render: (r) => fmtQty(r.quantity), value: (r) => Number(r.quantity), total: true },
     { key: 'uom', label: 'UOM' },
     { key: 'mfg_date', label: 'Mfg Date', render: (r) => fmtDate(r.mfg_date) },
     { key: 'expiry_date', label: 'Expiry Date', render: (r) => <span className={r.is_expired ? 'text-danger' : ''}>{fmtDate(r.expiry_date)}{r.is_expired ? ' (expired)' : ''}</span> },
@@ -70,7 +70,8 @@ export default function StockPage() {
       </div>
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={rows} loading={loading} exportName="stock"
+        <DataTable columns={columns} rows={rows} loading={loading} exportName="stock" printTitle="Stock" printDateKey="mfg_date"
+          printFilters={[['Location', location ? location.code : 'All locations'], ['Warehouse', warehouse ? warehouse.code : '']]}
           empty="No stock for the selected location / warehouse"
           onRowClick={(r) => navigate(`/reports/traceability?mpn_id=${r.mpn_id}&lot_no=${encodeURIComponent(r.lot_no)}`)}
           toolbar={<>
