@@ -5,15 +5,32 @@ const compression = require('compression');
 const { actingUser, scope, writeGuard } = require('./middleware/session');
 const { AppError, fromPg } = require('./utils/errors');
 
+const LOCAL_DEV_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
+ * The UI normally calls the API through the Vite proxy (same origin, CORS not involved).
+ * When it calls the API directly: production allows only CLIENT_URL; development also allows any
+ * localhost / 127.0.0.1 port, so a UI on 127.0.0.1 or another port is not blocked.
+ */
+function corsOrigin() {
+  const allowed = (process.env.CLIENT_URL || 'http://localhost:3000').split(',').map((s) => s.trim()).filter(Boolean);
+  const isProduction = process.env.NODE_ENV === 'production';
+  return (origin, callback) => {
+    const ok = !origin || allowed.includes(origin) || (!isProduction && LOCAL_DEV_ORIGIN.test(origin));
+    callback(null, ok);
+  };
+}
+
 function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(compression());
   app.use(cors({
-    origin: (process.env.CLIENT_URL || 'http://localhost:3000').split(',').map((s) => s.trim()),
+    origin: corsOrigin(),
     allowedHeaders: ['Content-Type', 'X-User-Id', 'X-Location-Id', 'X-Warehouse-Id'],
     exposedHeaders: ['Content-Disposition'],
+    maxAge: 600, // cache preflight for 10 minutes: every request carries X-User-Id, so each would preflight
   }));
   app.use('/api/bulk', express.json({ limit: '10mb' })); // uploaded spreadsheets
   app.use(express.json({ limit: '1mb' }));
@@ -47,6 +64,7 @@ function createApp() {
   app.use((err, req, res, next) => {
     const mapped = err instanceof AppError ? err : fromPg(err);
     if (mapped) {
+      if (mapped.status === 503) console.error('[db] unreachable:', err.code || '', err.message);
       return res.status(mapped.status).json({ error: mapped.message, details: mapped.details });
     }
     if (err.type === 'entity.parse.failed') {

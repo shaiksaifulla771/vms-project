@@ -11,6 +11,15 @@ async function main() {
   const server = createApp().listen(port, () => {
     console.log(`[api] listening on http://localhost:${port}`);
   });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[api] Port ${port} is already in use - another copy of the API is already running. `
+        + 'Close the other terminal or run "npm run stop", then start again.');
+    } else {
+      console.error('[api] server error:', err.message);
+    }
+    process.exit(1);
+  });
   const shutdown = () => server.close(() => close().then(() => process.exit(0)));
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

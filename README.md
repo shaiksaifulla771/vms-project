@@ -14,13 +14,29 @@ Requirements: Node 18+, a PostgreSQL database (Supabase project `vms`, or local 
 ```bash
 npm run install-all
 cp backend/.env.example backend/.env      # set DATABASE_URL (see below)
-npm run dev                               # API http://localhost:5000, UI http://localhost:3000
+npm start                                 # API http://localhost:5000, UI http://localhost:3000
 ```
+
+| Command | Use it when |
+|---|---|
+| `npm start` | Using the app. The API does **not** restart by itself. |
+| `npm run dev` | Changing code. The API restarts automatically on every backend file change (editing, `git pull`, an AI agent editing files). It is unreachable for a few seconds each time: page loads retry automatically, a save made in that moment asks you to try again. |
+| `npm run stop` | Frees ports 3000 and 5000 when an old copy is still running. |
+
+Run only **one** copy. If `npm start` / `npm run dev` says *Port 3000 (or 5000) is already in use*, an old
+terminal is still running the project: close it or run `npm run stop`, then start again. Always open
+http://localhost:3000.
+
+The browser only talks to the Vite server; Vite forwards `/api` to the API, so CORS is not involved in local use.
+A CORS problem would show as "blocked by CORS policy" in the browser console (F12); an API restart shows as
+`[vite] http proxy error ... ECONNREFUSED / ECONNRESET` in the terminal.
 
 **Supabase connection:** Supabase Dashboard -> Project `vms` -> Connect -> Session pooler URI, e.g.
 `postgresql://postgres.hqpkgutythloohankart:<DB_PASSWORD>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres`.
 Put it only in `backend/.env` (git-ignored). SSL is enabled automatically. The Supabase database already has the
 schema and your migrated data; the API applies any newer migration on start (`AUTO_MIGRATE=true`).
+If the database cannot be reached within `DATABASE_CONNECT_TIMEOUT_MS` (default 10 s) the request fails with
+"The database is not reachable right now" instead of hanging, and the API terminal logs the cause.
 
 **Local Postgres instead:** set `DATABASE_URL=postgres://postgres:postgres@localhost:5432/erp_dev`, then
 `npm run migrate --prefix backend` and `npm run seed:demo --prefix backend` for demo data.

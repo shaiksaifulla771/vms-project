@@ -22,8 +22,24 @@ const CHECK_MESSAGES = {
   boms_freight_cost_check: 'Freight cost cannot be negative',
 };
 
+const DB_UNREACHABLE_CODES = new Set([
+  'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE',
+  '57P01', '57P03', '53300', // admin shutdown, cannot connect now, too many connections
+]);
+const DB_UNREACHABLE_MESSAGE = /timeout exceeded when trying to connect|Connection terminated|max clients reached/i;
+
+/** True when the database itself could not be reached (network, pooler limits), not a bad request. */
+function isDbUnreachable(err) {
+  return DB_UNREACHABLE_CODES.has(err.code)
+    || (typeof err.code === 'string' && err.code.startsWith('08')) // connection_exception class
+    || DB_UNREACHABLE_MESSAGE.test(err.message || '');
+}
+
 /** Map PostgreSQL errors to HTTP responses with readable messages. */
 function fromPg(err) {
+  if (isDbUnreachable(err)) {
+    return new AppError(503, 'The database is not reachable right now. Please try again in a few seconds.');
+  }
   switch (err.code) {
     case '23505': { // unique_violation
       const m = /Key \((.+?)\)=\((.+?)\)/.exec(err.detail || '');
