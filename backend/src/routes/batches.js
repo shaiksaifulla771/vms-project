@@ -3,7 +3,7 @@ const { query, withTransaction, getPool } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
 const { isAdmin, requireAdmin } = require('../middleware/session');
-const { loadBom } = require('./boms');
+const { loadBom, resolveBom } = require('../services/boms');
 const { getSettings } = require('../services/settings');
 const { postStock, outputMpn } = require('../services/stock');
 const v = require('../utils/validate');
@@ -95,8 +95,13 @@ router.get('/prefill', h(async (req, res) => {
   }
   if (!productId || !locationId) throw badRequest('Select a plan, or a product and location');
   if (!bomId) {
-    bomId = (await db.query(`select id from public.boms where product_id = $1 and location_id = $2 and status = 'ACTIVE'`,
-      [productId, locationId])).rows[0]?.id || null;
+    // Ad hoc: the chosen BOM, else the Default. A product without an active BOM can still be entered by hand.
+    try {
+      bomId = await resolveBom(db, { productId, locationId, bomId: v.uuid(req.query.bom_id, 'BOM') });
+    } catch (e) {
+      if (req.query.bom_id || /choose one/.test(e.message)) throw e;
+      bomId = null;
+    }
   }
   const product = (await db.query('select * from public.materials where id = $1', [productId])).rows[0];
   if (!product) throw notFound('Product not found');
@@ -187,9 +192,12 @@ router.post('/', h(async (req, res) => {
     } else {
       productId = v.uuid(b.product_id, 'Product', { required: true });
       locationId = v.uuid(b.location_id || req.scope.locationId, 'Location', { required: true });
-      bomId = v.uuid(b.bom_id, 'BOM') || (await c.query(
-        `select id from public.boms where product_id = $1 and location_id = $2 and status = 'ACTIVE'`,
-        [productId, locationId])).rows[0]?.id || null;
+      try {
+        bomId = await resolveBom(c, { productId, locationId, bomId: v.uuid(b.bom_id, 'BOM') });
+      } catch (e) {
+        if (b.bom_id || /choose one/.test(e.message)) throw e;
+        bomId = null;
+      }
     }
     const product = (await c.query('select * from public.materials where id = $1', [productId])).rows[0];
     if (!product) throw notFound('Product not found');

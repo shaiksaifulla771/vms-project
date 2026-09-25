@@ -3,7 +3,7 @@ const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { badRequest, notFound, forbidden } = require('../utils/errors');
 const { requireAdmin, isAdmin } = require('../middleware/session');
-const { postStock, lockInventory } = require('../services/stock');
+const { postStock, lockInventory, outputMpn } = require('../services/stock');
 const v = require('../utils/validate');
 
 // Centralized Inventory (lots) for the selected Location / WH
@@ -101,8 +101,6 @@ router.post('/inward', h(async (req, res) => {
   };
   const materialId = v.uuid(b.material_id, 'Material');
   if (!p.mpnId && !materialId) throw badRequest('MPN is required');
-  const FG_BLOCKED = 'Finished goods cannot be added here. Their stock comes only from a manufacturing batch '
-    + '(Manufacturing > Batch Entry). To correct an existing finished-goods lot, use Stock > Adjust or a physical stock count.';
   if (p.mfgDate && p.expiryDate && p.expiryDate < p.mfgDate) throw badRequest('Expiry date must be after Mfg date');
   // A goods receipt must be traceable to its purchase document.
   if (/^goods receipt/i.test(p.reason) && !p.referenceId) throw badRequest('Enter the GRN / invoice no for a goods receipt');
@@ -117,10 +115,16 @@ router.post('/inward', h(async (req, res) => {
     } else {
       mat = (await c.query('select id, uom, classification from public.materials where id = $1', [materialId])).rows[0];
       if (!mat) throw badRequest('Material not found');
-      if (mat.classification === 'FINISHED_GOOD') throw badRequest(FG_BLOCKED);
-      throw badRequest('MPN is required');
+      if (mat.classification !== 'FINISHED_GOOD') throw badRequest('MPN is required');
+      p.mpnId = await outputMpn(c, mat.id, req.user.id); // hidden internal stock code of the finished good
     }
-    if (mat.classification === 'FINISHED_GOOD') throw badRequest(FG_BLOCKED);
+    if (mat.classification === 'FINISHED_GOOD') {
+      // Finished goods are made, not bought: they come in as Opening Stock or an Adjustment (or from a batch).
+      if (entryType === 'PURCHASE') {
+        throw badRequest('Finished goods cannot be purchased. Use Opening Stock or Adjustment, or record a production batch.');
+      }
+      p.vendorId = null;
+    }
     // A production batch lot is changed from the batch (Edit IP / OP), never topped up by Inward.
     const batchLot = (await c.query('select 1 from public.batches where output_mpn_id = $1 and upper(batch_no) = upper($2) limit 1',
       [p.mpnId, p.lotNo])).rows[0];

@@ -62,8 +62,9 @@ async function seedDemo(c) {
 
   // BOM: 1 batch = 100 kg input -> 1000 pouches
   const bom = await ins(`insert into public.boms(product_id, location_id, warehouse_id, version, status, batch_size, batch_uom,
-                            expected_output_qty, output_uom, created_by, packing_cost, processing_cost, overhead_cost, freight_cost)
-                         values ($1,$2,$3,1,'ACTIVE',100,'kg',1000,'pcs',$4, 250, 400, 150, 120) returning id`, [fg.id, mum.id, mumWh2.id, admin.id]);
+                            expected_output_qty, output_uom, created_by, packing_cost, processing_cost, overhead_cost, freight_cost,
+                            name, is_default)
+                         values ($1,$2,$3,1,'ACTIVE',100,'kg',1000,'pcs',$4, 250, 400, 150, 120, 'Standard', true) returning id`, [fg.id, mum.id, mumWh2.id, admin.id]);
   const line = (n, m, p, q, uom, scrap) => c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct)
                                                    values ($1,$2,$3,$4,$5,$6,$7)`, [bom.id, n, m, p, q, uom, scrap]);
   await line(1, rice.id, riceMpn.id, 60, 'kg', 2);

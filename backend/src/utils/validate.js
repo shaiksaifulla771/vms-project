@@ -59,6 +59,18 @@ function bool(v, def = false) {
   return v === true || v === 'true' || v === 1 || v === '1';
 }
 
+/** HSN code: 4, 6 or 8 digits (spaces / dots ignored). Empty -> null. */
+const HSN_RE = /^([0-9]{4}|[0-9]{6}|[0-9]{8})$/;
+function hsn(v, name = 'HSN code') {
+  if (v === undefined || v === null || String(v).trim() === '') return null;
+  const s = String(v).replace(/[\s.]/g, '');
+  if (!HSN_RE.test(s)) {
+    const { badRequest } = require('./errors');
+    throw badRequest(`${name} must be 4, 6 or 8 digits`);
+  }
+  return s;
+}
+
 const round4 = (n) => Math.round(Number(n) * 10000) / 10000;
 
-module.exports = { str, uuid, num, date, oneOf, bool, round4, UUID_RE };
+module.exports = { hsn, HSN_RE, str, uuid, num, date, oneOf, bool, round4, UUID_RE };

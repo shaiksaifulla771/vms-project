@@ -10,6 +10,7 @@ const { query } = require('../db/pool');
 const { badRequest } = require('../utils/errors');
 const md = require('./masterData');
 const { loadUoms, matchUom, STATES } = require('./options');
+const v = require('../utils/validate');
 
 const MAX_ROWS = 2000;
 
@@ -65,7 +66,7 @@ async function loadLookups(db) {
   const cats = await db.query('select id, name, parent_id, status, classification from public.material_categories order by lower(name)');
   const mats = await db.query('select id, code, name, status, uom, classification, category_id, sub_category_id, shelf_life_days, description from public.materials');
   const vens = await db.query('select id, code, name, status, phone, contact_email, gstin, fssai_no, fssai_expiry from public.vendors');
-  const mpns = await db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.material_id, mv.vendor_id,
+  const mpns = await db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.hsn_code, p.material_id, mv.vendor_id,
                      mv.uom, mv.moq, mv.price, mv.lead_time_days, mv.is_preferred
                 from public.mpns p left join public.mpn_vendors mv on mv.mpn_id = p.id
                where not exists (select 1 from public.materials m where m.id = p.material_id and m.classification = 'FINISHED_GOOD')`);
@@ -136,6 +137,7 @@ const MPN_COLS = [
   { key: 'price', header: 'Price (INR)', required: true, width: 12 },
   { key: 'lead_time_days', header: 'Lead Time (days)', width: 14 },
   { key: 'manufacturer', header: 'Manufacturer', width: 22 },
+  { key: 'hsn_code', header: 'HSN Code', width: 11 },
 ];
 const MPN_UPDATE_COLS = [
   { key: 'mpn_code', header: 'MPN Code', required: true, width: 14, isKey: true },
@@ -148,6 +150,7 @@ const MPN_UPDATE_COLS = [
   { key: 'lead_time_days', header: 'Lead Time (days)', width: 14 },
   { key: 'is_preferred', header: 'Preferred (Yes/No)', width: 12, list: ['Yes', 'No'] },
   { key: 'manufacturer', header: 'Manufacturer', width: 22 },
+  { key: 'hsn_code', header: 'HSN Code', width: 11 },
   { key: 'status', header: 'MPN Status', width: 10, list: Object.values(STATUS_LABEL) },
 ];
 
@@ -394,6 +397,8 @@ function validateMpnCreate(rows, lk) {
     if (price === null) errors.push('Price is required');
     else if (price === undefined || price < 0) errors.push('Price must be a number, 0 or more');
     if (lead === undefined || (lead !== null && lead < 0)) errors.push('Lead time must be 0 or more days');
+    let hsnCode = null;
+    try { hsnCode = v.hsn(text(r.hsn_code)); } catch (e) { errors.push(e.message); }
     if (mat && ven) {
       const k = `${mat.id}|${ven.id}`;
       if (seen.has(k)) errors.push(`Same material and vendor as row ${seen.get(k)}`);
@@ -406,7 +411,7 @@ function validateMpnCreate(rows, lk) {
       values: { ...r, material_code: mat?.code || r.material_code, material_name: mat?.name, vendor_code: ven?.code || r.vendor_code, vendor_name: ven?.name },
       data: mat && ven ? {
         materialId: mat.id, vendorId: ven.id, uom: uom || mat.uom, moq, price, lead,
-        manufacturer: text(r.manufacturer),
+        manufacturer: text(r.manufacturer), hsnCode,
       } : null,
       errors,
       action: 'create',
@@ -452,6 +457,12 @@ function validateMpnUpdate(rows, lk) {
     }
     if (!blank(r.manufacturer) && !same(r.manufacturer, ex.manufacturer)) {
       patch.manufacturer = text(r.manufacturer); changes.push({ field: 'Manufacturer', from: ex.manufacturer, to: patch.manufacturer });
+    }
+    if (!blank(r.hsn_code)) {
+      try {
+        const hc = v.hsn(text(r.hsn_code));
+        if (hc !== ex.hsn_code) { patch.hsn_code = hc; changes.push({ field: 'HSN Code', from: ex.hsn_code, to: hc }); }
+      } catch (e) { errors.push(e.message); }
     }
     if (!blank(r.status)) {
       const s = fromLabel(STATUS_LABEL, r.status);
@@ -556,7 +567,7 @@ async function commitMpnRows(c, checked, userId) {
   for (const r of checked) {
     const d = r.data;
     const mpn = await md.createMpn(c, {
-      materialId: d.materialId, manufacturer: d.manufacturer,
+      materialId: d.materialId, manufacturer: d.manufacturer, hsnCode: d.hsnCode,
       vendors: [{ vendorId: d.vendorId, preferred: true, lead: d.lead, uom: d.uom, moq: d.moq, price: d.price }],
     }, userId);
     out.push({ row_no: r.row_no, code: mpn.mpn_code, id: mpn.id });
@@ -594,10 +605,11 @@ async function commit(c, entity, mode, checked, userId) {
         await c.query(`update public.mpn_vendors set ${mvCols.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`,
           [r.mv_id, ...mvCols.map((k) => p[k])]);
       }
-      if ('manufacturer' in p || 'status' in p) {
+      if ('manufacturer' in p || 'status' in p || 'hsn_code' in p) {
         await c.query(`update public.mpns set manufacturer = case when $2 then $3 else manufacturer end,
+                              hsn_code = case when $6 then $7 else hsn_code end,
                               status = coalesce($4, status), updated_by = $5 where id = $1`,
-        [r.mpn_id, 'manufacturer' in p, p.manufacturer ?? null, p.status ?? null, userId]);
+        [r.mpn_id, 'manufacturer' in p, p.manufacturer ?? null, p.status ?? null, userId, 'hsn_code' in p, p.hsn_code ?? null]);
       }
       out.push({ row_no: r.row_no, code: r.code });
     }
@@ -627,7 +639,7 @@ async function exportRows(entity, db = { query }, { forUpdate = false } = {}) {
   if (entity === 'mpns') {
     const { rows } = await db.query(`
       select p.mpn_code, ve.code as vendor_code, m.code as material_code, m.name as material_name, mv.uom, mv.moq, mv.price,
-             mv.lead_time_days, mv.is_preferred, p.manufacturer, p.status
+             mv.lead_time_days, mv.is_preferred, p.manufacturer, p.hsn_code, p.status
         from public.mpns p join public.materials m on m.id = p.material_id
         left join public.mpn_vendors mv on mv.mpn_id = p.id left join public.vendors ve on ve.id = mv.vendor_id
        where m.classification <> 'FINISHED_GOOD' ${forUpdate ? 'and mv.id is not null' : ''}

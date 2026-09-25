@@ -33,9 +33,9 @@ function MpnForm({ mpn, preset, onClose, onDone }) {
   const vendors = useVendors();
   const isNew = !mpn;
   const [f, setF] = useState(mpn
-    ? { material_id: mpn.material_id, manufacturer: mpn.manufacturer || '', description: mpn.description || '', status: mpn.status,
+    ? { material_id: mpn.material_id, manufacturer: mpn.manufacturer || '', description: mpn.description || '', hsn_code: mpn.hsn_code || '', status: mpn.status,
       vendors: mpn.vendors.map((v) => ({ vendor_id: v.vendor_id, is_preferred: v.is_preferred, uom: v.uom || '', moq: v.moq ?? '', price: v.price ?? '', lead_time_days: v.lead_time_days ?? '' })) }
-    : { material_id: preset?.material_id || '', manufacturer: '', description: '', status: 'ACTIVE',
+    : { material_id: preset?.material_id || '', manufacturer: '', description: '', hsn_code: '', status: 'ACTIVE',
       vendors: preset?.vendor_id ? [{ vendor_id: preset.vendor_id, is_preferred: true, uom: '', moq: '', price: '', lead_time_days: '' }] : [] });
   const [err, setErr] = useState(null);
   const suppliers = useSuppliers(f.material_id);
@@ -69,6 +69,8 @@ function MpnForm({ mpn, preset, onClose, onDone }) {
           <Combobox value={f.material_id} disabled={!isNew} onChange={(v) => setF({ ...f, material_id: v })} options={materialOptions(materials.filter((m) => m.classification !== 'FINISHED_GOOD'))} />
         </div>
         <Field label="Manufacturer"><input className="input" value={f.manufacturer} onChange={(e) => setF({ ...f, manufacturer: e.target.value })} /></Field>
+        <Field label="HSN Code" hint="4, 6 or 8 digits"><input className="input" inputMode="numeric" maxLength={8} value={f.hsn_code}
+          onChange={(e) => setF({ ...f, hsn_code: e.target.value.replace(/[^0-9]/g, '') })} /></Field>
         <Field label="Description"><input className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
         {!isNew && (
           <Field label="Status"><select className="input" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></Field>
@@ -111,7 +113,7 @@ function MpnView({ id, canWrite, onClose, onEdit }) {
         <div className="space-y-4">
           <DetailGrid items={[
             ['MPN Code', p.mpn_code], ['Material', `${p.material_code} - ${p.material_name}`, 'col-span-2'],
-            ['Manufacturer', p.manufacturer], ['Description', p.description], ['Status', <Status key="s" value={p.status} />],
+            ['Manufacturer', p.manufacturer], ['HSN Code', p.hsn_code], ['Description', p.description], ['Status', <Status key="s" value={p.status} />],
           ]} />
           <div>
             <div className="text-xs2 uppercase tracking-wide text-ink-muted mb-1">Vendors</div>
@@ -161,6 +163,7 @@ export default function MpnsPage() {
     { key: 'mpn_code', label: 'MPN' },
     { key: 'material', label: 'Material', value: (r) => `${r.material_code} - ${r.material_name}`, className: 'whitespace-normal min-w-[200px]' },
     { key: 'classification', label: 'Classification', value: (r) => CLASS_LABEL[r.classification] },
+    { key: 'hsn_code', label: 'HSN', value: (r) => r.hsn_code || '' },
     { key: 'vendors', label: 'Vendor(s)', value: (r) => r.vendors.map((v) => `${v.vendor_name}${v.is_preferred && r.vendors.length > 1 ? ' (preferred)' : ''}`).join(', '), className: 'whitespace-normal max-w-[240px]' },
     { key: 'uom', label: 'UOM', value: (r) => pref(r)?.uom || '' },
     { key: 'moq', label: 'MOQ', align: 'right', value: (r) => (pref(r)?.moq ?? null), render: (r) => fmtQty(pref(r)?.moq) },

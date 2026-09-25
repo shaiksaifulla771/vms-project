@@ -5,7 +5,7 @@ import { api, qs } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtDate, fmtPct, fmtQty } from '../../lib/format';
 import { ErrorBox, Field, PageHeader } from '../../components/ui';
-import { BomLocationSelect, Combobox, activeBomLocations, bomLocationHint, materialOptions, pickBomLocation, useMaterials } from '../../components/pickers';
+import { Combobox, LocationProductBom, materialOptions, useMaterials } from '../../components/pickers';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
 const variance = (actual, plan) => ({ qty: r4(Number(actual || 0) - Number(plan || 0)), pct: Number(plan) > 0 ? ((Number(actual || 0) - Number(plan)) / Number(plan)) * 100 : 0 });
@@ -29,17 +29,9 @@ export default function BatchEntryPage() {
   const [source, setSource] = useState('PLAN');
   const [plans, setPlans] = useState([]);
   const [planId, setPlanId] = useState(params.get('plan_id') || '');
-  const [productId, setProductId] = useState('');
-  const [locationId, setLocationId] = useState(scopeLoc || '');
-  const [boms, setBoms] = useState([]);
-  // Ad hoc: the manufacturing location comes from the product's active BOM.
-  const chooseProduct = async (v) => {
-    setProductId(v);
-    if (!v) { setBoms([]); return; }
-    const list = await activeBomLocations(v).catch(() => []);
-    setBoms(list);
-    setLocationId(pickBomLocation(list, locationId || scopeLoc));
-  };
+  // Ad hoc: location first, then a product made there, then its BOM (Default pre-selected).
+  const [adhoc, setAdhoc] = useState({ location_id: scopeLoc || '', product_id: '', bom_id: '' });
+  const { product_id: productId, location_id: locationId, bom_id: bomId } = adhoc;
   const [pf, setPf] = useState(null);
   const [head, setHead] = useState({ batch_no: '', mfg_date: '', expiry_date: '', executed_by: user?.full_name || '', warehouse_id: '' });
   const [out, setOut] = useState({ plan: '', actual: '', reason: '' });
@@ -60,7 +52,7 @@ export default function BatchEntryPage() {
     try {
       const p = await api.get(`/batches/prefill${qs({
         plan_id: source === 'PLAN' ? planId : '', product_id: source === 'AD_HOC' ? productId : '',
-        location_id: source === 'AD_HOC' ? locationId : '', planned_output: plannedOutput,
+        location_id: source === 'AD_HOC' ? locationId : '', bom_id: source === 'AD_HOC' ? bomId : '', planned_output: plannedOutput,
       })}`, { scoped: false });
       setPf(p);
       setHead((h) => ({ ...h, mfg_date: h.mfg_date || p.mfg_date, expiry_date: h.expiry_date || p.expiry_date, warehouse_id: h.warehouse_id || p.warehouse_id || '' }));
@@ -71,7 +63,7 @@ export default function BatchEntryPage() {
         actual_input_qty: String(l.plan_input_qty), variance_reason: '',
       })));
     } catch (e) { setError(e.message); setPf(null); setRows([]); }
-  }, [source, planId, productId, locationId]);
+  }, [source, planId, productId, locationId, bomId]);
 
   useEffect(() => { loadPrefill(undefined); }, [loadPrefill]);
 
@@ -111,6 +103,7 @@ export default function BatchEntryPage() {
       const b = await api.post('/batches', {
         source, plan_id: source === 'PLAN' ? planId : undefined,
         product_id: source === 'AD_HOC' ? productId : undefined, location_id: source === 'AD_HOC' ? locationId : undefined,
+        bom_id: source === 'AD_HOC' ? (bomId || undefined) : undefined,
         warehouse_id: head.warehouse_id || undefined, batch_no: head.batch_no, mfg_date: head.mfg_date, expiry_date: head.expiry_date,
         executed_by: head.executed_by, plan_output_qty: Number(out.plan || 0), actual_output_qty: Number(out.actual),
         variance_reason: out.reason, tolerance_override: override,
@@ -148,12 +141,8 @@ export default function BatchEntryPage() {
               </Field>
             ) : (
               <>
-                <Field label="Product" required className="col-span-2">
-                  <Combobox value={productId} onChange={chooseProduct} options={materialOptions(products)} placeholder="Select product" />
-                </Field>
-                <Field label="Location" required hint={bomLocationHint(boms, productId, locationId) ?? <span className="text-danger">No active BOM for this product</span>}>
-                  <BomLocationSelect value={locationId} onChange={setLocationId} boms={boms} productId={productId} />
-                </Field>
+                <LocationProductBom value={adhoc} extraProducts={products}
+                  onChange={(v) => { setAdhoc(v); setHead((h) => ({ ...h, warehouse_id: '' })); setOut({ plan: '', actual: '', reason: '' }); }} />
               </>
             )}
             <Field label="Output Warehouse" required>

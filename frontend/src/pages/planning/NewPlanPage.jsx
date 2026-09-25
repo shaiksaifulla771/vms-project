@@ -1,20 +1,18 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtQty } from '../../lib/format';
 import { ErrorBox, Field, PageHeader } from '../../components/ui';
-import { BomLocationSelect, Combobox, activeBomLocations, bomLocationHint, materialOptions, pickBomLocation, useMaterials } from '../../components/pickers';
+import { LocationProductBom } from '../../components/pickers';
 import PlanSummaries from './PlanSummaries';
 
 export default function NewPlanPage() {
   const { locationId, settings, canWrite, notify } = useApp();
   const navigate = useNavigate();
-  const products = useMaterials({ producible: 'true', status: 'ACTIVE' });
-  const [f, setF] = useState({ product_id: '', location_id: locationId || '', plan_mode: 'BATCHES', target_batches: '', demand_qty: '', required_date: '', notes: '',
+  const [f, setF] = useState({ product_id: '', location_id: locationId || '', bom_id: '', plan_mode: 'BATCHES', target_batches: '', demand_qty: '', required_date: '', notes: '',
     apply_scrap_allowance: settings?.apply_scrap_allowance ?? true });
   const [sim, setSim] = useState(null);
-  const [boms, setBoms] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -22,12 +20,12 @@ export default function NewPlanPage() {
   const simulate = async (next = f, force = false) => {
     // Skip if nothing changed (e.g. the input loses focus when Create Plan is clicked);
     // keep the current result on screen until the new one arrives so buttons don't jump.
-    const key = JSON.stringify([next.product_id, next.location_id, next.plan_mode, next.target_batches, next.demand_qty, next.apply_scrap_allowance, next.required_date]);
+    const key = JSON.stringify([next.product_id, next.location_id, next.bom_id, next.plan_mode, next.target_batches, next.demand_qty, next.apply_scrap_allowance, next.required_date]);
     if (!force && key === lastKey) return;
     setLastKey(key);
     setError(null);
     const amount = next.plan_mode === 'BATCHES' ? Number(next.target_batches) : Number(next.demand_qty);
-    if (!next.product_id || !next.location_id || !(amount > 0)) { setSim(null); return; }
+    if (!next.product_id || !next.location_id || !next.bom_id || !(amount > 0)) { setSim(null); return; }
     setBusy(true);
     try {
       setSim(await api.post('/plans/simulate', { ...next, demand_qty: Number(next.demand_qty), target_batches: Number(next.target_batches) }));
@@ -38,7 +36,7 @@ export default function NewPlanPage() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.post('/plans', { product_id: f.product_id, location_id: f.location_id, plan_mode: f.plan_mode,
+      const r = await api.post('/plans', { product_id: f.product_id, location_id: f.location_id, bom_id: f.bom_id, plan_mode: f.plan_mode,
         target_qty: f.plan_mode === 'QTY' ? Number(f.demand_qty) : undefined,
         target_batches: f.plan_mode === 'BATCHES' ? Number(f.target_batches) : undefined,
         apply_scrap_allowance: f.apply_scrap_allowance, required_date: f.required_date, notes: f.notes });
@@ -49,26 +47,12 @@ export default function NewPlanPage() {
 
   return (
     <div>
-      <PageHeader title="New Plan" subtitle="Plan by number of batches or by quantity. The active BOM is exploded and checked against inventory at the location." />
+      <PageHeader title="New Plan" subtitle="Choose the location, then a product that has a BOM there and its BOM. The BOM is exploded and checked against inventory at the location." />
       <div className="p-5 space-y-4">
         <div className="card p-4">
-          <div className="grid grid-cols-6 gap-3 items-end">
-            <Field label="Product" required className="col-span-2">
-              <Combobox value={f.product_id} options={materialOptions(products)} placeholder="Select finished good"
-                onChange={async (v) => {
-                  // The manufacturing location comes from where the product has an active BOM.
-                  let list = [];
-                  try { list = await activeBomLocations(v); } catch (e) { setError(e.message); }
-                  setBoms(list);
-                  const n = { ...f, product_id: v, location_id: pickBomLocation(list, f.location_id || locationId) };
-                  setF(n); simulate(n, true);
-                }} />
-            </Field>
-            <Field label="Manufacturing Location" required
-              hint={bomLocationHint(boms, f.product_id, f.location_id) ?? <span className="text-danger">No active BOM for this product. <Link className="text-accent" to={`/masters/boms/new?product_id=${f.product_id}`}>Create BOM</Link></span>}>
-              <BomLocationSelect value={f.location_id} boms={boms} productId={f.product_id}
-                onChange={(v) => { const n = { ...f, location_id: v }; setF(n); simulate(n); }} />
-            </Field>
+          <div className="grid grid-cols-8 gap-3 items-end">
+            <LocationProductBom value={f} productPlaceholder="Select finished or semi-finished good"
+              onChange={(v) => { const n = { ...f, ...v }; setF(n); simulate(n, true); }} />
             {f.plan_mode === 'BATCHES' ? (
               <Field label="Number of Batches" required hint="Whole batches of the active BOM">
                 <input className="input num" type="number" min="1" step="1" value={f.target_batches}
@@ -111,7 +95,7 @@ export default function NewPlanPage() {
         {sim && (
           <>
             <div className="text-xs text-ink-muted">
-              BOM {sim.bom.bom_no} v{sim.bom.version} · Batch size {fmtQty(sim.bom.batch_size)} {sim.bom.batch_uom} ·
+              BOM {sim.bom.bom_no} v{sim.bom.version}{sim.bom.name ? ` (${sim.bom.name})` : ''} · Batch size {fmtQty(sim.bom.batch_size)} {sim.bom.batch_uom} ·
               Expected output {fmtQty(sim.bom.expected_output_qty)} {sim.bom.output_uom} per batch ·
               {f.plan_mode === 'BATCHES'
                 ? <>Planned output = {sim.planSummary.target_batches} batches × {fmtQty(sim.bom.expected_output_qty)} = {fmtQty(sim.planSummary.target_qty)} {sim.bom.output_uom}</>

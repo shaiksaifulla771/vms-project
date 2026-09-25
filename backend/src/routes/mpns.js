@@ -12,8 +12,9 @@ router.get('/', h(async (req, res) => {
   const { clause, params } = where([
     [`m.classification <> 'FINISHED_GOOD' and ?::int = 1`, 1],
     ['p.material_id = ?', req.query.material_id],
-    ['(p.mpn_code ilike ? or m.code ilike ? or m.name ilike ? or p.manufacturer ilike ?)', q],
+    ['(p.mpn_code ilike ? or m.code ilike ? or m.name ilike ? or p.manufacturer ilike ? or p.hsn_code ilike ?)', q],
     ['p.status = ?', req.query.status],
+    ['(p.hsn_code is null and ?::int = 1)', req.query.hsn_missing === 'true' ? 1 : null],
     ['exists (select 1 from public.mpn_vendors x where x.mpn_id = p.id and x.vendor_id = ?)', req.query.vendor_id],
   ]);
   const { rows } = await query(`
@@ -61,6 +62,7 @@ router.post('/', h(async (req, res) => {
       legacyCode: v.str(b.mpn_code, 'MPN', { max: 100 })?.toUpperCase(),
       manufacturer: v.str(b.manufacturer, 'Manufacturer', { max: 200 }),
       description: v.str(b.description, 'Description', { max: 1000 }),
+      hsnCode: v.hsn(b.hsn_code),
       vendors,
     }, req.user.id);
   });
@@ -94,10 +96,12 @@ router.put('/:id', h(async (req, res) => {
     const r = (await c.query(`update public.mpns
          set manufacturer = case when $6 then $2 else manufacturer end,
              description = case when $7 then $3 else description end,
+             hsn_code = case when $9 then $8 else hsn_code end,
              status = coalesce($4, status), updated_by = $5
        where id = $1 returning *`,
     [id, v.str(b.manufacturer, 'Manufacturer', { max: 200 }), v.str(b.description, 'Description', { max: 1000 }),
-      v.oneOf(b.status, 'status', md.STATUSES), req.user.id, b.manufacturer !== undefined, b.description !== undefined])).rows[0];
+      v.oneOf(b.status, 'status', md.STATUSES), req.user.id, b.manufacturer !== undefined, b.description !== undefined,
+      v.hsn(b.hsn_code), b.hsn_code !== undefined])).rows[0];
     if (!r) throw notFound('MPN not found');
     if (vendors) await md.writeMpnVendors(c, id, vendors, req.user.id);
     return r;

@@ -66,7 +66,7 @@ export default function VendorViewPage() {
                 <div key={a.id} className="border border-line rounded p-3 text-[13px]">
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-medium">{a.address_name}</span>
-                    <span className="text-xs2 text-ink-muted uppercase tracking-wide">{a.address_type === 'PRIMARY' ? 'Primary' : 'Secondary'}{a.is_default ? ' · Default' : ''}</span>
+                    <span className="text-xs2 text-ink-muted uppercase tracking-wide">{a.is_default ? 'Default address' : ''}</span>
                   </div>
                   <div className="text-ink-soft">{[a.line1, a.line2].filter(Boolean).join(', ')}</div>
                   <div className="text-ink-soft">{[a.city, a.state, a.pincode].filter(Boolean).join(', ')}</div>

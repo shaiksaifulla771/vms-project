@@ -108,11 +108,6 @@ export default function VendorFormPage() {
               <div key={a._k} className="border border-line rounded p-3">
                 <div className="flex items-end gap-3 mb-3">
                   <Field label="Address Name" required className="w-56"><input className="input font-medium" value={a.address_name} onChange={(e) => setList('addresses', i, { address_name: e.target.value })} /></Field>
-                  <Field label="Type" className="w-36">
-                    <select className="input" value={a.address_type} onChange={(e) => setList('addresses', i, { address_type: e.target.value })}>
-                      <option value="PRIMARY">Primary</option><option value="SECONDARY">Secondary</option>
-                    </select>
-                  </Field>
                   <label className="flex items-center gap-1.5 h-8 text-[13px] text-ink-soft">
                     <input type="radio" name="default-address" checked={a.is_default} onChange={() => onlyOne('addresses', i, 'is_default')} /> Default
                   </label>

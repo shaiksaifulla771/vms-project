@@ -8,7 +8,7 @@ import { Combobox, UomSelect, materialOptions, useMaterials, useUoms, useVendors
 import { sortedVendorOptions } from './MpnsPage';
 
 let seq = 0;
-const blankRow = (from) => ({ _k: (seq += 1), material_id: '', vendor_id: from?.vendor_id || '', uom: '', moq: '', price: '', lead_time_days: from?.lead_time_days || '', manufacturer: '' });
+const blankRow = (from) => ({ _k: (seq += 1), material_id: '', vendor_id: from?.vendor_id || '', uom: '', moq: '', price: '', lead_time_days: from?.lead_time_days || '', manufacturer: '', hsn_code: '' });
 
 /**
  * Bulk MPN Create: pick material + vendor per row and define UOM, MOQ and price.
@@ -39,7 +39,7 @@ export default function MpnBulkCreatePage() {
     setErr(null); setErrors({}); setBusy(true);
     const payload = filled.map((r) => ({
       row_no: rows.indexOf(r) + 1, material_id: r.material_id || null, vendor_id: r.vendor_id || null, uom: r.uom,
-      moq: r.moq, price: r.price, lead_time_days: r.lead_time_days, manufacturer: r.manufacturer,
+      moq: r.moq, price: r.price, lead_time_days: r.lead_time_days, manufacturer: r.manufacturer, hsn_code: r.hsn_code,
     }));
     try {
       const res = await api.post('/mpns/bulk', { rows: payload }, { scoped: false });
@@ -92,7 +92,7 @@ export default function MpnBulkCreatePage() {
               <tr>
                 <th className="th w-10">#</th><th className="th min-w-[260px]">Material *</th><th className="th min-w-[220px]">Vendor *</th>
                 <th className="th w-20">UOM *</th><th className="th w-24 text-right">MOQ *</th><th className="th w-28 text-right">Price (₹) *</th>
-                <th className="th w-24 text-right">Lead (d)</th><th className="th w-40">Manufacturer</th><th className="th w-16" />
+                <th className="th w-24 text-right">Lead (d)</th><th className="th w-40">Manufacturer</th><th className="th w-24">HSN</th><th className="th w-16" />
               </tr>
             </thead>
             <tbody>
@@ -126,13 +126,14 @@ function FragmentRow({ i, r, errors, set, matOpts, vOpts, onCopy, onRemove, uoms
         <td className="td px-1"><input className="input num" type="number" min="0" step="0.01" value={r.price} onChange={(e) => set(i, { price: e.target.value })} /></td>
         <td className="td px-1"><input className="input num" type="number" min="0" value={r.lead_time_days} onChange={(e) => set(i, { lead_time_days: e.target.value })} /></td>
         <td className="td px-1"><input className="input" value={r.manufacturer} onChange={(e) => set(i, { manufacturer: e.target.value })} /></td>
+        <td className="td px-1"><input className="input w-24" inputMode="numeric" maxLength={8} value={r.hsn_code} onChange={(e) => set(i, { hsn_code: e.target.value.replace(/[^0-9]/g, '') })} /></td>
         <td className="td px-1 whitespace-nowrap">
           <button type="button" title="Copy vendor to a new row" className="h-7 w-7 inline-flex items-center justify-center text-ink-muted hover:text-accent" onClick={onCopy}><Copy size={13} /></button>
           <button type="button" title="Remove row" className="h-7 w-7 inline-flex items-center justify-center text-ink-muted hover:text-danger" onClick={onRemove}><Trash2 size={13} /></button>
         </td>
       </tr>
       {errors && (
-        <tr className="bg-red-50"><td /><td colSpan={8} className="px-3 pb-2 text-xs text-danger">{errors.join(' · ')}</td></tr>
+        <tr className="bg-red-50"><td /><td colSpan={9} className="px-3 pb-2 text-xs text-danger">{errors.join(' · ')}</td></tr>
       )}
     </>
   );

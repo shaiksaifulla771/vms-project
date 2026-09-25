@@ -330,13 +330,13 @@ async function assertNotFinishedGoodMpn(c, mpnId) {
   if (r && r.classification === 'FINISHED_GOOD') throw badRequest('Finished goods are made, not bought: they have no MPN');
 }
 
-async function createMpn(c, { materialId, manufacturer, description, vendors, legacyCode }, userId) {
+async function createMpn(c, { materialId, manufacturer, description, vendors, legacyCode, hsnCode }, userId) {
   const mat = (await c.query('select id, status, classification from public.materials where id = $1', [materialId])).rows[0];
   if (!mat) throw badRequest('Material not found');
   if (mat.classification === 'FINISHED_GOOD') throw badRequest('Finished goods are made, not bought: they have no MPN');
-  const mpn = (await c.query(`insert into public.mpns(mpn_code, material_id, manufacturer, description, created_by)
-                              values ($1,$2,$3,$4,$5) returning *`,
-  [legacyCode || null, materialId, manufacturer, description, userId])).rows[0];
+  const mpn = (await c.query(`insert into public.mpns(mpn_code, material_id, manufacturer, description, created_by, hsn_code)
+                              values ($1,$2,$3,$4,$5,$6) returning *`,
+  [legacyCode || null, materialId, manufacturer, description, userId, hsnCode || null])).rows[0];
   if (vendors?.length) await writeMpnVendors(c, mpn.id, vendors, userId);
   return mpn;
 }

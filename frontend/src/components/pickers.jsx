@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { Link } from 'react-router-dom';
+import { Field } from './ui';
 
 /** Searchable single select for long lists. options: [{value, label, sub}] */
 export function Combobox({ value, onChange, options, placeholder = 'Select...', disabled }) {
@@ -161,35 +163,71 @@ export function UomSelect({ value, onChange, uoms, placeholder, className = 'inp
 }
 
 /**
- * Active BOMs of a product (all locations). The manufacturing location of a plan / ad hoc batch is taken from here:
- * one active BOM -> that location; several -> the preferred one if it has a BOM, else the first; none -> ''.
+ * Location first: the active BOMs at one location, the products they make, and each product's BOMs
+ * (Default first). Used by New Plan and Batch Entry (Ad Hoc).
  */
-export async function activeBomLocations(productId) {
-  if (!productId) return [];
-  const boms = await api.get(`/boms${qs({ product_id: productId, status: 'ACTIVE' })}`, { scoped: false });
-  return boms.map((b) => ({ location_id: b.location_id, location_code: b.location_code, bom_no: b.bom_no, version: b.version }));
+export function useLocationBoms(locationId) {
+  const [boms, setBoms] = useState([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!locationId) { setBoms([]); return undefined; }
+    let live = true;
+    setLoading(true);
+    api.get(`/boms${qs({ status: 'ACTIVE', location_id: locationId })}`, { scoped: false })
+      .then((r) => { if (live) setBoms(r); })
+      .catch(() => { if (live) setBoms([]); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [locationId]);
+  const products = [];
+  const seen = new Set();
+  for (const b of boms) {
+    if (!seen.has(b.product_id)) {
+      seen.add(b.product_id);
+      products.push({ value: b.product_id, label: `${b.product_code} - ${b.product_name}`,
+        sub: b.product_classification === 'SEMI_FINISHED' ? 'Semi-finished' : 'Finished good' });
+    }
+  }
+  const bomsFor = (productId) => boms.filter((b) => b.product_id === productId)
+    .sort((a, b) => Number(b.is_default) - Number(a.is_default) || b.version - a.version);
+  return { boms, products, bomsFor, loading };
 }
-export const pickBomLocation = (boms, preferred) => (boms.find((b) => b.location_id === preferred) || boms[0])?.location_id || '';
 
-/** Location dropdown limited to locations with an active BOM for the product (others shown disabled). */
-export function BomLocationSelect({ value, onChange, boms, productId, disabled }) {
+/** Default BOM of a product at the location (or its only / newest active one). */
+export const defaultBomId = (list) => (list.find((b) => b.is_default) || list[0])?.id || '';
+
+/** Location -> Product (only those with a BOM there) -> BOM. Calls onChange({ location_id, product_id, bom_id }). */
+export function LocationProductBom({ value, onChange, disabled, productPlaceholder = 'Select product', extraProducts = [] }) {
   const { locations } = useApp();
-  const has = (id) => boms.some((b) => b.location_id === id);
+  const { products, bomsFor, loading } = useLocationBoms(value.location_id);
+  const list = value.product_id ? bomsFor(value.product_id) : [];
+  // Batch Entry (Ad Hoc) may also make a product that has no BOM here; its inputs are entered by hand.
+  const withBom = new Set(products.map((p) => p.value));
+  const options = [...products, ...extraProducts.filter((m) => !withBom.has(m.id))
+    .map((m) => ({ value: m.id, label: `${m.code} - ${m.name}`, sub: 'No BOM here - enter inputs by hand' }))];
+  const setLoc = (loc) => onChange({ location_id: loc, product_id: '', bom_id: '' });
+  const setProduct = (pid) => onChange({ ...value, product_id: pid, bom_id: defaultBomId(bomsFor(pid)) });
   return (
-    <select className="input" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      <option value="">{productId && !boms.length ? 'No active BOM' : 'Select'}</option>
-      {locations.map((l) => (
-        <option key={l.id} value={l.id} disabled={Boolean(productId) && !has(l.id)}>
-          {l.code} - {l.name}{productId && !has(l.id) ? ' (no active BOM)' : ''}
-        </option>
-      ))}
-    </select>
+    <>
+      <Field label="Manufacturing Location" required>
+        <select className="input" value={value.location_id} disabled={disabled} onChange={(e) => setLoc(e.target.value)}>
+          <option value="">Select</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Product" required className="col-span-2"
+        hint={value.location_id && !loading && !products.length
+          ? <span className="text-danger">No active BOMs at this location yet. <Link className="text-accent" to="/masters/boms/new">Create BOM</Link></span>
+          : (value.location_id ? `${products.length} product${products.length === 1 ? '' : 's'} with a BOM here` : 'Choose the location first')}>
+        <Combobox value={value.product_id} options={options} onChange={setProduct} disabled={disabled || !value.location_id}
+          placeholder={value.location_id ? productPlaceholder : 'Choose the location first'} />
+      </Field>
+      <Field label="BOM" required hint={list.length > 1 ? `${list.length} active BOMs; Default pre-selected` : ''}>
+        <select className="input" value={value.bom_id} disabled={disabled || !value.product_id} onChange={(e) => onChange({ ...value, bom_id: e.target.value })}>
+          {!list.length && <option value="">-</option>}
+          {list.map((b) => <option key={b.id} value={b.id}>{b.bom_no} v{b.version}{b.name ? ` · ${b.name}` : ''}{b.is_default ? ' (Default)' : ''}</option>)}
+        </select>
+      </Field>
+    </>
   );
-}
-
-export function bomLocationHint(boms, productId, locationId) {
-  if (!productId) return '';
-  if (!boms.length) return null;
-  const b = boms.find((x) => x.location_id === locationId);
-  return b ? `From active ${b.bom_no} v${b.version}${boms.length > 1 ? ` · ${boms.length} locations have a BOM` : ''}` : '';
 }

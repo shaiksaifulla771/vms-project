@@ -1,5 +1,5 @@
 /** BOM loading and costing, shared by the BOM and Product APIs. */
-const { notFound } = require('../utils/errors');
+const { notFound, badRequest } = require('../utils/errors');
 
 /**
  * The single rule for a BOM line's source, used by every screen and by planning:
@@ -34,7 +34,7 @@ async function lineSource(db, materialId, mpnId) {
 }
 
 const BOM_SELECT = `
-  select b.*, m.code as product_code, m.name as product_name,
+  select b.*, m.code as product_code, m.name as product_name, m.classification as product_classification,
          l.code as location_code, l.name as location_name, w.code as warehouse_code, w.name as warehouse_name,
          (select count(*) from public.bom_lines x where x.bom_id = b.id)::int as line_count
     from public.boms b
@@ -42,9 +42,10 @@ const BOM_SELECT = `
     join public.locations l on l.id = b.location_id
     join public.warehouses w on w.id = b.warehouse_id`;
 
-async function loadBom(db, id) {
+async function loadBom(db, id, depth = 0) {
   const bom = (await db.query(`${BOM_SELECT} where b.id = $1`, [id])).rows[0];
   if (!bom) throw notFound('BOM not found');
+  bom.label = bomLabel(bom);
   bom.lines = (await db.query(`
     select bl.*, m.code as material_code, m.name as material_name, m.classification,
            src.source_mpn_id, src.mpn_code, src.vendor_id, src.vendor_name, src.vendor_code,
@@ -53,6 +54,22 @@ async function loadBom(db, id) {
       join public.materials m on m.id = bl.material_id
       ${LINE_SOURCE}
      where bl.bom_id = $1 order by bl.line_no`, [id])).rows;
+  // A semi-finished ingredient made in-house has no bought price: cost it from its own Default BOM
+  // (same location first). One level deep is enough for costing and avoids loops.
+  if (depth < 2) {
+    for (const l of bom.lines) {
+      if (l.mpn_price != null || l.classification !== 'SEMI_FINISHED') continue;
+      const sub = (await db.query(`select id from public.boms where product_id = $1 and status = 'ACTIVE'
+                                    order by (location_id = $2) desc, is_default desc, version desc limit 1`,
+      [l.material_id, bom.location_id])).rows[0];
+      if (!sub || sub.id === bom.id) continue;
+      const sb = await loadBom(db, sub.id, depth + 1);
+      if (sb.costing.cost_per_output_unit != null && !sb.costing.unpriced_lines) {
+        l.bom_unit_cost = sb.costing.cost_per_output_unit;
+        l.bom_cost_source = `${sb.bom_no} v${sb.version}`;
+      }
+    }
+  }
   bom.costing = costBom(bom);
   return bom;
 }
@@ -66,9 +83,9 @@ function costBom(bom) {
   let unpriced = 0;
   for (const l of bom.lines) {
     // The MPN price is the only price: a BOM never overrides it.
-    const price = l.mpn_price;
-    l.effective_price = price ?? null;
-    l.price_source = price != null ? 'MPN' : null;
+    const price = l.mpn_price ?? l.bom_unit_cost ?? null;
+    l.effective_price = price;
+    l.price_source = l.mpn_price != null ? 'MPN' : (l.bom_unit_cost != null ? 'BOM' : null);
     const gross = Number(l.qty_per_batch) * (1 + Number(l.scrap_allowance_pct || 0) / 100);
     l.gross_qty = r4(gross);
     l.line_cost = price == null ? null : r2(gross * Number(price));
@@ -88,4 +105,31 @@ function costBom(bom) {
   };
 }
 
-module.exports = { BOM_SELECT, LINE_SOURCE, lineSource, loadBom, costBom, r2, r4 };
+/** "BOM-1001 v2 · Standard (Default)" */
+function bomLabel(b) {
+  return `${b.bom_no} v${b.version}${b.name ? ` · ${b.name}` : ''}${b.is_default ? ' (Default)' : ''}`;
+}
+
+/**
+ * Which BOM a plan or batch uses. An explicit bom_id must be ACTIVE and belong to the product and
+ * location; otherwise the Default BOM is used, or the only active one. Several active BOMs and no
+ * Default -> the user must choose.
+ */
+async function resolveBom(db, { productId, locationId, bomId }) {
+  if (bomId) {
+    const b = (await db.query('select id, product_id, location_id, status from public.boms where id = $1', [bomId])).rows[0];
+    if (!b) throw badRequest('BOM not found');
+    if (productId && b.product_id !== productId) throw badRequest('The selected BOM is for a different product');
+    if (locationId && b.location_id !== locationId) throw badRequest('The selected BOM is for a different location');
+    if (b.status !== 'ACTIVE') throw badRequest('The selected BOM is not active');
+    return b.id;
+  }
+  const { rows } = await db.query(`select id, is_default from public.boms
+                                    where product_id = $1 and location_id = $2 and status = 'ACTIVE'
+                                    order by is_default desc, version desc`, [productId, locationId]);
+  if (!rows.length) throw badRequest('No active BOM for this product at the selected location');
+  if (rows[0].is_default || rows.length === 1) return rows[0].id;
+  throw badRequest('This product has several active BOMs at this location: choose one');
+}
+
+module.exports = { resolveBom, bomLabel, BOM_SELECT, LINE_SOURCE, lineSource, loadBom, costBom, r2, r4 };

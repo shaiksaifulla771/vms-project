@@ -59,7 +59,7 @@ export default function BomEditPage() {
     if (!id) {
       // ?product_id= comes from Products > Create BOM
       setF({ product_id: search.get('product_id') || '', location_id: def.locationId, warehouse_id: def.warehouseId, batch_size: '', batch_uom: 'kg',
-        expected_output_qty: '', output_uom: '', notes: '', packing_cost: '', processing_cost: '', overhead_cost: '', freight_cost: '',
+        expected_output_qty: '', output_uom: '', notes: '', name: '', packing_cost: '', processing_cost: '', overhead_cost: '', freight_cost: '',
         lines: [emptyLine()] });
       return;
     }
@@ -118,10 +118,13 @@ export default function BomEditPage() {
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
         <section className="card p-3 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Product" required>
+          <div className="grid grid-cols-4 gap-3">
+            <Field label="Product" required hint="Finished or semi-finished good">
               <Combobox value={f.product_id} disabled={!!id} options={materialOptions(products)}
                 onChange={(v) => { const p = materials.find((m) => m.id === v); setF({ ...f, product_id: v, output_uom: f.output_uom || p?.uom || '' }); }} />
+            </Field>
+            <Field label="BOM Name" hint="e.g. Standard, Economy pack">
+              <input className="input" maxLength={100} value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} />
             </Field>
             <div className="col-span-2">
               <LocationWarehouse locationId={f.location_id} warehouseId={f.warehouse_id} required disabledLocation={!!id}
