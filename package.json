@@ -4,13 +4,16 @@
   "private": true,
   "description": "Zoho-style ERP: Inventory, Planning, Manufacturing (React + Express + PostgreSQL/Supabase)",
   "scripts": {
-    "install-all": "npm install --prefix backend && npm install --prefix frontend",
+    "install-all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "start": "concurrently -n api,web \"npm start --prefix backend\" \"npm run dev --prefix frontend\"",
     "dev": "concurrently -n api,web \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "stop": "kill-port 3000 5000",
     "migrate": "npm run migrate --prefix backend",
     "test": "npm test --prefix backend",
     "build": "npm run build --prefix frontend"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "kill-port": "^2.0.1"
   }
 }
