@@ -3,7 +3,7 @@ const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { badRequest, notFound, forbidden } = require('../utils/errors');
 const { requireAdmin, isAdmin } = require('../middleware/session');
-const { postStock, lockInventory } = require('../services/stock');
+const { postStock, lockInventory, outputMpn } = require('../services/stock');
 const v = require('../utils/validate');
 
 // Centralized Inventory (lots) for the selected Location / WH
@@ -101,9 +101,8 @@ router.post('/inward', h(async (req, res) => {
   };
   const materialId = v.uuid(b.material_id, 'Material');
   if (!p.mpnId && !materialId) throw badRequest('MPN is required');
-  const FG_BLOCKED = 'Finished goods cannot be added here. Their stock comes only from a manufacturing batch '
-    + '(Manufacturing > Batch Entry). To correct an existing finished-goods lot, use Stock > Adjust or a physical stock count.';
   if (p.mfgDate && p.expiryDate && p.expiryDate < p.mfgDate) throw badRequest('Expiry date must be after Mfg date');
+  if (p.mfgDate && p.mfgDate > v.today()) throw badRequest('Mfg date cannot be in the future');
   // A goods receipt must be traceable to its purchase document.
   if (/^goods receipt/i.test(p.reason) && !p.referenceId) throw badRequest('Enter the GRN / invoice no for a goods receipt');
   const uom = v.str(b.uom, 'UOM', { max: 20 });
@@ -117,10 +116,16 @@ router.post('/inward', h(async (req, res) => {
     } else {
       mat = (await c.query('select id, uom, classification from public.materials where id = $1', [materialId])).rows[0];
       if (!mat) throw badRequest('Material not found');
-      if (mat.classification === 'FINISHED_GOOD') throw badRequest(FG_BLOCKED);
-      throw badRequest('MPN is required');
+      if (mat.classification !== 'FINISHED_GOOD') throw badRequest('MPN is required');
+      p.mpnId = await outputMpn(c, mat.id, req.user.id); // hidden internal stock code of the finished good
     }
-    if (mat.classification === 'FINISHED_GOOD') throw badRequest(FG_BLOCKED);
+    if (mat.classification === 'FINISHED_GOOD') {
+      // Finished goods are made, not bought: they come in as Opening Stock or an Adjustment (or from a batch).
+      if (entryType === 'PURCHASE') {
+        throw badRequest('Finished goods cannot be purchased. Use Opening Stock or Adjustment, or record a production batch.');
+      }
+      p.vendorId = null;
+    }
     // A production batch lot is changed from the batch (Edit IP / OP), never topped up by Inward.
     const batchLot = (await c.query('select 1 from public.batches where output_mpn_id = $1 and upper(batch_no) = upper($2) limit 1',
       [p.mpnId, p.lotNo])).rows[0];
@@ -178,8 +183,8 @@ router.get('/ledger', h(async (req, res) => {
   const { clause, params } = where([
     ['l.location_id = ?', req.scope.locationId],
     ['l.warehouse_id = ?', req.scope.warehouseId],
-    ['l.mpn_id = ?', req.query.mpn_id],
-    ['l.material_id = ?', req.query.material_id],
+    ['l.mpn_id = ?', v.uuid(req.query.mpn_id, 'MPN')],
+    ['l.material_id = ?', v.uuid(req.query.material_id, 'Material')],
     ['l.txn_type = ?', req.query.type],
     ['l.lot_no = ?', req.query.lot_no],
     ['l.reference_id = ?', req.query.reference_id],
@@ -198,7 +203,7 @@ router.get('/ledger', h(async (req, res) => {
     ]);
     return res.json({ rows: list.rows, total: total.rows[0].n, page, page_size: size });
   }
-  const limit = Math.min(parseInt(req.query.limit || '1000', 10) || 1000, 5000);
+  const limit = Math.min(Math.max(parseInt(req.query.limit || '1000', 10) || 1000, 1), 5000);
   const { rows } = await query(`select l.*, (select x.classification from public.materials x where x.id = l.material_id) as classification from public.v_ledger l ${clause} order by l.txn_no desc limit ${limit}`, params);
   res.json(rows);
 }));

@@ -10,7 +10,9 @@
     "stop": "kill-port 3000 5000",
     "migrate": "npm run migrate --prefix backend",
     "test": "npm test --prefix backend",
-    "build": "npm run build --prefix frontend"
+    "build": "npm run build --prefix frontend",
+    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
+    "check": "npm run lint && npm run build && npm test"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

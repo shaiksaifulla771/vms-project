@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { canWrite } = require('../middleware/session');
 const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { notFound } = require('../utils/errors');
@@ -53,10 +54,18 @@ router.get('/:id', h(async (req, res) => {
                                               where mv.vendor_id = vm.vendor_id and p.material_id = vm.material_id)
      order by m.code`, [id])).rows;
   // Full account numbers only when the caller is going to edit (?full=true); masked otherwise.
-  const full = req.query.full === 'true';
+  // Full account numbers only for users who can edit (the Edit form); everyone else sees them masked.
+  const full = req.query.full === 'true' && canWrite(req.user);
   res.json({
     ...vendor,
     mpns: mpns.rows,
+    // Recent receipts from this vendor (lots whose vendor it is)
+    recent_receipts: (await query(`select s.txn_no, s.txn_at, s.txn_type, s.qty_change, s.uom, s.lot_no, s.reference_id,
+                                          m.code as material_code, m.name as material_name, l.code as location_code
+                                     from public.stock_ledger s join public.inventory i on i.id = s.inventory_id
+                                     join public.materials m on m.id = s.material_id join public.locations l on l.id = s.location_id
+                                    where i.vendor_id = $1 and s.txn_type in ('INWARD', 'OPENING') and s.qty_change > 0
+                                    order by s.txn_no desc limit 20`, [id])).rows,
     addresses: addresses.rows,
     contacts: contacts.rows,
     bank_accounts: banks.rows.map((b) => (full ? b : { ...b, account_number: mask(b.account_number) })),

@@ -10,6 +10,7 @@ const { query } = require('../db/pool');
 const { badRequest } = require('../utils/errors');
 const md = require('./masterData');
 const { loadUoms, matchUom, STATES } = require('./options');
+const v = require('../utils/validate');
 
 const MAX_ROWS = 2000;
 
@@ -65,7 +66,7 @@ async function loadLookups(db) {
   const cats = await db.query('select id, name, parent_id, status, classification from public.material_categories order by lower(name)');
   const mats = await db.query('select id, code, name, status, uom, classification, category_id, sub_category_id, shelf_life_days, description from public.materials');
   const vens = await db.query('select id, code, name, status, phone, contact_email, gstin, fssai_no, fssai_expiry from public.vendors');
-  const mpns = await db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.material_id, mv.vendor_id,
+  const mpns = await db.query(`select mv.id as mv_id, p.id as mpn_id, p.mpn_code, p.status, p.manufacturer, p.hsn_code, p.material_id, mv.vendor_id,
                      mv.uom, mv.moq, mv.price, mv.lead_time_days, mv.is_preferred
                 from public.mpns p left join public.mpn_vendors mv on mv.mpn_id = p.id
                where not exists (select 1 from public.materials m where m.id = p.material_id and m.classification = 'FINISHED_GOOD')`);
@@ -136,6 +137,7 @@ const MPN_COLS = [
   { key: 'price', header: 'Price (INR)', required: true, width: 12 },
   { key: 'lead_time_days', header: 'Lead Time (days)', width: 14 },
   { key: 'manufacturer', header: 'Manufacturer', width: 22 },
+  { key: 'hsn_code', header: 'HSN Code', width: 11 },
 ];
 const MPN_UPDATE_COLS = [
   { key: 'mpn_code', header: 'MPN Code', required: true, width: 14, isKey: true },
@@ -148,6 +150,7 @@ const MPN_UPDATE_COLS = [
   { key: 'lead_time_days', header: 'Lead Time (days)', width: 14 },
   { key: 'is_preferred', header: 'Preferred (Yes/No)', width: 12, list: ['Yes', 'No'] },
   { key: 'manufacturer', header: 'Manufacturer', width: 22 },
+  { key: 'hsn_code', header: 'HSN Code', width: 11 },
   { key: 'status', header: 'MPN Status', width: 10, list: Object.values(STATUS_LABEL) },
 ];
 
@@ -394,6 +397,8 @@ function validateMpnCreate(rows, lk) {
     if (price === null) errors.push('Price is required');
     else if (price === undefined || price < 0) errors.push('Price must be a number, 0 or more');
     if (lead === undefined || (lead !== null && lead < 0)) errors.push('Lead time must be 0 or more days');
+    let hsnCode = null;
+    try { hsnCode = v.hsn(text(r.hsn_code)); } catch (e) { errors.push(e.message); }
     if (mat && ven) {
       const k = `${mat.id}|${ven.id}`;
       if (seen.has(k)) errors.push(`Same material and vendor as row ${seen.get(k)}`);
@@ -406,7 +411,7 @@ function validateMpnCreate(rows, lk) {
       values: { ...r, material_code: mat?.code || r.material_code, material_name: mat?.name, vendor_code: ven?.code || r.vendor_code, vendor_name: ven?.name },
       data: mat && ven ? {
         materialId: mat.id, vendorId: ven.id, uom: uom || mat.uom, moq, price, lead,
-        manufacturer: text(r.manufacturer),
+        manufacturer: text(r.manufacturer), hsnCode,
       } : null,
       errors,
       action: 'create',
@@ -453,6 +458,12 @@ function validateMpnUpdate(rows, lk) {
     if (!blank(r.manufacturer) && !same(r.manufacturer, ex.manufacturer)) {
       patch.manufacturer = text(r.manufacturer); changes.push({ field: 'Manufacturer', from: ex.manufacturer, to: patch.manufacturer });
     }
+    if (!blank(r.hsn_code)) {
+      try {
+        const hc = v.hsn(text(r.hsn_code));
+        if (hc !== ex.hsn_code) { patch.hsn_code = hc; changes.push({ field: 'HSN Code', from: ex.hsn_code, to: hc }); }
+      } catch (e) { errors.push(e.message); }
+    }
     if (!blank(r.status)) {
       const s = fromLabel(STATUS_LABEL, r.status);
       if (s === undefined) errors.push('MPN Status must be Active or Inactive');
@@ -469,7 +480,8 @@ function validateMpnUpdate(rows, lk) {
 function prepRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) throw badRequest('No rows to process');
   if (rows.length > MAX_ROWS) throw badRequest(`At most ${MAX_ROWS} rows per upload`);
-  return rows.map((r, i) => ({ ...r, row_no: r.row_no || i + 1 }));
+  v.objList(rows, 'Rows', { max: MAX_ROWS });
+  return rows.map((r, i) => ({ ...r, row_no: Number.isInteger(r.row_no) ? r.row_no : i + 1 }));
 }
 
 const VALIDATORS = {
@@ -556,7 +568,7 @@ async function commitMpnRows(c, checked, userId) {
   for (const r of checked) {
     const d = r.data;
     const mpn = await md.createMpn(c, {
-      materialId: d.materialId, manufacturer: d.manufacturer,
+      materialId: d.materialId, manufacturer: d.manufacturer, hsnCode: d.hsnCode,
       vendors: [{ vendorId: d.vendorId, preferred: true, lead: d.lead, uom: d.uom, moq: d.moq, price: d.price }],
     }, userId);
     out.push({ row_no: r.row_no, code: mpn.mpn_code, id: mpn.id });
@@ -594,10 +606,11 @@ async function commit(c, entity, mode, checked, userId) {
         await c.query(`update public.mpn_vendors set ${mvCols.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`,
           [r.mv_id, ...mvCols.map((k) => p[k])]);
       }
-      if ('manufacturer' in p || 'status' in p) {
+      if ('manufacturer' in p || 'status' in p || 'hsn_code' in p) {
         await c.query(`update public.mpns set manufacturer = case when $2 then $3 else manufacturer end,
+                              hsn_code = case when $6 then $7 else hsn_code end,
                               status = coalesce($4, status), updated_by = $5 where id = $1`,
-        [r.mpn_id, 'manufacturer' in p, p.manufacturer ?? null, p.status ?? null, userId]);
+        [r.mpn_id, 'manufacturer' in p, p.manufacturer ?? null, p.status ?? null, userId, 'hsn_code' in p, p.hsn_code ?? null]);
       }
       out.push({ row_no: r.row_no, code: r.code });
     }
@@ -627,7 +640,7 @@ async function exportRows(entity, db = { query }, { forUpdate = false } = {}) {
   if (entity === 'mpns') {
     const { rows } = await db.query(`
       select p.mpn_code, ve.code as vendor_code, m.code as material_code, m.name as material_name, mv.uom, mv.moq, mv.price,
-             mv.lead_time_days, mv.is_preferred, p.manufacturer, p.status
+             mv.lead_time_days, mv.is_preferred, p.manufacturer, p.hsn_code, p.status
         from public.mpns p join public.materials m on m.id = p.material_id
         left join public.mpn_vendors mv on mv.mpn_id = p.id left join public.vendors ve on ve.id = mv.vendor_id
        where m.classification <> 'FINISHED_GOOD' ${forUpdate ? 'and mv.id is not null' : ''}
@@ -769,9 +782,11 @@ async function templateBuffer(entity, mode) {
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
+/** CSV cell. Text starting with = + - @ (or tab / CR) gets a leading ' so Excel never runs it as a formula. */
 function csvEscape(x) {
   if (x === null || x === undefined) return '';
-  const s = String(x);
+  let s = String(x);
+  if (typeof x === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -781,14 +796,14 @@ async function exportFile(entity, format) {
     const cols = columns(entity, 'update');
     const out = [cols.map((c) => csvEscape(c.header)).join(',')];
     for (const r of rows) out.push(cols.map((c) => csvEscape(r[c.key])).join(','));
-    return { buffer: Buffer.from(`﻿${out.join('\r\n')}`, 'utf8'), type: 'text/csv; charset=utf-8', ext: 'csv' };
+    return { buffer: Buffer.from(`\uFEFF${out.join('\r\n')}`, 'utf8'), type: 'text/csv; charset=utf-8', ext: 'csv' };
   }
   const wb = await buildWorkbook(entity, 'update', rows);
   return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
 }
 
 function parseCsv(textIn) {
-  const s = textIn.replace(/^﻿/, '');
+  const s = textIn.replace(/^\uFEFF/, '');
   const rows = [];
   let row = [];
   let cell = '';
@@ -819,6 +834,25 @@ function cellValue(v) {
   return v;
 }
 
+/**
+ * Refuse "zip bomb" workbooks before unpacking them: an .xlsx is a zip, and a 5 MB upload could expand
+ * to gigabytes. The zip directory lists every entry's unpacked size without unpacking anything.
+ */
+async function assertSafeXlsx(buf) {
+  const MAX_TOTAL = 40 * 1024 * 1024;
+  let zip;
+  try { zip = await require('jszip').loadAsync(buf); } catch { throw badRequest('Could not read the file. Upload the .xlsx template or a .csv file.'); }
+  let total = 0;
+  for (const f of Object.values(zip.files)) {
+    const size = f._data && typeof f._data.uncompressedSize === 'number' ? f._data.uncompressedSize : 0;
+    const packed = f._data && typeof f._data.compressedSize === 'number' ? f._data.compressedSize : 0;
+    total += size;
+    if (total > MAX_TOTAL || (packed > 0 && size / packed > 200 && size > 1024 * 1024)) {
+      throw badRequest('This file is too large when unpacked. Use the template, with at most 2000 rows.');
+    }
+  }
+}
+
 /** Turn an uploaded xlsx/csv into row objects keyed by column key. */
 async function parseFile(entity, mode, filename, base64) {
   if (!base64) throw badRequest('Choose a file to upload');
@@ -830,12 +864,16 @@ async function parseFile(entity, mode, filename, base64) {
   if (/\.csv$/i.test(filename || '')) {
     grid = parseCsv(buf.toString('utf8'));
   } else {
+    await assertSafeXlsx(buf);
     const wb = new ExcelJS.Workbook();
     try { await wb.xlsx.load(buf); } catch { throw badRequest('Could not read the file. Upload the .xlsx template or a .csv file.'); }
     const ws = wb.worksheets[0];
+    if (!ws) throw badRequest('The file has no sheet');
+    if (ws.rowCount > MAX_ROWS + 50) throw badRequest(`At most ${MAX_ROWS} rows per upload`);
     ws.eachRow({ includeEmpty: true }, (row, n) => {
       const vals = [];
-      for (let i = 1; i <= Math.max(row.cellCount, cols.length); i += 1) vals.push(cellValue(row.getCell(i).value));
+      // Only the template's columns are read (a stray cell far to the right cannot blow up memory).
+      for (let i = 1; i <= cols.length + 5; i += 1) vals.push(cellValue(row.getCell(i).value));
       grid[n - 1] = vals;
     });
     grid = Array.from(grid, (r) => r || []);

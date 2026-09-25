@@ -75,7 +75,7 @@ async function request(method, path, body, { scoped = true } = {}) {
       continue;
     }
     if (isUnreachable(res.status, text)) throw unreachableError();
-    let data = null;
+    let data;
     try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
     if (!res.ok) {
       const err = new Error((data && data.error) || `Request failed (${res.status})`);

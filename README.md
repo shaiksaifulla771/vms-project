@@ -41,7 +41,16 @@ If the database cannot be reached within `DATABASE_CONNECT_TIMEOUT_MS` (default 
 **Local Postgres instead:** set `DATABASE_URL=postgres://postgres:postgres@localhost:5432/erp_dev`, then
 `npm run migrate --prefix backend` and `npm run seed:demo --prefix backend` for demo data.
 
-**Tests:** `npm test` - 21 end-to-end API tests against a throw-away database (`TEST_DATABASE_URL`, wiped on every run).
+**Checks:** `npm run check` runs everything before a push: ESLint on backend and frontend (undefined names,
+unused code), the production build, and the backend test suite (134 end-to-end API tests, including the
+security / bad-input tests in `backend/tests/hardening.test.js`) against a throw-away database
+(`TEST_DATABASE_URL`, wiped on every run). `npm test` runs the tests only, `npm run lint` the linters only.
+
+**Time zone:** "today", lot expiry and report day boundaries use `APP_TIMEZONE` (default `Asia/Kolkata`).
+
+**Acting user:** there is no login; each request names its user in the `X-User-Id` header (the top-bar user
+switcher). Only the start-up `/api/session` call may omit it; any other request without a valid, known user is
+refused (401), so nobody can act as an admin by leaving the header out.
 
 ## Architecture
 

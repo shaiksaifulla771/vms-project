@@ -19,7 +19,8 @@ const PRODUCT_SQL = `
          coalesce((select json_agg(json_build_object('id', b.id, 'bom_no', b.bom_no, 'version', b.version,
                     'location_id', b.location_id, 'location_code', l.code, 'warehouse_code', w.code,
                     'batch_size', b.batch_size, 'batch_uom', b.batch_uom,
-                    'expected_output_qty', b.expected_output_qty, 'output_uom', b.output_uom) order by l.code)
+                    'expected_output_qty', b.expected_output_qty, 'output_uom', b.output_uom,
+                    'name', b.name, 'is_default', b.is_default) order by l.code, b.is_default desc, b.version desc)
                      from public.boms b join public.locations l on l.id = b.location_id join public.warehouses w on w.id = b.warehouse_id
                     where b.product_id = m.id and b.status = 'ACTIVE'), '[]') as active_boms,
          (select coalesce(sum(i.quantity), 0) from public.inventory i
@@ -33,7 +34,8 @@ const PRODUCT_SQL = `
 
 /** Cost per output unit of the active BOM in the selected location (or the first active BOM). */
 async function withCost(p, locationId) {
-  const bom = p.active_boms.find((b) => b.location_id === locationId) || (locationId ? null : p.active_boms[0]);
+  const inLoc = p.active_boms.filter((b) => !locationId || b.location_id === locationId);
+  const bom = inLoc.find((b) => b.is_default) || inLoc[0];
   if (!bom) return { ...p, bom_in_scope: null, cost_per_unit: null };
   const full = await loadBom({ query }, bom.id);
   return { ...p, bom_in_scope: bom, cost_per_unit: full.costing.cost_per_output_unit, unpriced_lines: full.costing.unpriced_lines };

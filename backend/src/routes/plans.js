@@ -3,7 +3,7 @@ const { query, withTransaction, getPool } = require('../db/pool');
 const { h, where } = require('../utils/http');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
 const { isAdmin } = require('../middleware/session');
-const { loadBom } = require('./boms');
+const { loadBom, resolveBom } = require('../services/boms');
 const { getSettings } = require('../services/settings');
 const planning = require('../services/planning');
 const v = require('../utils/validate');
@@ -27,12 +27,10 @@ function wholeBatches(x, name = 'Number of batches') {
   return n;
 }
 
-async function activeBomId(db, productId, locationId) {
-  const r = await db.query(`select id from public.boms where product_id = $1 and location_id = $2 and status = 'ACTIVE'`,
-    [productId, locationId]);
-  if (!r.rows[0]) throw badRequest('No ACTIVE BOM for this product at the selected location');
-  return r.rows[0].id;
-}
+const MAX_BATCHES = 100000;
+
+/** The BOM a plan uses: the one chosen, else the Default (or only) active BOM of product + location. */
+const activeBomId = (db, productId, locationId, bomId) => resolveBom(db, { productId, locationId, bomId });
 
 /** Plan Summary + Batch Summary + Material Summary (computed live from BOM + inventory). */
 async function buildPlanView(db, planId) {
@@ -102,7 +100,7 @@ router.post('/simulate', h(async (req, res) => {
   const db = getPool();
   const settings = await getSettings(db);
   const applyScrap = b.apply_scrap_allowance === undefined ? settings.apply_scrap_allowance : v.bool(b.apply_scrap_allowance);
-  const bom = await loadBom(db, await activeBomId(db, productId, locationId));
+  const bom = await loadBom(db, await activeBomId(db, productId, locationId, v.uuid(b.bom_id, 'BOM')));
   let demand;
   let batches;
   if (mode === 'BATCHES') {
@@ -111,6 +109,7 @@ router.post('/simulate', h(async (req, res) => {
   } else {
     demand = v.num(b.demand_qty, 'Required quantity', { required: true, gt: 0 });
     batches = planning.requiredBatches(demand, bom.expected_output_qty);
+    if (batches > MAX_BATCHES) throw badRequest(`That is ${batches.toLocaleString('en-IN')} batches: a plan can have at most ${MAX_BATCHES.toLocaleString('en-IN')}`);
   }
   res.json({
     bom,
@@ -134,9 +133,12 @@ router.post('/', h(async (req, res) => {
   let target = mode === 'QTY' ? v.num(b.target_qty, 'Target quantity', { required: true, gt: 0 }) : null;
   const id = await withTransaction(async (c) => {
     const settings = await getSettings(c);
-    const bomId = await activeBomId(c, productId, locationId);
+    const bomId = await activeBomId(c, productId, locationId, v.uuid(b.bom_id, 'BOM'));
     const bom = (await c.query('select warehouse_id, expected_output_qty from public.boms where id = $1', [bomId])).rows[0];
     if (mode === 'BATCHES') target = v.round4(targetBatches * Number(bom.expected_output_qty));
+    else if (planning.requiredBatches(target, bom.expected_output_qty) > MAX_BATCHES) {
+      throw badRequest(`A plan can have at most ${MAX_BATCHES.toLocaleString('en-IN')} batches: lower the target quantity`);
+    }
     const warehouseId = v.uuid(b.warehouse_id, 'Warehouse') || bom.warehouse_id;
     const applyScrap = b.apply_scrap_allowance === undefined ? settings.apply_scrap_allowance : v.bool(b.apply_scrap_allowance);
     const r = await c.query(`insert into public.plans(product_id, location_id, warehouse_id, bom_id, target_qty,

@@ -4,19 +4,30 @@ const { h, where } = require('../utils/http');
 const { badRequest } = require('../utils/errors');
 const v = require('../utils/validate');
 
-// Stock Balance Sheet: current inventory grouped by Location / WH (lot level)
+// Stock Balance Sheet: inventory grouped by Location / WH (lot level).
+// ?as_on=YYYY-MM-DD rebuilds the balance of every lot at the end of that day from the audit ledger.
 router.get('/stock-balance', h(async (req, res) => {
+  const asOn = v.date(req.query.as_on, 'As on date');
+  if (asOn && asOn > v.today()) throw badRequest('As on date cannot be in the future');
   const { clause, params } = where([
     ['s.location_id = ?', req.scope.locationId],
     ['s.warehouse_id = ?', req.scope.warehouseId],
-    ['s.classification = ?', req.query.classification],
-    ['s.quantity > ?', req.query.include_zero === 'true' ? null : 0],
+    ['s.classification = ?', v.oneOf(req.query.classification, 'Classification', ['RAW_MATERIAL', 'PACKAGING', 'CONSUMABLE', 'SEMI_FINISHED', 'FINISHED_GOOD'])],
+    ['s.material_id = ?', v.uuid(req.query.material_id, 'Material')],
   ]);
+  const zero = req.query.include_zero === 'true';
+  const qtyExpr = asOn ? 'coalesce(h.qty, 0)' : 's.quantity';
+  const hist = asOn ? `left join (select inventory_id, sum(qty_change) as qty from public.stock_ledger
+                                   where txn_at < ($${params.length + 1}::date + 1) group by inventory_id) h on h.inventory_id = s.id` : '';
+  if (asOn) params.push(asOn);
   const { rows } = await query(`
     select s.location_code, s.location_name, s.warehouse_code, s.warehouse_name,
            case when s.classification = 'FINISHED_GOOD' then null else s.mpn_code end as mpn_code, s.material_code,
-           s.material_name, s.classification, s.lot_no, s.quantity, s.uom, s.mfg_date, s.expiry_date, s.is_expired, s.vendor_name
-      from public.v_stock s ${clause}
+           s.material_name, s.classification, s.lot_no, ${qtyExpr} as quantity, s.uom, s.mfg_date, s.expiry_date,
+           (s.expiry_date is not null and s.expiry_date < coalesce(${asOn ? `$${params.length}::date` : 'null'}, current_date)) as is_expired,
+           s.vendor_name
+      from public.v_stock s ${hist}
+      ${clause ? `${clause} and` : 'where'} (${zero ? 'true' : `${qtyExpr} > 0`})
      order by s.location_code, s.warehouse_code, s.material_code, s.lot_no`, params);
   res.json(rows);
 }));

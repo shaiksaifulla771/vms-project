@@ -55,9 +55,11 @@ export const TXN_LABEL = {
 
 /** Download rows as CSV (columns: [{key|value, label}]) */
 export function downloadCsv(filename, columns, rows) {
+  // Text starting with = + - @ (or tab / CR) gets a leading ' so a spreadsheet never runs it as a formula.
   const esc = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = v === null || v === undefined ? '' : String(v);
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [columns.map((c) => esc(c.label)).join(',')];
   rows.forEach((r) => lines.push(columns.map((c) => esc(c.csv ? c.csv(r) : (c.value ? c.value(r) : r[c.key]))).join(',')));

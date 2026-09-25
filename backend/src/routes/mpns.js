@@ -12,8 +12,9 @@ router.get('/', h(async (req, res) => {
   const { clause, params } = where([
     [`m.classification <> 'FINISHED_GOOD' and ?::int = 1`, 1],
     ['p.material_id = ?', req.query.material_id],
-    ['(p.mpn_code ilike ? or m.code ilike ? or m.name ilike ? or p.manufacturer ilike ?)', q],
+    ['(p.mpn_code ilike ? or m.code ilike ? or m.name ilike ? or p.manufacturer ilike ? or p.hsn_code ilike ?)', q],
     ['p.status = ?', req.query.status],
+    ['(p.hsn_code is null and ?::int = 1)', req.query.hsn_missing === 'true' ? 1 : null],
     ['exists (select 1 from public.mpn_vendors x where x.mpn_id = p.id and x.vendor_id = ?)', req.query.vendor_id],
   ]);
   const { rows } = await query(`
@@ -47,7 +48,12 @@ router.get('/:id', h(async (req, res) => {
       join public.mpn_vendors mv on mv.id = h.mpn_vendor_id join public.vendors ve on ve.id = mv.vendor_id
       left join public.user_profiles u on u.id = h.changed_by
      where mv.mpn_id = $1 order by h.changed_at desc limit 50`, [id])).rows;
-  res.json({ ...mpn, vendors, price_history: history });
+  const stock = (await query(`select id, location_code, warehouse_code, lot_no, quantity, uom, mfg_date, expiry_date, is_expired, vendor_name
+                                from public.v_stock where mpn_id = $1 and quantity > 0
+                               order by location_code, warehouse_code, expiry_date nulls last, lot_no`, [id])).rows;
+  const txns = (await query(`select txn_no, txn_at, txn_type, qty_change, new_balance, uom, lot_no, reference_id, location_code, warehouse_code
+                               from public.v_ledger where mpn_id = $1 order by txn_no desc limit 20`, [id])).rows;
+  res.json({ ...mpn, vendors, price_history: history, stock, transactions: txns });
 }));
 
 router.post('/', h(async (req, res) => {
@@ -61,6 +67,7 @@ router.post('/', h(async (req, res) => {
       legacyCode: v.str(b.mpn_code, 'MPN', { max: 100 })?.toUpperCase(),
       manufacturer: v.str(b.manufacturer, 'Manufacturer', { max: 200 }),
       description: v.str(b.description, 'Description', { max: 1000 }),
+      hsnCode: v.hsn(b.hsn_code),
       vendors,
     }, req.user.id);
   });
@@ -94,10 +101,12 @@ router.put('/:id', h(async (req, res) => {
     const r = (await c.query(`update public.mpns
          set manufacturer = case when $6 then $2 else manufacturer end,
              description = case when $7 then $3 else description end,
+             hsn_code = case when $9 then $8 else hsn_code end,
              status = coalesce($4, status), updated_by = $5
        where id = $1 returning *`,
     [id, v.str(b.manufacturer, 'Manufacturer', { max: 200 }), v.str(b.description, 'Description', { max: 1000 }),
-      v.oneOf(b.status, 'status', md.STATUSES), req.user.id, b.manufacturer !== undefined, b.description !== undefined])).rows[0];
+      v.oneOf(b.status, 'status', md.STATUSES), req.user.id, b.manufacturer !== undefined, b.description !== undefined,
+      v.hsn(b.hsn_code), b.hsn_code !== undefined])).rows[0];
     if (!r) throw notFound('MPN not found');
     if (vendors) await md.writeMpnVendors(c, id, vendors, req.user.id);
     return r;
@@ -107,7 +116,10 @@ router.put('/:id', h(async (req, res) => {
 
 router.delete('/:id', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
-  const out = await withTransaction((c) => md.deleteOrDeactivate(c, { table: 'mpns', id, label: 'MPN', userId: req.user.id }));
+  const out = await withTransaction(async (c) => {
+    await md.assertNotFinishedGoodMpn(c, id);        // the hidden stock code of a finished good is never deleted
+    return md.deleteOrDeactivate(c, { table: 'mpns', id, label: 'MPN', userId: req.user.id });
+  });
   res.json(out);
 }));
 

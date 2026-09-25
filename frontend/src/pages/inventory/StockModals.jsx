@@ -3,7 +3,7 @@ import { api, qs } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtDate, fmtQty, today, mpnLabel } from '../../lib/format';
 import { ErrorBox, Field, Modal } from '../../components/ui';
-import { Combobox, LocationWarehouse, materialOptions, mpnOptions, useDefaultScope, useMaterials, useMpns } from '../../components/pickers';
+import { Combobox, LocationWarehouse, materialOptions, useDefaultScope, useMaterials, useMpns } from '../../components/pickers';
 
 function addDays(iso, days) {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -82,11 +82,13 @@ export function InwardModal({ onClose, onDone }) {
   const s = useSubmit((r) => { notify(`Stock added. New balance ${fmtQty(r.new_balance)}`); onDone(); });
   const life = (mat) => mat?.shelf_life_days || settings?.default_shelf_life_days || 365;
   const prefVendor = (p) => (p?.vendors?.find((x) => x.is_preferred) || p?.vendors?.[0])?.vendor_id || '';
-  // Finished goods are never entered here: their stock comes only from a manufacturing batch.
-  const choices = materials.filter((m) => m.classification !== 'FINISHED_GOOD' && mpns.some((p) => p.material_id === m.id));
+  // Finished goods have no MPN: they come in as Opening Stock or Adjustment (never Purchase). Others need an MPN.
+  const choices = materials.filter((m) => (m.classification === 'FINISHED_GOOD'
+    ? f.entry_type !== 'PURCHASE' : mpns.some((p) => p.material_id === m.id)));
+  const isFG = material?.classification === 'FINISHED_GOOD';
   const setType = (t) => setF({ ...f, entry_type: t,
     reason: INWARD_REASONS[t][0] === 'Other' ? '' : (t === 'ADJUSTMENT' ? '' : INWARD_REASONS[t][0]) });
-  const ready = f.material_id && f.mpn_id && (f.entry_type !== 'ADJUSTMENT' || f.reason);
+  const ready = f.material_id && (isFG || f.mpn_id) && (f.entry_type !== 'ADJUSTMENT' || f.reason);
 
   const pickMaterial = async (id) => {
     const mat = materials.find((m) => m.id === id);
@@ -112,7 +114,8 @@ export function InwardModal({ onClose, onDone }) {
       footer={<>
         <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         <button type="button" className="btn-primary" disabled={s.busy || !ready}
-          onClick={() => s.run(() => api.post('/inventory/inward', { ...f, qty: Number(f.qty) }))}>Save</button>
+          onClick={() => s.run(() => api.post('/inventory/inward', { ...f, qty: Number(f.qty),
+            ...(isFG ? { mpn_id: undefined, vendor_id: undefined } : {}) }))}>Save</button>
       </>}>
       <ErrorBox message={s.error} onClose={() => s.setError(null)} />
       <Field label="Entry Type" required hint={ENTRY_TYPES.find((t) => t.value === f.entry_type).hint}>
@@ -126,19 +129,18 @@ export function InwardModal({ onClose, onDone }) {
         </div>
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Material" required hint="Finished goods are not listed: their stock comes only from a batch">
+        <Field label="Material" required hint="Materials with an MPN, and finished goods">
           <Combobox value={f.material_id} onChange={pickMaterial} options={materialOptions(choices)} placeholder="Select material" />
         </Field>
-        <Field label="MPN" required hint={matMpns.length > 1 ? `${matMpns.length} MPNs for this material` : ''}>
+        <Field label="MPN" required={!isFG} hint={isFG ? 'Made in-house: no MPN' : (matMpns.length > 1 ? `${matMpns.length} MPNs for this material` : '')}>
+          {isFG ? <input className="input" disabled value="None (made in-house)" /> : (
           <select className="input" value={f.mpn_id} disabled={!matMpns.length}
             onChange={(e) => { const p = mpns.find((x) => x.id === e.target.value); setF({ ...f, mpn_id: e.target.value, vendor_id: prefVendor(p) }); }}>
             <option value="">-</option>
-            {matMpns.map((p) => <option key={p.id} value={p.id}>{p.mpn_code}{p.vendors?.length ? ` · ${p.vendors.map((x) => x.vendor_name).join(', ')}` : ''}</option>)}
-          </select>
+            {matMpns.map((p) => <option key={p.id} value={p.id}>{p.mpn_code}{p.hsn_code ? ` · HSN ${p.hsn_code}` : ''}{p.vendors?.length ? ` · ${p.vendors.map((x) => x.vendor_name).join(', ')}` : ''}</option>)}
+          </select>)}
         </Field>
       </div>
-      <div className="text-xs text-ink-muted -mt-1">Finished goods cannot be added here. Their stock comes only from
-        Manufacturing &gt; Batch Entry, so stock always matches what was really produced.</div>
       {material && (
         <div className="text-xs text-ink-muted">{material.code} - {material.name} · {material.classification?.replace(/_/g, ' ')} · UOM {material.uom} · shelf life {life(material)} days</div>
       )}
@@ -149,7 +151,7 @@ export function InwardModal({ onClose, onDone }) {
         <Field label="Lot No" required hint="Suggested; type the vendor's lot if it has one"><input className="input" value={f.lot_no} onChange={set('lot_no')} /></Field>
         <Field label={`Quantity${material ? ` (${material.uom})` : ''}`} required><input className="input num" type="number" min="0" step="any" value={f.qty} onChange={set('qty')} /></Field>
         <Field label="Vendor">
-          <select className="input" value={f.vendor_id} onChange={set('vendor_id')}>
+          <select className="input" value={isFG ? '' : f.vendor_id} disabled={isFG} onChange={set('vendor_id')}>
             <option value="">-</option>
             {(mpn?.vendors || []).map((x) => <option key={x.vendor_id} value={x.vendor_id}>{x.vendor_name}{x.is_preferred ? ' (preferred)' : ''}</option>)}
           </select>

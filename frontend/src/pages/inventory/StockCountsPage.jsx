@@ -105,7 +105,7 @@ export default function StockCountsPage() {
       </div>
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} onRowClick={(r) => navigate(`/inventory/stock-counts/${r.id}`)}
+        <DataTable columns={columns} rows={data || []} loading={loading} printTitle="Physical Stock Counts" printDateKey="created_at" onRowClick={(r) => navigate(`/inventory/stock-counts/${r.id}`)}
           empty="No counts yet - click Start Count"
           toolbar={(
             <select className="input w-40" value={status} onChange={(e) => setStatus(e.target.value)}>

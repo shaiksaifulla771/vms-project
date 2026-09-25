@@ -46,7 +46,7 @@ export default function TransfersPage() {
       <PageHeader title="Stock Transfers" subtitle="Draft → In-Transit → Completed. Dispatch takes the stock out of the source; Completed adds it at the destination; cancelling an In-Transit transfer puts it back. Create a transfer from the Stock page (row action)." />
       <div className="p-5 space-y-3">
         <ErrorBox message={err || error} onClose={() => setErr(null)} />
-        <DataTable columns={columns} rows={data || []} loading={loading} exportName="transfers"
+        <DataTable columns={columns} rows={data || []} loading={loading} exportName="transfers" printTitle="Stock Transfers" printDateKey="created_at"
           toolbar={(
             <select className="input w-40" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option>

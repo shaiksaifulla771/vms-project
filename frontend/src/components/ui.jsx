@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Download, Search, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ArrowDown, ArrowUp, Download, Printer, Search, X } from 'lucide-react';
 import { downloadCsv } from '../lib/format';
+import { PrintDialog, PrintHeader, inDateRange, printAfterRender } from './print';
 
 export function PageHeader({ title, subtitle, actions, children }) {
   return (
@@ -125,8 +127,15 @@ export function NewTag({ ts }) {
  * and a light-blue row, and the top right shows an "N added today" filter plus a "Newest first" reset.
  */
 export function DataTable({ columns, rows, loading, empty = 'No records', searchable = true, exportName,
-  onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer, newField }) {
+  onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer, newField,
+  printTitle, printFilters = [], printDateKey, printDateMode, onPrintFetch, printSelectable = true }) {
   const [q, setQ] = useState('');
+  // Printing: tick rows, choose All / Current filter / Selected (+ dates), print a clean table.
+  const [picked, setPicked] = useState(() => new Set());
+  const [printing, setPrinting] = useState(null);         // { rows, filters }
+  const [printAsk, setPrintAsk] = useState(false);
+  const [printErr, setPrintErr] = useState(null);
+  const canPick = Boolean(printTitle) && printSelectable;
   const defaultSort = initialSort || (newField ? { key: newField, dir: 'desc' } : null);
   const [sort, setSort] = useState(defaultSort);
   const [onlyNew, setOnlyNew] = useState(false);
@@ -175,10 +184,72 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
   }, [rows, q, sort, columns, onlyNew]);
 
   const toggleSort = (key) => setSort((s) => (s && s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  const keyOf = (r, i) => r[rowKey] ?? i;
+  const pickedRows = shown.filter((r, i) => picked.has(keyOf(r, i)));
+  const allPicked = shown.length > 0 && pickedRows.length === shown.length;
+  const togglePick = (k) => setPicked((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  // Button / action columns (not exported) are not printed either.
+  const printCols = columns.filter((c) => !c.noPrint && !c.noExport && c.key !== '_actions');
+  const doPrint = async (opt) => {
+    setPrintAsk(false);
+    setPrintErr(null);
+    try {
+      let list;
+      // onPrintFetch(opt): server-paged reports load every matching row (not just the page on screen).
+      if (opt.scope === 'selected') list = pickedRows;
+      else if (onPrintFetch) list = await onPrintFetch(opt);
+      else list = opt.scope === 'view' ? shown : (rows || []);
+      if (!onPrintFetch || opt.scope === 'selected') list = inDateRange(list, printDateKey, opt.from, opt.to);
+      const scopeLabel = { all: 'All records', view: 'Current filter', selected: 'Selected rows' }[opt.scope];
+      const dates = opt.from || opt.to ? `${opt.from || 'start'} to ${opt.to || 'today'}` : '';
+      setPrinting({ rows: list, filters: [['Printed', scopeLabel], ['Dates', dates], ...printFilters, ['Rows', String(list.length)]] });
+      // Only the report goes on paper: the page (filters, cards, sidebar) is hidden while printing.
+      document.body.classList.add('printing-report');
+      printAfterRender(() => { document.body.classList.remove('printing-report'); setPrinting(null); });
+    } catch (e) { setPrintErr(e.message); }
+  };
+  const totals = printing && printCols.some((c) => c.total)
+    ? Object.fromEntries(printCols.filter((c) => c.total).map((c) => [c.key, printing.rows.reduce((a, r) => a + (Number(val(c, r)) || 0), 0)]))
+    : null;
 
   return (
-    <div className="card overflow-hidden">
-      {(searchable || exportName || toolbar) && (
+    <>
+    {printing && createPortal(
+      <div className={`print-only print-table ${printCols.length > 8 ? 'print-wide' : ''}`}>
+        <PrintHeader title={printTitle} filters={printing.filters} />
+        <table className="w-full border-collapse">
+          <thead><tr>{printCols.map((c) => <th key={c.key} className={`th ${c.align === 'right' ? 'text-right' : ''}`}>{c.label}</th>)}</tr></thead>
+          <tbody>
+            {printing.rows.length === 0 && <tr><td className="td" colSpan={printCols.length}>No records</td></tr>}
+            {printing.rows.map((r, i) => (
+              <tr key={keyOf(r, i)}>
+                {printCols.map((c) => (
+                  <td key={c.key} className={`td ${c.align === 'right' ? 'num' : ''}`}>
+                    {c.printValue ? c.printValue(r) : (c.render ? c.render(r) : (c.value ? c.value(r) : r[c.key]))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          {totals && (
+            <tfoot><tr>{printCols.map((c, i) => (
+              <td key={c.key} className={`td font-semibold ${c.align === 'right' ? 'num' : ''}`}>
+                {c.key in totals ? totals[c.key].toLocaleString('en-IN', { maximumFractionDigits: 4 }) : (i === 0 ? 'Total' : '')}
+              </td>
+            ))}</tr></tfoot>
+          )}
+        </table>
+      </div>,
+      document.body,
+    )}
+    {printAsk && (
+      <PrintDialog title={printTitle} onClose={() => setPrintAsk(false)} onPrint={doPrint} selectedCount={pickedRows.length}
+        viewCount={shown.length} allCount={onPrintFetch ? undefined : (rows || []).length} allowSelected={canPick}
+        dateMode={printDateMode || (printDateKey ? 'range' : null)} />
+    )}
+    <div className={`card overflow-hidden ${printing ? 'no-print' : ''}`}>
+      {printErr && <div className="px-3 py-2 text-[13px] text-danger border-b border-line no-print">{printErr}</div>}
+      {(searchable || exportName || toolbar || printTitle) && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line no-print">
           {searchable && (
             <div className="relative w-64">
@@ -198,10 +269,16 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
               <button type="button" className="btn-link" onClick={() => setSort({ key: newField, dir: 'desc' })}>Newest first</button>
             )}
             <span>{shown.length} record{shown.length === 1 ? '' : 's'}</span>
+            {canPick && pickedRows.length > 0 && (
+              <button type="button" className="btn-link" onClick={() => setPicked(new Set())}>{pickedRows.length} selected · clear</button>
+            )}
             {exportName && (
               <button type="button" className="btn-link" onClick={() => downloadCsv(`${exportName}.csv`, columns.filter((c) => !c.noExport), shown)}>
                 <Download size={13} /> CSV
               </button>
+            )}
+            {printTitle && (
+              <button type="button" className="btn-link" onClick={() => setPrintAsk(true)}><Printer size={13} /> Print</button>
             )}
           </div>
         </div>
@@ -212,6 +289,12 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
         <table className="w-full border-collapse">
           <thead className={scroll ? 'sticky top-0 z-10' : ''}>
             <tr>
+              {canPick && (
+                <th className="th w-8 no-print" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" aria-label="Select all rows" checked={allPicked}
+                    onChange={() => setPicked(allPicked ? new Set() : new Set(shown.map((r, i) => keyOf(r, i))))} />
+                </th>
+              )}
               {columns.map((c) => (
                 <th key={c.key} className={`th ${c.align === 'right' ? 'text-right' : ''} ${c.noSort ? '' : 'cursor-pointer'}`}
                   style={c.width ? { width: c.width } : undefined} onClick={() => !c.noSort && toggleSort(c.key)}>
@@ -225,14 +308,19 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           </thead>
           <tbody>
             {loading && (
-              <tr><td className="td text-ink-muted" colSpan={columns.length}>Loading...</td></tr>
+              <tr><td className="td text-ink-muted" colSpan={columns.length + (canPick ? 1 : 0)}>Loading...</td></tr>
             )}
             {!loading && shown.length === 0 && (
-              <tr><td className="td text-ink-muted" colSpan={columns.length}>{empty}</td></tr>
+              <tr><td className="td text-ink-muted" colSpan={columns.length + (canPick ? 1 : 0)}>{empty}</td></tr>
             )}
             {!loading && shown.map((r, i) => (
               <tr key={r[rowKey] ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
                 className={`${newField && isNewToday(r[newField]) ? 'bg-accent-soft/40' : ''} ${onRowClick ? 'cursor-pointer hover:bg-accent-soft' : 'hover:bg-panel'}`}>
+                {canPick && (
+                  <td className="td w-8 no-print" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label="Select row" checked={picked.has(keyOf(r, i))} onChange={() => togglePick(keyOf(r, i))} />
+                  </td>
+                )}
                 {columns.map((c, ci) => (
                   <td key={c.key} className={`td ${dense ? 'py-1' : ''} ${c.align === 'right' ? 'num' : ''} ${c.className || ''}`}>
                     {c.render ? c.render(r) : (c.value ? c.value(r) : r[c.key])}
@@ -246,6 +334,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
       </div>
       {footer}
     </div>
+    </>
   );
 }
 

@@ -16,13 +16,13 @@ export function AppProvider({ children }) {
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [s, l, st] = await Promise.all([
-        api.get('/session'), api.get('/locations', { scoped: false }), api.get('/settings'),
-      ]);
+      // Session first: it confirms (or replaces) the saved user, and every other call needs a valid one.
+      const s = await api.get('/session');
+      if (prefs.userId() !== s.user.id) prefs.setUserId(s.user.id);
+      const [l, st] = await Promise.all([api.get('/locations', { scoped: false }), api.get('/settings')]);
       setSession(s);
       setLocations(l);
       setSettings(st);
-      if (prefs.userId() !== s.user.id) prefs.setUserId(s.user.id);
       // Drop a stored location/WH that no longer exists
       const loc = prefs.locationId();
       if (loc && !l.some((x) => x.id === loc)) { prefs.setLocationId(''); prefs.setWarehouseId(''); setLocationIdState(''); setWarehouseIdState(''); }

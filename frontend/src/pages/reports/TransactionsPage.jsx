@@ -60,6 +60,11 @@ export default function TransactionsPage() {
         </div>
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data?.rows || []} loading={loading} exportName="transactions" rowKey="id" searchable={false}
+          printTitle="Transaction Report" printDateKey="txn_at"
+          printFilters={[['Type', f.type ? (TXN_LABEL[f.type] || f.type) : ''], ['Search', f.q]]}
+          onPrintFetch={(opt) => api.get(`/inventory/ledger${qs({
+            ...(opt.scope === 'view' ? { type: f.type, mpn_id: f.mpn_id, q: f.q } : {}),
+            from: opt.from || (opt.scope === 'view' ? f.from : ''), to: opt.to || (opt.scope === 'view' ? f.to : ''), limit: 5000 })}`)}
           toolbar={<span className="text-xs text-ink-muted">{total.toLocaleString('en-IN')} transactions · CSV exports this page</span>}
           footer={(
             <div className="flex items-center justify-end gap-3 px-3 py-2 border-t border-line text-[13px] no-print">

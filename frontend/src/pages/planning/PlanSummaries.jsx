@@ -76,7 +76,11 @@ export default function PlanSummaries({ planSummary: p, batchSummary, materialSu
           <tbody>
             {materialSummary.map((m) => (
               <tr key={m.material_id}>
-                <td className="td whitespace-normal min-w-[260px]">{m.material_code} - {m.material_name}{m.mpn_code ? <span className="text-ink-muted"> ({m.mpn_code})</span> : ''}</td>
+                <td className="td whitespace-normal min-w-[260px]">{m.material_code} - {m.material_name}
+                  {m.classification === 'SEMI_FINISHED' ? <span className="text-ink-muted"> (semi-finished)</span>
+                    : (m.mpn_code ? <span className="text-ink-muted"> ({m.mpn_code})</span> : '')}
+                  {m.make_first && <div className="text-xs text-danger">Make it first: <Link className="text-accent" to="/planning/new">plan {m.material_code}</Link></div>}
+                </td>
                 <td className="td whitespace-normal min-w-[140px]">{m.vendor_name || <span className="text-ink-faint">-</span>}</td>
                 <td className="td num">{fmtQty(m.qty_per_batch)}</td>
                 <td className="td num">{fmtQty(m.scrap_allowance_pct)}</td>

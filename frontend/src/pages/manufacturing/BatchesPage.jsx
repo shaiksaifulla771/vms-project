@@ -29,7 +29,7 @@ export default function BatchesPage() {
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/manufacturing/new')}><Plus size={14} /> Batch Entry</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} exportName="batches" onRowClick={(r) => navigate(`/manufacturing/batches/${r.id}`)} />
+        <DataTable columns={columns} rows={data || []} loading={loading} exportName="batches" printTitle="Production Batches" printDateKey="mfg_date" onRowClick={(r) => navigate(`/manufacturing/batches/${r.id}`)} />
       </div>
     </div>
   );

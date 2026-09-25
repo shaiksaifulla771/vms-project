@@ -53,6 +53,9 @@ async function materialSummary(db, bom, qty, applyScrap, locationId) {
       short_long: diff,
       status: diff < 0 ? 'SHORT' : 'LONG',
       uom: l.uom,
+      classification: l.classification || null,
+      // A short semi-finished ingredient is made here, not bought: plan it first.
+      make_first: diff < 0 && l.classification === 'SEMI_FINISHED',
     };
   });
 }

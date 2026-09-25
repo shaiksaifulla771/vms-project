@@ -14,16 +14,25 @@ function getPool() {
       throw new Error('DATABASE_URL is not set. See backend/.env.example');
     }
     const useSsl = process.env.DATABASE_SSL === 'true' || /supabase\.(co|com)/.test(connectionString);
+    // "Today", expiry checks and day boundaries follow the business time zone, not the server's UTC.
+    const tz = process.env.APP_TIMEZONE || 'Asia/Kolkata';
+    const tzOk = /^[A-Za-z_]+(\/[A-Za-z_+-]+)*$/.test(tz);
+    if (!tzOk) console.error(`[db] APP_TIMEZONE "${tz}" is not a valid time zone name; using the database default`);
     pool = new Pool({
       connectionString,
-      ssl: useSsl ? { rejectUnauthorized: false } : false,
+      // Set DATABASE_SSL_CA to the Supabase CA certificate file to also verify the server certificate.
+      ssl: useSsl ? (process.env.DATABASE_SSL_CA
+        ? { rejectUnauthorized: true, ca: require('fs').readFileSync(process.env.DATABASE_SSL_CA, 'utf8') }
+        : { rejectUnauthorized: false }) : false,
       max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
       // pg's default is to wait forever for a connection; fail with an error instead of hanging the request.
       connectionTimeoutMillis: parseInt(process.env.DATABASE_CONNECT_TIMEOUT_MS || '10000', 10),
       // Keeps idle sockets to the Supabase pooler from being silently dropped by the network.
       keepAlive: true,
+      ...(tzOk ? { options: `-c TimeZone=${tz}` } : {}),
     });
     pool.on('error', (err) => console.error('[db] idle client error', err.message));
+
   }
   return pool;
 }

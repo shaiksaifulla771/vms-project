@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Scale } from 'lucide-react';
+import { Copy, Printer, Scale, Star } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { fmtDateTime, fmtQty } from '../../lib/format';
+import { fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader, Status } from '../../components/ui';
+import { PrintHeader } from '../../components/print';
 
 const money = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
@@ -62,6 +63,46 @@ function ScaleDialog({ bom, onClose, onDone }) {
   );
 }
 
+/** Copy into a separate BOM (side by side), optionally to another location, with its own name. */
+function CopyDialog({ bom, onClose, onDone }) {
+  const { locations } = useApp();
+  const [name, setName] = useState(bom.name ? `${bom.name} (copy)` : '');
+  const [loc, setLoc] = useState(bom.location_id);
+  const [err, setErr] = useState(null);
+  const save = async () => {
+    try { onDone(await api.post(`/boms/${bom.id}/copy`, { name: name || null, location_id: loc })); } catch (e) { setErr(e.message); }
+  };
+  return (
+    <Modal title={`Copy ${bom.bom_no} v${bom.version} to a new BOM`} onClose={onClose}
+      footer={<><button type="button" className="btn-secondary" onClick={onClose}>Cancel</button><button type="button" className="btn-primary" onClick={save}>Create draft</button></>}>
+      <ErrorBox message={err} />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="New BOM name" hint="e.g. Economy pack"><input className="input" autoFocus maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Location">
+          <select className="input" value={loc} onChange={(e) => setLoc(e.target.value)}>
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      <p className="text-xs text-ink-muted">The copy is a new draft. The current BOM stays active; both can be used once the copy is activated.</p>
+    </Modal>
+  );
+}
+
+function RenameDialog({ bom, onClose, onDone }) {
+  const [name, setName] = useState(bom.name || '');
+  const [err, setErr] = useState(null);
+  const save = async () => { try { onDone(await api.post(`/boms/${bom.id}/rename`, { name: name || null })); } catch (e) { setErr(e.message); } };
+  return (
+    <Modal title="BOM name" onClose={onClose}
+      footer={<><button type="button" className="btn-secondary" onClick={onClose}>Cancel</button><button type="button" className="btn-primary" onClick={save}>Save</button></>}>
+      <ErrorBox message={err} />
+      <Field label="Name" hint="A label to tell BOMs of the same product apart"><input className="input" autoFocus maxLength={100} value={name}
+        onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); }} /></Field>
+    </Modal>
+  );
+}
+
 export default function BomDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -69,6 +110,8 @@ export default function BomDetailPage() {
   const { data: bom, loading, error, setData } = useData(() => api.get(`/boms/${id}`), [id]);
   const [err, setErr] = useState(null);
   const [scale, setScale] = useState(false);
+  const [copy, setCopy] = useState(false);
+  const [rename, setRename] = useState(false);
   if (loading && !bom) return <Loading />;
   if (error) return <div className="p-5"><ErrorBox message={error} /></div>;
 
@@ -77,19 +120,30 @@ export default function BomDetailPage() {
     try {
       const r = await api.post(`/boms/${id}/${action}`);
       notify(msg);
-      if (r.id !== bom.id) navigate(`/masters/boms/${r.id}/edit`); else setData(r);
+      if (r.id !== bom.id) navigate(`/masters/boms/${r.id}/edit`); else setData({ ...bom, ...r });
     } catch (e) { setErr(e.message); }
   };
   const c = bom.costing;
 
   return (
     <div>
-      <PageHeader title={`${bom.bom_no} · v${bom.version}`} subtitle={`${bom.product_code} - ${bom.product_name} · ${bom.location_code} / ${bom.warehouse_code}`}
+      <PrintHeader title={`BOM ${bom.bom_no} v${bom.version}${bom.name ? ` · ${bom.name}` : ''} - ${bom.product_code} ${bom.product_name}`}
+        filters={[['Location', `${bom.location_code} / ${bom.warehouse_code}`], ['Status', bom.status], ['Default', bom.is_default ? 'Yes' : 'No']]} />
+      <PageHeader title={<span>{bom.bom_no} · v{bom.version}{bom.name ? ` · ${bom.name}` : ''}
+        {bom.is_default && <span className="ml-2 align-middle text-xs2 px-1.5 py-0.5 rounded bg-accent-soft text-accent">Default</span>}</span>}
+        subtitle={`${bom.product_code} - ${bom.product_name} · ${bom.location_code} / ${bom.warehouse_code}`}
         actions={<>
-          <Link className="btn-secondary" to="/masters/boms">Back</Link>
+          <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>Back</button>
+          <button type="button" className="btn-secondary no-print" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          {canWrite && <button type="button" className="btn-secondary" onClick={() => setRename(true)}>Rename</button>}
+          {canWrite && bom.status === 'ACTIVE' && !bom.is_default && (
+            <button type="button" className="btn-secondary" onClick={() => act('set-default', 'This BOM is now the Default')}><Star size={14} /> Set as Default</button>
+          )}
+          {canWrite && <button type="button" className="btn-secondary" onClick={() => setCopy(true)}><Copy size={14} /> Copy</button>}
           {canWrite && bom.status === 'DRAFT' && <Link className="btn-secondary" to={`/masters/boms/${bom.id}/edit`}>Edit</Link>}
           {canWrite && <button type="button" className="btn-secondary" onClick={() => setScale(true)}><Scale size={14} /> Scale Recipe</button>}
-          {canWrite && <button type="button" className="btn-secondary" onClick={() => act('revise', 'New draft version created')}>New Version</button>}
+          {canWrite && <button type="button" className="btn-secondary" title="A new version replaces this BOM when activated"
+            onClick={() => act('revise', 'New draft version created')}>New Version</button>}
           {canWrite && bom.status === 'ACTIVE' && <button type="button" className="btn-secondary" onClick={() => act('obsolete', 'BOM marked obsolete')}>Mark Obsolete</button>}
           {canWrite && bom.status === 'DRAFT' && <button type="button" className="btn-primary" onClick={() => act('activate', 'BOM activated')}>Activate</button>}
         </>} />
@@ -131,7 +185,9 @@ export default function BomDetailPage() {
                   <td className="td num">{fmtQty(l.qty_per_batch, 4)}</td>
                   <td className="td">{l.uom}</td>
                   <td className="td num">{fmtQty(l.scrap_allowance_pct)}</td>
-                  <td className="td num" title="From the MPN">{l.effective_price == null ? <span className="text-ink-faint">No price</span> : money(l.effective_price)}</td>
+                  <td className="td num" title={l.price_source === 'BOM' ? `Cost per unit of ${l.bom_cost_source}` : 'From the MPN'}>
+                    {l.effective_price == null ? <span className="text-ink-faint">No price</span> : money(l.effective_price)}
+                    {l.price_source === 'BOM' && <span className="text-ink-faint"> (BOM)</span>}</td>
                   <td className="td num">{money(l.line_cost)}</td>
                   <td className="td text-ink-soft whitespace-normal">{l.notes}</td>
                 </tr>
@@ -139,8 +195,46 @@ export default function BomDetailPage() {
             </tbody>
           </table>
         </section>
-        <p className="text-xs text-ink-faint">* price overridden on this BOM. Line cost = qty × (1 + loss %) × price.</p>
+        <p className="text-xs text-ink-faint">Line cost = qty × (1 + loss %) × price. Price comes from the MPN; a semi-finished ingredient made in-house uses the cost per unit of its own BOM (marked "BOM").</p>
+
+        <div className="grid grid-cols-3 gap-4">
+          <section className="card">
+            <div className="px-3 py-2 border-b border-line text-[13px] font-medium">Plans using this BOM ({bom.used_in_plans?.length || 0})</div>
+            <table className="w-full"><tbody>
+              {(bom.used_in_plans || []).map((p) => (
+                <tr key={p.id}><td className="td"><Link className="text-accent" to={`/planning/plans/${p.id}`}>{p.plan_no}</Link></td>
+                  <td className="td num">{fmtQty(p.remaining_qty)} left</td><td className="td"><Status value={p.status} /></td></tr>
+              ))}
+              {!bom.used_in_plans?.length && <tr><td className="td text-ink-muted">Not used in any plan</td></tr>}
+            </tbody></table>
+          </section>
+          <section className="card">
+            <div className="px-3 py-2 border-b border-line text-[13px] font-medium">Batches made with it ({bom.used_in_batches?.length || 0})</div>
+            <table className="w-full"><tbody>
+              {(bom.used_in_batches || []).map((b) => (
+                <tr key={b.id}><td className="td"><Link className="text-accent" to={`/manufacturing/batches/${b.id}`}>{b.batch_no}</Link></td>
+                  <td className="td">{fmtDate(b.mfg_date)}</td><td className="td num">{fmtQty(b.actual_output_qty)} {b.output_uom}</td></tr>
+              ))}
+              {!bom.used_in_batches?.length && <tr><td className="td text-ink-muted">No batches yet</td></tr>}
+            </tbody></table>
+          </section>
+          <section className="card">
+            <div className="px-3 py-2 border-b border-line text-[13px] font-medium">Other BOMs of this product ({bom.other_boms?.length || 0})</div>
+            <table className="w-full"><tbody>
+              {(bom.other_boms || []).map((o) => (
+                <tr key={o.id}><td className="td"><Link className="text-accent" to={`/masters/boms/${o.id}`}>{o.bom_no} v{o.version}</Link>
+                  {o.name ? ` · ${o.name}` : ''}{o.is_default ? ' (Default)' : ''}</td>
+                  <td className="td">{o.location_code}</td><td className="td"><Status value={o.status} /></td></tr>
+              ))}
+              {!bom.other_boms?.length && <tr><td className="td text-ink-muted">This is the only BOM</td></tr>}
+            </tbody></table>
+          </section>
+        </div>
       </div>
+      {copy && <CopyDialog bom={bom} onClose={() => setCopy(false)}
+        onDone={(nb) => { setCopy(false); notify(`Copied to ${nb.bom_no} (draft)`); navigate(`/masters/boms/${nb.id}/edit`); }} />}
+      {rename && <RenameDialog bom={bom} onClose={() => setRename(false)}
+        onDone={(nb) => { setRename(false); notify('BOM name saved'); setData({ ...bom, ...nb }); }} />}
       {scale && <ScaleDialog bom={bom} onClose={() => setScale(false)}
         onDone={(nb) => { setScale(false); notify(`Scaled recipe saved as draft v${nb.version}`); navigate(`/masters/boms/${nb.id}`); }} />}
     </div>

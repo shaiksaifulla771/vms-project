@@ -5,28 +5,29 @@ const { notFound, badRequest, conflict } = require('../utils/errors');
 const v = require('../utils/validate');
 const { loadUoms, matchUom } = require('../services/options');
 
-const { BOM_SELECT, loadBom, lineSource, r2, r4 } = require('../services/boms');
+const { BOM_SELECT, loadBom, lineSource, resolveBom, r2, r4 } = require('../services/boms');
 
 router.get('/', h(async (req, res) => {
   const { clause, params } = where([
-    ['b.product_id = ?', req.query.product_id],
-    ['b.location_id = ?', req.scope.locationId],
-    ['b.warehouse_id = ?', req.scope.warehouseId],
-    ['b.status = ?', req.query.status],
-    ['(m.code ilike ? or m.name ilike ? or b.bom_no ilike ?)', req.query.q ? `%${req.query.q}%` : null],
+    ['b.product_id = ?', v.uuid(req.query.product_id, 'Product')],
+    // An explicit location (location-first pickers) wins over the top-bar scope.
+    ['b.location_id = ?', v.uuid(req.query.location_id, 'Location') || req.scope.locationId],
+    ['b.warehouse_id = ?', req.query.location_id ? null : req.scope.warehouseId],
+    ['b.status = ?', v.oneOf(req.query.status, 'Status', ['DRAFT', 'ACTIVE', 'OBSOLETE'])],
+    ['m.classification = ?', v.oneOf(req.query.classification, 'Classification', ['FINISHED_GOOD', 'SEMI_FINISHED'])],
+    ['(m.code ilike ? or m.name ilike ? or b.bom_no ilike ? or b.name ilike ?)', req.query.q ? `%${req.query.q}%` : null],
   ]);
-  const { rows } = await query(`${BOM_SELECT} ${clause} order by m.code, l.code, b.version desc`, params);
+  const { rows } = await query(`${BOM_SELECT} ${clause}
+    order by m.code, l.code, (b.status = 'ACTIVE') desc, b.is_default desc, b.version desc`, params);
   res.json(rows);
 }));
 
-// Active BOM for a product at a location (used by planning & batch entry)
+// The BOM planning / batch entry would use for a product at a location (Default, or the only active one)
 router.get('/active', h(async (req, res) => {
   const productId = v.uuid(req.query.product_id, 'Product', { required: true });
   const locationId = v.uuid(req.query.location_id || req.scope.locationId, 'Location', { required: true });
-  const r = await query(`select id from public.boms where product_id = $1 and location_id = $2 and status = 'ACTIVE'`,
-    [productId, locationId]);
-  if (!r.rows[0]) throw notFound('No active BOM for this product at this location');
-  res.json(await loadBom({ query }, r.rows[0].id));
+  const id = await resolveBom({ query }, { productId, locationId, bomId: v.uuid(req.query.bom_id, 'BOM') });
+  res.json(await loadBom({ query }, id));
 }));
 
 /**
@@ -41,7 +42,19 @@ router.get('/line-source', h(async (req, res) => {
 }));
 
 router.get('/:id', h(async (req, res) => {
-  res.json(await loadBom({ query }, v.uuid(req.params.id, 'id', { required: true })));
+  const id = v.uuid(req.params.id, 'id', { required: true });
+  const bom = await loadBom({ query }, id);
+  // Full-page view: where this BOM is used, and the other BOMs of the same product.
+  const [plans, batches, siblings] = await Promise.all([
+    query(`select id, plan_no, status, target_qty, executed_qty, remaining_qty, created_at from public.plans
+            where bom_id = $1 order by created_at desc limit 20`, [id]),
+    query(`select id, batch_no, status, mfg_date, actual_output_qty, output_uom from public.batches
+            where bom_id = $1 order by created_at desc limit 20`, [id]),
+    query(`select b.id, b.bom_no, b.version, b.name, b.status, b.is_default, l.code as location_code
+             from public.boms b join public.locations l on l.id = b.location_id
+            where b.product_id = $1 and b.id <> $2 order by l.code, (b.status = 'ACTIVE') desc, b.version desc`, [bom.product_id, id]),
+  ]);
+  res.json({ ...bom, used_in_plans: plans.rows, used_in_batches: batches.rows, other_boms: siblings.rows });
 }));
 
 function parseHeader(b) {
@@ -51,6 +64,7 @@ function parseHeader(b) {
     expectedOutput: v.num(b.expected_output_qty, 'Expected output qty', { required: true, gt: 0 }),
     outputUom: v.str(b.output_uom, 'Output UOM', { max: 20 }),
     notes: v.str(b.notes, 'Notes', { max: 2000 }),
+    name: v.str(b.name, 'BOM name', { max: 100 }),
     packingCost: v.num(b.packing_cost, 'Packing cost', { min: 0 }) ?? 0,
     processingCost: v.num(b.processing_cost, 'Processing cost', { min: 0 }) ?? 0,
     overheadCost: v.num(b.overhead_cost, 'Overhead cost', { min: 0 }) ?? 0,
@@ -108,14 +122,79 @@ async function insertLines(c, bomId, lines) {
   }
 }
 
+/** Serialise BOM status changes of one product + location (two users activating at once). */
+async function lockProductLocation(c, productId, locationId) {
+  await c.query('select pg_advisory_xact_lock(hashtext($1))', [`bom:${productId}:${locationId}`]);
+}
+
+/**
+ * Activate a DRAFT. Several BOMs can be active side by side. A new version made with "Revise"
+ * replaces the BOM it came from (that one becomes obsolete and hands over the Default). The first
+ * active BOM of a product + location becomes the Default.
+ */
 async function activate(c, bomId, userId) {
-  const bom = (await c.query('select * from public.boms where id = $1 for update', [bomId])).rows[0];
+  let bom = (await c.query('select * from public.boms where id = $1', [bomId])).rows[0];
   if (!bom) throw notFound('BOM not found');
+  await lockProductLocation(c, bom.product_id, bom.location_id);
+  bom = (await c.query('select * from public.boms where id = $1 for update', [bomId])).rows[0];
   if (bom.status === 'OBSOLETE') throw conflict('An obsolete BOM cannot be re-activated; create a new version');
-  await c.query(`update public.boms set status = 'OBSOLETE', updated_by = $3
-                  where product_id = $1 and location_id = $2 and status = 'ACTIVE' and id <> $4`,
+  if (bom.status === 'ACTIVE') return;
+  let makeDefault = false;
+  if (bom.revised_from_bom_id) {
+    const src = (await c.query(`select is_default from public.boms where id = $1 and status = 'ACTIVE' for update`,
+      [bom.revised_from_bom_id])).rows[0];
+    if (src) {
+      await c.query(`update public.boms set status = 'OBSOLETE', is_default = false, updated_by = $2 where id = $1`,
+        [bom.revised_from_bom_id, userId]);
+      if (src.is_default) makeDefault = true;
+    }
+  }
+  const hasDefault = (await c.query(`select 1 from public.boms where product_id = $1 and location_id = $2
+                                       and status = 'ACTIVE' and is_default and id <> $3`,
+  [bom.product_id, bom.location_id, bomId])).rows[0];
+  if (!hasDefault) makeDefault = true;
+  await c.query(`update public.boms set status = 'ACTIVE', is_default = $3, updated_by = $2 where id = $1`,
+    [bomId, userId, makeDefault]);
+}
+
+/** Make an ACTIVE BOM the Default of its product + location. */
+async function setDefault(c, bomId, userId) {
+  const first = (await c.query('select product_id, location_id from public.boms where id = $1', [bomId])).rows[0];
+  if (!first) throw notFound('BOM not found');
+  await lockProductLocation(c, first.product_id, first.location_id);
+  const bom = (await c.query('select * from public.boms where id = $1 for update', [bomId])).rows[0];
+  if (bom.status !== 'ACTIVE') throw conflict('Only an active BOM can be the Default');
+  await c.query(`update public.boms set is_default = false, updated_by = $3
+                  where product_id = $1 and location_id = $2 and is_default and id <> $4`,
   [bom.product_id, bom.location_id, userId, bomId]);
-  await c.query(`update public.boms set status = 'ACTIVE', updated_by = $2 where id = $1`, [bomId, userId]);
+  await c.query('update public.boms set is_default = true, updated_by = $2 where id = $1', [bomId, userId]);
+}
+
+/** New DRAFT BOM copied from another (optionally to another location / under a new name). */
+async function copyBom(c, srcId, { name, locationId, revise, userId }) {
+  const src = (await c.query('select * from public.boms where id = $1', [srcId])).rows[0];
+  if (!src) throw notFound('BOM not found');
+  const loc = locationId || src.location_id;
+  let wh = src.warehouse_id;
+  if (loc !== src.location_id) {
+    wh = (await c.query('select id from public.warehouses where location_id = $1 order by is_default desc, code limit 1', [loc])).rows[0]?.id;
+    if (!wh) throw badRequest('Location not found or it has no warehouse');
+  }
+  await lockProductLocation(c, src.product_id, loc);
+  const ver = (await c.query('select coalesce(max(version), 0) + 1 as v from public.boms where product_id = $1 and location_id = $2',
+    [src.product_id, loc])).rows[0].v;
+  const nb = (await c.query(`insert into public.boms(product_id, location_id, warehouse_id, version, status, name, batch_size, batch_uom,
+                               expected_output_qty, output_uom, notes, created_by,
+                               packing_cost, processing_cost, overhead_cost, freight_cost, revised_from_bom_id)
+                             select product_id, $2, $3, $4, 'DRAFT', $5, batch_size, batch_uom,
+                                    expected_output_qty, output_uom, notes, $6,
+                                    packing_cost, processing_cost, overhead_cost, freight_cost, $7
+                               from public.boms where id = $1 returning id`,
+  [srcId, loc, wh, ver, name === undefined ? src.name : name, userId, revise ? srcId : null])).rows[0];
+  await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes)
+                 select $2, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes
+                   from public.bom_lines where bom_id = $1`, [srcId, nb.id]);
+  return nb.id;
 }
 
 router.post('/', h(async (req, res) => {
@@ -136,15 +215,16 @@ router.post('/', h(async (req, res) => {
     }
     await canonHeaderUoms(c, hdr);
     const lines = await parseLines(c, productId, b.lines);
+    await lockProductLocation(c, productId, locationId);
     const ver = (await c.query('select coalesce(max(version), 0) + 1 as v from public.boms where product_id = $1 and location_id = $2',
       [productId, locationId])).rows[0].v;
     const bom = (await c.query(`insert into public.boms(product_id, location_id, warehouse_id, version, status, batch_size, batch_uom,
                                   expected_output_qty, output_uom, notes, created_by,
-                                  packing_cost, processing_cost, overhead_cost, freight_cost)
-                                values ($1,$2,$3,$4,'DRAFT',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
+                                  packing_cost, processing_cost, overhead_cost, freight_cost, name)
+                                values ($1,$2,$3,$4,'DRAFT',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
       [productId, locationId, warehouseId, ver, hdr.batchSize, hdr.batchUom, hdr.expectedOutput,
         hdr.outputUom || product.uom, hdr.notes, req.user.id,
-        hdr.packingCost, hdr.processingCost, hdr.overheadCost, hdr.freightCost])).rows[0];
+        hdr.packingCost, hdr.processingCost, hdr.overheadCost, hdr.freightCost, hdr.name])).rows[0];
     await insertLines(c, bom.id, lines);
     if (v.bool(b.activate)) await activate(c, bom.id, req.user.id);
     return bom.id;
@@ -166,9 +246,9 @@ router.put('/:id', h(async (req, res) => {
     let warehouseId = v.uuid(b.warehouse_id, 'Warehouse') || bom.warehouse_id;
     await c.query(`update public.boms set warehouse_id = $2, batch_size = $3, batch_uom = $4, expected_output_qty = $5,
                      output_uom = coalesce($6, output_uom), notes = $7, updated_by = $8,
-                     packing_cost = $9, processing_cost = $10, overhead_cost = $11, freight_cost = $12 where id = $1`,
+                     packing_cost = $9, processing_cost = $10, overhead_cost = $11, freight_cost = $12, name = $13 where id = $1`,
     [id, warehouseId, hdr.batchSize, hdr.batchUom, hdr.expectedOutput, hdr.outputUom, hdr.notes, req.user.id,
-      hdr.packingCost, hdr.processingCost, hdr.overheadCost, hdr.freightCost]);
+      hdr.packingCost, hdr.processingCost, hdr.overheadCost, hdr.freightCost, hdr.name]);
     await c.query('delete from public.bom_lines where bom_id = $1', [id]);
     await insertLines(c, id, lines);
   });
@@ -181,34 +261,54 @@ router.post('/:id/activate', h(async (req, res) => {
   res.json(await loadBom({ query }, id));
 }));
 
-router.post('/:id/obsolete', h(async (req, res) => {
+router.post('/:id/set-default', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
-  const r = await query(`update public.boms set status = 'OBSOLETE', updated_by = $2 where id = $1 returning id`, [id, req.user.id]);
+  await withTransaction((c) => setDefault(c, id, req.user.id));
+  res.json(await loadBom({ query }, id));
+}));
+
+/** Rename any BOM (the name is only a label, so it can change at any status). */
+router.post('/:id/rename', h(async (req, res) => {
+  const id = v.uuid(req.params.id, 'id', { required: true });
+  const name = v.str((req.body || {}).name, 'BOM name', { max: 100 });
+  const r = await query('update public.boms set name = $2, updated_by = $3 where id = $1 returning id', [id, name, req.user.id]);
   if (!r.rows[0]) throw notFound('BOM not found');
   res.json(await loadBom({ query }, id));
 }));
 
-// Copy a BOM into a new DRAFT version
+router.post('/:id/obsolete', h(async (req, res) => {
+  const id = v.uuid(req.params.id, 'id', { required: true });
+  await withTransaction(async (c) => {
+    const first = (await c.query('select product_id, location_id from public.boms where id = $1', [id])).rows[0];
+    if (!first) throw notFound('BOM not found');
+    await lockProductLocation(c, first.product_id, first.location_id);
+    // Re-read under the lock: a concurrent Set as Default may have just changed it.
+    const bom = (await c.query('select * from public.boms where id = $1 for update', [id])).rows[0];
+    await c.query(`update public.boms set status = 'OBSOLETE', is_default = false, updated_by = $2 where id = $1`, [id, req.user.id]);
+    // The newest other active BOM takes over as Default, so planning keeps working.
+    if (bom.is_default) {
+      await c.query(`update public.boms set is_default = true, updated_by = $3 where id = (
+                       select id from public.boms where product_id = $1 and location_id = $2 and status = 'ACTIVE'
+                        order by version desc limit 1)`, [bom.product_id, bom.location_id, req.user.id]);
+    }
+  });
+  res.json(await loadBom({ query }, id));
+}));
+
+// New version of a BOM: a DRAFT that replaces its source when activated
 router.post('/:id/revise', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
-  const newId = await withTransaction(async (c) => {
-    const src = (await c.query('select * from public.boms where id = $1', [id])).rows[0];
-    if (!src) throw notFound('BOM not found');
-    const ver = (await c.query('select max(version) + 1 as v from public.boms where product_id = $1 and location_id = $2',
-      [src.product_id, src.location_id])).rows[0].v;
-    const nb = (await c.query(`insert into public.boms(product_id, location_id, warehouse_id, version, status, batch_size, batch_uom,
-                                 expected_output_qty, output_uom, notes, created_by,
-                                 packing_cost, processing_cost, overhead_cost, freight_cost)
-                               select product_id, location_id, warehouse_id, $2, 'DRAFT', batch_size, batch_uom,
-                                      expected_output_qty, output_uom, notes, $3,
-                                      packing_cost, processing_cost, overhead_cost, freight_cost
-                                 from public.boms where id = $1 returning id`,
-      [id, ver, req.user.id])).rows[0];
-    await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes)
-                   select $2, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes
-                     from public.bom_lines where bom_id = $1`, [id, nb.id]);
-    return nb.id;
-  });
+  const newId = await withTransaction((c) => copyBom(c, id, { revise: true, userId: req.user.id }));
+  res.status(201).json(await loadBom({ query }, newId));
+}));
+
+// Copy a BOM into a separate new BOM (side by side), optionally to another location / name
+router.post('/:id/copy', h(async (req, res) => {
+  const id = v.uuid(req.params.id, 'id', { required: true });
+  const b = req.body || {};
+  const newId = await withTransaction((c) => copyBom(c, id, {
+    name: v.str(b.name, 'BOM name', { max: 100 }), locationId: v.uuid(b.location_id, 'Location'), userId: req.user.id,
+  }));
   res.status(201).json(await loadBom({ query }, newId));
 }));
 
@@ -240,17 +340,18 @@ router.post('/:id/scale', h(async (req, res) => {
   if (v.bool(b.preview)) return res.json(scaled);
 
   const newId = await withTransaction(async (c) => {
+    await lockProductLocation(c, src.product_id, src.location_id);
     const ver = (await c.query('select max(version) + 1 as v from public.boms where product_id = $1 and location_id = $2',
       [src.product_id, src.location_id])).rows[0].v;
     const nb = (await c.query(`insert into public.boms(product_id, location_id, warehouse_id, version, status, batch_size, batch_uom,
                                  expected_output_qty, output_uom, notes, created_by,
-                                 packing_cost, processing_cost, overhead_cost, freight_cost, scaled_from_bom_id)
-                               values ($1,$2,$3,$4,'DRAFT',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
+                                 packing_cost, processing_cost, overhead_cost, freight_cost, scaled_from_bom_id, name)
+                               values ($1,$2,$3,$4,'DRAFT',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning id`,
     [src.product_id, src.location_id, src.warehouse_id, ver, scaled.to.batch_size, src.batch_uom,
       scaled.to.expected_output_qty, src.output_uom,
       [src.notes, `Scaled x${scaled.factor} from ${src.bom_no} v${src.version}`].filter(Boolean).join('\n'),
       req.user.id, scaled.costs.packing_cost.to, scaled.costs.processing_cost.to, scaled.costs.overhead_cost.to,
-      scaled.costs.freight_cost.to, src.id])).rows[0];
+      scaled.costs.freight_cost.to, src.id, src.name])).rows[0];
     for (const l of src.lines) {
       await c.query(`insert into public.bom_lines(bom_id, line_no, material_id, mpn_id, qty_per_batch, uom, scrap_allowance_pct, notes)
                      values ($1,$2,$3,$4,$5,$6,$7,$8)`,

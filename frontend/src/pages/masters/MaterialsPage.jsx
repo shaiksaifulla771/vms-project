@@ -1,12 +1,13 @@
+import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
+import { CLASS_LABEL, fmtDate } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { Link } from 'react-router-dom';
 import { UomSelect, categoriesFor, useCategories, useUoms } from '../../components/pickers';
-import { BulkDialog, DeleteDialog, DetailGrid, FunctionsMenu, actionsColumn } from '../../components/masterKit';
+import { BulkDialog, DeleteDialog, FunctionsMenu, actionsColumn } from '../../components/masterKit';
 
 const CLASSES = Object.entries(CLASS_LABEL);
 
@@ -145,53 +146,9 @@ export function MaterialForm({ material, onClose, onDone, preset }) {
   );
 }
 
-function MaterialView({ id, onClose, onEdit, canWrite }) {
-  const { data: m, error } = useData(() => api.get(`/materials/${id}`, { scoped: false }), [id]);
-  return (
-    <Modal title={m ? `${m.code} - ${m.name}` : 'Material'} onClose={onClose} width="max-w-3xl"
-      footer={<><button type="button" className="btn-secondary" onClick={onClose}>Close</button>
-        {canWrite && m && <button type="button" className="btn-primary" onClick={() => onEdit(m)}>Edit</button>}</>}>
-      <ErrorBox message={error} />
-      {m && (
-        <div className="space-y-4">
-          <DetailGrid items={[
-            ['Material Code', m.code], ['Material Name', m.name, 'col-span-2'],
-            ['Classification', CLASS_LABEL[m.classification]], ['Category', m.category_name], ['Sub-category', m.sub_category_name],
-            ['Base UOM', m.uom], ['Shelf Life (days)', m.shelf_life_days], ['Status', <Status key="s" value={m.status} />],
-            ['Reorder Level', m.reorder_level == null ? '' : `${fmtQty(m.reorder_level)} ${m.uom}`],
-            ['Description', m.description, 'col-span-3'],
-            ['Created', fmtDateTime(m.created_at)], ['Last updated', fmtDateTime(m.updated_at)],
-          ]} />
-          {m.classification === 'FINISHED_GOOD' ? (
-            <p className="text-[13px] text-ink-muted">Finished good: made in-house, so it has no MPN or vendor. Stock comes from production batches, Opening Stock or Adjustment.</p>
-          ) : (<>
-          <div>
-            <div className="text-xs2 uppercase tracking-wide text-ink-muted mb-1">MPNs and vendor prices</div>
-            <table className="w-full border-collapse border border-line">
-              <thead><tr><th className="th">MPN</th><th className="th">Vendor</th><th className="th">UOM</th><th className="th text-right">MOQ</th><th className="th text-right">Price (₹)</th><th className="th">Status</th></tr></thead>
-              <tbody>
-                {m.mpns.length === 0 && <tr><td className="td text-ink-muted" colSpan={6}>No MPNs yet</td></tr>}
-                {m.mpns.flatMap((p) => (p.vendors.length ? p.vendors : [{}]).map((v, i) => (
-                  <tr key={`${p.id}-${i}`}>
-                    <td className="td">{i === 0 ? p.mpn_code : ''}</td>
-                    <td className="td">{v.vendor_name ? `${v.vendor_code} - ${v.vendor_name}${v.is_preferred ? ' (preferred)' : ''}` : <span className="text-ink-faint">-</span>}</td>
-                    <td className="td">{v.uom}</td><td className="td num">{v.moq}</td><td className="td num">{v.price}</td>
-                    <td className="td">{i === 0 && <Status value={p.status} />}</td>
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          </div>
-          <div className="text-[13px]"><span className="text-ink-muted">Supplied by (from MPNs): </span>{m.vendors.length ? m.vendors.map((v) => `${v.code} - ${v.name}`).join(', ') : '-'}</div>
-          </>)}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
 export default function MaterialsPage() {
   const { canWrite, notify } = useApp();
+  const navigate = useNavigate();
   const cats = useCategories();
   const [cls, setCls] = useState('');
   const [cat, setCat] = useState('');
@@ -214,7 +171,7 @@ export default function MaterialsPage() {
     { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
-      onView: (r) => setModal({ type: 'view', id: r.id }),
+      onView: (r) => navigate(`/masters/materials/${r.id}`),
       onEdit: (r) => setModal({ type: 'edit', material: r }),
       onDelete: (r) => setModal({ type: 'delete', row: r }),
     }),
@@ -230,7 +187,7 @@ export default function MaterialsPage() {
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at"
-          onRowClick={(r) => setModal({ type: 'view', id: r.id })}
+          onRowClick={(r) => navigate(`/masters/materials/${r.id}`)} printTitle="Material Master"
           toolbar={<>
             <select className="input w-40" value={cls} onChange={(e) => {
               const c = cats.find((x) => x.id === cat);
@@ -251,7 +208,6 @@ export default function MaterialsPage() {
       </div>
       {modal?.type === 'edit' && <MaterialForm material={modal.material} onClose={close}
         onDone={(m) => { setModal(null); notify(modal.material ? 'Material saved' : `Material ${m.code} created`); reload(); }} />}
-      {modal?.type === 'view' && <MaterialView id={modal.id} canWrite={canWrite} onClose={close} onEdit={(m) => setModal({ type: 'edit', material: m })} />}
       {modal?.type === 'delete' && <DeleteDialog label={`${modal.row.code} ${modal.row.name}`} path={`/materials/${modal.row.id}`} onClose={close} onDone={done()} />}
       {modal?.type === 'bulk' && <BulkDialog entity="materials" mode={modal.mode} onClose={close} onDone={done()} />}
     </div>

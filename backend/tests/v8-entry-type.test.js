@@ -23,18 +23,22 @@ describe('v8: Inward entry type', () => {
     expect(l).toEqual({ txn_type: 'INWARD', reference_type: 'PURCHASE' });
   });
 
-  test('a finished good can never be added by Inward, whatever the entry type or how it is addressed', async () => {
-    for (const entry of ['PURCHASE', 'OPENING', 'ADJUSTMENT']) {
-      // Adjustment is Admin-only, so an editor is turned away before the material is even looked at.
-      for (const who of entry === 'ADJUSTMENT' ? [admin] : [editor, admin]) {
-        for (const id of [{ material_id: C.fg.id }, { mpn_id: C.fgMpn.id }]) {
-          const r = await who.post('/inventory/inward', { ...base(), ...id, lot_no: 'FG-OPEN-1', entry_type: entry, reason: 'Found extra' });
-          expect(r.status).toBe(400);
-          expect(r.body.error).toMatch(/only from a manufacturing batch/);
-        }
-      }
+  test('v10: a finished good comes in by Opening Stock or Adjustment (no MPN), never as a Purchase', async () => {
+    for (const id of [{ material_id: C.fg.id }, { mpn_id: C.fgMpn.id }]) {
+      const r = await editor.post('/inventory/inward', { ...base(), ...id, lot_no: 'FG-BUY-1', entry_type: 'PURCHASE' });
+      expect(r.status).toBe(400);
+      expect(r.body.error).toMatch(/cannot be purchased/);
     }
-    expect(await q(`select 1 from public.stock_ledger where lot_no = 'FG-OPEN-1'`)).toHaveLength(0);
+    const open = await editor.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-OPEN-1', entry_type: 'OPENING' });
+    expect(open.status).toBe(201);
+    expect(open.body.mpn_id).toBe(C.fgMpn.id);                        // the hidden stock code, never shown as an MPN
+    expect(open.body.vendor_id || null).toBeNull();
+    expect((await editor.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-ADJ-1', entry_type: 'ADJUSTMENT', reason: 'Found extra' })).status).toBe(403);
+    const adj = await admin.post('/inventory/inward', { ...base(), material_id: C.fg.id, lot_no: 'FG-ADJ-1', entry_type: 'ADJUSTMENT', reason: 'Found extra' });
+    expect(adj.status).toBe(201);
+    expect((await q(`select txn_type from public.stock_ledger where lot_no in ('FG-OPEN-1','FG-ADJ-1') order by lot_no`)).map((x) => x.txn_type))
+      .toEqual(['ADJUSTMENT', 'OPENING']);
+    expect(await q(`select 1 from public.stock_ledger where lot_no = 'FG-BUY-1'`)).toHaveLength(0);
   });
 
   test('Adjustment is Admin only and needs a reason', async () => {
@@ -78,9 +82,10 @@ describe('v8: finished goods have no MPN', () => {
     const fg = (await admin.post('/materials', { name: 'Ready Upma 200g', classification: 'FINISHED_GOOD', uom: 'pcs' })).body;
     const hidden = await q('select id from public.mpns where material_id = $1', [fg.id]);
     expect(hidden).toHaveLength(1);
-    // ... but it still cannot be stocked by hand
+    // ... and Opening Stock uses the same hidden code
     const r = await editor.post('/inventory/inward', { location_id: C.mum.id, warehouse_id: C.wh2.id, qty: 5, material_id: fg.id, lot_no: 'UPMA-OPEN', entry_type: 'OPENING' });
-    expect(r.status).toBe(400);
+    expect(r.status).toBe(201);
+    expect(r.body.mpn_id).toBe(hidden[0].id);
     const batch = await editor.post('/batches', { source: 'AD_HOC', product_id: fg.id, location_id: C.mum.id, actual_output_qty: 5, inputs: [] });
     expect(batch.status).toBe(201);
     expect((await q('select mpn_id from public.inventory where lot_no = $1', [batch.body.batch_no]))[0].mpn_id).toBe(hidden[0].id);

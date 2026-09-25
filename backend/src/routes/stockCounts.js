@@ -14,7 +14,7 @@
 const router = require('express').Router();
 const { query, withTransaction } = require('../db/pool');
 const { h, where } = require('../utils/http');
-const { badRequest, notFound, conflict } = require('../utils/errors');
+const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
 const { requireAdmin, isAdmin } = require('../middleware/session');
 const { postStock, lockInventory } = require('../services/stock');
 const v = require('../utils/validate');
@@ -215,7 +215,7 @@ router.post('/:id/add-lots', h(async (req, res) => {
 router.put('/:id/lines', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
   const b = req.body || {};
-  if (!Array.isArray(b.lines)) throw badRequest('lines must be a list');
+  v.objList(b.lines, 'Lines', { required: true, max: 5000 });
   await withTransaction(async (c) => {
     const sc = (await c.query('select * from public.stock_counts where id = $1 for update', [id])).rows[0];
     if (!sc) throw notFound('Stock count not found');
@@ -341,8 +341,14 @@ router.post('/:id/approve', requireAdmin, h(async (req, res) => {
 
 router.post('/:id/cancel', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
+  // A count waiting for Admin approval can only be cancelled by an Admin.
+  const statuses = isAdmin(req.user) ? ['DRAFT', 'COUNTING', 'SUBMITTED'] : ['DRAFT', 'COUNTING'];
   const r = await query(`update public.stock_counts set status = 'CANCELLED', cancelled_by = $2, cancelled_at = now(), updated_by = $2
-                          where id = $1 and status in ('DRAFT', 'COUNTING', 'SUBMITTED') returning id`, [id, req.user.id]);
+                          where id = $1 and status = any($3) returning id`, [id, req.user.id, statuses]);
+  if (!r.rowCount && !isAdmin(req.user)) {
+    const st = (await query('select status from public.stock_counts where id = $1', [id])).rows[0]?.status;
+    if (st === 'SUBMITTED') throw forbidden('This count is waiting for Admin approval: only an Admin can cancel it');
+  }
   if (!r.rowCount) throw conflict('This count cannot be cancelled');
   res.json(await loadCount({ query }, id, req.user));
 }));

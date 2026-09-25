@@ -37,6 +37,12 @@ function createApp() {
 
   app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+  // NUL characters are never valid anywhere (PostgreSQL rejects them): refuse them up front with a 400.
+  const hasNul = (x, depth = 0) => (typeof x === 'string' ? x.includes('\u0000')
+    : (x && typeof x === 'object' && depth < 8 ? Object.values(x).some((y) => hasNul(y, depth + 1)) : false));
+  app.use('/api', (req, res, next) => (hasNul(req.query) || hasNul(req.body) || hasNul(req.path)
+    ? res.status(400).json({ error: 'The request contains an invalid character' }) : next()));
+
   app.use('/api', actingUser, scope, writeGuard);
 
   app.use('/api/session', require('./routes/session'));

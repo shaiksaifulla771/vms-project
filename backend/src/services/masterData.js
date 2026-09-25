@@ -134,7 +134,7 @@ function parseVendorBasic(b, { partial = false } = {}) {
 
 function parseAddresses(list) {
   if (list === undefined) return undefined;
-  if (!Array.isArray(list)) throw badRequest('addresses must be a list');
+  v.objList(list, 'Addresses', { max: 100 });
   const out = list.map((a, i) => {
     const n = `Address ${i + 1}`;
     const gstin = v.str(a.gstin, `${n} GSTIN`, { max: 15 })?.toUpperCase() || null;
@@ -168,7 +168,7 @@ function parseAddresses(list) {
 
 function parseContacts(list) {
   if (list === undefined) return undefined;
-  if (!Array.isArray(list)) throw badRequest('contacts must be a list');
+  v.objList(list, 'Contacts', { max: 100 });
   return list.map((x, i) => {
     const n = `Contact ${i + 1}`;
     const email = v.str(x.email, `${n} email`, { max: 200 });
@@ -186,7 +186,7 @@ function parseContacts(list) {
 
 function parseBanks(list) {
   if (list === undefined) return undefined;
-  if (!Array.isArray(list)) throw badRequest('bank_accounts must be a list');
+  v.objList(list, 'Bank accounts', { max: 100 });
   const out = list.map((x, i) => {
     const n = `Bank account ${i + 1}`;
     const acct = String(v.str(x.account_number, `${n} number`, { required: true, max: 20 })).replace(/\s/g, '');
@@ -283,7 +283,7 @@ async function updateVendor(c, id, d, userId) {
 // ---------------------------------------------------------------------------
 function parseMpnVendors(list) {
   if (list === undefined) return undefined;
-  if (!Array.isArray(list)) throw badRequest('vendors must be a list');
+  v.objList(list, 'Vendors', { max: 100 });
   const seen = new Set();
   const out = list.map((x, i) => {
     const n = `Vendor ${i + 1}`;
@@ -330,13 +330,13 @@ async function assertNotFinishedGoodMpn(c, mpnId) {
   if (r && r.classification === 'FINISHED_GOOD') throw badRequest('Finished goods are made, not bought: they have no MPN');
 }
 
-async function createMpn(c, { materialId, manufacturer, description, vendors, legacyCode }, userId) {
+async function createMpn(c, { materialId, manufacturer, description, vendors, legacyCode, hsnCode }, userId) {
   const mat = (await c.query('select id, status, classification from public.materials where id = $1', [materialId])).rows[0];
   if (!mat) throw badRequest('Material not found');
   if (mat.classification === 'FINISHED_GOOD') throw badRequest('Finished goods are made, not bought: they have no MPN');
-  const mpn = (await c.query(`insert into public.mpns(mpn_code, material_id, manufacturer, description, created_by)
-                              values ($1,$2,$3,$4,$5) returning *`,
-  [legacyCode || null, materialId, manufacturer, description, userId])).rows[0];
+  const mpn = (await c.query(`insert into public.mpns(mpn_code, material_id, manufacturer, description, created_by, hsn_code)
+                              values ($1,$2,$3,$4,$5,$6) returning *`,
+  [legacyCode || null, materialId, manufacturer, description, userId, hsnCode || null])).rows[0];
   if (vendors?.length) await writeMpnVendors(c, mpn.id, vendors, userId);
   return mpn;
 }

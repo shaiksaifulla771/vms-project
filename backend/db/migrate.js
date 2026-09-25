@@ -27,7 +27,7 @@ async function migrate({ silent = false } = {}) {
       if (!silent) console.log(`[migrate] applied ${file}`);
     } catch (err) {
       await client.query('ROLLBACK');
-      throw new Error(`${file}: ${err.message}`);
+      throw new Error(`${file}: ${err.message}`, { cause: err });
     } finally {
       client.release();
     }
