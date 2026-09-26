@@ -149,6 +149,11 @@ export function printSections(chosen) {
  * Print button for a detail page: opens the shared print dialog to choose the parts to print.
  * sections: [{ key, label, on? }] matching data-print-section="key" on the page.
  */
+/** The same parts dialog without its own button (opened from a ⋯ menu). */
+export function PrintPartsDialog({ title, sections, onClose }) {
+  return <PrintDialog title={title} sections={sections} onClose={onClose} onPrint={(opt) => { onClose(); printSections(opt.sections); }} />;
+}
+
 export function PrintPartsButton({ title, sections, className = 'btn-secondary' }) {
   const [ask, setAsk] = useState(false);
   return (

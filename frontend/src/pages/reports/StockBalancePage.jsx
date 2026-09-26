@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Printer } from 'lucide-react';
+import { CheckSquare, Download, Printer } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { CLASS_LABEL, downloadCsv, fmtDate, fmtQty, mpnLabel, today } from '../../lib/format';
@@ -56,6 +56,17 @@ export default function StockBalancePage() {
       printAfterRender(() => setPrinting(null));
     } catch (e) { setPrintErr(e.message); }
   };
+  // Select mode: tick lots, then print or download only those.
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState(() => new Set());
+  const rowKey = (r) => `${r.location_code}|${r.warehouse_code}|${r.mpn_code || r.material_name}|${r.lot_no}`;
+  const pickedRows = (data || []).filter((r) => picked.has(rowKey(r)));
+  const toggle = (r) => setPicked((s) => { const n = new Set(s); const k = rowKey(r); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const stopSelecting = () => { setSelecting(false); setPicked(new Set()); };
+  const printPicked = () => {
+    setPrinting({ rows: pickedRows, filters: [['Printed', 'Selected rows'], ['As on', asOn || `${todayStr} (today)`], ['Lots', String(pickedRows.length)]] });
+    printAfterRender(() => setPrinting(null));
+  };
   const list = printing ? printing.rows : data;
   const groups = useMemo(() => {
     const g = {};
@@ -88,7 +99,23 @@ export default function StockBalancePage() {
             </select>
           </Field>
           {(asOn || cls) && <button type="button" className="btn-link mb-2" onClick={() => { setAsOn(''); setCls(''); }}>Reset</button>}
+          {!selecting && (data || []).length > 0 && (
+            <button type="button" className="btn-link mb-2 ml-auto" onClick={() => setSelecting(true)}><CheckSquare size={13} /> Select</button>
+          )}
         </div>
+        {selecting && (
+          <div className="card flex flex-wrap items-center gap-3 px-3 py-1.5 bg-accent-soft text-[13px] no-print" role="toolbar" aria-label="Selected rows">
+            <span className="font-medium text-ink">{pickedRows.length} selected</span>
+            <button type="button" className="btn-link" onClick={() => setPicked(pickedRows.length === (data || []).length ? new Set() : new Set((data || []).map(rowKey)))}>
+              {pickedRows.length === (data || []).length ? 'Clear all' : `Select all ${(data || []).length}`}
+            </button>
+            <span className="ml-auto flex items-center gap-3">
+              <button type="button" className="btn-link" disabled={!pickedRows.length} onClick={printPicked}><Printer size={13} /> Print</button>
+              <button type="button" className="btn-link" disabled={!pickedRows.length} onClick={() => downloadCsv('stock_balance_selected.csv', COLS, pickedRows)}><Download size={13} /> Download CSV</button>
+              <button type="button" className="btn-link text-ink-soft" onClick={stopSelecting}>Cancel</button>
+            </span>
+          </div>
+        )}
         <ErrorBox message={error || printErr} />
         {loading && !printing && <Loading />}
         {!loading && !printing && groups.length === 0 && <div className="text-ink-muted">No stock</div>}
@@ -99,10 +126,13 @@ export default function StockBalancePage() {
               <span className="text-xs text-ink-muted">{g.name} · {g.rows.length} lots</span>
             </div>
             <table className="w-full">
-              <thead><tr><th className="th">MPN</th><th className="th">Material Name</th><th className="th">Lot No</th><th className="th text-right">Qty</th><th className="th">UOM</th><th className="th">Expiry</th></tr></thead>
+              <thead><tr>{selecting && !printing && <th className="th w-8 no-print" />}<th className="th">MPN</th><th className="th">Material Name</th><th className="th">Lot No</th><th className="th text-right">Qty</th><th className="th">UOM</th><th className="th">Expiry</th></tr></thead>
               <tbody>
                 {g.rows.map((r) => (
                   <tr key={`${r.mpn_code}-${r.lot_no}`}>
+                    {selecting && !printing && (
+                      <td className="td w-8 no-print"><input type="checkbox" aria-label={`Select lot ${r.lot_no}`} checked={picked.has(rowKey(r))} onChange={() => toggle(r)} /></td>
+                    )}
                     <td className="td">{mpnLabel(r.mpn_code, r.classification)}</td><td className="td">{r.material_name}</td><td className="td">{r.lot_no}</td>
                     <td className="td num">{fmtQty(r.quantity)}</td><td className="td">{r.uom}</td>
                     <td className={`td ${r.is_expired ? 'text-danger' : ''}`}>{fmtDate(r.expiry_date)}</td>
@@ -110,7 +140,7 @@ export default function StockBalancePage() {
                 ))}
               </tbody>
               <tfoot><tr className="bg-panel font-medium">
-                <td className="td" colSpan={3}>Total · {g.rows.length} lots</td>
+                <td className="td" colSpan={selecting && !printing ? 4 : 3}>Total · {g.rows.length} lots</td>
                 <td className="td num">{uomTotals(g.rows).map(([u, q]) => <div key={u}>{fmtQty(q)}</div>)}</td>
                 <td className="td">{uomTotals(g.rows).map(([u]) => <div key={u}>{u}</div>)}</td>
                 <td className="td" />

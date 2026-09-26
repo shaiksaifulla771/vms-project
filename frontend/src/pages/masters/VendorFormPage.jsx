@@ -9,7 +9,7 @@ import { Section } from '../../components/masterKit';
 
 const newAddress = (n) => ({ _k: Math.random(), address_name: n === 0 ? 'Head Office' : `Address ${n + 1}`, address_type: n === 0 ? 'PRIMARY' : 'SECONDARY',
   is_default: n === 0, line1: '', line2: '', city: '', state: '', pincode: '', country: 'India', gstin: '' });
-const newContact = () => ({ _k: Math.random(), name: '', designation: '', phone: '', email: '' });
+const newContact = () => ({ _k: Math.random(), name: '', designation: '', phone: '', email: '', notes: '' });
 const newBank = (n) => ({ _k: Math.random(), account_holder: '', account_number: '', ifsc: '', bank_name: '', branch: '', is_primary: n === 0 });
 
 function RemoveBtn({ onClick, title }) {
@@ -66,7 +66,7 @@ export default function VendorFormPage() {
       ...f,
       fssai_expiry: f.fssai_expiry || null,
       addresses: strip(f.addresses),
-      contacts: strip(f.contacts).filter((c) => c.name || c.phone || c.email),
+      contacts: strip(f.contacts).filter((c) => c.name || c.phone || c.email || c.notes),
       bank_accounts: strip(f.bank_accounts),
     };
     try {
@@ -146,13 +146,17 @@ export default function VendorFormPage() {
           {f.contacts.length === 0 && <p className="text-ink-muted text-[13px]">No contacts yet.</p>}
           {f.contacts.length > 0 && (
             <table className="w-full border-collapse">
-              <thead><tr><th className="th">Name</th><th className="th">Designation</th><th className="th">Phone</th><th className="th">Email</th><th className="th w-10" /></tr></thead>
+              <thead><tr><th className="th">Name</th><th className="th">Designation</th><th className="th">Phone</th><th className="th">Email</th><th className="th w-[28%]">Notes</th><th className="th w-10" /></tr></thead>
               <tbody>
                 {f.contacts.map((c, i) => (
                   <tr key={c._k}>
                     {['name', 'designation', 'phone', 'email'].map((k) => (
                       <td key={k} className="td px-1"><input className="input" value={c[k]} onChange={(e) => setList('contacts', i, { [k]: e.target.value })} /></td>
                     ))}
+                    <td className="td px-1 align-top">
+                      <textarea className="input h-8 py-1.5 leading-snug resize-none focus:h-20" rows={1} maxLength={1000} aria-label={`Contact ${i + 1} notes`}
+                        placeholder="e.g. handles invoices, call before 11am" value={c.notes || ''} onChange={(e) => setList('contacts', i, { notes: e.target.value })} />
+                    </td>
                     <td className="td px-1"><RemoveBtn title="Remove contact" onClick={() => remove('contacts', i)} /></td>
                   </tr>
                 ))}

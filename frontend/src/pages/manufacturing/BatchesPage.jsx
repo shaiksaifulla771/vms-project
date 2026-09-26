@@ -3,10 +3,10 @@ import { Plus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtPct, fmtQty } from '../../lib/format';
-import { DataTable, ErrorBox, PageHeader } from '../../components/ui';
+import { ActionMenu, DataTable, ErrorBox, PageHeader } from '../../components/ui';
 
 export default function BatchesPage() {
-  const { canWrite } = useApp();
+  const { canWrite, isAdmin } = useApp();
   const navigate = useNavigate();
   const { data, loading, error } = useData(() => api.get('/batches'), []);
   const columns = [
@@ -22,10 +22,24 @@ export default function BatchesPage() {
     { key: 'variance_pct', label: 'Variance %', align: 'right', render: (r) => fmtPct(r.variance_pct), value: (r) => Number(r.variance_pct) },
     { key: 'executed_by', label: 'Executed By' },
     { key: 'status', label: 'Status', value: (r) => (r.status === 'REVERSED' ? 'Reversed' : 'Completed'), printFilter: true },
+    { key: '_actions', label: '', noSort: true, noPrint: true, noExport: true, width: 40, render: (r) => {
+      const open = r.status !== 'REVERSED';
+      const go = (act) => navigate(`/manufacturing/batches/${r.id}${act ? `?do=${act}` : ''}`);
+      return (
+        <ActionMenu label={`Actions for batch ${r.batch_no}`} items={[
+          { label: 'View', onClick: () => go() },
+          { label: 'Open plan', onClick: () => navigate(`/planning/plans/${r.plan_id}`), hidden: !r.plan_id },
+          { label: 'Trace lot', onClick: () => navigate(`/reports/traceability?mpn_id=${r.output_mpn_id}&lot_no=${encodeURIComponent(r.batch_no)}`), hidden: !r.output_mpn_id },
+          { label: 'Print', onClick: () => go('print') },
+          { label: 'Edit IP / OP', onClick: () => go('edit'), hidden: !canWrite || !open },
+          { label: 'Reverse batch', onClick: () => go('reverse'), danger: true, hidden: !isAdmin || !open },
+        ]} />
+      );
+    } },
   ];
   return (
     <div>
-      <PageHeader title="Batches" subtitle="Executed manufacturing batches"
+      <PageHeader title="Batches"
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/manufacturing/new')}><Plus size={14} /> Batch Entry</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
