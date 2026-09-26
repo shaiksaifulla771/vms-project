@@ -17,6 +17,8 @@ body {
   .btn-primary { @apply btn bg-accent border-accent text-white hover:bg-accent-hover; }
   .btn-secondary { @apply btn bg-white border-line-strong text-ink hover:bg-panel; }
   .btn-link { @apply inline-flex items-center gap-1 text-accent hover:underline text-[13px] disabled:opacity-50; }
+  .btn-icon { @apply inline-flex h-7 w-7 items-center justify-center rounded text-ink-soft hover:bg-panel hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40; }
+  .btn-link:disabled { @apply cursor-not-allowed no-underline; }
   .btn-danger-link { @apply inline-flex items-center gap-1 text-danger hover:underline text-[13px]; }
   .btn-danger { @apply btn bg-white border-red-300 text-danger hover:bg-red-50; }
   .input { @apply h-8 w-full rounded border border-line-strong bg-white px-2 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent disabled:bg-panel; }

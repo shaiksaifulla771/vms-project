@@ -122,6 +122,7 @@ const VENDOR_COLS = [
   { key: 'contact_designation', header: 'Contact Designation', width: 16, createOnly: true },
   { key: 'contact_phone', header: 'Contact Phone', width: 14, createOnly: true },
   { key: 'contact_email2', header: 'Contact Email', width: 22, createOnly: true },
+  { key: 'contact_notes', header: 'Contact Notes', width: 26, createOnly: true },
   { key: 'account_holder', header: 'Account Holder Name', width: 22, createOnly: true },
   { key: 'account_number', header: 'Account Number', width: 18, createOnly: true, textCell: true },
   { key: 'ifsc', header: 'IFSC', width: 13, createOnly: true },
@@ -317,7 +318,7 @@ function validateVendorCreate(rows, lk) {
     const expiry = toDate(r.fssai_expiry);
     if (expiry === undefined) errors.push('FSSAI expiry must be a date (YYYY-MM-DD)');
     const hasAddr = ['line1', 'line2', 'city', 'state', 'pincode'].some((k) => !blank(r[k]));
-    const hasContact = ['contact_name', 'contact_phone', 'contact_email2', 'contact_designation'].some((k) => !blank(r[k]));
+    const hasContact = ['contact_name', 'contact_phone', 'contact_email2', 'contact_designation', 'contact_notes'].some((k) => !blank(r[k]));
     const hasBank = ['account_holder', 'account_number', 'ifsc', 'bank_name', 'branch'].some((k) => !blank(r[k]));
     const data = capture(errors, () => md.parseVendor({
       name: text(r.name), status: status || 'ACTIVE', phone: text(r.phone), contact_email: text(r.contact_email),
@@ -325,7 +326,7 @@ function validateVendorCreate(rows, lk) {
       addresses: hasAddr ? [{ address_name: text(r.address_name) || 'Head Office', address_type: 'PRIMARY', is_default: true,
         line1: text(r.line1), line2: text(r.line2), city: text(r.city), state: text(r.state), pincode: text(r.pincode) }] : [],
       contacts: hasContact ? [{ name: text(r.contact_name), designation: text(r.contact_designation),
-        phone: text(r.contact_phone), email: text(r.contact_email2) }] : [],
+        phone: text(r.contact_phone), email: text(r.contact_email2), notes: text(r.contact_notes) }] : [],
       bank_accounts: hasBank ? [{ account_holder: text(r.account_holder), account_number: text(r.account_number),
         ifsc: text(r.ifsc), bank_name: text(r.bank_name), branch: text(r.branch), is_primary: true }] : [],
     }));

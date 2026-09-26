@@ -34,6 +34,9 @@ export function fmtByUom(list) {
 /** Today's date (YYYY-MM-DD) in the user's own time zone, not UTC. */
 export const today = () => new Date().toLocaleDateString('en-CA');
 
+/** Short type codes for dense screens. */
+export const CLASS_SHORT = { RAW_MATERIAL: 'RM', PACKAGING: 'PKG', CONSUMABLE: 'CON', SEMI_FINISHED: 'SFG', FINISHED_GOOD: 'FG' };
+
 export const CLASS_LABEL = {
   RAW_MATERIAL: 'Raw Material',
   PACKAGING: 'Packaging',
@@ -86,4 +89,4 @@ export const STATES = [
 export const COUNTRIES = ['India', 'Bangladesh', 'Bhutan', 'China', 'Nepal', 'Sri Lanka', 'United Arab Emirates', 'United Kingdom', 'United States', 'Other'];
 
 /** Finished goods are made in-house and have no MPN: show a dash instead of their internal stock code. */
-export const mpnLabel = (code, classification) => (classification === 'FINISHED_GOOD' ? '–' : (code || '–'));
+export const mpnLabel = (code, classification) => (classification === 'FINISHED_GOOD' ? '-' : (code || '-'));

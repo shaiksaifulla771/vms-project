@@ -180,6 +180,7 @@ function parseContacts(list) {
       designation: v.str(x.designation, `${n} designation`, { max: 100 }),
       phone,
       email,
+      notes: v.str(x.notes, `${n} notes`, { max: 1000 }),
     };
   });
 }
@@ -243,8 +244,8 @@ async function writeVendorChildren(c, vendorId, d, userId) {
     await c.query('delete from public.vendor_contacts where vendor_id = $1', [vendorId]);
     let i = 0;
     for (const x of d.contacts) {
-      await c.query(`insert into public.vendor_contacts(vendor_id, name, designation, phone, email, sort_order)
-                     values ($1,$2,$3,$4,$5,$6)`, [vendorId, x.name, x.designation, x.phone, x.email, i]);
+      await c.query(`insert into public.vendor_contacts(vendor_id, name, designation, phone, email, notes, sort_order)
+                     values ($1,$2,$3,$4,$5,$6,$7)`, [vendorId, x.name, x.designation, x.phone, x.email, x.notes || null, i]);
       i += 1;
     }
   }

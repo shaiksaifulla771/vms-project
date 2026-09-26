@@ -84,8 +84,11 @@ export default function VendorViewPage() {
         <Section title={`Contact directory (${v.contacts.length})`}>
           {v.contacts.length === 0 ? <p className="text-ink-muted text-[13px]">No contacts.</p> : (
             <table className="w-full border-collapse">
-              <thead><tr><th className="th">Name</th><th className="th">Designation</th><th className="th">Phone</th><th className="th">Email</th></tr></thead>
-              <tbody>{v.contacts.map((c) => <tr key={c.id}><td className="td">{c.name}</td><td className="td">{c.designation}</td><td className="td">{c.phone}</td><td className="td">{c.email}</td></tr>)}</tbody>
+              <thead><tr><th className="th">Name</th><th className="th">Designation</th><th className="th">Phone</th><th className="th">Email</th><th className="th">Notes</th></tr></thead>
+              <tbody>{v.contacts.map((c) => (
+                <tr key={c.id}><td className="td">{c.name}</td><td className="td">{c.designation}</td><td className="td">{c.phone}</td><td className="td">{c.email}</td>
+                  <td className="td whitespace-pre-line max-w-[360px] text-ink-soft">{c.notes || '-'}</td></tr>
+              ))}</tbody>
             </table>
           )}
         </Section>

@@ -1,12 +1,19 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtDateTime, fmtPct, fmtQty, mpnLabel } from '../../lib/format';
-import { ErrorBox, Field, Loading, Modal, PageHeader } from '../../components/ui';
-import { PrintHeader, PrintPartsButton } from '../../components/print';
+import { ActionMenu, ErrorBox, Field, Loading, Modal, PageHeader } from '../../components/ui';
+import { PrintHeader, PrintPartsDialog } from '../../components/print';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
+const editState = (b) => ({
+  actual_output_qty: String(b.actual_output_qty), variance_reason: b.variance_reason || '',
+  inputs: b.inputs.map((i) => ({ id: i.id, actual_input_qty: String(i.actual_input_qty), variance_reason: i.variance_reason || '' })),
+});
+const PRINT_PARTS = [
+  { key: 'detail', label: 'Batch detail' }, { key: 'output', label: 'Output vs plan' },
+  { key: 'inputs', label: 'Material inputs' }, { key: 'ledger', label: 'Inventory postings', on: false }];
 
 export default function BatchDetailPage() {
   const { id } = useParams();
@@ -18,14 +25,24 @@ export default function BatchDetailPage() {
   const [err, setErr] = useState(null);
   const [reversing, setReversing] = useState(null);   // reason text while the dialog is open
   const tolerance = settings?.variance_tolerance_pct ?? 5;
+  const [printing, setPrinting] = useState(false);
+  const navigate = useNavigate();
+  const [search, setSearch] = useSearchParams();
+  // Actions chosen from the ⋯ menu on the Batches list arrive as ?do=print | edit | reverse.
+  useEffect(() => {
+    const act = search.get('do');
+    if (!b || !act) return;
+    setSearch({}, { replace: true });
+    const open = b.status !== 'REVERSED';
+    if (act === 'print') setPrinting(true);
+    if (act === 'edit' && canWrite && open) setEdit(editState(b));
+    if (act === 'reverse' && isAdmin && open) setReversing('');
+  }, [b, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading && !b) return <Loading />;
   if (error) return <div className="p-5"><ErrorBox message={error} /></div>;
 
-  const startEdit = () => setEdit({
-    actual_output_qty: String(b.actual_output_qty), variance_reason: b.variance_reason || '',
-    inputs: b.inputs.map((i) => ({ id: i.id, actual_input_qty: String(i.actual_input_qty), variance_reason: i.variance_reason || '' })),
-  });
+  const startEdit = () => setEdit(editState(b));
 
   const save = async () => {
     setErr(null);
@@ -64,13 +81,13 @@ export default function BatchDetailPage() {
         subtitle={`${b.product_code} - ${b.product_name} · ${b.location_code} / ${b.warehouse_code} · ${b.source === 'PLAN' ? `Plan ${b.plan_no}` : 'Ad Hoc'}`}
         actions={<>
           <Link className="btn-secondary" to="/manufacturing/batches">Back</Link>
-          <PrintPartsButton title={`Batch ${b.batch_no}`} sections={[
-            { key: 'detail', label: 'Batch detail' }, { key: 'output', label: 'Output vs plan' },
-            { key: 'inputs', label: 'Material inputs' }, { key: 'ledger', label: 'Inventory postings', on: false }]} />
-          {b.plan_id && <Link className="btn-secondary" to={`/planning/plans/${b.plan_id}`}>Open Plan</Link>}
-          <Link className="btn-secondary" to={`/reports/traceability?mpn_id=${b.output_mpn_id}&lot_no=${encodeURIComponent(b.batch_no)}`}>Trace Lot</Link>
-          {isAdmin && !edit && !reversed && <button type="button" className="btn-secondary" onClick={() => setReversing('')}>Reverse Batch</button>}
           {canWrite && !edit && !reversed && <button type="button" className="btn-primary" onClick={startEdit}>Edit IP / OP</button>}
+          <ActionMenu label="More batch actions" buttonClassName="btn-secondary px-2" items={[
+            { label: 'Print', onClick: () => setPrinting(true) },
+            { label: 'Open plan', onClick: () => navigate(`/planning/plans/${b.plan_id}`), hidden: !b.plan_id },
+            { label: 'Trace lot', onClick: () => navigate(`/reports/traceability?mpn_id=${b.output_mpn_id}&lot_no=${encodeURIComponent(b.batch_no)}`) },
+            { label: 'Reverse batch', onClick: () => setReversing(''), danger: true, hidden: !isAdmin || Boolean(edit) || reversed },
+          ]} />
         </>} />
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
@@ -184,6 +201,7 @@ export default function BatchDetailPage() {
           <Field label="Reason" required><input className="input" autoFocus value={reversing} onChange={(e) => setReversing(e.target.value)} placeholder="e.g. Entered on the wrong plan" /></Field>
         </Modal>
       )}
+      {printing && <PrintPartsDialog title={`Batch ${b.batch_no}`} sections={PRINT_PARTS} onClose={() => setPrinting(false)} />}
     </div>
   );
 }

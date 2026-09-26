@@ -1,9 +1,13 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, Download, Printer, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckSquare, ChevronDown, ChevronRight, Download, MoreHorizontal, Printer, Search, X } from 'lucide-react';
 import { downloadCsv, today } from '../lib/format';
 import { PrintDialog, PrintHeader, inDateRange, printAfterRender } from './print';
 import { usePersistedState } from '../lib/usePersisted';
+
+// Row-action columns (key '_actions') stay pinned to the right edge, so the ⋯ / icons are reachable without scrolling sideways.
+const STICKY_TH = 'sticky right-0 z-[1] shadow-[inset_1px_0_0_#e5e7eb]';
+const STICKY_TD = 'sticky right-0 bg-white shadow-[inset_1px_0_0_#e5e7eb] py-0';
 
 export function PageHeader({ title, subtitle, actions, children }) {
   return (
@@ -148,21 +152,27 @@ export function NewTag({ ts }) {
 export function DataTable({ columns, rows, loading, empty = 'No records', searchable = true, exportName,
   onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer, newField,
   printTitle, printFilters = [], printDateKey, printDateMode, onPrintAll, onPrintView, printSelectable = true,
-  stateKey, groupBy, printMatch }) {
+  stateKey, groupBy, printMatch, collapsibleGroups = false, groupSummary }) {
   // Search, sort and "added today" are remembered per list, so Back returns to the list as it was left.
   const memKey = stateKey || exportName || printTitle || `path:${window.location.pathname}`;
   const [q, setQ] = usePersistedState(memKey ? `${memKey}.q` : '_', '');
   // Printing: tick rows, choose All / Current filter / Selected (+ dates), print a clean table.
   const [picked, setPicked] = useState(() => new Set());
+  // Select mode: the tick boxes only show after "Select" is clicked, then the ticked rows can be printed or downloaded.
+  const [selecting, setSelecting] = useState(false);
+  const [printDefaults, setPrintDefaults] = useState({});
   const [printing, setPrinting] = useState(null);         // { rows, filters }
   const [printAsk, setPrintAsk] = useState(false);
   const [printErr, setPrintErr] = useState(null);
   const [optRows, setOptRows] = useState(null);             // every record, so the print filters list all values
   useEffect(() => { setOptRows(null); }, [rows]);
-  const canPick = Boolean(printTitle) && printSelectable;
+  const canPick = Boolean(printTitle || exportName) && printSelectable;
+  const showPick = canPick && selecting;
   const defaultSort = initialSort || (newField ? { key: newField, dir: 'desc' } : null);
   const [sort, setSort] = usePersistedState(memKey ? `${memKey}.sort` : '_sort', defaultSort);
   const [onlyNew, setOnlyNew] = usePersistedState(memKey ? `${memKey}.new` : '_new', false);
+  // Collapsible groups (e.g. BOMs by product): closed by default, open ones remembered for Back.
+  const [openGroups, setOpenGroups] = usePersistedState(`${memKey}.open`, []);
   const box = useRef(null);
   const [boxH, setBoxH] = useState(null);
   // Fit the scroll box to the space left on screen, so its sideways scrollbar is always visible.
@@ -178,6 +188,8 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
     return () => window.removeEventListener('resize', fit);
   }, [scroll, footer ? 1 : 0, toolbar ? 1 : 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const val = (c, r) => (c.value ? c.value(r) : r[c.key]);
+  // Columns with hidden: true are left off the screen but still printed / exported (compact screens, full paper).
+  const screenCols = columns.filter((c) => !c.hidden);
 
   const newCount = newField ? (rows || []).filter((r) => isNewToday(r[newField])).length : 0;
   const shown = useMemo(() => {
@@ -209,11 +221,25 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
 
   // Group headers only while the list is in its grouped order (sorting by another column turns them off).
   const grouping = Boolean(groupBy) && (!sort || !defaultSort || sort.key === defaultSort.key);
+  const collapsing = grouping && collapsibleGroups;
+  const searching = q.trim() !== '';                          // a search shows every matching group open
+  const isOpen = (label) => !collapsing || searching || openGroups.includes(label);
+  const toggleGroup = (label) => setOpenGroups((g) => (g.includes(label) ? g.filter((x) => x !== label) : [...g, label]));
+  const groupRows = useMemo(() => {
+    if (!grouping) return null;
+    const m = new Map();
+    shown.forEach((r) => { const k = groupBy(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); });
+    return m;
+  }, [grouping, shown]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allLabels = groupRows ? [...groupRows.keys()] : [];
   const toggleSort = (key) => setSort((s) => (s && s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   const keyOf = (r, i) => r[rowKey] ?? i;
   const pickedRows = shown.filter((r, i) => picked.has(keyOf(r, i)));
   const allPicked = shown.length > 0 && pickedRows.length === shown.length;
   const togglePick = (k) => setPicked((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const stopSelecting = () => { setSelecting(false); setPicked(new Set()); };
+  const csvName = `${exportName || String(printTitle || 'list').toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+  const csvCols = columns.filter((c) => !c.noExport && c.key !== '_actions');
   // Button / action columns (not exported) are not printed either.
   const printCols = columns.filter((c) => !c.noPrint && !c.noExport && c.key !== '_actions');
   // Columns marked printFilter offer a "print only this value" choice in the dialog (location, material, type ...).
@@ -319,7 +345,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
       document.body,
     )}
     {printAsk && (
-      <PrintDialog title={printTitle} onClose={() => setPrintAsk(false)} onPrint={doPrint} selectedCount={pickedRows.length}
+      <PrintDialog title={printTitle} onClose={() => { setPrintAsk(false); setPrintDefaults({}); }} onPrint={doPrint} selectedCount={pickedRows.length} defaults={printDefaults}
         viewCount={onPrintView ? undefined : shown.length} allCount={onPrintAll ? undefined : (rows || []).length} allowSelected={canPick}
         dateMode={printDateMode || (printDateKey ? 'range' : null)} fields={filterOptions} />
     )}
@@ -345,11 +371,16 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
               <button type="button" className="btn-link" onClick={() => setSort({ key: newField, dir: 'desc' })}>Newest first</button>
             )}
             <span>{shown.length} record{shown.length === 1 ? '' : 's'}</span>
-            {canPick && pickedRows.length > 0 && (
-              <button type="button" className="btn-link" onClick={() => setPicked(new Set())}>{pickedRows.length} selected · clear</button>
+            {collapsing && !searching && allLabels.length > 0 && (
+              <button type="button" className="btn-link" onClick={() => setOpenGroups(openGroups.length >= allLabels.length ? [] : allLabels)}>
+                {openGroups.length >= allLabels.length ? 'Collapse all' : 'Expand all'}
+              </button>
+            )}
+            {canPick && !selecting && (
+              <button type="button" className="btn-link" onClick={() => setSelecting(true)}><CheckSquare size={13} /> Select</button>
             )}
             {exportName && (
-              <button type="button" className="btn-link" onClick={() => downloadCsv(`${exportName}.csv`, columns.filter((c) => !c.noExport), shown)}>
+              <button type="button" className="btn-link" onClick={() => downloadCsv(`${exportName}.csv`, csvCols, shown)}>
                 <Download size={13} /> CSV
               </button>
             )}
@@ -359,20 +390,37 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           </div>
         </div>
       )}
+      {showPick && (
+        <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 border-b border-line bg-accent-soft text-[13px] no-print" role="toolbar" aria-label="Selected rows">
+          <span className="font-medium text-ink">{pickedRows.length} selected</span>
+          <button type="button" className="btn-link" onClick={() => setPicked(allPicked ? new Set() : new Set(shown.map((r, i) => keyOf(r, i))))}>
+            {allPicked ? 'Clear all' : `Select all ${shown.length}`}
+          </button>
+          <span className="ml-auto flex items-center gap-3">
+            {printTitle && (
+              <button type="button" className="btn-link" disabled={!pickedRows.length}
+                onClick={() => { setPrintDefaults({ scope: 'selected' }); setPrintAsk(true); }}><Printer size={13} /> Print</button>
+            )}
+            <button type="button" className="btn-link" disabled={!pickedRows.length}
+              onClick={() => downloadCsv(`${csvName}_selected.csv`, csvCols, pickedRows)}><Download size={13} /> Download CSV</button>
+            <button type="button" className="btn-link text-ink-soft" onClick={stopSelecting}>Cancel</button>
+          </span>
+        </div>
+      )}
       {/* Scroll box as tall as the screen: headers stay visible and the sideways scrollbar is always reachable. */}
       <div ref={box} className={scroll ? 'scroll-box overflow-auto min-h-[8rem] print:overflow-visible' : 'overflow-x-auto'}
         style={scroll && boxH ? { maxHeight: boxH } : undefined}>
         <table className="w-full border-collapse">
           <thead className={scroll ? 'sticky top-0 z-10' : ''}>
             <tr>
-              {canPick && (
+              {showPick && (
                 <th className="th w-8 no-print" onClick={(e) => e.stopPropagation()}>
                   <input type="checkbox" aria-label="Select all rows" checked={allPicked}
                     onChange={() => setPicked(allPicked ? new Set() : new Set(shown.map((r, i) => keyOf(r, i))))} />
                 </th>
               )}
-              {columns.map((c) => (
-                <th key={c.key} className={`th ${c.align === 'right' ? 'text-right' : ''} ${c.noSort ? '' : 'cursor-pointer'}`}
+              {screenCols.map((c) => (
+                <th key={c.key} className={`th ${c.align === 'right' ? 'text-right' : ''} ${c.noSort ? '' : 'cursor-pointer'} ${c.key === '_actions' ? STICKY_TH : ''}`}
                   style={c.width ? { width: c.width } : undefined} onClick={() => !c.noSort && toggleSort(c.key)}>
                   <span className="inline-flex items-center gap-1">
                     {c.label}
@@ -384,26 +432,37 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           </thead>
           <tbody>
             {loading && (
-              <tr><td className="td text-ink-muted" colSpan={columns.length + (canPick ? 1 : 0)}>Loading...</td></tr>
+              <tr><td className="td text-ink-muted" colSpan={screenCols.length + (showPick ? 1 : 0)}>Loading...</td></tr>
             )}
             {!loading && shown.length === 0 && (
-              <tr><td className="td text-ink-muted" colSpan={columns.length + (canPick ? 1 : 0)}>{empty}</td></tr>
+              <tr><td className="td text-ink-muted" colSpan={screenCols.length + (showPick ? 1 : 0)}>{empty}</td></tr>
             )}
             {!loading && shown.map((r, i) => [
               grouping && (i === 0 || groupBy(shown[i - 1]) !== groupBy(r)) && (
-                <tr key={`g-${groupBy(r)}-${i}`} className="bg-panel">
-                  <td colSpan={columns.length + (canPick ? 1 : 0)} className="td font-semibold text-ink">{groupBy(r)}</td>
+                <tr key={`g-${groupBy(r)}-${i}`} className={`bg-panel ${collapsing ? 'cursor-pointer hover:bg-line/60' : ''}`}
+                  onClick={collapsing ? () => toggleGroup(groupBy(r)) : undefined}>
+                  <td colSpan={screenCols.length + (showPick ? 1 : 0)} className="td text-ink">
+                    {collapsing ? (
+                      <button type="button" className="flex w-full items-center gap-2 text-left" aria-expanded={isOpen(groupBy(r))}
+                        onClick={(e) => { e.stopPropagation(); toggleGroup(groupBy(r)); }}>
+                        {isOpen(groupBy(r)) ? <ChevronDown size={14} className="text-ink-muted" /> : <ChevronRight size={14} className="text-ink-muted" />}
+                        <span className="font-semibold">{groupBy(r)}</span>
+                        <span className="text-xs text-ink-muted">{groupRows.get(groupBy(r)).length} {groupRows.get(groupBy(r)).length === 1 ? 'record' : 'records'}</span>
+                        {groupSummary && <span className="ml-auto text-xs text-ink-soft font-normal">{groupSummary(groupRows.get(groupBy(r)))}</span>}
+                      </button>
+                    ) : <span className="font-semibold">{groupBy(r)}</span>}
+                  </td>
                 </tr>
               ),
-              <tr key={r[rowKey] ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
+              (!grouping || isOpen(groupBy(r))) && <tr key={r[rowKey] ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
                 className={`${newField && isNewToday(r[newField]) ? 'bg-accent-soft/40' : ''} ${onRowClick ? 'cursor-pointer hover:bg-accent-soft' : 'hover:bg-panel'}`}>
-                {canPick && (
+                {showPick && (
                   <td className="td w-8 no-print" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" aria-label="Select row" checked={picked.has(keyOf(r, i))} onChange={() => togglePick(keyOf(r, i))} />
                   </td>
                 )}
-                {columns.map((c, ci) => (
-                  <td key={c.key} className={`td ${dense ? 'py-1' : ''} ${c.align === 'right' ? 'num' : ''} ${c.className || ''}`}>
+                {screenCols.map((c, ci) => (
+                  <td key={c.key} className={`td ${dense ? 'py-1' : ''} ${c.align === 'right' ? 'num' : ''} ${c.className || ''} ${c.key === '_actions' ? STICKY_TD : ''}`}>
                     {c.render ? c.render(r) : (c.value ? c.value(r) : r[c.key])}
                     {newField && ci === 0 && <NewTag ts={r[newField]} />}
                   </td>
@@ -426,5 +485,76 @@ export function Toast({ toast }) {
       ${toast.type === 'error' ? 'border-red-200 text-danger' : 'border-line-strong text-ink'}`}>
       {toast.message}
     </div>
+  );
+}
+
+/**
+ * Three-dots (⋯) action menu. items: [{ label, onClick, danger?, hidden? }].
+ * Opens below the button (in a portal, so table scroll boxes never clip it); closes on Esc, outside click or after a choice.
+ */
+export function ActionMenu({ items, label = 'More actions', buttonClassName = 'btn-icon', align = 'right', children }) {
+  const [pos, setPos] = useState(null);
+  const btn = useRef(null);
+  const menu = useRef(null);
+  const visible = items.filter((x) => x && !x.hidden);
+  const close = () => setPos(null);
+  useEffect(() => {
+    if (!pos) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { close(); btn.current?.focus(); } };
+    const onDown = (e) => { if (!menu.current?.contains(e.target) && !btn.current?.contains(e.target)) close(); };
+    // Follow the button while the page or table scrolls; close once it leaves the screen.
+    const onMove = () => { const p = place(); if (p) setPos(p); else close(); };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('resize', onMove);
+    document.addEventListener('scroll', onMove, true);
+    menu.current?.querySelector('button')?.focus();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('resize', onMove);
+      document.removeEventListener('scroll', onMove, true);
+    };
+  }, [pos]);
+  function place() {
+    if (!btn.current) return null;
+    const r = btn.current.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight || r.width === 0) return null;
+    const below = window.innerHeight - r.bottom > 40 + visible.length * 32;
+    return { top: below ? r.bottom + 4 : undefined, bottom: below ? undefined : window.innerHeight - r.top + 4,
+      left: align === 'left' ? r.left : undefined, right: align === 'right' ? window.innerWidth - r.right : undefined };
+  }
+  if (!visible.length) return null;
+  const open = (e) => {
+    e.stopPropagation();
+    if (pos) { close(); return; }
+    setPos(place());
+  };
+  const onMenuKey = (e) => {
+    if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    e.preventDefault();
+    const list = [...menu.current.querySelectorAll('button')];
+    const i = list.indexOf(document.activeElement);
+    list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus();
+  };
+  return (
+    <>
+      <button ref={btn} type="button" className={buttonClassName} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={Boolean(pos)} onClick={open}>
+        {children || <MoreHorizontal size={16} />}
+      </button>
+      {pos && createPortal(
+        <div ref={menu} role="menu" onKeyDown={onMenuKey} onClick={(e) => e.stopPropagation()}
+          className="fixed z-50 min-w-[170px] rounded border border-line bg-white py-1 shadow-lg no-print" style={pos}>
+          {visible.map((x) => (
+            <button key={x.label} type="button" role="menuitem"
+              className={`block w-full px-3 py-1.5 text-left text-[13px] hover:bg-panel focus:bg-panel focus:outline-none ${x.danger ? 'text-danger' : 'text-ink'}`}
+              onClick={() => { close(); x.onClick(); }}>
+              {x.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }

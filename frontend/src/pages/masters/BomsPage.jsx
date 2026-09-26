@@ -24,7 +24,7 @@ export default function BomsPage() {
   const productOptions = [...new Map((all || []).map((b) => [b.product_id, { value: b.product_id, label: `${b.product_code} - ${b.product_name}` }])).values()];
 
   const columns = [
-    { key: 'product', label: 'Product', value: (r) => `${r.product_code} - ${r.product_name}`, printFilter: true, className: 'whitespace-normal min-w-[180px]' },
+    { key: 'product', label: 'Product', value: (r) => `${r.product_code} - ${r.product_name}`, printFilter: true, hidden: true },
     { key: 'bom_no', label: 'BOM ID', render: (r) => <span className="font-medium text-accent">{r.bom_no}</span>, value: (r) => r.bom_no },
     { key: 'name', label: 'BOM Name', render: (r) => (
       <span>{r.name || <span className="text-ink-faint">-</span>}{r.is_default && <span className="ml-2 text-xs2 px-1.5 py-0.5 rounded bg-accent-soft text-accent">Default</span>}</span>
@@ -46,12 +46,16 @@ export default function BomsPage() {
   return (
     <div>
       <PageHeader title="Bill of Materials"
-        subtitle="Grouped by product. A product can have several active BOMs per location; the Default is used unless you choose another. * = some ingredients have no price yet."
+        subtitle="Click a product to show its BOMs. * = some ingredients have no price yet."
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/masters/boms/new')}><Plus size={14} /> New BOM</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data || []} loading={loading} exportName="boms" printTitle="Bill of Materials"
           newField="created_at" initialSort={{ key: 'product', dir: 'asc' }} groupBy={(r) => `${r.product_code} - ${r.product_name}`}
+          collapsibleGroups groupSummary={(list) => {
+            const def = list.find((b) => b.is_default && b.status === 'ACTIVE') || list[0];
+            return `Default ${def.bom_no} v${def.version}${def.cost_per_unit != null ? `, ${money(def.cost_per_unit)} / ${def.output_uom}` : ''}`;
+          }}
           onPrintAll={() => api.get('/boms', { scoped: false })}
           onRowClick={(r) => navigate(`/masters/boms/${r.id}`)}
           toolbar={(

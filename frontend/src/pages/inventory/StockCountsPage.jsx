@@ -95,19 +95,12 @@ export default function StockCountsPage() {
   return (
     <div>
       <PageHeader title="Physical Stock Count"
-        subtitle="Count what is on the shelf, explain every difference, and let an Admin approve before stock changes. For a single known correction use Stock > Adjust."
+        subtitle="Count stock, explain differences, Admin approves before stock changes."
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => setModal(true)}><Plus size={14} /> Start Count</button>} />
-      <div className="px-5 pt-4">
-        <ol className="grid grid-cols-5 gap-2 text-xs text-ink-soft">
-          {['1. Start a count (snapshot)', '2. Print the sheet and count', '3. Enter counts + reasons', '4. Submit for approval', '5. Admin approves - stock is adjusted'].map((t) => (
-            <li key={t} className="border border-line rounded px-2 py-1.5 bg-panel">{t}</li>
-          ))}
-        </ol>
-      </div>
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data || []} loading={loading} printTitle="Physical Stock Counts" printDateKey="created_at" onPrintAll={() => api.get('/stock-counts', { scoped: false })} onRowClick={(r) => navigate(`/inventory/stock-counts/${r.id}`)}
-          empty="No counts yet - click Start Count"
+          empty="No counts yet. Click Start Count to take a snapshot."
           toolbar={(
             <select className="input w-40" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option>

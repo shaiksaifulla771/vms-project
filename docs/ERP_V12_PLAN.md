@@ -1,18 +1,18 @@
 # ERP.Rorosaur v12: module clean-up (select / print / download, one-line stock, BOM collapse, batch menu, vendor contact notes)
 
-Status: **PLAN, waiting for approval.** No code changes until approved.
+Status: **DONE** (approved 2026-09-26, built on `feat/v12-module-cleanup`).
 Design direction: built with the `design-taste-frontend` skill in "redesign - preserve" mode. The existing Zoho-style look stays (white, grey borders, one blue accent, lucide icons). The work is dense data, not decoration: no motion, no new colours, and no em dashes in any label.
 
 ## 1. Request, split into tasks
 
 | # | What you asked | Module / screen | How it will be done | Status |
 |---|---|---|---|---|
-| 1 | One **Select** option at the top of each list. Clicking it shows the tick boxes; the ticked rows can then be printed or downloaded. Less clutter on screen. | Every list page (shared table): Materials, Products, Vendors, MPNs, BOMs, Stock, Transfers, Stock Counts, Plans, Batches, Stock Balance, Physical Sheet, Transactions, Reorder | See 2.1 | Pending |
-| 2 | **Stock**: every row on one line, so the whole list fits the screen without scrolling sideways | Inventory > Stock | See 2.2 | Pending |
-| 3 | **BOM**: stop showing everything expanded. Click to expand, click again to collapse. | Masters > BOMs list (product groups) | See 2.3 | Pending |
-| 4 | **Batches**: a three-dots (⋯) menu that holds all the options | Manufacturing > Batches list and Batch page | See 2.4 | Pending |
-| 5 | **Vendor contact directory**: add a Notes box to each contact | Masters > Vendors (edit form and view page) | See 2.5 | Pending |
-| 6 | **Stock Count**: remove the 5 numbered step boxes ("1. Start a count ... 5. Admin approves") | Inventory > Physical Stock Count | See 2.6 | Pending |
+| 1 | One **Select** option at the top of each list. Clicking it shows the tick boxes; the ticked rows can then be printed or downloaded. Less clutter on screen. | Every list page (shared table): Materials, Products, Vendors, MPNs, BOMs, Stock, Transfers, Stock Counts, Plans, Batches, Stock Balance, Physical Sheet, Transactions, Reorder | See 2.1 | Done |
+| 2 | **Stock**: every row on one line, so the whole list fits the screen without scrolling sideways | Inventory > Stock | See 2.2 | Done |
+| 3 | **BOM**: stop showing everything expanded. Click to expand, click again to collapse. | Masters > BOMs list (product groups) | See 2.3 | Done |
+| 4 | **Batches**: a three-dots (⋯) menu that holds all the options | Manufacturing > Batches list and Batch page | See 2.4 | Done |
+| 5 | **Vendor contact directory**: add a Notes box to each contact | Masters > Vendors (edit form and view page) | See 2.5 | Done |
+| 6 | **Stock Count**: remove the 5 numbered step boxes ("1. Start a count ... 5. Admin approves") | Inventory > Physical Stock Count | See 2.6 | Done |
 
 ## 2. Implementation detail
 
@@ -88,4 +88,34 @@ The list currently has 13 columns, so it scrolls sideways and material names wra
 3. On the Stock list, Vendor can leave the on-screen table (it stays in hover, CSV and Print) to make room for one line.
 
 ## 5. Session log
-- 2026-09-26: request analysed against the code (DataTable, StockPage, BomsPage, BatchesPage, BatchDetailPage, VendorFormPage / VendorViewPage, masterData service, StockCountsPage). Plan written. Waiting for approval.
+- 2026-09-26: request analysed against the code (DataTable, StockPage, BomsPage, BatchesPage, BatchDetailPage, VendorFormPage / VendorViewPage, masterData service, StockCountsPage). Plan written.
+- 2026-09-26: **Approved and built.**
+  - **Select mode:** in the shared table, plus the Stock Balance page (its own layout).
+    - Tick boxes appear only after **Select**.
+    - The selection bar offers Print (the dialog opens on "Selected rows"), Download CSV (ticked rows only) and Cancel.
+  - **Stock:** 9 compact columns on one line.
+    - Measured: no sideways scroll at 1280, 1366 and 1440px, and every row is one line.
+    - Print and CSV still carry all 12 detail fields, via new `hidden: true` columns that are printed but not shown on screen.
+  - **Row actions:**
+    - Row actions sit in a ⋯ `ActionMenu`: keyboard arrows, Esc and outside click all work, and the menu follows the button when the table scrolls.
+    - Row-action columns are pinned to the right edge, so ⋯ is reachable without scrolling sideways. This also applies to the master lists.
+  - **BOM list:**
+    - Product groups start collapsed and open or close with a click.
+    - Expand all / Collapse all.
+    - The open groups are remembered on Back, and a search shows every matching group.
+    - Each group header shows its Default BOM and cost per unit.
+  - **Batches:**
+    - The list has a ⋯ per row: View, Open plan, Trace lot, Print, Edit IP / OP, Reverse. Items are hidden by role and by status (reversed batches).
+    - The batch page keeps Back and Edit IP / OP; Print, Open plan, Trace lot and Reverse sit in ⋯.
+  - **Vendor contact notes:**
+    - Migration `014_vendor_contact_notes.sql`, with a 1,000-character limit.
+    - Validated in the API, included in bulk import, and shown on the edit form and the view page.
+    - Tests: `backend/tests/v12.test.js`.
+  - **Stock Count:** the 5 step boxes are removed and the subtitle is one short line.
+  - **Small clean-ups:**
+    - Empty-value dash is now a plain hyphen.
+    - The Stock footnote uses readable contrast.
+  - **Checks:**
+    - `npm run check`: lint, build and 140 backend tests all pass.
+    - Browser walkthrough as Admin and Editor, plus the earlier v9, e2e and PDF print scripts, with no errors.
+  - Screenshots are in `docs/v12/`.
