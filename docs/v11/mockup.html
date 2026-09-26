@@ -1,0 +1,160 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#ffffff; --canvas:#f6f7f9; --surface:#ffffff;
+  --ink-900:#16181d; --ink-700:#3b3f47; --ink-500:#626873; --ink-400:#7c828d; --line:#e4e6ea; --line-strong:#cfd3d9;
+  --accent:#1f5eff; --accent-600:#1a4fd6; --accent-50:#eef3ff;
+  --ok:#1e7a46; --warn:#9a6700; --danger:#c62828;
+  --r-sm:4px; --r-md:6px;
+  --fs-xs:11.5px; --fs-sm:12.5px; --fs-md:13.5px; --fs-lg:15px; --fs-xl:18px;
+}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;font-size:var(--fs-md);color:var(--ink-900);background:var(--canvas);
+  font-feature-settings:"tnum" 1,"cv11" 1;-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:216px 1fr;grid-template-rows:48px 1fr;height:100vh}
+/* top bar */
+.top{grid-column:1/3;display:flex;align-items:center;gap:16px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:var(--fs-lg);width:184px}
+.brand .mark{width:22px;height:22px;border-radius:5px;background:var(--ink-900);color:#fff;font-size:12px;display:grid;place-items:center;font-weight:600}
+.search{flex:0 1 420px;display:flex;align-items:center;gap:8px;height:30px;border:1px solid var(--line);border-radius:var(--r-md);padding:0 10px;color:var(--ink-400);background:var(--canvas);font-size:var(--fs-sm)}
+.search kbd{margin-left:auto;font:inherit;font-size:11px;border:1px solid var(--line-strong);border-radius:3px;padding:0 4px;background:#fff}
+.spacer{flex:1}
+.scope{display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--line-strong);border-radius:var(--r-md);font-size:var(--fs-sm);background:#fff}
+.scope b{font-weight:600}.scope .sep{color:var(--line-strong)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-50);color:var(--accent);display:grid;place-items:center;font-size:12px;font-weight:600}
+/* sidebar */
+.side{background:var(--surface);border-right:1px solid var(--line);padding:10px 8px;overflow:auto}
+.grp{font-size:var(--fs-xs);font-weight:600;color:var(--ink-400);letter-spacing:.02em;padding:12px 10px 4px}
+.nav{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:var(--r-sm);color:var(--ink-700);font-size:var(--fs-md)}
+.nav svg{width:15px;height:15px;stroke:var(--ink-400)}
+.nav.on{background:var(--accent-50);color:var(--accent);font-weight:500}.nav.on svg{stroke:var(--accent)}
+/* main */
+main{overflow:auto;display:flex;flex-direction:column}
+.crumb{font-size:var(--fs-sm);color:var(--ink-500);padding:14px 24px 0}.crumb a{color:var(--ink-500);text-decoration:none}
+.phead{display:flex;align-items:center;gap:12px;padding:6px 24px 14px}
+.phead h1{font-size:var(--fs-xl);font-weight:600;margin:0;letter-spacing:-.01em}
+.count{font-size:var(--fs-sm);color:var(--ink-500);background:var(--canvas);border:1px solid var(--line);border-radius:10px;padding:0 7px}
+.btn{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:var(--r-md);border:1px solid var(--line-strong);background:#fff;color:var(--ink-900);font:inherit;font-size:var(--fs-sm);font-weight:500}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink-700)}
+.btn svg{width:14px;height:14px}
+.sheet{margin:0 24px 24px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);display:flex;flex-direction:column;min-height:0;flex:1}
+.bar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.field{height:30px;border:1px solid var(--line-strong);border-radius:var(--r-md);display:flex;align-items:center;gap:6px;padding:0 10px;font-size:var(--fs-sm);color:var(--ink-500);background:#fff}
+.field.search2{width:260px}
+.chip{height:26px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:13px;background:var(--canvas);border:1px solid var(--line);font-size:var(--fs-sm);color:var(--ink-700)}
+.chip b{font-weight:500;color:var(--ink-900)}.chip .x{color:var(--ink-400)}
+.addf{font-size:var(--fs-sm);color:var(--accent);font-weight:500}
+table{width:100%;border-collapse:separate;border-spacing:0}
+th{position:sticky;top:0;text-align:left;font-size:var(--fs-xs);font-weight:600;color:var(--ink-500);text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--line);background:#fbfbfc;white-space:nowrap}
+td{padding:0 12px;height:38px;border-bottom:1px solid var(--line);white-space:nowrap;color:var(--ink-700)}
+tr:hover td{background:#f9fafb}
+td.code{color:var(--ink-900);font-weight:500}td.code a{color:var(--accent);text-decoration:none}
+td.num,th.num{text-align:right}
+td.muted{color:var(--ink-400)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--ink-700)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ink-400)}
+.dot.ok{background:var(--ok)}.dot.warn{background:#d4a017}.dot.bad{background:var(--danger)}
+.newdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:6px;vertical-align:middle}
+.cb{width:14px;height:14px;border:1px solid var(--line-strong);border-radius:3px;display:inline-block;vertical-align:middle}
+.foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid var(--line);font-size:var(--fs-sm);color:var(--ink-500)}
+.rowact{opacity:0}tr:hover .rowact{opacity:1}
+/* detail */
+.facts{display:grid;grid-template-columns:repeat(5,1fr);margin:0 24px 16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md)}
+.fact{padding:12px 16px;border-left:1px solid var(--line)}.fact:first-child{border-left:0}
+.fact .k{font-size:var(--fs-xs);color:var(--ink-500)}.fact .v{font-size:var(--fs-lg);font-weight:600;margin-top:2px}
+.fact .v small{font-size:var(--fs-sm);font-weight:400;color:var(--ink-500)}
+.tabs{display:flex;gap:20px;padding:0 24px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tab{padding:8px 0;font-size:var(--fs-md);color:var(--ink-500);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ink-900);font-weight:500;border-color:var(--accent)}
+.tab .n{font-size:var(--fs-xs);color:var(--ink-400);margin-left:4px}
+.cols{display:grid;grid-template-columns:1fr 360px;gap:16px;padding:0 24px 24px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md)}
+.card h3{font-size:var(--fs-md);font-weight:600;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.card h3 a{font-size:var(--fs-sm);font-weight:500;color:var(--accent);text-decoration:none}
+.dl{display:grid;grid-template-columns:160px 1fr;row-gap:10px;padding:14px 16px;font-size:var(--fs-md)}
+.dl dt{color:var(--ink-500)}.dl dd{margin:0;color:var(--ink-900)}
+.status-h{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--ok);background:#eef7f1;border-radius:10px;padding:1px 8px;font-weight:500}
+/* form */
+.form{margin:0 24px 24px;background:#fff;border:1px solid var(--line);border-radius:var(--r-md)}
+.fsec{display:grid;grid-template-columns:240px 1fr;gap:24px;padding:20px 24px;border-bottom:1px solid var(--line)}
+.fsec .t{font-weight:600}.fsec .d{font-size:var(--fs-sm);color:var(--ink-500);margin-top:4px;line-height:1.5}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;max-width:720px}
+.lbl{font-size:var(--fs-sm);color:var(--ink-700);margin-bottom:5px;font-weight:500}.lbl i{color:var(--danger);font-style:normal}
+.inp{height:32px;border:1px solid var(--line-strong);border-radius:var(--r-md);padding:0 10px;display:flex;align-items:center;color:var(--ink-900);background:#fff}
+.inp.ph{color:var(--ink-400)}.inp.focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-50)}
+.inp.ro{background:var(--canvas);color:var(--ink-500)}
+.help{font-size:var(--fs-xs);color:var(--ink-500);margin-top:4px}
+.ffoot{position:sticky;bottom:0;display:flex;gap:8px;padding:12px 24px;background:#fff;border-top:1px solid var(--line);border-radius:0 0 var(--r-md) var(--r-md)}
+</style></head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand"><span class="mark">R</span>ERP.Rorosaur</div>
+    <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search materials, lots, batches, plans<kbd>Ctrl K</kbd></div>
+    <div class="spacer"></div>
+    <div class="scope">Location <b>MUM · Mumbai Plant</b><span class="sep">/</span><b>All warehouses</b> ▾</div>
+    <div class="avatar">AU</div>
+  </header>
+  <nav class="side" id="side"></nav>
+  <main id="main"></main>
+</div>
+<script>
+const I={box:'<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/>',stock:'<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',plan:'<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/>',mfg:'<path d="M3 21V9l6 4V9l6 4V5h6v16z"/>',rep:'<path d="M6 3h9l5 5v13H6z"/><path d="M14 3v6h6"/>',set:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>'};
+const svg=k=>`<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">${I[k]}</svg>`;
+const NAV=[['Master data',[['box','Materials',1],['box','Products'],['box','Vendors'],['box','MPNs'],['box','Bills of materials']]],
+ ['Operations',[['stock','Stock'],['stock','Transfers'],['stock','Stock counts'],['plan','Plans'],['mfg','Batches']]],
+ ['Insights',[['rep','Reports'],['set','Settings']]]];
+document.getElementById('side').innerHTML=NAV.map(([g,items])=>`<div class="grp">${g}</div>`+items.map(([i,l,on])=>`<div class="nav ${on?'on':''}">${svg(i)}${l}</div>`).join('')).join('');
+const screen=new URLSearchParams(location.search).get('s')||'list';
+const M=document.getElementById('main');
+const rows=[['FG-RL1','Rice O Lentil 100g Pouch','Finished good','—','—','Made in-house','pcs','ok','Active',1],
+['PK-POUCH','Spouted Pouch 100g','Packaging','Packing material','Pouches','MPN-POUCH-PR','pcs','ok','Active',1],
+['RM-LENTIL','Lentil Powder','Raw material','Cereals & pulses','Pulses','MPN-LENTIL-AG','kg','ok','Active',0],
+['RM-RICE','Rice Flour','Raw material','Cereals & pulses','Flours','MPN-RICE-AG','kg','ok','Active',0],
+['RM-SALT','Iodised Salt','Raw material','Spices','Salt','MPN-SALT-TT','kg','ok','Active',0],
+['RM-CHILLI','Red Chilli Powder','Raw material','Spices','Chilli','2 MPNs','kg','warn','Below reorder',0],
+['CN-GLOVE','Nitrile Gloves','Consumable','Hygiene','Gloves','MPN-GLOVE-SF','pcs','','Inactive',0]];
+if(screen==='list'){
+M.innerHTML=`<div class="crumb">Master data</div>
+<div class="phead"><h1>Materials</h1><span class="count">${rows.length}</span><div class="spacer"></div>
+<button class="btn ghost">Import / export ▾</button><button class="btn">Print</button><button class="btn primary">+ New material</button></div>
+<div class="sheet"><div class="bar"><div class="field search2">⌕&nbsp; Search code, name, MPN</div>
+<span class="chip">Classification <b>Raw material</b> <span class="x">×</span></span><span class="chip">Status <b>Active</b> <span class="x">×</span></span>
+<span class="addf">+ Filter</span><div class="spacer" style="flex:1"></div><span style="font-size:12.5px;color:var(--ink-500)">Sorted by Added ↓</span></div>
+<div style="overflow:auto"><table><thead><tr><th style="width:36px"><span class="cb"></span></th><th>Code</th><th>Name</th><th>Classification</th><th>Category</th><th>Sub-category</th><th>MPN</th><th>UOM</th><th>Status</th><th class="num">Added</th><th style="width:70px"></th></tr></thead>
+<tbody>${rows.map(r=>`<tr><td><span class="cb"></span></td><td class="code"><a>${r[0]}</a>${r[9]?'<span class="newdot" title="Added today"></span>':''}</td><td style="color:var(--ink-900)">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td class="muted">${r[6]}</td>
+<td><span class="pill"><span class="dot ${r[7]}"></span>${r[8]}</span></td><td class="num muted">26 Sep 2026</td><td class="rowact muted">Edit ⋯</td></tr>`).join('')}</tbody></table></div>
+<div class="foot"><span>7 of 7 materials · <span class="newdot" style="margin:0 4px 0 0"></span>2 added today</span><span>Rows per page 50 ▾</span></div></div>`;
+}
+if(screen==='detail'){
+M.innerHTML=`<div class="crumb"><a>Materials</a> / RM-RICE</div>
+<div class="phead"><h1>Rice Flour</h1><span style="color:var(--ink-500);font-size:13.5px">RM-RICE</span><span class="status-h"><span class="dot ok"></span>Active</span><div class="spacer" style="flex:1"></div>
+<button class="btn ghost">More ▾</button><button class="btn">Print</button><button class="btn primary">Edit</button></div>
+<div class="facts"><div class="fact"><div class="k">Stock at MUM</div><div class="v">10,127.6 <small>kg</small></div></div>
+<div class="fact"><div class="k">Lots</div><div class="v">4 <small>· 1 expired</small></div></div><div class="fact"><div class="k">Preferred price</div><div class="v">₹ 42.00 <small>/ kg</small></div></div>
+<div class="fact"><div class="k">Used in BOMs</div><div class="v">2</div></div><div class="fact"><div class="k">Reorder level</div><div class="v" style="color:var(--ink-400)">Not set</div></div></div>
+<div class="tabs"><span class="tab on">Overview</span><span class="tab">Stock by lot<span class="n">4</span></span><span class="tab">MPNs & vendors<span class="n">1</span></span><span class="tab">BOMs<span class="n">2</span></span><span class="tab">Transactions</span></div>
+<div class="cols"><div class="card"><h3>Details</h3><dl class="dl"><dt>Classification</dt><dd>Raw material</dd><dt>Category</dt><dd>Cereals & pulses / Flours</dd><dt>Base UOM</dt><dd>kg</dd><dt>Shelf life</dt><dd>180 days</dd><dt>Description</dt><dd style="color:var(--ink-400)">—</dd><dt>Last updated</dt><dd>26 Sep 2026, 10:46 by Admin User</dd></dl></div>
+<div class="card"><h3>MPNs <a>+ Add MPN</a></h3><div style="padding:12px 16px;display:flex;justify-content:space-between"><div><div style="color:var(--accent);font-weight:500">MPN-RICE-AG</div><div style="font-size:12.5px;color:var(--ink-500);margin-top:2px">Agro Grains Co · preferred · HSN not set</div></div><div style="text-align:right"><div style="font-weight:600">₹ 42.00</div><div style="font-size:12.5px;color:var(--ink-500)">MOQ 100 kg</div></div></div></div>
+<div class="card" style="grid-column:1/3"><h3>Stock by lot · MUM <a>View all</a></h3><table><thead><tr><th>Location / WH</th><th>Lot</th><th>MPN</th><th>Vendor</th><th class="num">Qty</th><th>Mfg</th><th>Expiry</th></tr></thead><tbody>
+<tr><td>MUM / WH-01</td><td class="code">RICE-OLD</td><td>MPN-RICE-AG</td><td>Agro Grains Co</td><td class="num">20 kg</td><td>01 Jan 2025</td><td><span class="pill"><span class="dot bad"></span>01 Jul 2025 · expired</span></td></tr>
+<tr><td>MUM / WH-01</td><td class="code">RICE-L1</td><td>MPN-RICE-AG</td><td>Agro Grains Co</td><td class="num">27.6 kg</td><td>01 Aug 2026</td><td>01 Feb 2027</td></tr>
+<tr><td>MUM / WH-01</td><td class="code">RICE-L2</td><td>MPN-RICE-AG</td><td>Agro Grains Co</td><td class="num">80 kg</td><td>01 Sep 2026</td><td>01 Mar 2027</td></tr></tbody></table></div></div>`;
+}
+if(screen==='form'){
+M.innerHTML=`<div class="crumb"><a>Materials</a> / New material</div>
+<div class="phead"><h1>New material</h1></div>
+<div class="form"><div class="fsec"><div><div class="t">Basic information</div><div class="d">The code is assigned automatically when you save.</div></div>
+<div class="grid2"><div style="grid-column:1/3"><div class="lbl">Name <i>*</i></div><div class="inp focus">Turmeric Powder</div></div>
+<div><div class="lbl">Classification <i>*</i></div><div class="inp">Raw material ▾</div></div><div><div class="lbl">Base UOM <i>*</i></div><div class="inp">kg ▾</div></div>
+<div><div class="lbl">Category</div><div class="inp">Spices ▾</div></div><div><div class="lbl">Sub-category</div><div class="inp ph">Select ▾</div></div></div></div>
+<div class="fsec"><div><div class="t">Stock control</div><div class="d">Used for expiry dates on Inward and for Reorder alerts.</div></div>
+<div class="grid2"><div><div class="lbl">Shelf life (days)</div><div class="inp">365</div><div class="help">Expiry = Mfg date + shelf life</div></div><div><div class="lbl">Reorder level (kg)</div><div class="inp ph">e.g. 50</div></div>
+<div><div class="lbl">Status</div><div class="inp">Active ▾</div></div></div></div>
+<div class="fsec" style="border-bottom:0"><div><div class="t">Notes</div></div><div class="grid2"><div style="grid-column:1/3"><div class="lbl">Description</div><div class="inp ph" style="height:64px;align-items:flex-start;padding-top:8px">Optional</div></div></div></div>
+<div class="ffoot"><button class="btn primary">Save</button><button class="btn">Save and new</button><button class="btn ghost">Cancel</button></div></div>`;
+}
+</script>
+</body></html>
