@@ -58,7 +58,9 @@ export default function BomEditPage() {
   useEffect(() => {
     if (!id) {
       // ?product_id= comes from Products > Create BOM
-      setF({ product_id: search.get('product_id') || '', location_id: def.locationId, warehouse_id: def.warehouseId, batch_size: '', batch_uom: 'kg',
+      // ?product_id= / ?location_id= come from Products > Create BOM and the location-first pickers
+      const loc = search.get('location_id') || def.locationId;
+      setF({ product_id: search.get('product_id') || '', location_id: loc, warehouse_id: loc === def.locationId ? def.warehouseId : '', batch_size: '', batch_uom: 'kg',
         expected_output_qty: '', output_uom: '', notes: '', name: '', packing_cost: '', processing_cost: '', overhead_cost: '', freight_cost: '',
         lines: [emptyLine()] });
       return;
@@ -83,7 +85,7 @@ export default function BomEditPage() {
     const price = src.price == null ? null : Number(src.price);
     const gross = Number(l.qty_per_batch || 0) * (1 + Number(l.scrap_allowance_pct || 0) / 100);
     return { vendor: src.vendor_name || null, mpn_code: src.mpn_code || null, uom: lineUom(l),
-      price, cost: price == null ? null : gross * price };
+      price, cost: price == null ? null : gross * price, fromBom: src.price_source === 'BOM' ? src.bom_cost_source : null };
   });
   const materialCost = priced.reduce((a, p) => a + (p.cost || 0), 0);
   const extraCost = COSTS.reduce((a, [k]) => a + Number(f[k] || 0), 0);
@@ -182,8 +184,8 @@ export default function BomEditPage() {
                   <td className="td px-1"><input className="input num w-28 ml-auto" type="number" min="0" step="any" value={l.qty_per_batch} onChange={(e) => setLine(i, { qty_per_batch: e.target.value })} /></td>
                   <td className="td text-ink-soft" title="Stock UOM of the material">{priced[i].uom || <span className="text-ink-faint">-</span>}</td>
                   <td className="td px-1"><input className="input num w-16 ml-auto" type="number" min="0" max="99" step="any" value={l.scrap_allowance_pct} onChange={(e) => setLine(i, { scrap_allowance_pct: e.target.value })} /></td>
-                  <td className="td num" title="From the MPN; change it in Master Data > MPNs">
-                    {priced[i].price != null ? money(priced[i].price)
+                  <td className="td num" title={priced[i].fromBom ? `Semi-finished: cost per unit of ${priced[i].fromBom}` : 'From the MPN; change it in Master Data > MPNs'}>
+                    {priced[i].price != null ? <>{money(priced[i].price)}{priced[i].fromBom && <span className="text-ink-faint"> (BOM)</span>}</>
                       : l.material_id ? <Link to="/masters/mpns" className="btn-link text-xs">Set price in MPNs</Link>
                         : <span className="text-ink-faint">-</span>}</td>
                   <td className="td num">{priced[i].cost == null ? <span className="text-ink-faint" title="No price">-</span> : money(priced[i].cost)}</td>

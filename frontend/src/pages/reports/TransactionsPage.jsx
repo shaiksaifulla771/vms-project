@@ -5,13 +5,19 @@ import { useData } from '../../lib/app-context';
 import { TXN_LABEL, fmtDateTime, fmtQty, mpnLabel } from '../../lib/format';
 import { DataTable, ErrorBox, Field, PageHeader } from '../../components/ui';
 import { Combobox, mpnOptions, useMpns } from '../../components/pickers';
+import { usePersistedState } from '../../lib/usePersisted';
+
+const PRINT_MAX = 20000;
+// Dates are already applied by the server; say so on paper when the print hit the row limit.
+const capped = (rows) => ({ rows, serverDates: true,
+  note: rows.length >= PRINT_MAX ? `Only the latest ${PRINT_MAX.toLocaleString('en-IN')} transactions; narrow the dates to print older ones` : '' });
 
 export default function TransactionsPage() {
   const mpns = useMpns();
-  const [f, setF] = useState({ from: '', to: '', type: '', mpn_id: '', q: '' });
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [size, setSize] = useState(100);
+  const [f, setF] = usePersistedState('txns.f', { from: '', to: '', type: '', mpn_id: '', q: '' });
+  const [search, setSearch] = useState(f.q || '');
+  const [page, setPage] = usePersistedState('txns.page', 1);
+  const [size, setSize] = usePersistedState('txns.size', 100);
   const setFilter = (patch) => { setPage(1); setF({ ...f, ...patch }); };
   // Server-side paging: the audit ledger grows forever, so only one page is loaded at a time.
   const { data, loading, error } = useData(() => api.get(`/inventory/ledger${qs({ ...f, page, page_size: size })}`),
@@ -22,15 +28,15 @@ export default function TransactionsPage() {
     { key: 'txn_no', label: 'Txn ID', align: 'right' },
     { key: 'txn_at', label: 'Timestamp', render: (r) => fmtDateTime(r.txn_at) },
     { key: 'user_name', label: 'User' },
-    { key: 'txn_type', label: 'Type', value: (r) => TXN_LABEL[r.txn_type] || r.txn_type },
+    { key: 'txn_type', label: 'Type', value: (r) => TXN_LABEL[r.txn_type] || r.txn_type, printFilter: true },
     { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) },
-    { key: 'material_name', label: 'Material', className: 'whitespace-normal min-w-[180px]' },
+    { key: 'material_name', label: 'Material', className: 'whitespace-normal min-w-[180px]', printFilter: true },
     { key: 'lot_no', label: 'Lot No', render: (r) => <Link className="text-accent hover:underline" onClick={(e) => e.stopPropagation()} to={`/reports/traceability?mpn_id=${r.mpn_id}&lot_no=${encodeURIComponent(r.lot_no)}`}>{r.lot_no}</Link>, value: (r) => r.lot_no },
-    { key: 'qty_change', label: 'Qty Change', align: 'right', render: (r) => `${r.qty_change > 0 ? '+' : ''}${fmtQty(r.qty_change)}`, value: (r) => Number(r.qty_change) },
+    { key: 'qty_change', label: 'Qty Change', align: 'right', render: (r) => `${r.qty_change > 0 ? '+' : ''}${fmtQty(r.qty_change)}`, value: (r) => Number(r.qty_change), total: 'uom' },
     { key: 'new_balance', label: 'New Balance', align: 'right', render: (r) => fmtQty(r.new_balance), value: (r) => Number(r.new_balance) },
     { key: 'uom', label: 'UOM' },
-    { key: 'location_code', label: 'Location' },
-    { key: 'warehouse_code', label: 'WH' },
+    { key: 'location_code', label: 'Location', printFilter: true },
+    { key: 'warehouse_code', label: 'WH', printFilter: true },
     { key: 'reference_id', label: 'Reference', value: (r) => [r.reference_type, r.reference_id].filter(Boolean).join(' ') },
     { key: 'reason', label: 'Reason' },
   ];
@@ -62,9 +68,9 @@ export default function TransactionsPage() {
         <DataTable columns={columns} rows={data?.rows || []} loading={loading} exportName="transactions" rowKey="id" searchable={false}
           printTitle="Transaction Report" printDateKey="txn_at"
           printFilters={[['Type', f.type ? (TXN_LABEL[f.type] || f.type) : ''], ['Search', f.q]]}
-          onPrintFetch={(opt) => api.get(`/inventory/ledger${qs({
-            ...(opt.scope === 'view' ? { type: f.type, mpn_id: f.mpn_id, q: f.q } : {}),
-            from: opt.from || (opt.scope === 'view' ? f.from : ''), to: opt.to || (opt.scope === 'view' ? f.to : ''), limit: 5000 })}`)}
+          onPrintAll={(opt) => api.get(`/inventory/ledger${qs({ from: opt.from, to: opt.to, limit: opt.forOptions ? 2000 : PRINT_MAX })}`, { scoped: false }).then(capped)}
+          onPrintView={(opt) => api.get(`/inventory/ledger${qs({ type: f.type, mpn_id: f.mpn_id, q: f.q,
+            from: opt.from || f.from, to: opt.to || f.to, limit: PRINT_MAX })}`).then(capped)}
           toolbar={<span className="text-xs text-ink-muted">{total.toLocaleString('en-IN')} transactions · CSV exports this page</span>}
           footer={(
             <div className="flex items-center justify-end gap-3 px-3 py-2 border-t border-line text-[13px] no-print">

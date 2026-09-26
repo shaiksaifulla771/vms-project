@@ -73,10 +73,9 @@ router.get('/inward-defaults', h(async (req, res) => {
 //              OPENING             go-live / first balances                -> ledger OPENING
 //              ADJUSTMENT          Admin only, reason required             -> ledger ADJUSTMENT
 //
-// Finished goods can NEVER be entered here, whatever the entry type: their stock comes only from a
-// manufacturing batch, so that what the system holds always matches what was actually produced.
-// They still leave through Outward, move by Transfer, and are corrected by an Admin adjustment on an
-// existing lot (Stock > Adjust) or an approved physical stock count.
+// Finished goods (made, never bought) come in only as OPENING or ADJUSTMENT, addressed by material:
+// their hidden internal stock code is used, no vendor. A Purchase of a finished good is refused, and a
+// production batch lot is never topped up here (change it from the batch).
 const ENTRY_TYPES = { PURCHASE: 'INWARD', OPENING: 'OPENING', ADJUSTMENT: 'ADJUSTMENT' };
 
 router.post('/inward', h(async (req, res) => {
@@ -203,7 +202,7 @@ router.get('/ledger', h(async (req, res) => {
     ]);
     return res.json({ rows: list.rows, total: total.rows[0].n, page, page_size: size });
   }
-  const limit = Math.min(Math.max(parseInt(req.query.limit || '1000', 10) || 1000, 1), 5000);
+  const limit = Math.min(Math.max(parseInt(req.query.limit || '1000', 10) || 1000, 1), 20000);
   const { rows } = await query(`select l.*, (select x.classification from public.materials x where x.id = l.material_id) as classification from public.v_ledger l ${clause} order by l.txn_no desc limit ${limit}`, params);
   res.json(rows);
 }));

@@ -165,3 +165,36 @@ Print layout: company name, report title, filters used, printed by, date and tim
   - Database certificate check: set `DATABASE_SSL_CA` to the Supabase CA file to turn it on.
   - Blind stock counts: the Stock list still shows quantities to counters (low risk; can be hidden later).
 
+- 2026-09-26: **Gap re-check.** After the merge (PR #13), the plan was re-checked line by line against the code. 16 items were partial or missing. All are now closed on `fix/v10-gaps`, with a second independent review. New tests are in `backend/tests/v10gaps.test.js`; 138 backend tests pass.
+  - **Lists remember where you were.** Pressing Back keeps each list's search, sort, filters and page. This covers every master, inventory, planning and report list. The state is kept for the browser tab only.
+  - **BOM list:**
+    - Grouped by product, with the Default tag.
+    - A Cost / Unit column; `*` means some ingredients have no price.
+    - Product, location, type and status filters.
+    - Group headers show only in the product order. Sorting by another column turns them off.
+  - **Plans list:** location filter (on screen and when printing). Totals are shown only when every row uses the same unit.
+  - **MPN list:** HSN filter (missing / filled).
+  - **Print dialog, all lists:**
+    - "All records" now really loads everything: every location, not only the top-bar one.
+    - New print filters: location, material, type or status. The choices come from all records, not just the rows on screen.
+    - Totals are shown only within one unit.
+    - Transactions print up to 20,000 rows and say so on paper when that limit is hit.
+  - **Stock print:**
+    - "As on" a past date is rebuilt from the audit ledger. This works for All, Current filter and Selected rows.
+    - The Stock Balance Sheet has location, type and material print filters and no longer changes the screen's own filters.
+    - Each Location / WH group has a total for each unit.
+  - **Plan, Batch and BOM pages:** the shared print dialog now picks which parts to print (details, summaries, materials, history and so on). The Plan page gets a proper Plan details section.
+  - **Physical Stock Sheet:** now its own report page (Reports > Physical Stock Sheet). It includes a blind-count option and blank Physical Qty, Variance and Checked by columns.
+  - **New Plan / Ad Hoc Batch:**
+    - With no BOM at the chosen location, the page says "No BOMs at MUM yet" and offers a Create BOM link for that location.
+    - Products without a BOM are listed only when "Show all products" is ticked.
+    - The premix "Make it first" link opens New Plan with the product and location already chosen.
+  - **BOM edit:** a semi-finished ingredient with no bought price is costed from its own Default BOM, marked "(BOM)".
+  - **Material, Product and MPN create / edit are full pages now:** `/masters/materials/new`, `/masters/materials/:id/edit`, and the same pattern for products and MPNs. They replace the large pop-ups. Old `?new=1` links redirect. Vendor edit was already a full page, reachable from its view page.
+  - **BOM edit is still Draft-only** by design: an active BOM is changed with Copy, then edit the draft, then Activate. This keeps plans and batches tied to the exact recipe they used.
+  - **Inward:** a read-only HSN field next to the MPN.
+  - **Fixes from the second review:**
+    - "Today" in the browser now uses the local date, not UTC (early-morning IST prints were a day behind).
+    - Detail-page prints no longer bring hidden parts back before the print window closes.
+    - Pickers load BOMs without costing, so they are faster.
+    - Duplicate plan notes removed.

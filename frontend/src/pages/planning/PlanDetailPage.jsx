@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { fmtDateTime, fmtQty } from '../../lib/format';
+import { fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Loading, Modal, PageHeader, Field } from '../../components/ui';
 import PlanSummaries from './PlanSummaries';
-import { Printer } from 'lucide-react';
-import { PrintHeader } from '../../components/print';
+import { PrintHeader, PrintPartsButton } from '../../components/print';
+import { DetailGrid, Section } from '../../components/masterKit';
 
 export default function PlanDetailPage() {
   const { id } = useParams();
@@ -46,7 +46,10 @@ export default function PlanDetailPage() {
         subtitle={`${plan.product_code} - ${plan.product_name} · ${plan.location_code} / ${plan.warehouse_code} · BOM ${plan.bom_no} v${plan.bom_version}`}
         actions={<>
           <Link className="btn-secondary" to="/planning/plans">Back</Link>
-          <button type="button" className="btn-secondary" title="Plan, batches and material requirement (required stock)" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          <PrintPartsButton title={`Plan ${plan.plan_no}`} sections={[
+            { key: 'details', label: 'Plan details' }, { key: 'summary', label: 'Plan summary' },
+            { key: 'batches', label: 'Batch summary' }, { key: 'materials', label: 'Material summary (required stock)' },
+            { key: 'history', label: 'History', on: false }]} />
           {canWrite && open && <button type="button" className="btn-secondary" onClick={cancel}>Cancel Plan</button>}
           {isAdmin && plan.status !== 'CANCELLED' && (
             <button type="button" className="btn-secondary" onClick={() => { setTarget(String(byBatches ? plan.target_batches : plan.target_qty)); setEditing(true); }}>
@@ -59,19 +62,28 @@ export default function PlanDetailPage() {
         </>} />
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
-        <div className="flex items-center gap-6 text-[13px]">
+        <div data-print-section="details">
+          <Section title="Plan details">
+            <DetailGrid cols={4} items={[
+              ['Plan', plan.plan_no], ['Product', `${plan.product_code} - ${plan.product_name}`, 'col-span-2'], ['Status', plan.status.replace('_', ' ')],
+              ['Location / WH', `${plan.location_code} / ${plan.warehouse_code}`], ['BOM', `${plan.bom_no} v${plan.bom_version}`],
+              ['Plan by', byBatches ? `${plan.target_batches} batches` : `Quantity ${fmtQty(plan.target_qty)} ${plan.output_uom}`],
+              ['Required by', fmtDate(plan.required_date)], ['Created', fmtDateTime(plan.created_at)], ['Notes', plan.notes, 'col-span-3'],
+            ]} />
+          </Section>
+        </div>
+        <div className="flex items-center gap-6 text-[13px] no-print">
           <label className="flex items-center gap-1.5 text-ink-soft">
             <input type="checkbox" disabled={!canWrite || !open} checked={plan.apply_scrap_allowance}
               onChange={(e) => patch({ apply_scrap_allowance: e.target.checked }, 'Requirements recalculated')} />
             Include BOM scrap allowance
           </label>
-          {plan.notes && <span className="text-ink-muted">Notes: {plan.notes}</span>}
         </div>
-        <PlanSummaries {...data} applyScrap={plan.apply_scrap_allowance} />
+        <PlanSummaries {...data} applyScrap={plan.apply_scrap_allowance} locationId={plan.location_id} />
 
         {data.events.length > 0 && (
-          <section className="card">
-            <div className="px-3 py-2 border-b border-line text-[13px] font-semibold">History</div>
+          <section className="card break-inside-avoid" data-print-section="history">
+            <div className="px-4 py-2 border-b border-line bg-panel text-[13px] font-semibold text-ink">History</div>
             <table className="w-full">
               <tbody>
                 {data.events.map((e) => (

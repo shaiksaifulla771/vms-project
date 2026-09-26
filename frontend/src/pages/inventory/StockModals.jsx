@@ -128,7 +128,7 @@ export function InwardModal({ onClose, onDone }) {
           ))}
         </div>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-[2fr_2fr_1fr] gap-3">
         <Field label="Material" required hint="Materials with an MPN, and finished goods">
           <Combobox value={f.material_id} onChange={pickMaterial} options={materialOptions(choices)} placeholder="Select material" />
         </Field>
@@ -139,6 +139,9 @@ export function InwardModal({ onClose, onDone }) {
             <option value="">-</option>
             {matMpns.map((p) => <option key={p.id} value={p.id}>{p.mpn_code}{p.hsn_code ? ` · HSN ${p.hsn_code}` : ''}{p.vendors?.length ? ` · ${p.vendors.map((x) => x.vendor_name).join(', ')}` : ''}</option>)}
           </select>)}
+        </Field>
+        <Field label="HSN" hint={!isFG && mpn && !mpn.hsn_code ? 'Not set on this MPN' : ''}>
+          <input className="input" readOnly tabIndex={-1} aria-label="HSN code" value={isFG ? '-' : (mpn?.hsn_code || '')} placeholder="From MPN" />
         </Field>
       </div>
       {material && (

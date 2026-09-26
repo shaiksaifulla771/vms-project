@@ -28,6 +28,7 @@ const NAV = [
   ] },
   { title: 'Reports', icon: FileBarChart, items: [
     { to: '/reports/stock-balance', label: 'Stock Balance' },
+    { to: '/reports/physical-sheet', label: 'Physical Stock Sheet' },
     { to: '/reports/transactions', label: 'Transactions' },
     { to: '/reports/traceability', label: 'Traceability' },
     { to: '/reports/reorder', label: 'Reorder Alerts' },

@@ -6,12 +6,13 @@ import { useApp, useData } from '../../lib/app-context';
 import { fmtDate } from '../../lib/format';
 import { DataTable, ErrorBox, PageHeader, Status } from '../../components/ui';
 import { BulkDialog, DeleteDialog, FunctionsMenu, actionsColumn } from '../../components/masterKit';
+import { usePersistedState } from '../../lib/usePersisted';
 
 /** FSSAI expiry: shows a warning when expired or due within 30 days. */
 export function FssaiExpiry({ date }) {
   if (!date) return <span className="text-ink-faint">-</span>;
   const d = new Date(String(date).slice(0, 10));
-  const days = Math.floor((d - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
+  const days = Math.floor((d - new Date(new Date().toLocaleDateString('en-CA'))) / 86400000);
   return (
     <span className={days < 0 ? 'text-danger' : ''}>
       {fmtDate(date)}
@@ -24,7 +25,7 @@ export function FssaiExpiry({ date }) {
 export default function VendorsPage() {
   const { canWrite } = useApp();
   const navigate = useNavigate();
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = usePersistedState('vendors.status', '');
   const [modal, setModal] = useState(null);
   const { data, loading, error, reload } = useData(() => api.get(`/vendors${qs({ status })}`, { scoped: false }), [status]);
   const close = () => setModal(null);
@@ -39,7 +40,7 @@ export default function VendorsPage() {
     { key: 'fssai_expiry', label: 'FSSAI Expiry', render: (r) => <FssaiExpiry date={r.fssai_expiry} />, value: (r) => r.fssai_expiry },
     { key: 'material_count', label: 'Materials', align: 'right' },
     { key: 'mpn_count', label: 'MPNs', align: 'right' },
-    { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status, printFilter: true },
     { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
@@ -58,7 +59,8 @@ export default function VendorsPage() {
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" printTitle="Vendors" onRowClick={(r) => navigate(`/masters/vendors/${r.id}`)}
+        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" printTitle="Vendors"
+          onPrintAll={() => api.get('/vendors', { scoped: false })} onRowClick={(r) => navigate(`/masters/vendors/${r.id}`)}
           toolbar={(
             <select className="input w-32" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Any status</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>

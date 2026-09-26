@@ -4,8 +4,7 @@ import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtDateTime, fmtPct, fmtQty, mpnLabel } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader } from '../../components/ui';
-import { Printer } from 'lucide-react';
-import { PrintHeader } from '../../components/print';
+import { PrintHeader, PrintPartsButton } from '../../components/print';
 
 const r4 = (n) => Math.round(Number(n || 0) * 10000) / 10000;
 
@@ -65,7 +64,9 @@ export default function BatchDetailPage() {
         subtitle={`${b.product_code} - ${b.product_name} · ${b.location_code} / ${b.warehouse_code} · ${b.source === 'PLAN' ? `Plan ${b.plan_no}` : 'Ad Hoc'}`}
         actions={<>
           <Link className="btn-secondary" to="/manufacturing/batches">Back</Link>
-          <button type="button" className="btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          <PrintPartsButton title={`Batch ${b.batch_no}`} sections={[
+            { key: 'detail', label: 'Batch detail' }, { key: 'output', label: 'Output vs plan' },
+            { key: 'inputs', label: 'Material inputs' }, { key: 'ledger', label: 'Inventory postings', on: false }]} />
           {b.plan_id && <Link className="btn-secondary" to={`/planning/plans/${b.plan_id}`}>Open Plan</Link>}
           <Link className="btn-secondary" to={`/reports/traceability?mpn_id=${b.output_mpn_id}&lot_no=${encodeURIComponent(b.batch_no)}`}>Trace Lot</Link>
           {isAdmin && !edit && !reversed && <button type="button" className="btn-secondary" onClick={() => setReversing('')}>Reverse Batch</button>}
@@ -80,8 +81,8 @@ export default function BatchDetailPage() {
           </div>
         )}
 
-        <section className="card">
-          <div className="px-3 py-2 border-b border-line text-[13px] font-semibold">Section 1: Batch Detail</div>
+        <section className="card break-inside-avoid" data-print-section="detail">
+          <div className="px-4 py-2 border-b border-line bg-panel text-[13px] font-semibold text-ink">Section 1: Batch Detail</div>
           <div className="grid grid-cols-4 gap-x-6 gap-y-2 p-3 text-[13px]">
             {[
               ['Source', b.source === 'PLAN' ? 'Plan' : 'Ad Hoc'], ['Product', `${b.product_code} - ${b.product_name}`],
@@ -92,8 +93,8 @@ export default function BatchDetailPage() {
           </div>
         </section>
 
-        <section className="card">
-          <div className="px-3 py-2 border-b border-line text-[13px] font-semibold">Section 2: Output vs Plan</div>
+        <section className="card break-inside-avoid" data-print-section="output">
+          <div className="px-4 py-2 border-b border-line bg-panel text-[13px] font-semibold text-ink">Section 2: Output vs Plan</div>
           <table className="w-full">
             <thead><tr><th className="th text-right">Plan Output</th><th className="th text-right">Actual Output</th><th className="th text-right">Variance</th><th className="th text-right">Variance %</th><th className="th">Reason for Variance</th></tr></thead>
             <tbody><tr>
@@ -111,8 +112,8 @@ export default function BatchDetailPage() {
           </table>
         </section>
 
-        <section className="card">
-          <div className="px-3 py-2 border-b border-line text-[13px] font-semibold">Section 3: Material Inputs - Actual vs Plan</div>
+        <section className="card break-inside-avoid" data-print-section="inputs">
+          <div className="px-4 py-2 border-b border-line bg-panel text-[13px] font-semibold text-ink">Section 3: Material Inputs - Actual vs Plan</div>
           <table className="w-full">
             <thead><tr>
               <th className="th">Material</th><th className="th">MPN</th><th className="th">Lot No</th><th className="th">WH</th>
@@ -157,8 +158,8 @@ export default function BatchDetailPage() {
           </div>
         )}
 
-        <section className="card">
-          <div className="px-3 py-2 border-b border-line text-[13px] font-semibold">Inventory Postings (Audit Ledger)</div>
+        <section className="card break-inside-avoid" data-print-section="ledger">
+          <div className="px-4 py-2 border-b border-line bg-panel text-[13px] font-semibold text-ink">Inventory Postings (Audit Ledger)</div>
           <table className="w-full">
             <thead><tr><th className="th">Txn</th><th className="th">Time</th><th className="th">Type</th><th className="th">MPN</th><th className="th">Lot</th><th className="th">WH</th><th className="th text-right">Qty Change</th><th className="th text-right">New Balance</th><th className="th">User</th></tr></thead>
             <tbody>

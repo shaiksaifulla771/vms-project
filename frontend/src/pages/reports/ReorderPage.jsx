@@ -24,7 +24,7 @@ export default function ReorderPage() {
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data || []} loading={loading} rowKey="material_id" exportName="reorder_alerts"
-          empty="No material is below its reorder level." printTitle="Required Stock (Reorder Alerts)"
+          empty="No material is below its reorder level." onPrintAll={() => api.get('/reports/reorder', { scoped: false })} printTitle="Required Stock (Reorder Alerts)"
           printFilters={[['Location', location ? location.code : 'All locations']]} />
       </div>
     </div>

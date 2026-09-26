@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Printer } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -7,7 +6,6 @@ import { CLASS_LABEL, TXN_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/
 import { ErrorBox, Loading, PageHeader, Status } from '../../components/ui';
 import { DetailGrid, Section } from '../../components/masterKit';
 import { PrintHeader } from '../../components/print';
-import { MpnForm } from './MpnsPage';
 
 const money = (v) => (v === null || v === undefined ? '-' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
@@ -27,10 +25,8 @@ function Grid({ head, rows, empty, render }) {
 export default function MpnViewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { canWrite, notify } = useApp();
-  const [k, setK] = useState(0);
-  const { data: p, loading, error } = useData(() => api.get(`/mpns/${id}`, { scoped: false }), [id, k]);
-  const [edit, setEdit] = useState(false);
+  const { canWrite } = useApp();
+  const { data: p, loading, error } = useData(() => api.get(`/mpns/${id}`, { scoped: false }), [id]);
   if (loading && !p) return <Loading />;
   if (error) return <div className="p-5"><ErrorBox message={error} /></div>;
   const total = p.stock.reduce((a, s) => a + Number(s.quantity), 0);
@@ -41,7 +37,7 @@ export default function MpnViewPage() {
         actions={<>
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>Back</button>
           <button type="button" className="btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print</button>
-          {canWrite && <button type="button" className="btn-primary" onClick={() => setEdit(true)}><Pencil size={14} /> Edit</button>}
+          {canWrite && <button type="button" className="btn-primary" onClick={() => navigate(`/masters/mpns/${p.id}/edit`)}><Pencil size={14} /> Edit</button>}
         </>} />
       <div className="p-5 space-y-4">
         <Section title="Details">
@@ -87,7 +83,6 @@ export default function MpnViewPage() {
             )} />
         </Section>
       </div>
-      {edit && <MpnForm mpn={p} onClose={() => setEdit(false)} onDone={() => { setEdit(false); notify('MPN saved'); setK((x) => x + 1); }} />}
     </div>
   );
 }

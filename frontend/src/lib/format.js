@@ -31,7 +31,8 @@ export function fmtByUom(list) {
   return list.map((u) => [u.plus ? `+${fmtQty(u.plus)}` : null, u.minus ? fmtQty(u.minus) : null].filter(Boolean).join(' / ') + ` ${u.uom}`).join(' · ');
 }
 
-export const today = () => new Date().toISOString().slice(0, 10);
+/** Today's date (YYYY-MM-DD) in the user's own time zone, not UTC. */
+export const today = () => new Date().toLocaleDateString('en-CA');
 
 export const CLASS_LABEL = {
   RAW_MATERIAL: 'Raw Material',

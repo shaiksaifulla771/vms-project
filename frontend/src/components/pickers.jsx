@@ -173,7 +173,7 @@ export function useLocationBoms(locationId) {
     if (!locationId) { setBoms([]); return undefined; }
     let live = true;
     setLoading(true);
-    api.get(`/boms${qs({ status: 'ACTIVE', location_id: locationId })}`, { scoped: false })
+    api.get(`/boms${qs({ status: 'ACTIVE', location_id: locationId, cost: '0' })}`, { scoped: false })
       .then((r) => { if (live) setBoms(r); })
       .catch(() => { if (live) setBoms([]); })
       .finally(() => { if (live) setLoading(false); });
@@ -199,14 +199,22 @@ export const defaultBomId = (list) => (list.find((b) => b.is_default) || list[0]
 /** Location -> Product (only those with a BOM there) -> BOM. Calls onChange({ location_id, product_id, bom_id }). */
 export function LocationProductBom({ value, onChange, disabled, productPlaceholder = 'Select product', extraProducts = [],
   classes = { location: '', product: 'col-span-2', bom: '' } }) {
+  // Products with no BOM at this location are listed only when asked (Batch Entry, Ad Hoc).
+  const [showAll, setShowAll] = useState(false);
   const { locations } = useApp();
   const { products, bomsFor, loading } = useLocationBoms(value.location_id);
   const list = value.product_id ? bomsFor(value.product_id) : [];
+  // A product chosen elsewhere (link, earlier page) gets its Default BOM once the BOMs have loaded.
+  const firstBom = defaultBomId(list);
+  useEffect(() => {
+    if (value.product_id && !value.bom_id && firstBom) onChange({ ...value, bom_id: firstBom });
+  }, [value.product_id, value.bom_id, firstBom]); // eslint-disable-line react-hooks/exhaustive-deps
   // Batch Entry (Ad Hoc) may also make a product that has no BOM here; its inputs are entered by hand.
   const withBom = new Set(products.map((p) => p.value));
-  const options = [...products, ...extraProducts.filter((m) => !withBom.has(m.id))
+  const options = [...products, ...(showAll ? extraProducts : []).filter((m) => !withBom.has(m.id))
     .map((m) => ({ value: m.id, label: `${m.code} - ${m.name}`, sub: 'No BOM here - enter inputs by hand' }))];
   const setLoc = (loc) => onChange({ location_id: loc, product_id: '', bom_id: '' });
+  const locCode = locations.find((l) => l.id === value.location_id)?.code || 'this location';
   const setProduct = (pid) => onChange({ ...value, product_id: pid, bom_id: defaultBomId(bomsFor(pid)) });
   return (
     <>
@@ -217,9 +225,18 @@ export function LocationProductBom({ value, onChange, disabled, productPlacehold
         </select>
       </Field>
       <Field label="Product" required className={classes.product}
-        hint={value.location_id && !loading && !products.length
-          ? <span className="text-danger">No active BOMs at this location yet. <Link className="text-accent" to="/masters/boms/new">Create BOM</Link></span>
-          : (value.location_id ? `${products.length} product${products.length === 1 ? '' : 's'} with a BOM here` : 'Choose the location first')}>
+        hint={value.location_id && !loading && !products.length && !showAll
+          ? <span className="text-danger">No BOMs at {locCode} yet. <Link className="text-accent" to={`/masters/boms/new?location_id=${value.location_id}`}>Create BOM</Link></span>
+          : (value.location_id ? (
+            <span>
+              {products.length} product{products.length === 1 ? '' : 's'} with a BOM at {locCode}
+              {extraProducts.length > 0 && (
+                <label className="ml-2 inline-flex items-center gap-1">
+                  <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> also products without a BOM here
+                </label>
+              )}
+            </span>
+          ) : 'Choose the location first')}>
         <Combobox value={value.product_id} options={options} onChange={setProduct} disabled={disabled || !value.location_id}
           placeholder={value.location_id ? productPlaceholder : 'Choose the location first'} />
       </Field>

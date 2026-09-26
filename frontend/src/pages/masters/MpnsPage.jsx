@@ -7,6 +7,7 @@ import { CLASS_LABEL, fmtDate, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { Combobox, UomSelect, materialOptions, useMaterials, useUoms, useVendors } from '../../components/pickers';
 import { BulkDialog, DeleteDialog, FunctionsMenu, actionsColumn } from '../../components/masterKit';
+import { usePersistedState } from '../../lib/usePersisted';
 
 const money = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
@@ -103,30 +104,36 @@ export function MpnForm({ mpn, preset, onClose, onDone }) {
 }
 
 export default function MpnsPage() {
-  const { canWrite, notify } = useApp();
+  const { canWrite } = useApp();
   const navigate = useNavigate();
-  const [search, setSearch] = useSearchParams();
+  const [search] = useSearchParams();
   // /masters/mpns?new=1&vendor_id=..&material_id=.. opens New MPN pre-filled (from a vendor page)
-  const [modal, setModal] = useState(() => (search.get('new') ? { type: 'edit', preset: { vendor_id: search.get('vendor_id'), material_id: search.get('material_id') } } : null));
+  const [modal, setModal] = useState(null);
+  // Old links (/masters/mpns?new=1&...) now open the full-page form.
+  useEffect(() => {
+    if (search.get('new')) navigate(`/masters/mpns/new${qs({ vendor_id: search.get('vendor_id'), material_id: search.get('material_id') })}`, { replace: true });
+  }, [search, navigate]);
   const { data, loading, error, reload } = useData(() => api.get('/mpns', { scoped: false }), []);
-  const close = () => { setModal(null); if (search.get('new')) setSearch({}, { replace: true }); };
+  const [hsn, setHsn] = usePersistedState('mpns.hsn', '');
+  const rows = (data || []).filter((r) => (hsn === 'missing' ? !r.hsn_code : hsn === 'present' ? Boolean(r.hsn_code) : true));
+  const close = () => setModal(null);
   const pref = (r) => r.vendors.find((v) => v.is_preferred) || r.vendors[0];
 
   const columns = [
     { key: 'mpn_code', label: 'MPN' },
-    { key: 'material', label: 'Material', value: (r) => `${r.material_code} - ${r.material_name}`, className: 'whitespace-normal min-w-[200px]' },
-    { key: 'classification', label: 'Classification', value: (r) => CLASS_LABEL[r.classification] },
+    { key: 'material', label: 'Material', value: (r) => `${r.material_code} - ${r.material_name}`, className: 'whitespace-normal min-w-[200px]', printFilter: true },
+    { key: 'classification', label: 'Classification', value: (r) => CLASS_LABEL[r.classification], printFilter: true },
     { key: 'hsn_code', label: 'HSN', value: (r) => r.hsn_code || '' },
     { key: 'vendors', label: 'Vendor(s)', value: (r) => r.vendors.map((v) => `${v.vendor_name}${v.is_preferred && r.vendors.length > 1 ? ' (preferred)' : ''}`).join(', '), className: 'whitespace-normal max-w-[240px]' },
     { key: 'uom', label: 'UOM', value: (r) => pref(r)?.uom || '' },
     { key: 'moq', label: 'MOQ', align: 'right', value: (r) => (pref(r)?.moq ?? null), render: (r) => fmtQty(pref(r)?.moq) },
     { key: 'price', label: 'Price (₹)', align: 'right', value: (r) => (pref(r)?.price ?? null), render: (r) => money(pref(r)?.price) },
-    { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status, printFilter: true },
     { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => navigate(`/masters/mpns/${r.id}`),
-      onEdit: (r) => setModal({ type: 'edit', mpn: r }),
+      onEdit: (r) => navigate(`/masters/mpns/${r.id}/edit`),
       onDelete: (r) => setModal({ type: 'delete', row: r }),
     }),
   ];
@@ -135,16 +142,21 @@ export default function MpnsPage() {
     <div>
       <PageHeader title="MPNs" subtitle="Manufacturer Part Numbers with vendor price, MOQ and UOM · price shown is the preferred vendor's"
         actions={<>
-          <FunctionsMenu entity="mpns" onManual={() => setModal({ type: 'edit' })} onBulk={(mode) => setModal({ type: 'bulk', mode })}
+          <FunctionsMenu entity="mpns" onManual={() => navigate('/masters/mpns/new')} onBulk={(mode) => setModal({ type: 'bulk', mode })}
             extra={[{ label: 'Bulk MPN Create', icon: Rows3, onClick: () => navigate('/masters/mpns/bulk-create') }]} />
           {canWrite && <button type="button" className="btn-secondary" onClick={() => navigate('/masters/mpns/bulk-create')}><Rows3 size={14} /> Bulk MPN Create</button>}
-          {canWrite && <button type="button" className="btn-primary" onClick={() => setModal({ type: 'edit' })}><Plus size={14} /> New MPN</button>}
+          {canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/masters/mpns/new')}><Plus size={14} /> New MPN</button>}
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at" onRowClick={(r) => navigate(`/masters/mpns/${r.id}`)} printTitle="MPNs" />
+        <DataTable columns={columns} rows={rows} loading={loading} newField="created_at" onRowClick={(r) => navigate(`/masters/mpns/${r.id}`)} printTitle="MPNs"
+          onPrintAll={() => data || []}
+          toolbar={(
+            <select className="input w-40" value={hsn} onChange={(e) => setHsn(e.target.value)} aria-label="HSN">
+              <option value="">Any HSN</option><option value="missing">HSN missing</option><option value="present">HSN filled</option>
+            </select>
+          )} />
       </div>
-      {modal?.type === 'edit' && <MpnForm mpn={modal.mpn} preset={modal.preset} onClose={close} onDone={(r) => { close(); notify(modal.mpn ? 'MPN saved' : `MPN ${r.mpn_code} created`); reload(); }} />}
       {modal?.type === 'delete' && <DeleteDialog label={modal.row.mpn_code} path={`/mpns/${modal.row.id}`} onClose={close} onDone={() => { close(); reload(); }} />}
       {modal?.type === 'bulk' && <BulkDialog entity="mpns" mode={modal.mode} onClose={close} onDone={() => { close(); reload(); }} />}
     </div>

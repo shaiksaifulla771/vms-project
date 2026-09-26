@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, Download, Printer, Search, X } from 'lucide-react';
-import { downloadCsv } from '../lib/format';
+import { downloadCsv, today } from '../lib/format';
 import { PrintDialog, PrintHeader, inDateRange, printAfterRender } from './print';
+import { usePersistedState } from '../lib/usePersisted';
 
 export function PageHeader({ title, subtitle, actions, children }) {
   return (
@@ -52,12 +53,30 @@ export function Loading({ text = 'Loading...' }) {
   return <div className="px-5 py-8 text-ink-muted">{text}</div>;
 }
 
+/** When true, <Modal> renders as a full page (used by the /new and /:id/edit routes of record forms). */
+export const ModalAsPage = createContext(false);
+
 export function Modal({ title, onClose, children, footer, width = 'max-w-lg' }) {
+  const asPage = useContext(ModalAsPage);
   useEffect(() => {
+    if (asPage) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, asPage]);
+  if (asPage) {
+    return (
+      <ModalAsPage.Provider value={false}>
+        <PageHeader title={title} />
+        <div className="p-5">
+          <div className="card max-w-5xl" role="form" aria-label={title}>
+            <div className="p-4 space-y-3">{children}</div>
+            {footer && <div className="flex justify-end gap-2 border-t border-line px-4 py-2.5 bg-panel sticky bottom-0">{footer}</div>}
+          </div>
+        </div>
+      </ModalAsPage.Provider>
+    );
+  }
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/30 p-4 overflow-y-auto no-print">
       <div className={`w-full ${width} bg-white rounded border border-line shadow-lg mt-10`} role="dialog" aria-modal="true">
@@ -128,17 +147,22 @@ export function NewTag({ ts }) {
  */
 export function DataTable({ columns, rows, loading, empty = 'No records', searchable = true, exportName,
   onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer, newField,
-  printTitle, printFilters = [], printDateKey, printDateMode, onPrintFetch, printSelectable = true }) {
-  const [q, setQ] = useState('');
+  printTitle, printFilters = [], printDateKey, printDateMode, onPrintAll, onPrintView, printSelectable = true,
+  stateKey, groupBy, printMatch }) {
+  // Search, sort and "added today" are remembered per list, so Back returns to the list as it was left.
+  const memKey = stateKey || exportName || printTitle || `path:${window.location.pathname}`;
+  const [q, setQ] = usePersistedState(memKey ? `${memKey}.q` : '_', '');
   // Printing: tick rows, choose All / Current filter / Selected (+ dates), print a clean table.
   const [picked, setPicked] = useState(() => new Set());
   const [printing, setPrinting] = useState(null);         // { rows, filters }
   const [printAsk, setPrintAsk] = useState(false);
   const [printErr, setPrintErr] = useState(null);
+  const [optRows, setOptRows] = useState(null);             // every record, so the print filters list all values
+  useEffect(() => { setOptRows(null); }, [rows]);
   const canPick = Boolean(printTitle) && printSelectable;
   const defaultSort = initialSort || (newField ? { key: newField, dir: 'desc' } : null);
-  const [sort, setSort] = useState(defaultSort);
-  const [onlyNew, setOnlyNew] = useState(false);
+  const [sort, setSort] = usePersistedState(memKey ? `${memKey}.sort` : '_sort', defaultSort);
+  const [onlyNew, setOnlyNew] = usePersistedState(memKey ? `${memKey}.new` : '_new', false);
   const box = useRef(null);
   const [boxH, setBoxH] = useState(null);
   // Fit the scroll box to the space left on screen, so its sideways scrollbar is always visible.
@@ -183,6 +207,8 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, q, sort, columns, onlyNew]);
 
+  // Group headers only while the list is in its grouped order (sorting by another column turns them off).
+  const grouping = Boolean(groupBy) && (!sort || !defaultSort || sort.key === defaultSort.key);
   const toggleSort = (key) => setSort((s) => (s && s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   const keyOf = (r, i) => r[rowKey] ?? i;
   const pickedRows = shown.filter((r, i) => picked.has(keyOf(r, i)));
@@ -190,26 +216,73 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
   const togglePick = (k) => setPicked((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   // Button / action columns (not exported) are not printed either.
   const printCols = columns.filter((c) => !c.noPrint && !c.noExport && c.key !== '_actions');
+  // Columns marked printFilter offer a "print only this value" choice in the dialog (location, material, type ...).
+  const filterCols = printCols.filter((c) => c.printFilter);
+  const filterOptions = filterCols.map((c) => ({
+    key: c.key, label: c.label,
+    values: [...new Set([...(rows || []), ...(optRows || [])].map((r) => val(c, r)).filter((x) => x !== null && x !== undefined && x !== ''))].map(String).sort(),
+  }));
+  const openPrint = async () => {
+    setPrintAsk(true);
+    // Load every record once so the dialog's filters offer every location / material / type, not just those on screen.
+    if (onPrintAll && filterCols.length && !optRows) {
+      try { const got = await onPrintAll({ scope: 'all', from: '', to: '', asOn: today(), forOptions: true }); setOptRows((Array.isArray(got) ? got : got?.rows) || null); } catch { /* the loaded rows still work */ }
+    }
+  };
   const doPrint = async (opt) => {
     setPrintAsk(false);
     setPrintErr(null);
     try {
       let list;
-      // onPrintFetch(opt): server-paged reports load every matching row (not just the page on screen).
-      if (opt.scope === 'selected') list = pickedRows;
-      else if (onPrintFetch) list = await onPrintFetch(opt);
-      else list = opt.scope === 'view' ? shown : (rows || []);
-      if (!onPrintFetch || opt.scope === 'selected') list = inDateRange(list, printDateKey, opt.from, opt.to);
+      let note = '';
+      let serverDates = false;
+      // A fetcher returns rows, or { rows, serverDates, note } (dates already applied / a note for the paper).
+      const unwrap = (got) => {
+        if (got && !Array.isArray(got)) { serverDates = Boolean(got.serverDates); note = got.note || ''; return got.rows; }
+        return got;
+      };
+      // "All" loads every record (ignoring the page's filters) when the page can fetch them; server-paged
+      // reports load every matching row for "Current filter" too (not just the page on screen).
+      if (opt.scope === 'selected' && printMatch && opt.asOn && opt.asOn !== today() && onPrintAll) {
+        // Selected rows "as on" a past date: the same lots, with their balance on that date.
+        const keys = new Set(pickedRows.map(printMatch));
+        list = (unwrap(await onPrintAll(opt)) || []).filter((r) => keys.has(printMatch(r)));
+      } else if (opt.scope === 'selected') list = pickedRows;
+      else if (opt.scope === 'all' && onPrintAll) list = unwrap(await onPrintAll(opt));
+      else if (opt.scope === 'view' && onPrintView) list = unwrap(await onPrintView(opt));
+      // A fetcher may return nothing to mean "use what is already loaded".
+      if (!list) list = opt.scope === 'view' ? shown : (rows || []);
+      if (!serverDates) list = inDateRange(list, printDateKey, opt.from, opt.to);
+      const chosen = Object.entries(opt.fields || {}).filter(([, v]) => v);
+      for (const [k, v] of chosen) {
+        const c = printCols.find((x) => x.key === k);
+        if (c) list = list.filter((r) => String(val(c, r) ?? '') === v);
+      }
       const scopeLabel = { all: 'All records', view: 'Current filter', selected: 'Selected rows' }[opt.scope];
-      const dates = opt.from || opt.to ? `${opt.from || 'start'} to ${opt.to || 'today'}` : '';
-      setPrinting({ rows: list, filters: [['Printed', scopeLabel], ['Dates', dates], ...printFilters, ['Rows', String(list.length)]] });
+      const dates = opt.asOn ? `as on ${opt.asOn}` : (opt.from || opt.to ? `${opt.from || 'start'} to ${opt.to || 'today'}` : '');
+      const fieldLabels = chosen.map(([k, v]) => [printCols.find((x) => x.key === k)?.label || k, v]);
+      // "All" from a fetcher covers every location: drop the on-screen location / warehouse labels.
+      const everywhere = opt.scope === 'all' && onPrintAll;
+      const baseFilters = everywhere ? [...printFilters.filter(([k]) => !['Location', 'Warehouse'].includes(k)), ['Location', 'All locations']] : printFilters;
+      if (groupBy) list = [...list].sort((a, b) => String(groupBy(a)).localeCompare(String(groupBy(b)), undefined, { numeric: true }));
+      setPrinting({ rows: list, filters: [['Printed', scopeLabel], ['Dates', dates], ...baseFilters, ...fieldLabels, ['Rows', String(list.length)], ['Note', note]] });
       // Only the report goes on paper: the page (filters, cards, sidebar) is hidden while printing.
       document.body.classList.add('printing-report');
       printAfterRender(() => { document.body.classList.remove('printing-report'); setPrinting(null); });
     } catch (e) { setPrintErr(e.message); }
   };
+  // Totals: a plain sum, or for quantities (total: 'uom') only when every printed row has the same unit.
+  const totalOf = (c, list) => {
+    if (c.total === 'uom') {
+      const units = new Set(list.map((r) => r.uom || r.output_uom || ''));
+      if (units.size !== 1) return 'mixed units';
+      const sum = list.reduce((a, r) => a + (Number(val(c, r)) || 0), 0);
+      return `${sum.toLocaleString('en-IN', { maximumFractionDigits: 4 })} ${[...units][0]}`;
+    }
+    return list.reduce((a, r) => a + (Number(val(c, r)) || 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
+  };
   const totals = printing && printCols.some((c) => c.total)
-    ? Object.fromEntries(printCols.filter((c) => c.total).map((c) => [c.key, printing.rows.reduce((a, r) => a + (Number(val(c, r)) || 0), 0)]))
+    ? Object.fromEntries(printCols.filter((c) => c.total).map((c) => [c.key, totalOf(c, printing.rows)]))
     : null;
 
   return (
@@ -221,20 +294,23 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           <thead><tr>{printCols.map((c) => <th key={c.key} className={`th ${c.align === 'right' ? 'text-right' : ''}`}>{c.label}</th>)}</tr></thead>
           <tbody>
             {printing.rows.length === 0 && <tr><td className="td" colSpan={printCols.length}>No records</td></tr>}
-            {printing.rows.map((r, i) => (
+            {printing.rows.map((r, i) => [
+              groupBy && (i === 0 || groupBy(printing.rows[i - 1]) !== groupBy(r)) && (
+                <tr key={`g-${i}`}><td colSpan={printCols.length} className="td font-semibold">{groupBy(r)}</td></tr>
+              ),
               <tr key={keyOf(r, i)}>
                 {printCols.map((c) => (
                   <td key={c.key} className={`td ${c.align === 'right' ? 'num' : ''}`}>
                     {c.printValue ? c.printValue(r) : (c.render ? c.render(r) : (c.value ? c.value(r) : r[c.key]))}
                   </td>
                 ))}
-              </tr>
-            ))}
+              </tr>,
+            ])}
           </tbody>
           {totals && (
             <tfoot><tr>{printCols.map((c, i) => (
               <td key={c.key} className={`td font-semibold ${c.align === 'right' ? 'num' : ''}`}>
-                {c.key in totals ? totals[c.key].toLocaleString('en-IN', { maximumFractionDigits: 4 }) : (i === 0 ? 'Total' : '')}
+                {c.key in totals ? totals[c.key] : (i === 0 ? 'Total' : '')}
               </td>
             ))}</tr></tfoot>
           )}
@@ -244,8 +320,8 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
     )}
     {printAsk && (
       <PrintDialog title={printTitle} onClose={() => setPrintAsk(false)} onPrint={doPrint} selectedCount={pickedRows.length}
-        viewCount={shown.length} allCount={onPrintFetch ? undefined : (rows || []).length} allowSelected={canPick}
-        dateMode={printDateMode || (printDateKey ? 'range' : null)} />
+        viewCount={onPrintView ? undefined : shown.length} allCount={onPrintAll ? undefined : (rows || []).length} allowSelected={canPick}
+        dateMode={printDateMode || (printDateKey ? 'range' : null)} fields={filterOptions} />
     )}
     <div className={`card overflow-hidden ${printing ? 'no-print' : ''}`}>
       {printErr && <div className="px-3 py-2 text-[13px] text-danger border-b border-line no-print">{printErr}</div>}
@@ -278,7 +354,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
               </button>
             )}
             {printTitle && (
-              <button type="button" className="btn-link" onClick={() => setPrintAsk(true)}><Printer size={13} /> Print</button>
+              <button type="button" className="btn-link" onClick={openPrint}><Printer size={13} /> Print</button>
             )}
           </div>
         </div>
@@ -313,7 +389,12 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
             {!loading && shown.length === 0 && (
               <tr><td className="td text-ink-muted" colSpan={columns.length + (canPick ? 1 : 0)}>{empty}</td></tr>
             )}
-            {!loading && shown.map((r, i) => (
+            {!loading && shown.map((r, i) => [
+              grouping && (i === 0 || groupBy(shown[i - 1]) !== groupBy(r)) && (
+                <tr key={`g-${groupBy(r)}-${i}`} className="bg-panel">
+                  <td colSpan={columns.length + (canPick ? 1 : 0)} className="td font-semibold text-ink">{groupBy(r)}</td>
+                </tr>
+              ),
               <tr key={r[rowKey] ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
                 className={`${newField && isNewToday(r[newField]) ? 'bg-accent-soft/40' : ''} ${onRowClick ? 'cursor-pointer hover:bg-accent-soft' : 'hover:bg-panel'}`}>
                 {canPick && (
@@ -327,8 +408,8 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
                     {newField && ci === 0 && <NewTag ts={r[newField]} />}
                   </td>
                 ))}
-              </tr>
-            ))}
+              </tr>,
+            ])}
           </tbody>
         </table>
       </div>

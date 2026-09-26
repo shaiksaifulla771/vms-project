@@ -19,7 +19,17 @@ router.get('/', h(async (req, res) => {
   ]);
   const { rows } = await query(`${BOM_SELECT} ${clause}
     order by m.code, l.code, (b.status = 'ACTIVE') desc, b.is_default desc, b.version desc`, params);
-  res.json(rows);
+  // Cost per output unit for the list (same rule as the BOM page: MPN price, else a semi-finished
+  // ingredient's own Default BOM cost). Computed per BOM; lists are small (hundreds at most).
+  // Pickers pass cost=0 to skip it.
+  if (req.query.cost === '0') return res.json(rows);
+  const withCost = await Promise.all(rows.map(async (r) => {
+    try {
+      const full = await loadBom({ query }, r.id);
+      return { ...r, cost_per_unit: full.costing.cost_per_output_unit, unpriced_lines: full.costing.unpriced_lines };
+    } catch { return { ...r, cost_per_unit: null, unpriced_lines: null }; }
+  }));
+  res.json(withCost);
 }));
 
 // The BOM planning / batch entry would use for a product at a location (Default, or the only active one)
@@ -38,7 +48,22 @@ router.get('/line-source', h(async (req, res) => {
   const materialId = v.uuid(req.query.material_id, 'Material', { required: true });
   const src = await lineSource({ query }, materialId, v.uuid(req.query.mpn_id, 'MPN'));
   if (!src) throw notFound('Material not found');
-  res.json(src);
+  // A semi-finished ingredient made in-house has no bought price: use its own Default BOM cost.
+  if (src.price == null) {
+    const m = (await query('select classification from public.materials where id = $1', [materialId])).rows[0];
+    if (m?.classification === 'SEMI_FINISHED') {
+      const locationId = v.uuid(req.query.location_id, 'Location');
+      const sub = (await query(`select id from public.boms where product_id = $1 and status = 'ACTIVE'
+                                 order by (location_id = $2) desc, is_default desc, version desc limit 1`, [materialId, locationId])).rows[0];
+      if (sub) {
+        const sb = await loadBom({ query }, sub.id);
+        if (sb.costing.cost_per_output_unit != null && !sb.costing.unpriced_lines) {
+          return res.json({ ...src, price: sb.costing.cost_per_output_unit, price_uom: src.uom, price_source: 'BOM', bom_cost_source: `${sb.bom_no} v${sb.version}` });
+        }
+      }
+    }
+  }
+  res.json({ ...src, price_source: src.price != null ? 'MPN' : null });
 }));
 
 router.get('/:id', h(async (req, res) => {
