@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
 import { fmtQty } from '../../lib/format';
@@ -10,7 +10,9 @@ import PlanSummaries from './PlanSummaries';
 export default function NewPlanPage() {
   const { locationId, settings, canWrite, notify } = useApp();
   const navigate = useNavigate();
-  const [f, setF] = useState({ product_id: '', location_id: locationId || '', bom_id: '', plan_mode: 'BATCHES', target_batches: '', demand_qty: '', required_date: '', notes: '',
+  // ?product_id=&location_id= come from "Make it first" in another plan's material summary.
+  const [search] = useSearchParams();
+  const [f, setF] = useState({ product_id: search.get('product_id') || '', location_id: search.get('location_id') || locationId || '', bom_id: '', plan_mode: 'BATCHES', target_batches: '', demand_qty: '', required_date: '', notes: '',
     apply_scrap_allowance: settings?.apply_scrap_allowance ?? true });
   const [sim, setSim] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -102,7 +104,7 @@ export default function NewPlanPage() {
                 ? <>Planned output = {sim.planSummary.target_batches} batches × {fmtQty(sim.bom.expected_output_qty)} = {fmtQty(sim.planSummary.target_qty)} {sim.bom.output_uom}</>
                 : <>Batches = ceil({fmtQty(f.demand_qty)} / {fmtQty(sim.bom.expected_output_qty)}) = {sim.planSummary.remaining_batches}</>}
             </div>
-            <PlanSummaries {...sim} applyScrap={sim.apply_scrap_allowance} />
+            <PlanSummaries {...sim} applyScrap={sim.apply_scrap_allowance} locationId={f.location_id} />
             {canWrite && (
               <div className="flex justify-end">
                 <button type="button" className="btn-primary" disabled={busy} onClick={create}>Create Plan</button>

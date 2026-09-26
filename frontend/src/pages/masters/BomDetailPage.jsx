@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Copy, Printer, Scale, Star } from 'lucide-react';
+import { Copy, Scale, Star } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtDateTime, fmtQty } from '../../lib/format';
 import { ErrorBox, Field, Loading, Modal, PageHeader, Status } from '../../components/ui';
-import { PrintHeader } from '../../components/print';
+import { PrintHeader, PrintPartsButton } from '../../components/print';
 
 const money = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
@@ -134,7 +134,8 @@ export default function BomDetailPage() {
         subtitle={`${bom.product_code} - ${bom.product_name} · ${bom.location_code} / ${bom.warehouse_code}`}
         actions={<>
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>Back</button>
-          <button type="button" className="btn-secondary no-print" onClick={() => window.print()}><Printer size={14} /> Print</button>
+          <PrintPartsButton title={`BOM ${bom.bom_no} v${bom.version}`} sections={[
+            { key: 'header', label: 'Header and costs' }, { key: 'lines', label: 'Ingredients' }, { key: 'usage', label: 'Plans, batches and other BOMs', on: false }]} />
           {canWrite && <button type="button" className="btn-secondary" onClick={() => setRename(true)}>Rename</button>}
           {canWrite && bom.status === 'ACTIVE' && !bom.is_default && (
             <button type="button" className="btn-secondary" onClick={() => act('set-default', 'This BOM is now the Default')}><Star size={14} /> Set as Default</button>
@@ -149,7 +150,7 @@ export default function BomDetailPage() {
         </>} />
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
-        <section className="card grid grid-cols-6 gap-x-6 gap-y-2 p-3 text-[13px]">
+        <section className="card grid grid-cols-6 gap-x-6 gap-y-2 p-3 text-[13px]" data-print-section="header">
           {[
             ['Status', <Status key="s" value={bom.status} />], ['Batch Size', `${fmtQty(bom.batch_size)} ${bom.batch_uom}`],
             ['Expected Output', `${fmtQty(bom.expected_output_qty)} ${bom.output_uom}`], ['Location', bom.location_name],
@@ -158,7 +159,7 @@ export default function BomDetailPage() {
           {bom.notes && <div className="col-span-6 text-ink-muted whitespace-pre-line">{bom.notes}</div>}
         </section>
 
-        <section className="card grid grid-cols-7 gap-x-6 p-3 text-[13px]">
+        <section className="card grid grid-cols-7 gap-x-6 p-3 text-[13px]" data-print-section="header">
           {[
             ['Material cost', c.material_cost], ['Packing', c.packing_cost], ['Processing', c.processing_cost],
             ['Overhead', c.overhead_cost], ['Freight', c.freight_cost],
@@ -168,7 +169,7 @@ export default function BomDetailPage() {
           {c.unpriced_lines > 0 && <div className="col-span-7 text-xs text-ink-muted mt-1">{c.unpriced_lines} ingredient{c.unpriced_lines > 1 ? 's have' : ' has'} no price yet (set it on the MPN, or override it on the BOM line), so material cost is understated.</div>}
         </section>
 
-        <section className="card overflow-x-auto">
+        <section className="card overflow-x-auto" data-print-section="lines">
           <table className="w-full">
             <thead><tr>
               <th className="th w-12">#</th><th className="th">Ingredient</th><th className="th">MPN</th><th className="th">Vendor</th>
@@ -197,7 +198,7 @@ export default function BomDetailPage() {
         </section>
         <p className="text-xs text-ink-faint">Line cost = qty × (1 + loss %) × price. Price comes from the MPN; a semi-finished ingredient made in-house uses the cost per unit of its own BOM (marked "BOM").</p>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4" data-print-section="usage">
           <section className="card">
             <div className="px-3 py-2 border-b border-line text-[13px] font-medium">Plans using this BOM ({bom.used_in_plans?.length || 0})</div>
             <table className="w-full"><tbody>

@@ -8,6 +8,7 @@ import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../com
 import { Link } from 'react-router-dom';
 import { UomSelect, categoriesFor, useCategories, useUoms } from '../../components/pickers';
 import { BulkDialog, DeleteDialog, FunctionsMenu, actionsColumn } from '../../components/masterKit';
+import { usePersistedState } from '../../lib/usePersisted';
 
 const CLASSES = Object.entries(CLASS_LABEL);
 
@@ -150,9 +151,9 @@ export default function MaterialsPage() {
   const { canWrite, notify } = useApp();
   const navigate = useNavigate();
   const cats = useCategories();
-  const [cls, setCls] = useState('');
-  const [cat, setCat] = useState('');
-  const [status, setStatus] = useState('');
+  const [cls, setCls] = usePersistedState('materials.cls', '');
+  const [cat, setCat] = usePersistedState('materials.cat', '');
+  const [status, setStatus] = usePersistedState('materials.status', '');
   const [modal, setModal] = useState(null);
   const { data, loading, error, reload } = useData(
     () => api.get(`/materials${qs({ classification: cls, category_id: cat, status })}`, { scoped: false }), [cls, cat, status]);
@@ -162,17 +163,17 @@ export default function MaterialsPage() {
   const columns = [
     { key: 'code', label: 'Material Code' },
     { key: 'name', label: 'Material Name', className: 'whitespace-normal min-w-[200px]' },
-    { key: 'classification', label: 'Classification', value: (r) => CLASS_LABEL[r.classification] },
-    { key: 'category_name', label: 'Category' },
+    { key: 'classification', label: 'Classification', value: (r) => CLASS_LABEL[r.classification], printFilter: true },
+    { key: 'category_name', label: 'Category', printFilter: true },
     { key: 'sub_category_name', label: 'Sub-category' },
     { key: 'mpns', label: 'MPN(s)', value: (r) => (r.classification === 'FINISHED_GOOD' ? 'Made in-house' : r.mpns.map((m) => m.mpn_code).join(', ')), className: 'whitespace-normal max-w-[220px]' },
     { key: 'uom', label: 'UOM' },
-    { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status },
+    { key: 'status', label: 'Status', render: (r) => <Status value={r.status} />, value: (r) => r.status, printFilter: true },
     { key: 'created_at', label: 'Added', render: (r) => fmtDate(r.created_at), value: (r) => r.created_at || '' },
     actionsColumn({
       canWrite,
       onView: (r) => navigate(`/masters/materials/${r.id}`),
-      onEdit: (r) => setModal({ type: 'edit', material: r }),
+      onEdit: (r) => navigate(`/masters/materials/${r.id}/edit`),
       onDelete: (r) => setModal({ type: 'delete', row: r }),
     }),
   ];
@@ -181,13 +182,14 @@ export default function MaterialsPage() {
     <div>
       <PageHeader title="Material Master" subtitle="Raw materials, packaging and finished goods · codes are assigned automatically"
         actions={<>
-          <FunctionsMenu entity="materials" onManual={() => setModal({ type: 'edit' })} onBulk={(mode) => setModal({ type: 'bulk', mode })} />
-          {canWrite && <button type="button" className="btn-primary" onClick={() => setModal({ type: 'edit' })}><Plus size={14} /> New Material</button>}
+          <FunctionsMenu entity="materials" onManual={() => navigate('/masters/materials/new')} onBulk={(mode) => setModal({ type: 'bulk', mode })} />
+          {canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/masters/materials/new')}><Plus size={14} /> New Material</button>}
         </>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data || []} loading={loading} newField="created_at"
           onRowClick={(r) => navigate(`/masters/materials/${r.id}`)} printTitle="Material Master"
+          onPrintAll={() => api.get('/materials', { scoped: false })}
           toolbar={<>
             <select className="input w-40" value={cls} onChange={(e) => {
               const c = cats.find((x) => x.id === cat);
@@ -206,8 +208,6 @@ export default function MaterialsPage() {
             </select>
           </>} />
       </div>
-      {modal?.type === 'edit' && <MaterialForm material={modal.material} onClose={close}
-        onDone={(m) => { setModal(null); notify(modal.material ? 'Material saved' : `Material ${m.code} created`); reload(); }} />}
       {modal?.type === 'delete' && <DeleteDialog label={`${modal.row.code} ${modal.row.name}`} path={`/materials/${modal.row.id}`} onClose={close} onDone={done()} />}
       {modal?.type === 'bulk' && <BulkDialog entity="materials" mode={modal.mode} onClose={close} onDone={done()} />}
     </div>

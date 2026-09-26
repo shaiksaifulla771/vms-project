@@ -81,10 +81,11 @@ async function buildPlanView(db, planId) {
 
 router.get('/', h(async (req, res) => {
   const { clause, params } = where([
-    ['pl.location_id = ?', req.scope.locationId],
-    ['pl.warehouse_id = ?', req.scope.warehouseId],
-    ['pl.status = ?', req.query.status],
-    ['pl.product_id = ?', req.query.product_id],
+    // An explicit Location filter on the page wins over the top-bar scope.
+    ['pl.location_id = ?', v.uuid(req.query.location_id, 'Location') || req.scope.locationId],
+    ['pl.warehouse_id = ?', req.query.location_id ? null : req.scope.warehouseId],
+    ['pl.status = ?', v.oneOf(req.query.status, 'Status', ['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'])],
+    ['pl.product_id = ?', v.uuid(req.query.product_id, 'Product')],
     ['(pl.plan_no ilike ? or m.code ilike ? or m.name ilike ?)', req.query.q ? `%${req.query.q}%` : null],
   ]);
   const { rows } = await query(`${PLAN_SELECT} ${clause} order by pl.created_at desc limit 1000`, params);

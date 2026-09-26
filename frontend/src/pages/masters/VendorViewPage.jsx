@@ -38,7 +38,7 @@ export default function VendorViewPage() {
         </Section>
 
         <Section title={`Materials supplied, from MPNs (${v.mpns.length})`}
-          actions={canWrite && <button type="button" className="btn-link" onClick={() => navigate(`/masters/mpns?new=1&vendor_id=${id}`)}><Plus size={13} /> Add MPN for this vendor</button>}>
+          actions={canWrite && <button type="button" className="btn-link" onClick={() => navigate(`/masters/mpns/new?vendor_id=${id}`)}><Plus size={13} /> Add MPN for this vendor</button>}>
           {v.mpns.length === 0 ? <p className="text-ink-muted text-[13px]">No MPNs yet. Add one to record what this vendor supplies and at what price.</p> : (
             <table className="w-full border-collapse">
               <thead><tr><th className="th">MPN</th><th className="th">Material</th><th className="th">UOM</th><th className="th text-right">MOQ</th><th className="th text-right">Price (₹)</th><th className="th text-right">Lead time (d)</th><th className="th" /></tr></thead>
@@ -55,7 +55,7 @@ export default function VendorViewPage() {
               <table className="w-full border-collapse">
                 <tbody>{v.unpriced_links.map((m) => (
                   <tr key={m.id}><td className="td w-32">{m.code}</td><td className="td">{m.name}</td><td className="td text-ink-muted">{CLASS_LABEL[m.classification]} · {m.uom}</td>
-                    <td className="td text-right">{canWrite && <button type="button" className="btn-link" onClick={() => navigate(`/masters/mpns?new=1&vendor_id=${id}&material_id=${m.id}`)}>Create MPN</button>}</td></tr>
+                    <td className="td text-right">{canWrite && <button type="button" className="btn-link" onClick={() => navigate(`/masters/mpns/new?vendor_id=${id}&material_id=${m.id}`)}>Create MPN</button>}</td></tr>
                 ))}</tbody>
               </table>
             </div>

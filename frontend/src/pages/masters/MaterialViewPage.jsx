@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Plus, Printer } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -7,7 +6,6 @@ import { CLASS_LABEL, TXN_LABEL, fmtDate, fmtDateTime, fmtQty } from '../../lib/
 import { ErrorBox, Loading, PageHeader, Status } from '../../components/ui';
 import { DetailGrid, Section } from '../../components/masterKit';
 import { PrintHeader } from '../../components/print';
-import { MaterialForm } from './MaterialsPage';
 
 const money = (v) => (v === null || v === undefined ? '-' : `₹ ${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 4 })}`);
 
@@ -31,11 +29,9 @@ function Grid({ head, rows, empty, render }) {
 export default function MaterialViewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { canWrite, notify, locations, locationId } = useApp();
-  const [k, setK] = useState(0);
-  const { data: m, loading, error } = useData(() => api.get(`/materials/${id}`, { scoped: false }), [id, k]);
-  const { data: o } = useData(() => api.get(`/materials/${id}/overview`), [id, k, locationId]);
-  const [edit, setEdit] = useState(false);
+  const { canWrite, locations, locationId } = useApp();
+  const { data: m, loading, error } = useData(() => api.get(`/materials/${id}`, { scoped: false }), [id]);
+  const { data: o } = useData(() => api.get(`/materials/${id}/overview`), [id, locationId]);
   if (loading && !m) return <Loading />;
   if (error) return <div className="p-5"><ErrorBox message={error} /></div>;
   const product = ['FINISHED_GOOD', 'SEMI_FINISHED'].includes(m.classification);
@@ -50,8 +46,8 @@ export default function MaterialViewPage() {
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>Back</button>
           <button type="button" className="btn-secondary" onClick={() => window.print()}><Printer size={14} /> Print</button>
           {canWrite && product && <button type="button" className="btn-secondary" onClick={() => navigate(`/masters/boms/new?product_id=${m.id}`)}><Plus size={14} /> Create BOM</button>}
-          {canWrite && !fg && <button type="button" className="btn-secondary" onClick={() => navigate(`/masters/mpns?new=1&material_id=${m.id}`)}><Plus size={14} /> Add MPN</button>}
-          {canWrite && <button type="button" className="btn-primary" onClick={() => setEdit(true)}><Pencil size={14} /> Edit</button>}
+          {canWrite && !fg && <button type="button" className="btn-secondary" onClick={() => navigate(`/masters/mpns/new?material_id=${m.id}`)}><Plus size={14} /> Add MPN</button>}
+          {canWrite && <button type="button" className="btn-primary" onClick={() => navigate(`/masters/${product ? 'products' : 'materials'}/${m.id}/edit`)}><Pencil size={14} /> Edit</button>}
         </>} />
       <div className="p-5 space-y-4">
         <Section title="Details">
@@ -143,8 +139,6 @@ export default function MaterialViewPage() {
             )} />
         </Section>
       </div>
-      {edit && <MaterialForm material={m} onClose={() => setEdit(false)}
-        onDone={() => { setEdit(false); notify('Material saved'); setK((x) => x + 1); }} />}
     </div>
   );
 }

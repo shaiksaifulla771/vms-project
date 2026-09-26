@@ -3,15 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Minus } from 'lucide-react';
 import { api, qs } from '../../lib/api';
 import { useApp, useData } from '../../lib/app-context';
-import { CLASS_LABEL, fmtDate, fmtQty, mpnLabel } from '../../lib/format';
+import { CLASS_LABEL, fmtDate, fmtQty, mpnLabel, today } from '../../lib/format';
 import { DataTable, ErrorBox, PageHeader, Stat } from '../../components/ui';
 import { AdjustModal, InwardModal, OutwardModal, TransferModal } from './StockModals';
+import { usePersistedState } from '../../lib/usePersisted';
+
 
 export default function StockPage() {
   const { canWrite, isAdmin, location, warehouse } = useApp();
   const navigate = useNavigate();
-  const [cls, setCls] = useState('');
-  const [showExpired, setShowExpired] = useState(true);
+  const [cls, setCls] = usePersistedState('stock.cls', '');
+  const [showExpired, setShowExpired] = usePersistedState('stock.showExpired', true);
   const [modal, setModal] = useState(null);
   const { data, loading, error, reload } = useData(
     () => api.get(`/inventory/stock${qs({ classification: cls, expired: showExpired ? '' : 'false' })}`), [cls, showExpired]);
@@ -19,7 +21,7 @@ export default function StockPage() {
 
   const stats = useMemo(() => {
     const soon = new Date(); soon.setDate(soon.getDate() + 30);
-    const s = soon.toISOString().slice(0, 10);
+    const s = soon.toLocaleDateString('en-CA');
     return {
       lots: rows.length,
       materials: new Set(rows.map((r) => r.material_id)).size,
@@ -33,13 +35,13 @@ export default function StockPage() {
   const columns = [
     { key: 'mpn_code', label: 'MPN', value: (r) => mpnLabel(r.mpn_code, r.classification) },
     { key: 'material_code', label: 'Material Code' },
-    { key: 'material_name', label: 'Material Name', className: 'whitespace-normal min-w-[180px]' },
-    { key: 'classification', label: 'Classification', render: (r) => CLASS_LABEL[r.classification], value: (r) => CLASS_LABEL[r.classification] },
-    { key: 'vendor_name', label: 'Vendor' },
-    { key: 'location_code', label: 'Location' },
-    { key: 'warehouse_code', label: 'WH' },
+    { key: 'material_name', label: 'Material Name', className: 'whitespace-normal min-w-[180px]', printFilter: true },
+    { key: 'classification', label: 'Classification', render: (r) => CLASS_LABEL[r.classification], value: (r) => CLASS_LABEL[r.classification], printFilter: true },
+    { key: 'vendor_name', label: 'Vendor', printFilter: true },
+    { key: 'location_code', label: 'Location', printFilter: true },
+    { key: 'warehouse_code', label: 'WH', printFilter: true },
     { key: 'lot_no', label: 'Lot No' },
-    { key: 'quantity', label: 'Quantity', align: 'right', render: (r) => fmtQty(r.quantity), value: (r) => Number(r.quantity), total: true },
+    { key: 'quantity', label: 'Quantity', align: 'right', render: (r) => fmtQty(r.quantity), value: (r) => Number(r.quantity), total: 'uom' },
     { key: 'uom', label: 'UOM' },
     { key: 'mfg_date', label: 'Mfg Date', render: (r) => fmtDate(r.mfg_date) },
     { key: 'expiry_date', label: 'Expiry Date', render: (r) => <span className={r.is_expired ? 'text-danger' : ''}>{fmtDate(r.expiry_date)}{r.is_expired ? ' (expired)' : ''}</span> },
@@ -70,7 +72,14 @@ export default function StockPage() {
       </div>
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={rows} loading={loading} exportName="stock" printTitle="Stock" printDateKey="mfg_date"
+        <DataTable columns={columns} rows={rows} loading={loading} exportName="stock" printTitle="Stock" printDateMode="asOn"
+          printMatch={(r) => `${r.material_name}|${r.lot_no}|${r.location_code}|${r.warehouse_code}`}
+          // Printing "as on" a past day rebuilds each lot's balance from the audit ledger.
+          onPrintAll={(opt) => (opt.asOn && opt.asOn !== today()
+            ? api.get(`/reports/stock-balance${qs({ as_on: opt.asOn })}`, { scoped: false })
+            : api.get('/inventory/stock', { scoped: false }))}
+          onPrintView={(opt) => (opt.asOn && opt.asOn !== today()
+            ? api.get(`/reports/stock-balance${qs({ as_on: opt.asOn, classification: cls })}`) : null)}
           printFilters={[['Location', location ? location.code : 'All locations'], ['Warehouse', warehouse ? warehouse.code : '']]}
           empty="No stock for the selected location / warehouse"
           onRowClick={(r) => navigate(`/reports/traceability?mpn_id=${r.mpn_id}&lot_no=${encodeURIComponent(r.lot_no)}`)}

@@ -6,6 +6,7 @@ import { useApp, useData } from '../../lib/app-context';
 import { CLASS_LABEL, fmtByUom, fmtDateTime } from '../../lib/format';
 import { DataTable, ErrorBox, Field, Modal, PageHeader, Status } from '../../components/ui';
 import { LocationWarehouse, useCategories, useDefaultScope } from '../../components/pickers';
+import { usePersistedState } from '../../lib/usePersisted';
 
 const STATUS_HELP = {
   DRAFT: 'Snapshot taken - print the sheet and start counting',
@@ -73,14 +74,14 @@ function NewCountDialog({ onClose, onDone }) {
 export default function StockCountsPage() {
   const { canWrite } = useApp();
   const navigate = useNavigate();
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = usePersistedState('counts.status', '');
   const [modal, setModal] = useState(false);
   const { data, loading, error } = useData(() => api.get(`/stock-counts${qs({ status })}`), [status]);
 
   const columns = [
     { key: 'count_no', label: 'Count No' },
     { key: 'created_at', label: 'Started', render: (r) => fmtDateTime(r.created_at), value: (r) => r.created_at },
-    { key: 'scope', label: 'Location / WH', value: (r) => `${r.location_code} / ${r.warehouse_code || 'All WH'}` },
+    { key: 'scope', label: 'Location / WH', value: (r) => `${r.location_code} / ${r.warehouse_code || 'All WH'}`, printFilter: true },
     { key: 'filter', label: 'Filter', value: (r) => [r.classification && CLASS_LABEL[r.classification], r.category_name].filter(Boolean).join(', ') || 'All stock' },
     { key: 'blind', label: 'Hidden qty', value: (r) => (r.blind ? 'Yes' : '') },
     { key: 'progress', label: 'Counted', align: 'right', value: (r) => `${r.counted_count} / ${r.line_count}` },
@@ -105,7 +106,7 @@ export default function StockCountsPage() {
       </div>
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
-        <DataTable columns={columns} rows={data || []} loading={loading} printTitle="Physical Stock Counts" printDateKey="created_at" onRowClick={(r) => navigate(`/inventory/stock-counts/${r.id}`)}
+        <DataTable columns={columns} rows={data || []} loading={loading} printTitle="Physical Stock Counts" printDateKey="created_at" onPrintAll={() => api.get('/stock-counts', { scoped: false })} onRowClick={(r) => navigate(`/inventory/stock-counts/${r.id}`)}
           empty="No counts yet - click Start Count"
           toolbar={(
             <select className="input w-40" value={status} onChange={(e) => setStatus(e.target.value)}>

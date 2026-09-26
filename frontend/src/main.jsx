@@ -13,9 +13,11 @@ import BatchesPage from './pages/manufacturing/BatchesPage';
 import BatchEntryPage from './pages/manufacturing/BatchEntryPage';
 import BatchDetailPage from './pages/manufacturing/BatchDetailPage';
 import MaterialsPage from './pages/masters/MaterialsPage';
+import PhysicalSheetPage from './pages/reports/PhysicalSheetPage';
 import MaterialViewPage from './pages/masters/MaterialViewPage';
 import MpnViewPage from './pages/masters/MpnViewPage';
 import MpnsPage from './pages/masters/MpnsPage';
+import { MaterialFormPage, MpnFormPage } from './pages/masters/RecordFormPages';
 import VendorsPage from './pages/masters/VendorsPage';
 import VendorFormPage from './pages/masters/VendorFormPage';
 import VendorViewPage from './pages/masters/VendorViewPage';
@@ -66,12 +68,18 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="manufacturing/new" element={<BatchEntryPage />} />
               <Route path="manufacturing/batches/:id" element={<BatchDetailPage />} />
               <Route path="masters/materials" element={<MaterialsPage />} />
+              <Route path="masters/materials/new" element={<MaterialFormPage />} />
               <Route path="masters/materials/:id" element={<MaterialViewPage />} />
+              <Route path="masters/materials/:id/edit" element={<MaterialFormPage />} />
               <Route path="masters/products" element={<ProductsPage />} />
+              <Route path="masters/products/new" element={<MaterialFormPage product />} />
               <Route path="masters/products/:id" element={<MaterialViewPage />} />
+              <Route path="masters/products/:id/edit" element={<MaterialFormPage product />} />
               <Route path="masters/mpns" element={<MpnsPage />} />
               <Route path="masters/mpns/bulk-create" element={<MpnBulkCreatePage />} />
+              <Route path="masters/mpns/new" element={<MpnFormPage />} />
               <Route path="masters/mpns/:id" element={<MpnViewPage />} />
+              <Route path="masters/mpns/:id/edit" element={<MpnFormPage />} />
               <Route path="masters/vendors" element={<VendorsPage />} />
               <Route path="masters/vendors/new" element={<VendorFormPage />} />
               <Route path="masters/vendors/:id" element={<VendorViewPage />} />
@@ -85,7 +93,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               <Route path="reports/stock-balance" element={<StockBalancePage />} />
               <Route path="inventory/stock-counts" element={<StockCountsPage />} />
               <Route path="inventory/stock-counts/:id" element={<StockCountPage />} />
-              <Route path="reports/physical-sheet" element={<Navigate to="/inventory/stock-counts" replace />} />
+              <Route path="reports/physical-sheet" element={<PhysicalSheetPage />} />
               <Route path="reports/transactions" element={<TransactionsPage />} />
               <Route path="reports/traceability" element={<TraceabilityPage />} />
               <Route path="reports/reorder" element={<ReorderPage />} />

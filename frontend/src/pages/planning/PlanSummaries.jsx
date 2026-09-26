@@ -2,11 +2,11 @@ import { Link } from 'react-router-dom';
 import { fmtDate, fmtQty } from '../../lib/format';
 import { Status } from '../../components/ui';
 
-function Section({ title, children, note }) {
+function Section({ title, children, note, printKey }) {
   return (
-    <section className="card">
-      <div className="flex items-baseline justify-between px-3 py-2 border-b border-line">
-        <h3 className="text-[13px] font-semibold">{title}</h3>
+    <section className="card break-inside-avoid" data-print-section={printKey}>
+      <div className="flex items-baseline justify-between px-4 py-2 border-b border-line bg-panel">
+        <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
         {note && <span className="text-xs text-ink-muted">{note}</span>}
       </div>
       <div className="overflow-x-auto">{children}</div>
@@ -15,11 +15,11 @@ function Section({ title, children, note }) {
 }
 
 /** The three spec summaries: Plan, Batch, Material */
-export default function PlanSummaries({ planSummary: p, batchSummary, materialSummary, applyScrap }) {
+export default function PlanSummaries({ planSummary: p, batchSummary, materialSummary, applyScrap, locationId }) {
   const shortCount = materialSummary.filter((m) => m.status === 'SHORT').length;
   return (
     <div className="space-y-4">
-      <Section title="Plan Summary">
+      <Section title="Plan Summary" printKey="summary">
         <table className="w-full">
           <thead><tr>
             <th className="th">Product</th><th className="th">Plan ID</th><th className="th">Plan By</th>
@@ -42,7 +42,7 @@ export default function PlanSummaries({ planSummary: p, batchSummary, materialSu
         </table>
       </Section>
 
-      <Section title="Batch Summary">
+      <Section title="Batch Summary" printKey="batches">
         <table className="w-full">
           <thead><tr>
             <th className="th w-12">#</th><th className="th">Product</th><th className="th">Batch No</th><th className="th">Mfg Date</th>
@@ -65,7 +65,7 @@ export default function PlanSummaries({ planSummary: p, batchSummary, materialSu
         </table>
       </Section>
 
-      <Section title="Material Summary"
+      <Section title="Material Summary (required stock)" printKey="materials"
         note={`Requirement for the remaining ${p.plan_mode === 'BATCHES' ? `${p.remaining_batches} batch(es)` : 'quantity'}${applyScrap ? ', incl. scrap allowance' : ', without scrap allowance'} · ${shortCount ? `${shortCount} material(s) short` : 'all materials available'}`}>
         <table className="w-full">
           <thead><tr>
@@ -79,7 +79,7 @@ export default function PlanSummaries({ planSummary: p, batchSummary, materialSu
                 <td className="td whitespace-normal min-w-[260px]">{m.material_code} - {m.material_name}
                   {m.classification === 'SEMI_FINISHED' ? <span className="text-ink-muted"> (semi-finished)</span>
                     : (m.mpn_code ? <span className="text-ink-muted"> ({m.mpn_code})</span> : '')}
-                  {m.make_first && <div className="text-xs text-danger">Make it first: <Link className="text-accent" to="/planning/new">plan {m.material_code}</Link></div>}
+                  {m.make_first && <div className="text-xs text-danger">Make it first: <Link className="text-accent" to={`/planning/new?product_id=${m.material_id}${locationId ? `&location_id=${locationId}` : ''}`}>plan {m.material_code}</Link></div>}
                 </td>
                 <td className="td whitespace-normal min-w-[140px]">{m.vendor_name || <span className="text-ink-faint">-</span>}</td>
                 <td className="td num">{fmtQty(m.qty_per_batch)}</td>
