@@ -251,7 +251,10 @@ router.post('/', h(async (req, res) => {
         hdr.outputUom || product.uom, hdr.notes, req.user.id,
         hdr.packingCost, hdr.processingCost, hdr.overheadCost, hdr.freightCost, hdr.name])).rows[0];
     await insertLines(c, bom.id, lines);
-    if (v.bool(b.activate)) await activate(c, bom.id, req.user.id);
+    if (v.bool(b.activate)) {
+      await activate(c, bom.id, req.user.id);
+      if (v.bool(b.make_default)) await setDefault(c, bom.id, req.user.id);   // same transaction
+    }
     return bom.id;
   });
   res.status(201).json(await loadBom({ query }, id));
@@ -282,7 +285,11 @@ router.put('/:id', h(async (req, res) => {
 
 router.post('/:id/activate', h(async (req, res) => {
   const id = v.uuid(req.params.id, 'id', { required: true });
-  await withTransaction((c) => activate(c, id, req.user.id));
+  const makeDefault = v.bool((req.body || {}).make_default);
+  await withTransaction(async (c) => {
+    await activate(c, id, req.user.id);
+    if (makeDefault) await setDefault(c, id, req.user.id);
+  });
   res.json(await loadBom({ query }, id));
 }));
 

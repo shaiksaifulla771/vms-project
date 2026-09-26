@@ -6,6 +6,7 @@ import { useApp, useData } from '../../lib/app-context';
 import { fmtDate, fmtQty } from '../../lib/format';
 import { DataTable, ErrorBox, PageHeader, Status } from '../../components/ui';
 import { DeleteDialog, actionsColumn } from '../../components/masterKit';
+import { ProductBoms } from '../../components/bomKit';
 import { usePersistedState } from '../../lib/usePersisted';
 
 const money = (v) => (v === null || v === undefined ? '-' : `₹ ${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 4 })}`);
@@ -44,12 +45,13 @@ export default function ProductsPage() {
 
   return (
     <div>
-      <PageHeader title="Products" subtitle={`Finished and semi-finished goods with their BOM, cost, stock and plans${location ? ` · ${location.code}` : ' · all locations'}`}
+      <PageHeader title="Products" subtitle={`Click ▸ to see a product's BOMs. Finished and semi-finished goods with BOM, cost, stock and plans${location ? ` · ${location.code}` : ' · all locations'}`}
         actions={canWrite && <button type="button" className="btn-primary" onClick={() => navigate('/masters/products/new')}><Plus size={14} /> New Product</button>} />
       <div className="p-5 space-y-3">
         <ErrorBox message={error} />
         <DataTable columns={columns} rows={data || []} loading={loading} exportName="products" newField="created_at"
           onRowClick={(r) => navigate(`/masters/products/${r.id}`)} printTitle="Products"
+          renderExpanded={(r) => <ProductBoms product={r} />}
           onPrintAll={() => api.get('/products', { scoped: false })}
           toolbar={<>
             <select className="input w-44" value={type} onChange={(e) => setType(e.target.value)}>

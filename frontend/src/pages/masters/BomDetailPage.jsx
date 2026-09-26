@@ -64,7 +64,7 @@ function ScaleDialog({ bom, onClose, onDone }) {
 }
 
 /** Copy into a separate BOM (side by side), optionally to another location, with its own name. */
-function CopyDialog({ bom, onClose, onDone }) {
+export function CopyDialog({ bom, onClose, onDone }) {
   const { locations } = useApp();
   const [name, setName] = useState(bom.name ? `${bom.name} (copy)` : '');
   const [loc, setLoc] = useState(bom.location_id);
