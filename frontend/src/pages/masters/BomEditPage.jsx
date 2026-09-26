@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useApp } from '../../lib/app-context';
+import { ExistingBoms } from '../../components/bomKit';
 import { ErrorBox, Field, Loading, PageHeader } from '../../components/ui';
 import { Combobox, LocationWarehouse, UomSelect, materialOptions, useDefaultScope, useMaterials, useMpns, useUoms } from '../../components/pickers';
 
@@ -35,7 +36,8 @@ function useLineSources(lines) {
 export default function BomEditPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { notify } = useApp();
+  const { notify, locations } = useApp();
+  const [makeDefault, setMakeDefault] = useState(false);
   const def = useDefaultScope();
   const materials = useMaterials({ status: 'ACTIVE' });
   const products = materials.filter((m) => ['FINISHED_GOOD', 'SEMI_FINISHED'].includes(m.classification));
@@ -97,7 +99,7 @@ export default function BomEditPage() {
     setBusy(true);
     try {
       const body = {
-        ...f, activate,
+        ...f, activate, make_default: activate && makeDefault,
         batch_size: Number(f.batch_size), expected_output_qty: Number(f.expected_output_qty),
         ...Object.fromEntries(COSTS.map(([k]) => [k, f[k] === '' ? 0 : Number(f[k])])),
         lines: f.lines.filter((l) => l.material_id).map((l) => ({
@@ -106,8 +108,8 @@ export default function BomEditPage() {
           notes: l.notes || null })),
       };
       const r = id ? await api.put(`/boms/${id}`, body) : await api.post('/boms', body);
-      if (id && activate) await api.post(`/boms/${id}/activate`);
-      notify(activate ? 'BOM saved and activated' : 'BOM saved as draft');
+      if (id && activate) await api.post(`/boms/${id}/activate`, { make_default: makeDefault });
+      notify(activate ? `BOM saved and activated${makeDefault ? ' as the Default' : ''}` : 'BOM saved as draft');
       navigate(`/masters/boms/${r.id}`);
     } catch (e) { setErr(e.message); window.scrollTo(0, 0); } finally { setBusy(false); }
   };
@@ -116,9 +118,10 @@ export default function BomEditPage() {
   return (
     <div>
       <PageHeader title={id ? `Edit ${f.bom_no} (Draft v${f.version})` : 'New BOM'}
-        subtitle="Header: batch size, expected output, location, WH and batch costs. Ingredients: pick the material and MPN, then enter quantity and loss % - vendor, UOM and price come from the MPN." />
+        subtitle="Pick the product and location, then the ingredients. Vendor, UOM and price come from each MPN." />
       <div className="p-5 space-y-4">
         <ErrorBox message={err} onClose={() => setErr(null)} />
+        <ExistingBoms productId={f.product_id} locationId={f.location_id} currentId={id} />
         <section className="card p-3 space-y-3">
           <div className="grid grid-cols-4 gap-3">
             <Field label="Product" required hint="Finished or semi-finished good">
@@ -202,7 +205,11 @@ export default function BomEditPage() {
           </div>
         </section>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center justify-end gap-2">
+          <label className="mr-auto flex items-center gap-2 text-[13px] text-ink-soft">
+            <input type="checkbox" checked={makeDefault} onChange={(e) => setMakeDefault(e.target.checked)} />
+            Make this the Default BOM at {locations.find((l) => l.id === f.location_id)?.code || 'this location'} (applies on Save & Activate)
+          </label>
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>Cancel</button>
           <button type="button" className="btn-secondary" disabled={busy} onClick={() => save(false)}>Save Draft</button>
           <button type="button" className="btn-primary" disabled={busy} onClick={() => save(true)}>Save & Activate</button>

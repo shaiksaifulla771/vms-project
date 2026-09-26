@@ -152,7 +152,7 @@ export function NewTag({ ts }) {
 export function DataTable({ columns, rows, loading, empty = 'No records', searchable = true, exportName,
   onRowClick, rowKey = 'id', toolbar, dense = false, initialSort, scroll = true, footer, newField,
   printTitle, printFilters = [], printDateKey, printDateMode, onPrintAll, onPrintView, printSelectable = true,
-  stateKey, groupBy, printMatch, collapsibleGroups = false, groupSummary }) {
+  stateKey, groupBy, printMatch, collapsibleGroups = false, groupSummary, groupActions, renderExpanded }) {
   // Search, sort and "added today" are remembered per list, so Back returns to the list as it was left.
   const memKey = stateKey || exportName || printTitle || `path:${window.location.pathname}`;
   const [q, setQ] = usePersistedState(memKey ? `${memKey}.q` : '_', '');
@@ -168,13 +168,18 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
   useEffect(() => { setOptRows(null); }, [rows]);
   const canPick = Boolean(printTitle || exportName) && printSelectable;
   const showPick = canPick && selecting;
-  const defaultSort = initialSort || (newField ? { key: newField, dir: 'desc' } : null);
-  const [sort, setSort] = usePersistedState(memKey ? `${memKey}.sort` : '_sort', defaultSort);
+  const extraCols = (showPick ? 1 : 0) + (renderExpanded ? 1 : 0);
+  // Grouped lists keep their groups: a chosen sort orders rows inside each group (null = the server's order).
+  const defaultSort = groupBy ? (initialSort || null) : (initialSort || (newField ? { key: newField, dir: 'desc' } : null));
+  const [sort, setSort] = usePersistedState(`${memKey}.${groupBy ? 'gsort' : 'sort'}`, defaultSort);
+  // Expandable rows (e.g. a product's BOMs under the product row); open rows remembered for Back.
+  const [expanded, setExpanded] = usePersistedState(`${memKey}.expanded`, []);
   const [onlyNew, setOnlyNew] = usePersistedState(memKey ? `${memKey}.new` : '_new', false);
   // Collapsible groups (e.g. BOMs by product): closed by default, open ones remembered for Back.
   const [openGroups, setOpenGroups] = usePersistedState(`${memKey}.open`, []);
   const box = useRef(null);
   const [boxH, setBoxH] = useState(null);
+  const [boxW, setBoxW] = useState(null);
   // Fit the scroll box to the space left on screen, so its sideways scrollbar is always visible.
   useLayoutEffect(() => {
     if (!scroll) return undefined;
@@ -182,6 +187,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
       if (!box.current) return;
       const top = box.current.getBoundingClientRect().top + window.scrollY;
       setBoxH(Math.max(window.innerHeight - top - (footer ? 64 : 24), 240));
+      setBoxW(box.current.clientWidth);
     };
     fit();
     window.addEventListener('resize', fit);
@@ -190,6 +196,9 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
   const val = (c, r) => (c.value ? c.value(r) : r[c.key]);
   // Columns with hidden: true are left off the screen but still printed / exported (compact screens, full paper).
   const screenCols = columns.filter((c) => !c.hidden);
+  const rowId = (r, i) => String(r[rowKey] ?? i);
+  const isExpanded = (r, i) => expanded.includes(rowId(r, i));
+  const toggleExpanded = (r, i) => setExpanded((x) => (x.includes(rowId(r, i)) ? x.filter((k) => k !== rowId(r, i)) : [...x, rowId(r, i)]));
 
   const newCount = newField ? (rows || []).filter((r) => isNewToday(r[newField])).length : 0;
   const shown = useMemo(() => {
@@ -202,10 +211,14 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
         return x !== null && x !== undefined && String(x).toLowerCase().includes(needle);
       }));
     }
+    const cmpGroup = (a, b) => (groupBy ? String(groupBy(a)).localeCompare(String(groupBy(b)), undefined, { numeric: true }) : 0);
+    if (groupBy && !sort) list = [...list].sort(cmpGroup);            // stable: keeps the server's order inside a group
     if (sort) {
       const col = columns.find((c) => c.key === sort.key);
       if (col) {
         list = [...list].sort((a, b) => {
+          const g = cmpGroup(a, b);
+          if (g) return g;
           const x = val(col, a); const y = val(col, b);
           if (x === y) return 0;
           if (x === null || x === undefined || x === '') return 1;
@@ -220,7 +233,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
   }, [rows, q, sort, columns, onlyNew]);
 
   // Group headers only while the list is in its grouped order (sorting by another column turns them off).
-  const grouping = Boolean(groupBy) && (!sort || !defaultSort || sort.key === defaultSort.key);
+  const grouping = Boolean(groupBy);
   const collapsing = grouping && collapsibleGroups;
   const searching = q.trim() !== '';                          // a search shows every matching group open
   const isOpen = (label) => !collapsing || searching || openGroups.includes(label);
@@ -367,7 +380,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
                 <span className={`h-1.5 w-1.5 rounded-full ${onlyNew ? 'bg-white' : 'bg-accent'}`} />{newCount} added today
               </button>
             )}
-            {newField && (sort?.key !== newField || sort?.dir !== 'desc') && (
+            {newField && !groupBy && (sort?.key !== newField || sort?.dir !== 'desc') && (
               <button type="button" className="btn-link" onClick={() => setSort({ key: newField, dir: 'desc' })}>Newest first</button>
             )}
             <span>{shown.length} record{shown.length === 1 ? '' : 's'}</span>
@@ -413,6 +426,7 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
         <table className="w-full border-collapse">
           <thead className={scroll ? 'sticky top-0 z-10' : ''}>
             <tr>
+              {renderExpanded && <th className="th w-8 no-print" aria-label="Expand" />}
               {showPick && (
                 <th className="th w-8 no-print" onClick={(e) => e.stopPropagation()}>
                   <input type="checkbox" aria-label="Select all rows" checked={allPicked}
@@ -432,30 +446,45 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
           </thead>
           <tbody>
             {loading && (
-              <tr><td className="td text-ink-muted" colSpan={screenCols.length + (showPick ? 1 : 0)}>Loading...</td></tr>
+              <tr><td className="td text-ink-muted" colSpan={screenCols.length + extraCols}>Loading...</td></tr>
             )}
             {!loading && shown.length === 0 && (
-              <tr><td className="td text-ink-muted" colSpan={screenCols.length + (showPick ? 1 : 0)}>{empty}</td></tr>
+              <tr><td className="td text-ink-muted" colSpan={screenCols.length + extraCols}>{empty}</td></tr>
             )}
             {!loading && shown.map((r, i) => [
               grouping && (i === 0 || groupBy(shown[i - 1]) !== groupBy(r)) && (
                 <tr key={`g-${groupBy(r)}-${i}`} className={`bg-panel ${collapsing ? 'cursor-pointer hover:bg-line/60' : ''}`}
                   onClick={collapsing ? () => toggleGroup(groupBy(r)) : undefined}>
-                  <td colSpan={screenCols.length + (showPick ? 1 : 0)} className="td text-ink">
-                    {collapsing ? (
-                      <button type="button" className="flex w-full items-center gap-2 text-left" aria-expanded={isOpen(groupBy(r))}
-                        onClick={(e) => { e.stopPropagation(); toggleGroup(groupBy(r)); }}>
-                        {isOpen(groupBy(r)) ? <ChevronDown size={14} className="text-ink-muted" /> : <ChevronRight size={14} className="text-ink-muted" />}
-                        <span className="font-semibold">{groupBy(r)}</span>
-                        <span className="text-xs text-ink-muted">{groupRows.get(groupBy(r)).length} {groupRows.get(groupBy(r)).length === 1 ? 'record' : 'records'}</span>
-                        {groupSummary && <span className="ml-auto text-xs text-ink-soft font-normal">{groupSummary(groupRows.get(groupBy(r)))}</span>}
-                      </button>
-                    ) : <span className="font-semibold">{groupBy(r)}</span>}
+                  <td colSpan={screenCols.length + extraCols} className="td text-ink">
+                    <div className="sticky left-3 flex items-center gap-3" style={boxW ? { width: boxW - 24 } : undefined}>
+                      {collapsing ? (
+                        <button type="button" className="flex min-w-0 items-center gap-2 text-left" aria-expanded={isOpen(groupBy(r))}
+                          onClick={(e) => { e.stopPropagation(); toggleGroup(groupBy(r)); }}>
+                          {isOpen(groupBy(r)) ? <ChevronDown size={14} className="text-ink-muted" /> : <ChevronRight size={14} className="text-ink-muted" />}
+                          <span className="font-semibold truncate">{groupBy(r)}</span>
+                        </button>
+                      ) : <span className="font-semibold">{groupBy(r)}</span>}
+                      <span className="text-xs text-ink-muted whitespace-nowrap">
+                        {groupSummary ? groupSummary(groupRows.get(groupBy(r)))
+                          : `${groupRows.get(groupBy(r)).length} ${groupRows.get(groupBy(r)).length === 1 ? 'record' : 'records'}`}
+                      </span>
+                      {groupActions && (
+                        <span className="ml-auto flex items-center gap-3 font-normal" onClick={(e) => e.stopPropagation()}>{groupActions(groupRows.get(groupBy(r)))}</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ),
               (!grouping || isOpen(groupBy(r))) && <tr key={r[rowKey] ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
                 className={`${newField && isNewToday(r[newField]) ? 'bg-accent-soft/40' : ''} ${onRowClick ? 'cursor-pointer hover:bg-accent-soft' : 'hover:bg-panel'}`}>
+                {renderExpanded && (
+                  <td className="td w-8 no-print px-1" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="btn-icon h-6 w-6" aria-expanded={isExpanded(r, i)}
+                      aria-label={isExpanded(r, i) ? 'Hide details' : 'Show details'} onClick={() => toggleExpanded(r, i)}>
+                      {isExpanded(r, i) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                  </td>
+                )}
                 {showPick && (
                   <td className="td w-8 no-print" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" aria-label="Select row" checked={picked.has(keyOf(r, i))} onChange={() => togglePick(keyOf(r, i))} />
@@ -468,6 +497,14 @@ export function DataTable({ columns, rows, loading, empty = 'No records', search
                   </td>
                 ))}
               </tr>,
+              renderExpanded && isExpanded(r, i) && (!grouping || isOpen(groupBy(r))) && (
+                <tr key={`x-${rowId(r, i)}`} className="no-print">
+                  <td colSpan={screenCols.length + extraCols} className="border-b border-line bg-panel px-3 py-3">
+                    {/* Pinned to the visible width, so a wide table never pushes the panel off screen. */}
+                    <div className="sticky left-3" style={boxW ? { width: boxW - 24 } : undefined}>{renderExpanded(r)}</div>
+                  </td>
+                </tr>
+              ),
             ])}
           </tbody>
         </table>
